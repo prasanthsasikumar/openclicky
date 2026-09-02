@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { renderCodexConfig, ensureCodexHome } from "../src/codexHome.js";
+import { renderCodexConfig, renderMcpServers, ensureCodexHome } from "../src/codexHome.js";
 import { resolveConfig } from "../src/config.js";
 
 const tpl = `{{MODEL_LINE}}\nbase_url = "{{BACKEND_URL}}/v1"\npath = "{{OPENCLICKY_ROOT}}/skills"\n[projects."{{WORKSPACE}}"]\n`;
@@ -22,6 +22,19 @@ describe("renderCodexConfig", () => {
   });
 });
 
+describe("renderMcpServers", () => {
+  it("renders nothing by default", () => {
+    expect(renderMcpServers({})).toBe("");
+    expect(renderCodexConfig("a\n{{MCP_SERVERS}}\nb", { root: "/r", backendUrl: "x", workspace: "/w" })).toBe("a\n\nb");
+  });
+  it("renders composio and computer-use blocks when configured", () => {
+    const out = renderMcpServers({ composioMcpUrl: "https://mcp.example/composio", cuaDriverBin: "/opt/cua-driver" });
+    expect(out).toContain('[mcp_servers.composio]\nurl = "https://mcp.example/composio"\nbearer_token_env_var = "OPENCLICKY_SESSION_TOKEN"');
+    expect(out).toContain('[mcp_servers.computer-use]\ncommand = "/opt/cua-driver"\nargs = ["--socket"]');
+    expect(out).toContain('CUA_DRIVER_EMBEDDED = "1"');
+  });
+});
+
 describe("ensureCodexHome", () => {
   it("writes config.toml from the real template", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-home-"));
@@ -34,5 +47,13 @@ describe("ensureCodexHome", () => {
     expect(text).toContain('[projects."/tmp/ws"]');
     expect(text).not.toContain("{{");
     expect(text).not.toContain("clicky-crons]");
+    expect(text).not.toMatch(/^\[mcp_servers\.composio\]/m);
+  });
+  it("includes MCP servers from config", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-home-"));
+    const cfg = resolveConfig({ codexHome: home, backendUrl: "http://127.0.0.1:1", workspace: "/tmp/ws", composioMcpUrl: "https://mcp.example/c", cuaDriverBin: "/opt/cua" });
+    const text = fs.readFileSync(ensureCodexHome(cfg).configPath, "utf8");
+    expect(text).toMatch(/^\[mcp_servers\.composio\]\nurl = "https:\/\/mcp\.example\/c"/m);
+    expect(text).toMatch(/^\[mcp_servers\.computer-use\]\ncommand = "\/opt\/cua"/m);
   });
 });

@@ -2,7 +2,10 @@
 OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-5.5
+OPENAI_REALTIME_MODEL=gpt-realtime
+OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
 ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 SESSION_TOKEN_SECRET=change-me-openssl-rand-hex-32

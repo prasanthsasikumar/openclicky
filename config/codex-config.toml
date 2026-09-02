@@ -1,7 +1,7 @@
 # OpenClicky Codex CLI config template (derived from reference/codex-config.toml, HeyClicky v1.0.48).
 #
 # Rendered by agent/src/codexHome.ts into $OPENCLICKY_CODEX_HOME/config.toml on every run.
-# Placeholders (double-brace): MODEL_LINE, OPENCLICKY_ROOT, BACKEND_URL, WORKSPACE.
+# Placeholders (double-brace): MODEL_LINE, OPENCLICKY_ROOT, BACKEND_URL, WORKSPACE, MCP_SERVERS.
 #
 # Verified against Codex CLI 0.152.1 (`codex app-server --strict-config`).
 
@@ -37,16 +37,10 @@ enabled = true
 
 # `clicky-crons` intentionally removed: Remote Tasks / scheduled crons are out of scope for this cut.
 #
-# TODO(next cut): Computer Use via cua-driver and Composio integrations, e.g.
-#   [mcp_servers.computer-use]
-#   command = "<path-to-cua-driver>"
-#   args = "--socket"
-#   env = { CUA_DRIVER_EMBEDDED = "1", CUA_DRIVER_RS_TELEMETRY_ENABLED = "false", CUA_DRIVER_RS_UPDATE_CHECK = "false" }
-#   startup_timeout_sec = 20.0
-#   [mcp_servers.composio]
-#   url = "<composio mcp url>"
-#   bearer_token_env_var = "OPENCLICKY_SESSION_TOKEN"
-#   tool_timeout_sec = 120.0
+# Optional MCP servers, rendered only when configured on the agent side:
+#   COMPOSIO_MCP_URL  -> [mcp_servers.composio]      (external integrations; bearer = OPENCLICKY_SESSION_TOKEN)
+#   CUA_DRIVER_BIN    -> [mcp_servers.computer-use]  (Computer Use via cua-driver --socket)
+{{MCP_SERVERS}}
 
 [projects."{{WORKSPACE}}"]
 trust_level = "trusted"

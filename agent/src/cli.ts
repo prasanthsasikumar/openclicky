@@ -7,6 +7,7 @@ import { CodexAgent, type ApprovalRequest, type ApprovalDecision, type RunResult
 import { ask } from "./ask.js";
 import { gate, type Lane } from "./gate.js";
 import { captureScreen } from "./screenshot.js";
+import { recordAudio, transcribe } from "./audio.js";
 
 const program = new Command();
 program
@@ -153,6 +154,47 @@ withRunOptions(
       if (opts.lane !== "ask" && opts.lane !== "agent") fail("--lane must be ask or agent");
       lane = opts.lane;
       note(`lane: ${lane} (forced)`);
+    } else {
+      const d = await gate(cfg, text);
+      lane = d.lane;
+      note(`lane: ${lane}${d.gated ? "" : " (fallback)"} — ${d.reason}`);
+    }
+    if (lane === "ask") await runAsk(cfg, text, opts);
+    else await runAgent(cfg, text, opts);
+  } catch (e) {
+    fail((e as Error).message);
+  }
+});
+
+withRunOptions(
+  withCommonOptions(
+    program
+      .command("voice")
+      .description("push-to-talk stand-in: record the microphone, transcribe through the backend, then route like `do`")
+      .option("--seconds <n>", "how long to record", "5")
+      .option("--file <path>", "transcribe an existing audio file instead of recording")
+      .option("--device <index>", "AVFoundation audio device index", "0")
+      .option("--language <code>", "ISO language hint for transcription")
+      .option("--lane <lane>", "force a lane: ask | agent")
+      .option("--transcribe-only", "print the transcript and stop"),
+  ),
+).action(async (opts) => {
+  const cfg = configFrom(opts);
+  try {
+    let file: string = opts.file;
+    if (!file) {
+      note(`recording ${opts.seconds}s from microphone (device ${opts.device})…`);
+      file = recordAudio({ seconds: Number(opts.seconds), device: opts.device, ffmpegBin: cfg.ffmpegBin });
+      note(`recorded ${file}`);
+    }
+    const text = await transcribe(cfg, file, { language: opts.language });
+    if (!text) fail("transcription came back empty");
+    note(`you said: ${text}`);
+    if (opts.transcribeOnly) return void process.stdout.write(text + "\n");
+    let lane: Lane;
+    if (opts.lane) {
+      if (opts.lane !== "ask" && opts.lane !== "agent") fail("--lane must be ask or agent");
+      lane = opts.lane;
     } else {
       const d = await gate(cfg, text);
       lane = d.lane;

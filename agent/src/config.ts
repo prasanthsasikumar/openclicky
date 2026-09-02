@@ -18,6 +18,12 @@ export interface AgentConfig {
   /** Repo root (contains skills/ and config/). */
   root: string;
   verbose: boolean;
+  /** Composio MCP server URL; when set, the `composio` MCP server is rendered into the Codex config. */
+  composioMcpUrl?: string;
+  /** Path to cua-driver; when set, the `computer-use` MCP server is rendered into the Codex config. */
+  cuaDriverBin?: string;
+  /** ffmpeg binary used for microphone capture in the voice lane. */
+  ffmpegBin: string;
 }
 
 /** Repo root: agent/src/config.ts or agent/dist/config.js → ../../ */
@@ -39,5 +45,8 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     model: flags.model ?? env.OPENCLICKY_MODEL ?? undefined,
     root: flags.root ?? repoRoot(),
     verbose: flags.verbose ?? env.OPENCLICKY_VERBOSE === "1",
+    composioMcpUrl: flags.composioMcpUrl ?? env.COMPOSIO_MCP_URL ?? undefined,
+    cuaDriverBin: flags.cuaDriverBin ?? env.CUA_DRIVER_BIN ?? undefined,
+    ffmpegBin: flags.ffmpegBin ?? env.OPENCLICKY_FFMPEG_BIN ?? "ffmpeg",
   };
 }
