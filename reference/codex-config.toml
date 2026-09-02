@@ -1,0 +1,35 @@
+# Codex config recovered from HeyClicky v1.0.48
+
+# This is the Codex CLI TOML the app generates and feeds to the bundled
+# Codex runtime. Recovered from the HeyClicky Mach-O string table.
+# (The original had `[projects.<something>]` with the workspace name truncated
+# in the binary; `default` below is a placeholder.)
+
+js_repl = true
+multi_agent = true
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+
+[[skills.config]]
+path = ""
+enabled = true
+
+[mcp_servers.clicky-crons]
+command = ""
+startup_timeout_sec = 10.0
+
+[mcp_servers.computer-use]
+args = "--socket"
+env = { CUA_DRIVER_EMBEDDED = "1", CUA_DRIVER_RS_TELEMETRY_ENABLED = "false", CUA_DRIVER_RS_UPDATE_CHECK = "false" }
+startup_timeout_sec = 20.0
+enabled_tools = ""
+
+[mcp_servers.composio]
+url = ""
+bearer_token_env_var = "OPENAI_API_KEY"
+tool_timeout_sec = 120.0
+
+[projects.default]
+trust_level = "trusted"
+model_instructions_file = "<path-to-ModelInstructions.md>"

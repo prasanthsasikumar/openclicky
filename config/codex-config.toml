@@ -1,0 +1,52 @@
+# OpenClicky Codex CLI config template (derived from reference/codex-config.toml, HeyClicky v1.0.48).
+#
+# Rendered by agent/src/codexHome.ts into $OPENCLICKY_CODEX_HOME/config.toml on every run.
+# Placeholders (double-brace): MODEL_LINE, OPENCLICKY_ROOT, BACKEND_URL, WORKSPACE.
+#
+# Verified against Codex CLI 0.152.1 (`codex app-server --strict-config`).
+
+{{MODEL_LINE}}
+model_provider = "openclicky"
+
+# The product's behavior contract (routing doctrine, approval gate, style rules).
+model_instructions_file = "{{OPENCLICKY_ROOT}}/skills/ModelInstructions.md"
+
+# HeyClicky set these as top-level keys (Codex 0.132); in Codex 0.152 they are feature flags.
+[features]
+js_repl = true
+multi_agent = true
+
+# Keys stay server-side. Codex never sees an OpenAI key: it calls the OpenClicky backend, which
+# holds the real provider key. Codex attaches `Authorization: Bearer $OPENCLICKY_SESSION_TOKEN`
+# (the `env_key` below) to every request; the backend accepts a Supabase JWT or a session token.
+[model_providers.openclicky]
+name = "OpenClicky backend"
+base_url = "{{BACKEND_URL}}/v1"
+# Codex 0.152.x rejects `wire_api = "chat"`, so the backend proxies the Responses API (/v1/responses).
+wire_api = "responses"
+env_key = "OPENCLICKY_SESSION_TOKEN"
+requires_openai_auth = false
+supports_websockets = false
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+
+[[skills.config]]
+path = "{{OPENCLICKY_ROOT}}/skills"
+enabled = true
+
+# `clicky-crons` intentionally removed: Remote Tasks / scheduled crons are out of scope for this cut.
+#
+# TODO(next cut): Computer Use via cua-driver and Composio integrations, e.g.
+#   [mcp_servers.computer-use]
+#   command = "<path-to-cua-driver>"
+#   args = "--socket"
+#   env = { CUA_DRIVER_EMBEDDED = "1", CUA_DRIVER_RS_TELEMETRY_ENABLED = "false", CUA_DRIVER_RS_UPDATE_CHECK = "false" }
+#   startup_timeout_sec = 20.0
+#   [mcp_servers.composio]
+#   url = "<composio mcp url>"
+#   bearer_token_env_var = "OPENCLICKY_SESSION_TOKEN"
+#   tool_timeout_sec = 120.0
+
+[projects."{{WORKSPACE}}"]
+trust_level = "trusted"

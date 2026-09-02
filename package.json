@@ -1,0 +1,19 @@
+{
+  "name": "openclicky",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Open-source macOS AI voice assistant (headless initial cut: agent bridge + key-holding backend)",
+  "workspaces": [
+    "backend",
+    "agent"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "dev:backend": "npm run dev --workspace backend",
+    "port-skills": "node scripts/port-skills.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

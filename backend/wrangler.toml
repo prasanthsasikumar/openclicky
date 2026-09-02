@@ -1,0 +1,10 @@
+name = "openclicky-backend"
+main = "src/app.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets (OPENAI_API_KEY, ANTHROPIC_API_KEY, SUPABASE_JWT_SECRET, SESSION_TOKEN_SECRET, ...)
+# come from `.dev.vars` locally and `wrangler secret put <NAME>` in production.
+
+[dev]
+port = 8787

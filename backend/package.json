@@ -1,0 +1,28 @@
+{
+  "name": "@openclicky/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/app.js",
+  "scripts": {
+    "dev": "tsx watch src/node.ts",
+    "dev:worker": "wrangler dev",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/node.js",
+    "test": "vitest run",
+    "mint-jwt": "node scripts/mint-dev-jwt.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "dotenv": "^17.4.2",
+    "hono": "^4.13.5",
+    "jose": "^6.2.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.128.0"
+  }
+}
