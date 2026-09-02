@@ -20,6 +20,8 @@ struct PanelView: View {
                 }.help("Attach a screenshot to the next request").buttonStyle(.borderless)
                 Button { runner.voice() } label: { Image(systemName: "mic.fill") }
                     .help("Record \(runner.settings.voiceSeconds)s and run").buttonStyle(.borderless).disabled(runner.isRunning)
+                Button { runner.talk() } label: { Image(systemName: "waveform") }
+                    .help("Start an always-on voice conversation (OpenAI Realtime)").buttonStyle(.borderless).disabled(runner.isRunning)
                 if runner.isRunning {
                     Button("Stop") { runner.cancel() }.controlSize(.small)
                 }

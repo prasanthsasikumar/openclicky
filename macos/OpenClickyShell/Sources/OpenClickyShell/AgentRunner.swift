@@ -42,8 +42,20 @@ final class AgentRunner: ObservableObject {
         launch(["voice", "--seconds", String(settings.voiceSeconds), "--cwd", settings.workspace])
     }
 
+    /// `openclicky talk` — always-on Realtime conversation; runs until Stop.
+    func talk() {
+        guard !isRunning else { return }
+        transcript += "\n🎙 talk session (Stop to hang up)\n"
+        var args = ["talk", "--cwd", settings.workspace]
+        if !settings.model.isEmpty { args += ["--model", settings.model] }
+        launch(args)
+    }
+
     func cancel() {
-        process?.terminate()
+        process?.interrupt() // SIGINT so `talk` hangs up cleanly; falls back to terminate below
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            if let p = self?.process, p.isRunning { p.terminate() }
+        }
     }
 
     private func launch(_ args: [String]) {

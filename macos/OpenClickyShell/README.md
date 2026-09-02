@@ -29,6 +29,7 @@ What the panel does:
 - Text → `openclicky do "<text>"` (gate decides ask vs. agent); "Follow thread" resumes the last thread.
 - 📷 → adds `--screenshot` to the next request (`screencapture`, needs Screen Recording permission for this app).
 - 🎤 → `openclicky voice --seconds N` (ffmpeg microphone capture, needs Microphone permission).
+- 〰 → `openclicky talk` (always-on OpenAI Realtime conversation; Stop sends SIGINT to hang up).
 - Output streams into the panel; thread ids are picked up from the CLI's stderr.
 
 Next steps for the shell: OpenAI Realtime voice (`POST /agent/realtime/session` already mints the
