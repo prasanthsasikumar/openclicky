@@ -3,5 +3,8 @@ dist/
 .env
 .dev.vars
 .wrangler/
+.build/
+*.xcodeproj
+.swiftpm/
 *.log
 .DS_Store
