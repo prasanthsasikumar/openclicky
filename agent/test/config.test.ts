@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
 import path from "node:path";
 import { resolveConfig, repoRoot } from "../src/config.js";
 
@@ -24,6 +25,8 @@ describe("resolveConfig", () => {
     expect(c.model).toBe("m");
   });
   it("repoRoot points at the directory holding skills/ and config/", () => {
-    expect(path.basename(repoRoot())).toBe("openclicky");
+    const root = repoRoot();
+    expect(fs.existsSync(path.join(root, "skills", "ModelInstructions.md"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "config", "codex-config.toml"))).toBe(true);
   });
 });
