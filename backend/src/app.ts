@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { getEnv } from "./env.js";
 import { requireAuth, verifySupabaseJwt, issueSessionToken, bearerFrom, AuthError, type Principal } from "./auth.js";
-import { proxyOpenAI, proxyAnthropic } from "./proxy.js";
+import { proxyOpenAI, proxyAnthropic, createRealtimeSession, transcribeAudio } from "./proxy.js";
+import { SKILLS_MANIFEST } from "./skillsManifest.js";
 
 /**
  * OpenClicky backend: the key-holding proxy.
@@ -28,15 +29,23 @@ export function createApp() {
     }
   });
 
-  // Everything else under /agent/* and /v1/* needs a Supabase JWT or a session token.
+  // Everything else under /agent/*, /v1/* and /skills/* needs a Supabase JWT or a session token.
   app.use("/agent/*", requireAuth);
   app.use("/v1/*", requireAuth);
+  app.use("/skills/*", requireAuth);
 
   app.post("/v1/chat/completions", (c) => proxyOpenAI(c, "/chat/completions")); // `ask` lane
   app.post("/v1/responses", (c) => proxyOpenAI(c, "/responses")); // Codex agent lane (Codex >= 0.15x is Responses-only)
   app.post("/v1/messages", (c) => proxyAnthropic(c)); // Anthropic gate lane
 
-  // TODO(next cut): /agent/realtime/* (voice), /skills/*, /codex-thread-launch — see REVERSE-ENGINEERING.md §8.
+  // Voice groundwork: ephemeral Realtime client secrets + server-side speech-to-text.
+  app.post("/agent/realtime/session", (c) => createRealtimeSession(c));
+  app.post("/agent/transcribe", (c) => transcribeAudio(c));
+
+  // Skill library: the bundled skill set, generated from skills/ at build time.
+  app.get("/skills/library", (c) => c.json({ skills: SKILLS_MANIFEST }));
+
+  // TODO(next cut): /agent/realtime/turn|warmup, /skills/create|activations, /codex-thread-launch — see REVERSE-ENGINEERING.md §8.
   return app;
 }
 

@@ -5,10 +5,14 @@
   "type": "module",
   "main": "dist/app.js",
   "scripts": {
+    "manifest": "node scripts/build-skills-manifest.mjs",
+    "predev": "npm run manifest",
     "dev": "tsx watch src/node.ts",
     "dev:worker": "wrangler dev",
+    "prebuild": "npm run manifest",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/node.js",
+    "pretest": "npm run manifest",
     "test": "vitest run",
     "mint-jwt": "node scripts/mint-dev-jwt.mjs"
   },

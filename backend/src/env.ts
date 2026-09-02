@@ -8,8 +8,13 @@ export type Env = {
   OPENAI_API_KEY?: string;
   OPENAI_BASE_URL?: string;
   OPENAI_MODEL?: string;
+  /** Realtime voice model minted by POST /agent/realtime/session (default gpt-realtime). */
+  OPENAI_REALTIME_MODEL?: string;
+  /** Speech-to-text model used by POST /agent/transcribe (default gpt-4o-mini-transcribe). */
+  OPENAI_TRANSCRIBE_MODEL?: string;
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_BASE_URL?: string;
+  ANTHROPIC_MODEL?: string;
   SUPABASE_URL?: string;
   SUPABASE_JWT_SECRET?: string;
   SESSION_TOKEN_SECRET?: string;
