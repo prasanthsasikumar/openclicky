@@ -1,0 +1,113 @@
+/**
+ * Black-box tests of the `openclicky` command line: spawns src/cli.ts via tsx against a fake backend
+ * (chat completions, gate, and a message-only Responses API for the real codex binary).
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const cli = path.resolve(here, "..", "src", "cli.ts");
+const tsx = path.resolve(here, "..", "..", "node_modules", ".bin", "tsx");
+const hasCodex = spawnSync("codex", ["--version"], { encoding: "utf8" }).status === 0;
+
+let server: http.Server;
+let url: string;
+
+function runCli(args: string[], env: Record<string, string> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const p = spawn(tsx, [cli, ...args], { env: { ...process.env, BACKEND_URL: url, OPENCLICKY_TOKEN: "cli-token", OPENCLICKY_CODEX_HOME: fs.mkdtempSync(path.join(os.tmpdir(), "oc-cli-home-")), ...env } });
+    let stdout = "";
+    let stderr = "";
+    p.stdout.on("data", (d) => (stdout += d));
+    p.stderr.on("data", (d) => (stderr += d));
+    p.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+beforeAll(async () => {
+  server = http.createServer((req, res) => {
+    let b = "";
+    req.on("data", (d) => (b += d));
+    req.on("end", () => {
+      const body = b ? JSON.parse(b) : {};
+      if (req.headers.authorization !== "Bearer cli-token") return void res.writeHead(401, { "content-type": "application/json" }).end('{"error":"bad token"}');
+      if (req.url === "/v1/chat/completions") {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        for (const w of ["Hello ", "from ", "fake"]) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: w } }] })}\n\n`);
+        return void res.end("data: [DONE]\n\n");
+      }
+      if (req.url === "/v1/messages") {
+        const q: string = body.messages?.at(-1)?.content ?? "";
+        const lane = /\bfile\b/.test(q) ? "agent" : "ask";
+        res.writeHead(200, { "content-type": "application/json" });
+        return void res.end(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ lane, reason: "fake gate" }) }] }));
+      }
+      if (req.url === "/v1/responses") {
+        const id = "resp_1";
+        const item = { id: "msg_1", type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: "agent says hi", annotations: [] }] };
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const ev = (type: string, data: Record<string, unknown>) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+        ev("response.created", { response: { id, object: "response", status: "in_progress", output: [] } });
+        ev("response.output_item.added", { output_index: 0, item: { ...item, status: "in_progress", content: [] } });
+        ev("response.output_text.delta", { item_id: "msg_1", output_index: 0, content_index: 0, delta: "agent says hi" });
+        ev("response.output_item.done", { output_index: 0, item });
+        ev("response.completed", { response: { id, object: "response", status: "completed", output: [item], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } } });
+        return void res.end();
+      }
+      res.writeHead(404).end();
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+});
+afterAll(() => server.close());
+
+describe("openclicky CLI", () => {
+  it("ask streams the answer to stdout and exits 0", async () => {
+    const r = await runCli(["ask", "say", "hello"]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe("Hello from fake\n");
+  });
+
+  it("ask --events emits JSON Lines", async () => {
+    const r = await runCli(["ask", "hi", "--events"]);
+    expect(r.code).toBe(0);
+    const lines = r.stdout.trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines.filter((l) => l.type === "delta").map((l) => l.text).join("")).toBe("Hello from fake");
+    expect(lines.at(-1)).toEqual({ type: "answer", text: "Hello from fake" });
+  });
+
+  it("fails with a non-zero exit and an error line on a bad token", async () => {
+    const r = await runCli(["ask", "hi"], { OPENCLICKY_TOKEN: "wrong" });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/error: backend 401/);
+    const ev = await runCli(["ask", "hi", "--events"], { OPENCLICKY_TOKEN: "wrong" });
+    expect(ev.code).toBe(1);
+    expect(JSON.parse(ev.stdout.trim())).toMatchObject({ type: "error", message: expect.stringContaining("401") });
+  });
+
+  it("do routes through the gate and reports the lane", async () => {
+    const r = await runCli(["do", "what is up", "--events"]);
+    expect(r.code).toBe(0);
+    const lines = r.stdout.trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines[0]).toEqual({ type: "lane", lane: "ask", gated: true, reason: "fake gate" });
+    expect(lines.at(-1)).toEqual({ type: "answer", text: "Hello from fake" });
+  });
+
+  it.skipIf(!hasCodex)("run --events streams deltas and a result through the real codex binary", async () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cli-ws-"));
+    const r = await runCli(["run", "say hi", "--events", "--cwd", ws, "--model", "gpt-5.2"]);
+    expect(r.code).toBe(0);
+    const lines = r.stdout.trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines.some((l) => l.type === "event" && /started thread/.test(l.line))).toBe(true);
+    expect(lines.filter((l) => l.type === "delta").map((l) => l.text).join("")).toBe("agent says hi");
+    const result = lines.at(-1);
+    expect(result).toMatchObject({ type: "result", status: "completed", finalMessage: "agent says hi", artifacts: [] });
+    expect(typeof result.threadId).toBe("string");
+  }, 60_000);
+});

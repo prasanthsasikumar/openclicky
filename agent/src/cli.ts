@@ -16,11 +16,19 @@ program
   .description("OpenClicky headless agent: run tasks through Codex via the OpenClicky backend, or ask quick questions.")
   .version("0.2.0");
 
+/**
+ * Output modes: human (text on stdout, milestones on stderr), --json (one result object), or
+ * --events (JSON Lines on stdout: lane / event / delta / answer / result / error — for UIs).
+ */
+let eventsMode = false;
+const emit = (obj: Record<string, unknown>) => process.stdout.write(JSON.stringify(obj) + "\n");
+
 const fail = (msg: string): never => {
-  process.stderr.write(`error: ${msg}\n`);
+  if (eventsMode) emit({ type: "error", message: msg });
+  else process.stderr.write(`error: ${msg}\n`);
   process.exit(1);
 };
-const note = (line: string) => process.stderr.write(`▸ ${line}\n`);
+const note = (line: string) => (eventsMode ? emit({ type: "event", line }) : process.stderr.write(`▸ ${line}\n`));
 
 const withCommonOptions = (cmd: Command) =>
   cmd
@@ -29,7 +37,11 @@ const withCommonOptions = (cmd: Command) =>
     .option("--image <path>", "attach a local screenshot/image")
     .option("--screenshot", "capture the screen now (macOS screencapture) and attach it")
     .option("--json", "print the result as JSON")
-    .option("--verbose", "show Codex stderr / request details");
+    .option("--events", "stream JSON Lines events to stdout (for UIs)")
+    .option("--verbose", "show Codex stderr / request details")
+    .hook("preAction", (_thisCommand, actionCommand) => {
+      eventsMode = Boolean(actionCommand.opts().events);
+    });
 
 const withRunOptions = (cmd: Command) =>
   cmd
@@ -78,16 +90,20 @@ async function runAgent(cfg: AgentConfig, task: string, opts: Record<string, any
     onEvent: note,
     onDelta: opts.json
       ? undefined
-      : (t) => {
-          streamed = true;
-          process.stdout.write(t);
-        },
+      : opts.events
+        ? (t) => emit({ type: "delta", text: t })
+        : (t) => {
+            streamed = true;
+            process.stdout.write(t);
+          },
     onApproval: opts.approve ? promptApproval : undefined,
   });
   try {
     await agent.start();
     const result = await agent.run(task, { threadId: opts.thread, imagePath: resolveImage(opts) });
-    if (opts.json) {
+    if (opts.events) {
+      emit({ type: "result", ...result });
+    } else if (opts.json) {
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
     } else {
       if (streamed) process.stdout.write("\n");
@@ -108,12 +124,15 @@ async function runAsk(cfg: AgentConfig, question: string, opts: Record<string, a
     imagePath: resolveImage(opts),
     onDelta: opts.json
       ? undefined
-      : (t) => {
-          streamed = true;
-          process.stdout.write(t);
-        },
+      : opts.events
+        ? (t) => emit({ type: "delta", text: t })
+        : (t) => {
+            streamed = true;
+            process.stdout.write(t);
+          },
   });
-  if (opts.json) process.stdout.write(JSON.stringify({ answer }) + "\n");
+  if (opts.events) emit({ type: "answer", text: answer });
+  else if (opts.json) process.stdout.write(JSON.stringify({ answer }) + "\n");
   else process.stdout.write(streamed ? "\n" : answer + "\n");
   return answer;
 }
@@ -154,11 +173,13 @@ withRunOptions(
     if (opts.lane) {
       if (opts.lane !== "ask" && opts.lane !== "agent") fail("--lane must be ask or agent");
       lane = opts.lane;
-      note(`lane: ${lane} (forced)`);
+      if (opts.events) emit({ type: "lane", lane, forced: true });
+      else note(`lane: ${lane} (forced)`);
     } else {
       const d = await gate(cfg, text);
       lane = d.lane;
-      note(`lane: ${lane}${d.gated ? "" : " (fallback)"} — ${d.reason}`);
+      if (opts.events) emit({ type: "lane", lane, gated: d.gated, reason: d.reason });
+      else note(`lane: ${lane}${d.gated ? "" : " (fallback)"} — ${d.reason}`);
     }
     if (lane === "ask") await runAsk(cfg, text, opts);
     else await runAgent(cfg, text, opts);

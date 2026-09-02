@@ -22,5 +22,14 @@ prioritizing what can be built and verified headlessly without provider keys.
    the backend, then routes through the gate.
 8. Native shell scaffold — `macos/` SwiftUI menu-bar app that drives the CLI (compile-verified only).
 
+9. Realtime voice loop — `openclicky talk`: backend-minted ephemeral secret, WebSocket to OpenAI
+   Realtime (subprotocol auth), ffmpeg mic in / ffplay out, server VAD + barge-in, `send_to_agent`
+   tool into a persistent Codex thread. Verified against a fake Realtime server.
+10. `--events` JSON Lines output mode + black-box CLI tests; structured request log in the backend.
+
 Verification standard: unit tests per module, the real-codex integration test for anything that
 touches the bridge, and a live run through the built backend with the fake upstream.
+
+**Status (end of block):** all ten delivered and committed (`git log`), 65 tests passing, both
+workspaces and the Swift shell building. Everything model-dependent was verified against fakes; see
+README "Verification notes".

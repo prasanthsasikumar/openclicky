@@ -3,13 +3,20 @@ import { getEnv } from "./env.js";
 import { requireAuth, verifySupabaseJwt, issueSessionToken, bearerFrom, AuthError, type Principal } from "./auth.js";
 import { proxyOpenAI, proxyAnthropic, createRealtimeSession, transcribeAudio } from "./proxy.js";
 import { SKILLS_MANIFEST } from "./skillsManifest.js";
+import { requestLogger, type LogSink } from "./log.js";
+
+export interface AppOptions {
+  /** Structured request log sink (default: JSON lines on stdout). Pass `null` to disable. */
+  log?: LogSink | null;
+}
 
 /**
  * OpenClicky backend: the key-holding proxy.
  * Runs unchanged under Node (`src/node.ts`) and Cloudflare Workers (`wrangler dev`, default export).
  */
-export function createApp() {
+export function createApp(options: AppOptions = {}) {
   const app = new Hono<{ Variables: { principal: Principal } }>();
+  if (options.log !== null) app.use("*", requestLogger(options.log));
 
   app.get("/health", (c) => c.json({ ok: true }));
 

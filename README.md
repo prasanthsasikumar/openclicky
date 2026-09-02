@@ -99,7 +99,8 @@ curl localhost:8787/health        # → {"ok":true}
 | `POST /agent/transcribe` | token | `{ audio: <base64>, mime?, language? }` → `{ text }` via `OPENAI_TRANSCRIBE_MODEL` |
 | `GET /skills/library` | token | the bundled skill manifest (id, name, description, kind, files) |
 
-"token" = a Supabase JWT or an exchanged session token. Deploy: `cd backend && npx wrangler deploy`,
+"token" = a Supabase JWT or an exchanged session token. Every request is logged as one JSON line
+(method, path, status, ms, user id — never bodies or tokens). Deploy: `cd backend && npx wrangler deploy`,
 then `wrangler secret put` each secret.
 
 ## Run the agent
@@ -127,9 +128,10 @@ hands real work to a Codex thread (kept across the conversation). Transcripts pr
 `openclicky:`. Needs `ffmpeg` + `ffplay` and Microphone permission for your terminal.
 
 Flags on `run`/`do`/`voice`: `--thread`, `--cwd`, `--model` (e.g. `gpt-5.6-luna`), `--approve`,
-`--image`, `--screenshot`, `--json`, `--verbose`, `--backend-url`, `--token`. Agent text streams to
-stdout as it is generated; milestones (`thread: …`, `ran: …`, approvals) go to stderr; `artifacts:`
-lists new/changed files in the workspace. Non-zero exit on failure.
+`--image`, `--screenshot`, `--json`, `--events`, `--verbose`, `--backend-url`, `--token`. Agent text
+streams to stdout as it is generated; milestones (`thread: …`, `ran: …`, approvals) go to stderr;
+`artifacts:` lists new/changed files in the workspace. Non-zero exit on failure. `--events` switches
+to JSON Lines on stdout (`lane`, `event`, `delta`, `answer`, `result`, `error`) for UIs like the shell.
 
 Codex state lives in an isolated `CODEX_HOME` (`~/.openclicky/codex-home`, `OPENCLICKY_CODEX_HOME`),
 separate from your personal `~/.codex`, stable across runs so threads can be resumed. Its

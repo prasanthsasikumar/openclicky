@@ -52,7 +52,8 @@ const env: Env = {
   OPENAI_MODEL: "gpt-test",
   ANTHROPIC_API_KEY: "ak-upstream",
 };
-const app = createApp();
+const logged: any[] = [];
+const app = createApp({ log: (e) => logged.push(e) });
 const call = (path: string, init: RequestInit = {}, over: Partial<Env> = {}) =>
   app.request(path, init, { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1", ANTHROPIC_BASE_URL: upstreamUrl, ...over });
 const jwt = () =>
@@ -180,6 +181,21 @@ describe("app", () => {
     expect(artifacts.files).toContain("SKILL.md");
     expect(skills.find((s) => s.id === "pdf")!.kind).toBe("capability");
     expect(skills.some((s) => s.id === "powerpoint")).toBe(false);
+  });
+
+  it("logs one structured entry per request with the principal (never the token)", async () => {
+    logged.length = 0;
+    await call("/health");
+    const r = await call("/v1/chat/completions", json({ messages: [] }, await jwt()));
+    await r.text();
+    await call("/v1/chat/completions", { method: "POST" });
+    expect(logged.map((e) => [e.path, e.status, e.sub ?? null])).toEqual([
+      ["/health", 200, null],
+      ["/v1/chat/completions", 200, "user-1"],
+      ["/v1/chat/completions", 401, null],
+    ]);
+    expect(logged[1]).toMatchObject({ method: "POST", via: "supabase", ms: expect.any(Number), ts: expect.any(String) });
+    expect(JSON.stringify(logged)).not.toContain("eyJ");
   });
 
   it("502 when upstream key missing", async () => {
