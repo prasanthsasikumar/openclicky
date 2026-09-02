@@ -5,7 +5,8 @@ plus a first native shell scaffold**. What works today:
 
 - `agent/` — a TypeScript CLI that drives **OpenAI Codex CLI** over JSON-RPC stdio (the "do work"
   lane), a lightweight **ask** lane, a cheap **gate** that routes between them, screenshots, a
-  push-to-talk **voice** lane (ffmpeg + server-side speech-to-text), and thread management.
+  push-to-talk **voice** lane (ffmpeg + server-side speech-to-text), an always-on **talk** loop
+  (OpenAI Realtime with a `send_to_agent` tool), and thread management.
 - `backend/` — a **Hono** API that holds the provider keys, verifies **Supabase** auth, proxies model
   calls, mints Realtime voice secrets, transcribes audio, and serves the skill library. Runs on Node
   or Cloudflare Workers unchanged.
@@ -115,8 +116,15 @@ openclicky ask "say hello in 5 words"                               # one chat c
 openclicky do "what does ENOENT mean"                               # gate picks ask; `do "fix the build"` picks agent
 openclicky voice --seconds 5                                        # record mic → transcribe → gate → ask/run
 openclicky voice --file note.wav --transcribe-only
+openclicky talk --voice marin                                       # always-on conversation via OpenAI Realtime (Ctrl-C to hang up)
 openclicky threads list | show <id> | archive <id>
 ```
+
+`talk` is the HeyClicky-style voice loop: the backend mints an ephemeral Realtime client secret,
+the CLI streams microphone PCM (ffmpeg) to OpenAI Realtime over WebSocket, plays spoken replies
+(ffplay), handles barge-in with server VAD, and exposes a `send_to_agent` tool so the voice model
+hands real work to a Codex thread (kept across the conversation). Transcripts print as `you:` /
+`openclicky:`. Needs `ffmpeg` + `ffplay` and Microphone permission for your terminal.
 
 Flags on `run`/`do`/`voice`: `--thread`, `--cwd`, `--model` (e.g. `gpt-5.6-luna`), `--approve`,
 `--image`, `--screenshot`, `--json`, `--verbose`, `--backend-url`, `--token`. Agent text streams to
@@ -171,8 +179,10 @@ with real keys, drop `--model gpt-5.2` (only the fake needs a classic-tools mode
 
 ## Next
 
-- Shell: Realtime voice session (WebRTC/WebSocket using `/agent/realtime/session`), agent cards and
+- Shell: native audio (today the Talk button runs `openclicky talk` as a subprocess), agent cards and
   timeline from `--json`, active-document reader, permissions onboarding, app bundle + Sparkle.
+- Voice: verify `talk` against the real Realtime API (built against a fake server), wake word,
+  spoken task-finished summaries, Deepgram/Whisper STT fallback.
 - Backend: `/agent/realtime/turn|warmup`, `/skills/create|activations`, Composio session brokering.
 - Agent: Composio + cua-driver end-to-end once those services are configured; barge-in/always-on voice.
 

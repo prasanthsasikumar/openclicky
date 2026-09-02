@@ -8,6 +8,7 @@ import { ask } from "./ask.js";
 import { gate, type Lane } from "./gate.js";
 import { captureScreen } from "./screenshot.js";
 import { recordAudio, transcribe } from "./audio.js";
+import { RealtimeSession, defaultMicCommand } from "./realtime.js";
 
 const program = new Command();
 program
@@ -206,6 +207,59 @@ withRunOptions(
     fail((e as Error).message);
   }
 });
+
+program
+  .command("talk")
+  .description("always-on voice conversation via OpenAI Realtime (mic → speech in/out); work is handed to a Codex thread")
+  .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL)")
+  .option("--token <token>", "Supabase JWT or session token (env OPENCLICKY_TOKEN)")
+  .option("--voice <name>", "Realtime voice (e.g. marin, cedar, alloy)")
+  .option("--device <index>", "AVFoundation audio device index", "0")
+  .option("--cwd <dir>", "working directory for agent tasks")
+  .option("--model <model>", "Codex model override for agent tasks")
+  .option("--seconds <n>", "hang up after N seconds (default: until Ctrl-C)")
+  .option("--no-agent", "answer only; never hand work to the agent")
+  .option("--verbose")
+  .action(async (opts) => {
+    const cfg = configFrom(opts);
+    let agent: CodexAgent | undefined;
+    let threadId: string | undefined;
+    const session = new RealtimeSession({
+      cfg,
+      voice: opts.voice,
+      micCommand: defaultMicCommand(cfg.ffmpegBin, opts.device),
+      onEvent: note,
+      onTranscript: (role, text) => process.stdout.write(`${role === "user" ? "you" : "openclicky"}: ${text}\n`),
+      onAgentTask: opts.agent === false
+        ? undefined
+        : async (task) => {
+            if (!agent) {
+              agent = new CodexAgent(cfg, { onEvent: note });
+              await agent.start();
+            }
+            const r = await agent.run(task, { threadId });
+            threadId = r.threadId;
+            const files = r.artifacts.length ? ` Files: ${r.artifacts.map((a) => path.basename(a)).join(", ")}.` : "";
+            return `${r.status === "completed" ? "Done." : `Turn ${r.status}.`} ${r.finalMessage.slice(0, 600)}${files}`;
+          },
+    });
+    const shutdown = async () => {
+      session.stop();
+      await agent?.stop();
+      process.exit(0);
+    };
+    process.on("SIGINT", () => void shutdown());
+    try {
+      await session.start();
+      note("talking — speak now, Ctrl-C to hang up");
+      if (opts.seconds) setTimeout(() => void shutdown(), Number(opts.seconds) * 1000);
+      await session.waitForClose();
+      await agent?.stop();
+    } catch (e) {
+      await agent?.stop();
+      fail((e as Error).message);
+    }
+  });
 
 const threads = program.command("threads").description("inspect OpenClicky's Codex threads (isolated CODEX_HOME)");
 const withThreadAgent = async <T>(opts: Record<string, any>, fn: (agent: CodexAgent) => Promise<T>): Promise<T> => {
