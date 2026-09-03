@@ -85,6 +85,29 @@ npm link -w agent                                 # optional: puts `openclicky` 
 keys, verified via JWKS). `ANTHROPIC_API_KEY` enables the gate; without it `do`/`voice` fall back to a
 local heuristic. See `.env.example` for every variable.
 
+## Choosing a provider
+
+The backend speaks three upstream dialects, so any of these work:
+
+| Setup | Agent (Codex) | Gate + teacher (Claude) | Ask | Speech in | Speech out | Realtime voice |
+|---|---|---|---|---|---|---|
+| OpenAI key + Anthropic key | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **OpenRouter key only** | ✓ (Responses API) | ✓ (Anthropic-format `/messages`) | ✓ | ✓ (`openai/gpt-4o-mini-transcribe`) | Mac system voice | ✗ |
+| OpenRouter + ElevenLabs | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+
+For OpenRouter set `OPENAI_BASE_URL=https://openrouter.ai/api/v1`, `ANTHROPIC_BASE_URL=https://openrouter.ai/api`,
+the same key in both `*_API_KEY`s, and the model mapping (`OPENAI_MODEL_PREFIX=openai/`,
+`ANTHROPIC_MODEL_PREFIX=anthropic/`, `MODEL_ALIASES=claude-sonnet-4-6=anthropic/claude-sonnet-4.6,…`); the
+commented block in `.env.example` has the full set. When `/tts` has no provider the app speaks with the
+built-in macOS voice.
+
+Keep the backend running at login so the app works straight from Spotlight:
+
+```bash
+scripts/install-backend-service.sh       # launchd user agent org.openclicky.backend on :8787 (logs in ~/Library/Logs/OpenClicky)
+scripts/install-backend-service.sh --uninstall
+```
+
 ## Run the backend
 
 ```bash

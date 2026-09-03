@@ -15,6 +15,11 @@ export type Env = {
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_BASE_URL?: string;
   ANTHROPIC_MODEL?: string;
+  /** "from=to,from=to" model renames applied to every proxied request (e.g. for OpenRouter). */
+  MODEL_ALIASES?: string;
+  /** Prepended to model names without a "/" on the OpenAI / Anthropic routes (e.g. "openai/", "anthropic/"). */
+  OPENAI_MODEL_PREFIX?: string;
+  ANTHROPIC_MODEL_PREFIX?: string;
   /** Native shell TTS (`/tts`): ElevenLabs when set, else OpenAI speech with OPENAI_TTS_MODEL/VOICE. */
   ELEVENLABS_API_KEY?: string;
   ELEVENLABS_VOICE_ID?: string;

@@ -580,6 +580,7 @@ final class CompanionManager: ObservableObject {
             currentResponseTask?.cancel()
             openClickyAgentClient.cancel()
             elevenLabsTTSClient.stopPlayback()
+            systemSpeechSynthesizer.stopSpeaking(at: .immediate)
             clearDetectedElementLocation()
 
             // Dismiss the onboarding prompt if it's showing
@@ -811,8 +812,8 @@ final class CompanionManager: ObservableObject {
                         voiceState = .responding
                     } catch {
                         ClickyAnalytics.trackTTSError(error: error.localizedDescription)
-                        print("⚠️ ElevenLabs TTS error: \(error)")
-                        speakCreditsErrorFallback()
+                        print("⚠️ TTS via backend failed (\(error.localizedDescription)); using the system voice")
+                        speakWithSystemVoice(spokenText)
                     }
                 }
             } catch is CancellationError {
@@ -892,8 +893,8 @@ final class CompanionManager: ObservableObject {
             try await elevenLabsTTSClient.speakText(spokenText)
             voiceState = .responding
         } catch {
-            print("⚠️ TTS error after agent run: \(error)")
-            speakCreditsErrorFallback()
+            print("⚠️ TTS via backend failed after agent run (\(error.localizedDescription)); using the system voice")
+            speakWithSystemVoice(spokenText)
         }
     }
 
@@ -907,7 +908,7 @@ final class CompanionManager: ObservableObject {
         transientHideTask?.cancel()
         transientHideTask = Task {
             // Wait for TTS audio to finish playing
-            while elevenLabsTTSClient.isPlaying {
+            while elevenLabsTTSClient.isPlaying || systemSpeechSynthesizer.isSpeaking {
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 guard !Task.isCancelled else { return }
             }
@@ -925,6 +926,18 @@ final class CompanionManager: ObservableObject {
             overlayWindowManager.fadeOutAndHideOverlay()
             isOverlayVisible = false
         }
+    }
+
+    /// OpenClicky: speak with the built-in macOS voice when the backend has no text-to-speech
+    /// route (for example an OpenRouter-only backend). Keeps the conversation audible.
+    private let systemSpeechSynthesizer = AVSpeechSynthesizer()
+
+    private func speakWithSystemVoice(_ text: String) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        systemSpeechSynthesizer.stopSpeaking(at: .immediate)
+        systemSpeechSynthesizer.speak(utterance)
+        voiceState = .responding
     }
 
     /// Speaks a hardcoded error message using macOS system TTS when API

@@ -44,6 +44,10 @@ BUILD_NUMBER="$(git -C "$REPO_DIR" rev-list --count HEAD)"
 COMMIT="$(git -C "$REPO_DIR" rev-parse --short HEAD)"
 TAG="v$VERSION"
 
+# A secure timestamp is required for notarization but needs Apple's timestamp server; only ask for
+# it on Developer ID builds so a development build never fails on a network hiccup.
+CODE_SIGN_FLAGS=""
+if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then CODE_SIGN_FLAGS="--timestamp"; fi
 echo "▸ OpenClicky $VERSION (build $BUILD_NUMBER, $COMMIT) — signing as '$SIGN_IDENTITY' team $TEAM_ID"
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"
@@ -63,7 +67,7 @@ xcodebuild \
   CODE_SIGN_STYLE=Automatic \
   CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
   ENABLE_HARDENED_RUNTIME=YES \
-  OTHER_CODE_SIGN_FLAGS="--timestamp" \
+  OTHER_CODE_SIGN_FLAGS="$CODE_SIGN_FLAGS" \
   -quiet
 APP_PATH="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
 [[ -d "$APP_PATH" ]] || { echo "build product missing: $APP_PATH" >&2; exit 1; }

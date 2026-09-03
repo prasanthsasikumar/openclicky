@@ -19,10 +19,12 @@ struct NotchFullPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // The tab bar lives in the menu-bar band, on either side of the physical notch.
             NotchTabBar(model: model, companionManager: companionManager, threadStore: threadStore)
-                .padding(.horizontal, 22)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+                .frame(height: 24)
+                .padding(.horizontal, 14)
+                .padding(.top, 5)
+                .frame(height: model.geometry.notchHeight, alignment: .top)
 
             Group {
                 switch model.activeTab {
@@ -35,6 +37,7 @@ struct NotchFullPanelView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.top, 6)
         }
         .onChange(of: model.activeTab) { tab in
             if tab == .agents { threadStore.refresh() }
@@ -74,13 +77,13 @@ struct NotchTabBar: View {
     private func tabPill(title: String, systemImage: String, tab: NotchHUDTab) -> some View {
         let isSelected = model.activeTab == tab
         return Button(action: { model.select(tab) }) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage).font(.system(size: 11, weight: .semibold))
-                Text(title).font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 5) {
+                Image(systemName: systemImage).font(.system(size: 9.5, weight: .semibold))
+                Text(title).font(.system(size: 10.5, weight: .semibold))
             }
-            .foregroundColor(isSelected ? .white : Color.white.opacity(0.6))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .foregroundColor(isSelected ? .white : Color.white.opacity(0.65))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
             .background(Capsule().fill(isSelected ? Color.white.opacity(0.14) : Color.clear))
         }
         .buttonStyle(.plain)
@@ -89,14 +92,15 @@ struct NotchTabBar: View {
 
     private var backendStatusPill: some View {
         let isConfigured = OpenClickyConfiguration.isConfigured
-        return HStack(spacing: 6) {
-            Circle().fill(isConfigured ? DS.Colors.success : DS.Colors.overlayCursorColor).frame(width: 6, height: 6)
+        return HStack(spacing: 5) {
+            Circle().fill(isConfigured ? DS.Colors.success : DS.Colors.overlayCursorColor).frame(width: 5, height: 5)
             Text(isConfigured ? OpenClickyConfiguration.backendHostDescription : "Set up backend")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(isConfigured ? Color.white.opacity(0.7) : .white)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
         .background(Capsule().fill(isConfigured ? Color.white.opacity(0.08) : DS.Colors.overlayCursorColor.opacity(0.35)))
         .onTapGesture { OpenClickyConfiguration.revealSettingsFile() }
         .pointerCursor()
@@ -105,9 +109,9 @@ struct NotchTabBar: View {
     private func iconButton(systemImage: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(Color.white.opacity(0.75))
-                .frame(width: 26, height: 26)
+                .frame(width: 22, height: 22)
         }
         .buttonStyle(.plain)
         .pointerCursor()
@@ -122,61 +126,72 @@ struct NotchHomeView: View {
     @ObservedObject var model: NotchHUDModel
 
     var body: some View {
-        HStack(alignment: .top, spacing: 28) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Talk to your Mac")
-                    .font(.system(size: 17, weight: .bold))
+        HStack(alignment: .top, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Add skills")
+                    .font(.system(size: 13.5, weight: .bold))
                     .foregroundColor(.white)
-                Text("Hold the shortcut and say what you need. Questions get a spoken answer and a pointer; work goes to an agent.")
-                    .font(.system(size: 11))
+                Text("Skills give OpenClicky superpowers")
+                    .font(.system(size: 10.5))
                     .foregroundColor(Color.white.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 10) {
-                    skillBadge(systemImage: "text.viewfinder", label: "Screen")
-                    skillBadge(systemImage: "doc.text", label: "Docs")
-                    skillBadge(systemImage: "chevron.left.forwardslash.chevron.right", label: "Code")
-                    skillBadge(systemImage: "magnifyingglass", label: "Research")
-                    addBadge(help: "Skills live in the repository's skills/ folder") { OpenClickyConfiguration.revealSettingsFile() }
+                HStack(spacing: 8) {
+                    skillTile(systemImage: "text.viewfinder", label: "Screen")
+                    skillTile(systemImage: "doc.text", label: "Docs")
+                    skillTile(systemImage: "chevron.left.forwardslash.chevron.right", label: "Code")
+                    skillTile(systemImage: "magnifyingglass", label: "Research")
+                    addTile(help: "Skills live in the repository's skills/ folder") { OpenClickyConfiguration.revealSettingsFile() }
                 }
-                .padding(.top, 4)
+                .padding(.top, 10)
 
                 Text("Active integrations")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color.white.opacity(0.7))
-                    .padding(.top, 8)
-                HStack(spacing: 8) {
-                    integrationBadge(title: "Composio", isOn: OpenClickyConfiguration.settings.composioMcpUrl != nil)
-                    integrationBadge(title: "Computer Use", isOn: OpenClickyConfiguration.settings.cuaDriverBin != nil)
-                    addBadge(help: "Set COMPOSIO_MCP_URL / CUA_DRIVER_BIN in shell.json") { OpenClickyConfiguration.revealSettingsFile() }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundColor(Color.white.opacity(0.75))
+                    .padding(.top, 16)
+                HStack(spacing: 6) {
+                    integrationIcon(systemImage: "link", tint: Color(hex: "#7C6CFF"), title: "Composio", isOn: OpenClickyConfiguration.settings.composioMcpUrl != nil)
+                    integrationIcon(systemImage: "cursorarrow.rays", tint: Color(hex: "#38BDF8"), title: "Computer Use", isOn: OpenClickyConfiguration.settings.cuaDriverBin != nil)
+                    Button(action: { OpenClickyConfiguration.revealSettingsFile() }) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Color.white.opacity(0.7))
+                            .frame(width: 22, height: 22)
+                            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    .pointerCursor()
+                    .help("Set COMPOSIO_MCP_URL / CUA_DRIVER_BIN in shell.json")
+                    Spacer(minLength: 0)
                 }
+                .padding(7)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: "#161616")))
+                .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Shortcuts", systemImage: "command")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color.white.opacity(0.7))
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 5) {
+                    Image(systemName: "command").font(.system(size: 10, weight: .semibold))
+                    Text("Shortcuts").font(.system(size: 11.5, weight: .semibold))
+                }
+                .foregroundColor(Color.white.opacity(0.75))
+                .padding(.top, 1)
                 shortcutRow(title: "Talk", keys: ["⌃ control", "⌥ option"])
-                shortcutRow(title: "Open this panel", keys: ["hover the notch"])
-                shortcutRow(title: "Dock cursor", keys: ["button below"])
+                shortcutRow(title: "Text", keys: ["soon"])
+                shortcutRow(title: "Dictate", keys: ["soon"])
+                shortcutRow(title: "Hands-free", keys: ["soon"])
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 4)
 
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Spacer(minLength: 0)
                     Button(action: { companionManager.setCursorDocked(!companionManager.isCursorDocked) }) {
-                        HStack(spacing: 6) {
-                            Triangle()
-                                .fill(DS.Colors.overlayCursorColor)
-                                .frame(width: 10, height: 10)
-                                .rotationEffect(.degrees(-35))
-                            Text(companionManager.isCursorDocked ? "Release Cursor" : "Dock Cursor")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(Color.white.opacity(0.14)))
+                        Text(companionManager.isCursorDocked ? "Release Cursor" : "Dock Cursor")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(Capsule().fill(Color(hex: "#262626")))
                     }
                     .buttonStyle(.plain)
                     .pointerCursor()
@@ -184,71 +199,64 @@ struct NotchHomeView: View {
 
                     Button(action: { model.select(.settings) }) {
                         Image(systemName: "info")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 30, height: 30)
-                            .background(Circle().fill(Color.white.opacity(0.14)))
+                            .frame(width: 26, height: 26)
+                            .background(Circle().fill(Color(hex: "#262626")))
                     }
                     .buttonStyle(.plain)
                     .pointerCursor()
                 }
             }
-            .frame(width: 250, alignment: .leading)
+            .frame(width: 190, alignment: .leading)
         }
-        .padding(.horizontal, 26)
-        .padding(.bottom, 20)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
     }
 
-    private func skillBadge(systemImage: String, label: String) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white)
-                .frame(width: 44, height: 44)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.10)))
-            Text(label).font(.system(size: 9)).foregroundColor(Color.white.opacity(0.5))
-        }
-        .help(label)
+    private func skillTile(systemImage: String, label: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundColor(.white)
+            .frame(width: 40, height: 40)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.10)))
+            .help(label)
     }
 
-    private func addBadge(help: String, action: @escaping () -> Void) -> some View {
-        VStack(spacing: 4) {
-            Button(action: action) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(Color.white.opacity(0.8))
-                    .frame(width: 44, height: 44)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .pointerCursor()
-            .help(help)
-            Text(" ").font(.system(size: 9))
+    private func addTile(help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(Color.white.opacity(0.8))
+                .frame(width: 40, height: 40)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.10)))
         }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .help(help)
     }
 
-    private func integrationBadge(title: String, isOn: Bool) -> some View {
-        HStack(spacing: 6) {
-            Circle().fill(isOn ? DS.Colors.success : Color.white.opacity(0.25)).frame(width: 6, height: 6)
-            Text(title).font(.system(size: 11, weight: .medium)).foregroundColor(Color.white.opacity(isOn ? 0.9 : 0.5))
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(Color.white.opacity(0.08)))
+    private func integrationIcon(systemImage: String, tint: Color, title: String, isOn: Bool) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(isOn ? .white : Color.white.opacity(0.35))
+            .frame(width: 22, height: 22)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(isOn ? tint : Color.white.opacity(0.08)))
+            .help(isOn ? "\(title) connected" : "\(title) not configured")
     }
 
     private func shortcutRow(title: String, keys: [String]) -> some View {
         HStack {
-            Text(title).font(.system(size: 12)).foregroundColor(Color.white.opacity(0.85))
+            Text(title).font(.system(size: 10.5)).foregroundColor(Color.white.opacity(0.85))
             Spacer()
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 ForEach(keys, id: \.self) { key in
                     Text(key)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                         .foregroundColor(Color.white.opacity(0.8))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.white.opacity(0.12)))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.white.opacity(0.12)))
                 }
             }
         }
@@ -331,8 +339,8 @@ struct NotchAgentsView: View {
                     }
                 }
             }
-            .padding(.horizontal, 26)
-            .padding(.bottom, 22)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
         .onAppear { threadStore.refresh() }
     }
@@ -365,11 +373,11 @@ struct AgentCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 12, weight: .bold))
                 .foregroundColor(.white)
                 .lineLimit(1)
             Text(thread.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                .font(.system(size: 10))
+                .font(.system(size: 9.5))
                 .foregroundColor(Color.white.opacity(0.55))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -395,8 +403,8 @@ struct AgentCardView: View {
                     .foregroundColor(Color.white.opacity(0.5))
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(LinearGradient(
@@ -453,8 +461,8 @@ struct NotchSettingsView: View {
                     actionRow(systemImage: "power", title: "Quit OpenClicky", detail: nil) { NSApp.terminate(nil) }
                 }
             }
-            .padding(.horizontal, 26)
-            .padding(.bottom, 22)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
     }
 

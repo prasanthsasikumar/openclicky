@@ -7,6 +7,33 @@ export function applyModelDefault(body: Record<string, unknown>, model?: string)
   return body;
 }
 
+/**
+ * Map client model names onto what the upstream expects. Aggregators like OpenRouter want
+ * `openai/gpt-5.5` or `anthropic/claude-sonnet-4.6` while clients send plain `gpt-5.5` /
+ * `claude-sonnet-4-6`. `aliases` is "from=to,from=to"; `prefix` is prepended to names that have no "/".
+ */
+export function mapModelName(model: unknown, aliases?: string, prefix?: string): unknown {
+  if (typeof model !== "string" || !model) return model;
+  const aliasMap = new Map(
+    (aliases ?? "")
+      .split(",")
+      .map((pair) => pair.trim())
+      .filter(Boolean)
+      .map((pair) => {
+        const [from, to] = pair.split("=").map((s) => s.trim());
+        return [from, to] as [string, string];
+      }),
+  );
+  if (aliasMap.has(model)) return aliasMap.get(model);
+  if (prefix && !model.includes("/")) return prefix + model;
+  return model;
+}
+
+function applyModelMapping(body: Record<string, unknown>, aliases?: string, prefix?: string): Record<string, unknown> {
+  const mapped = mapModelName(body.model, aliases, prefix);
+  return mapped === body.model ? body : { ...body, model: mapped };
+}
+
 async function readJson(c: Context): Promise<Record<string, unknown>> {
   const text = await c.req.text();
   if (!text) return {};
@@ -33,7 +60,7 @@ export async function proxyOpenAI(c: Context, upstreamPath: string): Promise<Res
   const env = getEnv(c);
   if (!env.OPENAI_API_KEY) return c.json({ error: "backend missing OPENAI_API_KEY" }, 502);
   const base = (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-  const body = applyModelDefault(await readJson(c), env.OPENAI_MODEL);
+  const body = applyModelMapping(applyModelDefault(await readJson(c), env.OPENAI_MODEL), env.MODEL_ALIASES, env.OPENAI_MODEL_PREFIX);
   const upstream = await fetch(base + upstreamPath, {
     method: "POST",
     headers: {
@@ -141,7 +168,7 @@ export async function proxyAnthropic(c: Context): Promise<Response> {
   const env = getEnv(c);
   if (!env.ANTHROPIC_API_KEY) return c.json({ error: "backend missing ANTHROPIC_API_KEY" }, 502);
   const base = (env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/$/, "");
-  const body = applyModelDefault(await readJson(c), env.ANTHROPIC_MODEL);
+  const body = applyModelMapping(applyModelDefault(await readJson(c), env.ANTHROPIC_MODEL), env.MODEL_ALIASES, env.ANTHROPIC_MODEL_PREFIX);
   const upstream = await fetch(base + "/v1/messages", {
     method: "POST",
     headers: {

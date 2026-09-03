@@ -67,15 +67,15 @@ final class NotchHUDModel: ObservableObject {
     let collapsedLipHeight: CGFloat = 10
     let compactWidth: CGFloat = 300
     let compactContentHeight: CGFloat = 54
-    let fullWidth: CGFloat = 680
+    let fullWidth: CGFloat = 512
 
     var collapsedHeight: CGFloat { geometry.notchHeight + collapsedLipHeight }
     var compactHeight: CGFloat { geometry.notchHeight + compactContentHeight }
     var fullHeight: CGFloat {
         switch activeTab {
-        case .home: return geometry.notchHeight + 290
-        case .agents: return geometry.notchHeight + 440
-        case .settings: return geometry.notchHeight + 560
+        case .home: return geometry.notchHeight + 198
+        case .agents: return geometry.notchHeight + 380
+        case .settings: return geometry.notchHeight + 520
         }
     }
 
@@ -360,7 +360,7 @@ struct NotchHUDView: View {
 
     private var expansion: NotchHUDExpansion { model.expansion }
     private var notchHeight: CGFloat { model.geometry.notchHeight }
-    private var bottomCornerRadius: CGFloat { expansion == .collapsed ? 11 : 24 }
+    private var bottomCornerRadius: CGFloat { expansion == .collapsed ? 11 : 20 }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -390,8 +390,7 @@ struct NotchHUDView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
             case .full:
                 NotchFullPanelView(model: model, companionManager: companionManager)
-                    .frame(width: model.fullWidth, height: model.fullHeight - notchHeight)
-                    .padding(.top, notchHeight)
+                    .frame(width: model.fullWidth, height: model.fullHeight)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
             }
         }

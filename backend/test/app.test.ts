@@ -240,6 +240,20 @@ describe("app", () => {
     expect(JSON.stringify(logged)).not.toContain("eyJ");
   });
 
+  it("maps model names for aggregators via MODEL_ALIASES and prefixes", async () => {
+    const mapping = { MODEL_ALIASES: "claude-sonnet-4-6=anthropic/claude-sonnet-4.6", OPENAI_MODEL_PREFIX: "openai/", ANTHROPIC_MODEL_PREFIX: "anthropic/" };
+    const r = await call("/v1/responses", json({ model: "gpt-5.6-luna", input: "x" }, await jwt()), mapping);
+    expect(r.status).toBe(200);
+    await r.text();
+    expect(seen.at(-1)!.body.model).toBe("openai/gpt-5.6-luna");
+    const a = await call("/chat", json({ model: "claude-sonnet-4-6", messages: [] }, await jwt()), mapping);
+    await a.text();
+    expect(seen.at(-1)!.body.model).toBe("anthropic/claude-sonnet-4.6");
+    const already = await call("/chat", json({ model: "anthropic/claude-haiku-4.5", messages: [] }, await jwt()), mapping);
+    await already.text();
+    expect(seen.at(-1)!.body.model).toBe("anthropic/claude-haiku-4.5");
+  });
+
   it("502 when upstream key missing", async () => {
     const r = await call("/v1/chat/completions", json({}, await jwt()), { OPENAI_API_KEY: undefined });
     expect(r.status).toBe(502);
