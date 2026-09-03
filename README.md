@@ -12,7 +12,7 @@ plus a first native shell scaffold**. What works today:
   or Cloudflare Workers unchanged.
 - `skills/` + `config/` — the ported agent behavior contract and 15 skills, rendered into an isolated
   Codex home on every run; optional Composio / cua-driver MCP servers via env.
-- `macos/Clicky` — the native shell: the original open-source Clicky app (MIT, vendored from
+- `macos/OpenClicky` — the native shell: a renamed fork of the original open-source Clicky app (MIT,
   `farzaa/clicky`) with its cursor buddy, ScreenCaptureKit capture, push-to-talk, pointing, and
   TTS, rerouted through the OpenClicky backend and given an **Agent mode** that hands "do work"
   requests to a Codex thread via the CLI. `macos/OpenClickyShell` is a minimal SwiftPM panel kept
@@ -57,7 +57,7 @@ Codex's environment and only ever presents the user's token; the shell does the 
 | `backend/src/app.ts`, `auth.ts`, `proxy.ts` | routes, Supabase/session auth, streaming proxies, Realtime secret, STT |
 | `backend/scripts/` | `mint-dev-jwt.mjs` (local auth), `build-skills-manifest.mjs` (→ `src/skillsManifest.ts`) |
 | `skills/` | `ModelInstructions.md` + 15 skills; regenerate with `npm run port-skills` |
-| `macos/Clicky/` | primary native shell, vendored `farzaa/clicky` + OpenClicky integration (`OPENCLICKY.md`) |
+| `macos/OpenClicky/` | primary native shell, vendored `farzaa/clicky` + OpenClicky integration (`OPENCLICKY.md`) |
 | `macos/OpenClickyShell/` | minimal SwiftPM menu-bar panel used as a headless smoke harness |
 | `reference/`, `REVERSE-ENGINEERING.md`, `docs/superpowers/plans/` | reverse-engineering notes and the plans for each cut |
 
@@ -147,11 +147,11 @@ auto-accepted by default (the sandbox is `workspace-write`); `--approve` switche
 
 ## Run the macOS app
 
-The primary shell is `macos/Clicky`: the original Clicky app (`farzaa/clicky`, MIT, imported with
-`git subtree`) wired to OpenClicky. See `macos/Clicky/OPENCLICKY.md` for exactly what changed.
+The primary shell is `macos/OpenClicky`: a renamed fork of the original Clicky app (`farzaa/clicky`,
+MIT) wired to OpenClicky. See `macos/OpenClicky/OPENCLICKY.md` for the rename map and what changed.
 
 ```bash
-open macos/Clicky/leanring-buddy.xcodeproj     # set your signing team, then Run
+open macos/OpenClicky/OpenClicky.xcodeproj     # set your signing team, then Run
 ```
 
 Configure `~/.openclicky/shell.json` (panel → Backend row, or create it by hand):
@@ -207,7 +207,7 @@ with real keys, drop `--model gpt-5.2` (only the fake needs a classic-tools mode
 
 ## Next
 
-- Shell (`macos/Clicky`): stream agent milestones onto the cursor bubble, a text-input mode and
+- Shell (`macos/OpenClicky`): stream agent milestones onto the cursor bubble, a text-input mode and
   Keychain token entry (upstream PR #80 is a good template), Realtime `talk` inside the app,
   active-document reader, Sparkle feed for our own releases.
 - Voice: verify `talk` against the real Realtime API (built against a fake server), wake word,

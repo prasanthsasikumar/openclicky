@@ -7,5 +7,5 @@ dist/
 .swiftpm/
 *.log
 .DS_Store
-macos/Clicky/leanring-buddy.xcodeproj/xcuserdata/
-macos/Clicky/leanring-buddy.xcodeproj/project.xcworkspace/xcuserdata/
+macos/OpenClicky/OpenClicky.xcodeproj/xcuserdata/
+macos/OpenClicky/OpenClicky.xcodeproj/project.xcworkspace/xcuserdata/

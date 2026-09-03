@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LSUIElement</key>
+	<true/>
+	<key>VoiceTranscriptionProvider</key>
+	<string>assemblyai</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>OpenClicky uses your microphone so you can talk to it</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>OpenClicky needs screen recording access to see your screen and help you.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>OpenClicky uses speech recognition to transcribe your voice when you talk to it</string>
+</dict>
+</plist>
