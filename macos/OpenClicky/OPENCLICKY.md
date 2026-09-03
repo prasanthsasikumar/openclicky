@@ -46,6 +46,9 @@ and the upstream `AGENTS.md` apart from the rename. The upstream README, feedbac
 | `BuddyTranscriptionProvider.swift` | `transcriptionProvider` from shell.json wins; defaults to the backend ("openai") when a token exists. |
 | `ClickyAnalytics.swift` | PostHog only when `PostHogAPIKey` is in Info.plist (upstream hardcoded the original key). |
 | `OpenClickyApp.swift` | Login-item registration is opt-in (`registerAsLoginItem`); `--openclicky-smoke-run "<text>"` runs gate + agent headlessly and exits. |
+| `NotchHUD.swift` (new) | The notch HUD (HeyClicky's notch app): collapsed lip + handle under the notch, compact status strip while listening/thinking/speaking, and the full Home / Agents / Settings panel on hover or click. Window is sized per state and only the active layer is in the SwiftUI hierarchy (NSHostingView otherwise centers and clips oversized content). Hover is polled from the pointer position; SwiftUI's onHover is unreliable in a non-key panel. Lives on the screen with the hardware notch. |
+| `NotchHUDPanels.swift` (new) | Home (skills, integrations, shortcuts, Dock Cursor), Agents (thread cards from `openclicky threads list --json`, Open Agent), Settings (backend, agent mode, voice, cursor, support), and the top-right agent result card with Copy + "Follow up with agent". |
+| `OverlayWindow.swift` | `flyingToDock` navigation mode: the buddy flies into the notch along the bezier arc, fades, and the HUD shows it as a badge; pointing while docked launches from the notch and returns there. Buddy color is red-orange (`DS.Colors.overlayCursorColor`). |
 
 Backend routes for this shell: `POST /chat` (Claude, streamed), `POST /tts` (ElevenLabs or OpenAI
 speech), `POST /transcribe-token` (AssemblyAI, optional). All require the user's token.
