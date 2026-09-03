@@ -141,7 +141,8 @@ enum DS {
         /// The blue cursor/bubble color used in OverlayWindow.
         /// Kept distinct from the accent since it serves a different purpose
         /// (screen overlay vs in-app UI).
-        static let overlayCursorBlue = Color(hex: "#3380FF")
+        // OpenClicky: the buddy is red-orange like the current HeyClicky cursor (upstream was blue #3380FF).
+        static let overlayCursorColor = Color(hex: "#F0452B")
 
         // ── Floating Button Gradient ─────────────────────────────────
 

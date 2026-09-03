@@ -24,6 +24,9 @@ struct OpenClickyShellSettings: Codable {
     var transcriptionProvider: String? = nil
     /// Opt in to launching at login (upstream OpenClicky registered itself unconditionally).
     var registerAsLoginItem: Bool? = nil
+    /// Optional MCP servers for the agent (rendered into the Codex config by the CLI).
+    var composioMcpUrl: String? = nil
+    var cuaDriverBin: String? = nil
 }
 
 enum OpenClickyConfiguration {
@@ -106,6 +109,8 @@ enum OpenClickyConfiguration {
         if let token { environment["OPENCLICKY_TOKEN"] = token }
         if let model = agentModelOverride { environment["OPENCLICKY_MODEL"] = model }
         environment["OPENCLICKY_WORKSPACE"] = workspacePath
+        if let composioMcpUrl = settings.composioMcpUrl, !composioMcpUrl.isEmpty { environment["COMPOSIO_MCP_URL"] = composioMcpUrl }
+        if let cuaDriverBin = settings.cuaDriverBin, !cuaDriverBin.isEmpty { environment["CUA_DRIVER_BIN"] = cuaDriverBin }
         environment.removeValue(forKey: "OPENAI_API_KEY")
         environment.removeValue(forKey: "ANTHROPIC_API_KEY")
         // GUI apps get a minimal PATH; add the usual CLI locations so `openclicky`, `codex`, `node`, `ffmpeg` resolve.

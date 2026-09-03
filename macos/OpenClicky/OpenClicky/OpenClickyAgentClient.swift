@@ -19,6 +19,40 @@ struct OpenClickyAgentRunResult {
     var errorMessage: String?
 }
 
+/// One Codex thread as reported by `openclicky threads list --json`.
+struct OpenClickyThreadSummary: Decodable, Identifiable, Equatable {
+    let id: String
+    let preview: String
+    let cwd: String
+    let createdAt: Double
+    let updatedAt: Double
+    let status: String
+    let modelProvider: String
+
+    var updatedDate: Date { Date(timeIntervalSince1970: updatedAt) }
+}
+
+struct OpenClickyThreadTurn: Decodable, Identifiable {
+    let id: String
+    let status: String
+    let startedAt: Double?
+    let completedAt: Double?
+    let user: [String]
+    let agent: [String]
+    let commands: [String]
+}
+
+/// `openclicky threads show <id> --json`.
+struct OpenClickyThreadDetail: Decodable {
+    let thread: OpenClickyThreadSummary
+    let turns: [OpenClickyThreadTurn]
+
+    /// The last thing the agent said on this thread, for cards and the result panel.
+    var lastAgentMessage: String? {
+        turns.reversed().lazy.compactMap { $0.agent.last }.first
+    }
+}
+
 struct OpenClickyAgentError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
@@ -52,6 +86,50 @@ final class OpenClickyAgentClient {
         if let threadId { arguments += ["--thread", threadId] }
         if let model = OpenClickyConfiguration.agentModelOverride { arguments += ["--model", model] }
         return try await execute(arguments: arguments, onEvent: onEvent)
+    }
+
+    /// Recent Codex threads (newest first) for the Agents tab.
+    func listThreads(limit: Int = 30) async throws -> [OpenClickyThreadSummary] {
+        let data = try await captureStandardOutput(arguments: ["threads", "list", "--limit", String(limit), "--json"])
+        return try JSONDecoder().decode([OpenClickyThreadSummary].self, from: data)
+    }
+
+    /// Full turn history of one thread.
+    func readThread(_ threadId: String) async throws -> OpenClickyThreadDetail {
+        let data = try await captureStandardOutput(arguments: ["threads", "show", threadId, "--json"])
+        return try JSONDecoder().decode(OpenClickyThreadDetail.self, from: data)
+    }
+
+    /// Runs a CLI command that prints a single JSON document and returns its stdout.
+    private func captureStandardOutput(arguments: [String]) async throws -> Data {
+        let cliCommand = OpenClickyConfiguration.cliCommand
+        guard let executableName = cliCommand.first, !executableName.isEmpty else {
+            throw OpenClickyAgentError(message: "cliCommand is empty in \(OpenClickyConfiguration.settingsFileURL.path)")
+        }
+        let environment = OpenClickyConfiguration.cliProcessEnvironment
+        let workingDirectory = OpenClickyConfiguration.workspacePath
+        let fullArguments = [executableName] + Array(cliCommand.dropFirst()) + arguments
+        try? FileManager.default.createDirectory(atPath: workingDirectory, withIntermediateDirectories: true)
+        return try await Task.detached(priority: .userInitiated) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = fullArguments
+            process.environment = environment
+            process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
+            let standardOutputPipe = Pipe()
+            let standardErrorPipe = Pipe()
+            process.standardOutput = standardOutputPipe
+            process.standardError = standardErrorPipe
+            try process.run()
+            let outputData = standardOutputPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorData = standardErrorPipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else {
+                let errorText = String(decoding: errorData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                throw OpenClickyAgentError(message: errorText.isEmpty ? "openclicky exited with status \(process.terminationStatus)" : errorText)
+            }
+            return outputData
+        }.value
     }
 
     /// Interrupt the current run (the user started talking again).

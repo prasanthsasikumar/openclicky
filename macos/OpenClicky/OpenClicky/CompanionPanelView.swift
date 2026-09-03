@@ -628,6 +628,32 @@ struct CompanionPanelView: View {
             }
             .padding(.vertical, 4)
 
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.to.line.compact")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .frame(width: 16)
+
+                    Text("Dock cursor in the notch")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(DS.Colors.textSecondary)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: Binding(
+                    get: { companionManager.isCursorDocked },
+                    set: { companionManager.setCursorDocked($0) }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .tint(DS.Colors.accent)
+                .scaleEffect(0.8)
+                .disabled(companionManager.voiceState != .idle)
+            }
+            .padding(.vertical, 4)
+
             Button(action: { OpenClickyConfiguration.revealSettingsFile() }) {
                 HStack {
                     HStack(spacing: 8) {

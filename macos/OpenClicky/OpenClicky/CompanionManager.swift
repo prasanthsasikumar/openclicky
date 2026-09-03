@@ -14,6 +14,16 @@ import PostHog
 import ScreenCaptureKit
 import SwiftUI
 
+/// Snapshot of a finished agent turn, shown in the notch HUD's result card.
+struct OpenClickyAgentResultSummary: Equatable {
+    let threadId: String
+    let title: String
+    let text: String
+    let artifacts: [String]
+    let status: String
+    let finishedAt: Date
+}
+
 enum CompanionVoiceState {
     case idle
     case listening
@@ -79,6 +89,12 @@ final class CompanionManager: ObservableObject {
     /// Files the last agent turn created or changed.
     @Published private(set) var lastAgentArtifacts: [String] = []
 
+    /// The last completed agent turn, for the notch HUD's result card.
+    @Published private(set) var lastAgentResult: OpenClickyAgentResultSummary?
+
+    /// The floating card that shows an agent's result and takes follow-ups (top-right of the screen).
+    let agentResultPanelManager = AgentResultPanelManager()
+
     /// Agent mode: a cheap gate classifies each utterance; "do work" requests go to a Codex
     /// thread via the OpenClicky CLI instead of the teacher (Claude + pointing) lane.
     @Published var isAgentModeEnabled: Bool = UserDefaults.standard.object(forKey: "isOpenClickyAgentModeEnabled") == nil
@@ -88,6 +104,114 @@ final class CompanionManager: ObservableObject {
     func setAgentModeEnabled(_ enabled: Bool) {
         isAgentModeEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "isOpenClickyAgentModeEnabled")
+    }
+
+    // MARK: - Notch HUD + docked cursor (OpenClicky)
+
+    /// The notch HUD: a lip under the notch that opens on hover / while busy.
+    let notchHUDManager = NotchHUDManager()
+
+    /// True while the buddy lives in the notch HUD instead of following the mouse.
+    @Published private(set) var isCursorDocked: Bool = false
+
+    /// Set to start the docking flight; observed by BlueCursorView on the screen that owns the point.
+    @Published var cursorDockTargetScreenLocation: CGPoint?
+
+    /// Where a freshly shown overlay should start the buddy (the notch) before flying out.
+    var cursorLaunchOriginScreenLocation: CGPoint?
+
+    private var isDockingInProgress = false
+
+    /// Dock the buddy in the notch, or release it back to the mouse.
+    func setCursorDocked(_ docked: Bool) {
+        if docked { dockCursorToNotch() } else { undockCursorFromNotch() }
+    }
+
+    private func dockCursorToNotch() {
+        guard !isCursorDocked, !isDockingInProgress else { return }
+        guard voiceState == .idle else { return }
+        isDockingInProgress = true
+        if !isOverlayVisible {
+            overlayWindowManager.hasShownOverlayBefore = true
+            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+            isOverlayVisible = true
+        }
+        transientHideTask?.cancel()
+        transientHideTask = nil
+        clearDetectedElementLocation()
+        // Set on the next runloop turn so a freshly created overlay observes the change.
+        let dockPoint = notchHUDManager.dockPoint
+        DispatchQueue.main.async {
+            self.cursorDockTargetScreenLocation = dockPoint
+        }
+        print("🎯 Docking cursor to notch at \(dockPoint)")
+    }
+
+    /// Called by the overlay once the flight into the notch has finished.
+    func finishDockingCursor() {
+        isDockingInProgress = false
+        isCursorDocked = true
+        UserDefaults.standard.set(true, forKey: "isOpenClickyCursorDocked")
+        overlayWindowManager.hideOverlay()
+        isOverlayVisible = false
+        cursorDockTargetScreenLocation = nil
+    }
+
+    private func undockCursorFromNotch() {
+        guard isCursorDocked else { return }
+        isCursorDocked = false
+        UserDefaults.standard.set(false, forKey: "isOpenClickyCursorDocked")
+        cursorDockTargetScreenLocation = nil
+        // Re-create the overlay with the buddy starting at the notch; it flies to the mouse.
+        cursorLaunchOriginScreenLocation = notchHUDManager.dockPoint
+        overlayWindowManager.hasShownOverlayBefore = true
+        overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+        isOverlayVisible = true
+        print("🎯 Cursor released from the notch")
+    }
+
+    /// Text entry point into the agent lane (result-card follow-ups, future text mode). Captures the
+    /// screen like the voice path does, resumes `threadId` when given, and speaks the result.
+    func submitTextToAgent(_ text: String, threadId: String? = nil) {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty, OpenClickyConfiguration.isConfigured else { return }
+        currentResponseTask?.cancel()
+        openClickyAgentClient.cancel()
+        elevenLabsTTSClient.stopPlayback()
+        if let threadId { lastAgentThreadId = threadId }
+        lastTranscript = trimmedText
+        currentResponseTask = Task {
+            voiceState = .processing
+            let screenCaptures = (try? await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()) ?? []
+            do {
+                try await runOpenClickyAgentLane(transcript: trimmedText, screenCaptures: screenCaptures)
+            } catch is CancellationError {
+            } catch {
+                print("⚠️ Agent follow-up error: \(error)")
+                agentActivityText = nil
+                speakCreditsErrorFallback()
+            }
+            if !Task.isCancelled {
+                voiceState = .idle
+                scheduleTransientHideIfNeeded()
+            }
+        }
+    }
+
+    /// Opens the result card for a thread (Agents tab → Open Agent).
+    func openAgentResultCard(threadId: String) {
+        agentResultPanelManager.show(threadId: threadId, companionManager: self)
+    }
+
+    /// While docked, pointing needs the buddy on screen: launch it from the notch, let the
+    /// normal navigation fly it to the element, and it returns to the notch afterwards.
+    private func launchDockedCursorForPointing() {
+        guard isCursorDocked, !isOverlayVisible else { return }
+        cursorLaunchOriginScreenLocation = notchHUDManager.dockPoint
+        cursorDockTargetScreenLocation = notchHUDManager.dockPoint
+        overlayWindowManager.hasShownOverlayBefore = true
+        overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+        isOverlayVisible = true
     }
 
     private lazy var claudeAPI: ClaudeAPI = {
@@ -194,10 +318,18 @@ final class CompanionManager: ObservableObject {
         // were revoked (e.g. signing change), don't show the cursor — the
         // panel will show the permissions UI instead.
         if hasCompletedOnboarding && allPermissionsGranted && isClickyCursorEnabled {
-            overlayWindowManager.hasShownOverlayBefore = true
-            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-            isOverlayVisible = true
+            if UserDefaults.standard.bool(forKey: "isOpenClickyCursorDocked") {
+                // Restore the docked state without an animation: the buddy is simply home.
+                isCursorDocked = true
+            } else {
+                overlayWindowManager.hasShownOverlayBefore = true
+                overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+                isOverlayVisible = true
+            }
         }
+
+        // OpenClicky: the notch HUD is always available; it needs no permissions.
+        notchHUDManager.show(companionManager: self)
     }
 
     /// Called by BlueCursorView after the buddy finishes its pointing
@@ -239,6 +371,7 @@ final class CompanionManager: ObservableObject {
     }
 
     func stop() {
+        notchHUDManager.hide()
         globalPushToTalkShortcutMonitor.stop()
         buddyDictationManager.cancelCurrentDictation()
         overlayWindowManager.hideOverlay()
@@ -433,7 +566,8 @@ final class CompanionManager: ObservableObject {
             transientHideTask = nil
 
             // If the cursor is hidden, bring it back transiently for this interaction
-            if !isClickyCursorEnabled && !isOverlayVisible {
+            // (unless it is docked in the notch — the HUD shows the voice state instead)
+            if !isClickyCursorEnabled && !isOverlayVisible && !isCursorDocked {
                 overlayWindowManager.hasShownOverlayBefore = true
                 overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
                 isOverlayVisible = true
@@ -603,6 +737,7 @@ final class CompanionManager: ObservableObject {
                 let hasPointCoordinate = parseResult.coordinate != nil
                 if hasPointCoordinate {
                     voiceState = .idle
+                    launchDockedCursorForPointing()
                 }
 
                 // Pick the screen capture matching Claude's screen number,
@@ -727,6 +862,14 @@ final class CompanionManager: ObservableObject {
         }
         lastAgentArtifacts = result.artifacts
         agentActivityText = nil
+        lastAgentResult = OpenClickyAgentResultSummary(
+            threadId: result.threadId ?? lastAgentThreadId ?? "",
+            title: String(transcript.prefix(60)),
+            text: result.text.trimmingCharacters(in: .whitespacesAndNewlines),
+            artifacts: result.artifacts,
+            status: result.status,
+            finishedAt: Date()
+        )
 
         var spokenText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if spokenText.isEmpty {

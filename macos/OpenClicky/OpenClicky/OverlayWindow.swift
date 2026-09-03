@@ -94,6 +94,8 @@ enum BuddyNavigationMode {
     case navigatingToTarget
     /// Buddy has arrived at the target and is pointing at it with a speech bubble
     case pointingAtTarget
+    /// Buddy is flying to the notch to dock (OpenClicky). The HUD takes over when it lands.
+    case flyingToDock
 }
 
 // SwiftUI view for the blue glowing cursor pointer.
@@ -195,8 +197,8 @@ struct BlueCursorView: View {
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 6, x: 0, y: 0)
+                            .fill(DS.Colors.overlayCursorColor)
+                            .shadow(color: DS.Colors.overlayCursorColor.opacity(0.5), radius: 6, x: 0, y: 0)
                     )
                     .fixedSize()
                     .overlay(
@@ -239,8 +241,8 @@ struct BlueCursorView: View {
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 6, x: 0, y: 0)
+                            .fill(DS.Colors.overlayCursorColor)
+                            .shadow(color: DS.Colors.overlayCursorColor.opacity(0.5), radius: 6, x: 0, y: 0)
                     )
                     .fixedSize()
                     .overlay(
@@ -269,9 +271,9 @@ struct BlueCursorView: View {
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
+                            .fill(DS.Colors.overlayCursorColor)
                             .shadow(
-                                color: DS.Colors.overlayCursorBlue.opacity(0.5 + (1.0 - navigationBubbleScale) * 1.0),
+                                color: DS.Colors.overlayCursorColor.opacity(0.5 + (1.0 - navigationBubbleScale) * 1.0),
                                 radius: 6 + (1.0 - navigationBubbleScale) * 16,
                                 x: 0, y: 0
                             )
@@ -303,10 +305,10 @@ struct BlueCursorView: View {
             // During navigation: NO implicit animation — the frame-by-frame bezier
             // timer controls position directly at 60fps for a smooth arc flight.
             Triangle()
-                .fill(DS.Colors.overlayCursorBlue)
+                .fill(DS.Colors.overlayCursorColor)
                 .frame(width: 16, height: 16)
                 .rotationEffect(.degrees(triangleRotationDegrees))
-                .shadow(color: DS.Colors.overlayCursorBlue, radius: 8 + (buddyFlightScale - 1.0) * 20, x: 0, y: 0)
+                .shadow(color: DS.Colors.overlayCursorColor, radius: 8 + (buddyFlightScale - 1.0) * 20, x: 0, y: 0)
                 .scaleEffect(buddyFlightScale)
                 .opacity(buddyIsVisibleOnThisScreen && (companionManager.voiceState == .idle || companionManager.voiceState == .responding) ? cursorOpacity : 0)
                 .position(cursorPosition)
@@ -347,6 +349,20 @@ struct BlueCursorView: View {
             let swiftUIPosition = convertScreenPointToSwiftUICoordinates(mouseLocation)
             self.cursorPosition = CGPoint(x: swiftUIPosition.x + 35, y: swiftUIPosition.y + 25)
 
+            // OpenClicky: when the buddy is leaving the notch (undock, or launching from the
+            // dock to point at something), start at the notch and fly out instead of popping
+            // in at the mouse.
+            if let launchOrigin = companionManager.cursorLaunchOriginScreenLocation, screenFrame.contains(launchOrigin) {
+                self.cursorPosition = convertScreenPointToSwiftUICoordinates(launchOrigin)
+                self.cursorOpacity = 1.0
+                companionManager.cursorLaunchOriginScreenLocation = nil
+                startTrackingCursor()
+                if companionManager.detectedElementScreenLocation == nil {
+                    startFlyingBackToCursor()
+                }
+                return
+            }
+
             startTrackingCursor()
 
             // Only show welcome message on first appearance (app start)
@@ -384,6 +400,11 @@ struct BlueCursorView: View {
 
             startNavigatingToElement(screenLocation: screenLocation)
         }
+        .onChange(of: companionManager.cursorDockTargetScreenLocation) { dockTarget in
+            // OpenClicky: the user asked the buddy to dock in the notch — fly there.
+            guard let dockTarget, screenFrame.contains(dockTarget) else { return }
+            startFlyingToDock(screenLocation: dockTarget)
+        }
     }
 
     /// Whether the buddy triangle should be visible on this screen.
@@ -401,7 +422,7 @@ struct BlueCursorView: View {
                 return false
             }
             return isCursorOnThisScreen
-        case .navigatingToTarget, .pointingAtTarget:
+        case .navigatingToTarget, .pointingAtTarget, .flyingToDock:
             return true
         }
     }
@@ -631,8 +652,15 @@ struct BlueCursorView: View {
         }
     }
 
-    /// Flies the buddy back to the current cursor position after pointing is done.
+    /// Flies the buddy back to the current cursor position after pointing is done —
+    /// or back into the notch when it is docked there (OpenClicky).
     private func startFlyingBackToCursor() {
+        if companionManager.isCursorDocked, let dockTarget = companionManager.cursorDockTargetScreenLocation, screenFrame.contains(dockTarget) {
+            navigationBubbleText = ""
+            navigationBubbleOpacity = 0.0
+            startFlyingToDock(screenLocation: dockTarget)
+            return
+        }
         let mouseLocation = NSEvent.mouseLocation
         let cursorInSwiftUI = convertScreenPointToSwiftUICoordinates(mouseLocation)
         let cursorWithTrackingOffset = CGPoint(x: cursorInSwiftUI.x + 35, y: cursorInSwiftUI.y + 25)
@@ -644,6 +672,33 @@ struct BlueCursorView: View {
 
         animateBezierFlightArc(to: cursorWithTrackingOffset) {
             self.finishNavigationAndResumeFollowing()
+        }
+    }
+
+    // MARK: - Docking (OpenClicky)
+
+    /// Flies the buddy into the notch along a high arc, tip pointing up, then fades it out
+    /// and hands over to the notch HUD, which shows the docked badge.
+    private func startFlyingToDock(screenLocation: CGPoint) {
+        guard !showWelcome || welcomeText.isEmpty else { return }
+        navigationAnimationTimer?.invalidate()
+        buddyNavigationMode = .flyingToDock
+        isReturningToCursor = false
+        navigationBubbleText = ""
+        navigationBubbleOpacity = 0.0
+
+        let dockTargetInSwiftUI = convertScreenPointToSwiftUICoordinates(screenLocation)
+        animateBezierFlightArc(to: dockTargetInSwiftUI) {
+            guard self.buddyNavigationMode == .flyingToDock else { return }
+            // Settle tip-up under the notch, then slip inside.
+            self.triangleRotationDegrees = 0
+            withAnimation(.easeIn(duration: 0.22)) {
+                self.cursorOpacity = 0.0
+                self.buddyFlightScale = 0.6
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                self.companionManager.finishDockingCursor()
+            }
         }
     }
 
@@ -706,7 +761,7 @@ struct BlueCursorView: View {
 
 /// A small blue waveform that replaces the triangle cursor while
 /// the user is holding the push-to-talk shortcut and speaking.
-private struct BlueCursorWaveformView: View {
+struct BlueCursorWaveformView: View {
     let audioPowerLevel: CGFloat
 
     private let barCount = 5
@@ -717,7 +772,7 @@ private struct BlueCursorWaveformView: View {
             HStack(alignment: .center, spacing: 2) {
                 ForEach(0..<barCount, id: \.self) { barIndex in
                     RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                        .fill(DS.Colors.overlayCursorBlue)
+                        .fill(DS.Colors.overlayCursorColor)
                         .frame(
                             width: 2,
                             height: barHeight(
@@ -727,7 +782,7 @@ private struct BlueCursorWaveformView: View {
                         )
                 }
             }
-            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.6), radius: 6, x: 0, y: 0)
+            .shadow(color: DS.Colors.overlayCursorColor.opacity(0.6), radius: 6, x: 0, y: 0)
             .animation(.linear(duration: 0.08), value: audioPowerLevel)
         }
     }
@@ -746,7 +801,7 @@ private struct BlueCursorWaveformView: View {
 
 /// A small blue spinning indicator that replaces the triangle cursor
 /// while the AI is processing a voice input.
-private struct BlueCursorSpinnerView: View {
+struct BlueCursorSpinnerView: View {
     @State private var isSpinning = false
 
     var body: some View {
@@ -755,8 +810,8 @@ private struct BlueCursorSpinnerView: View {
             .stroke(
                 AngularGradient(
                     colors: [
-                        DS.Colors.overlayCursorBlue.opacity(0.0),
-                        DS.Colors.overlayCursorBlue
+                        DS.Colors.overlayCursorColor.opacity(0.0),
+                        DS.Colors.overlayCursorColor
                     ],
                     center: .center
                 ),
@@ -764,7 +819,7 @@ private struct BlueCursorSpinnerView: View {
             )
             .frame(width: 14, height: 14)
             .rotationEffect(.degrees(isSpinning ? 360 : 0))
-            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.6), radius: 6, x: 0, y: 0)
+            .shadow(color: DS.Colors.overlayCursorColor.opacity(0.6), radius: 6, x: 0, y: 0)
             .onAppear {
                 withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
                     isSpinning = true
