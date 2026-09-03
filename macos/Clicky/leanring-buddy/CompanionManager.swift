@@ -68,9 +68,32 @@ final class CompanionManager: ObservableObject {
     // Response text is now displayed inline on the cursor overlay via
     // streamingResponseText, so no separate response overlay manager is needed.
 
-    /// Base URL for the Cloudflare Worker proxy. All API requests route
-    /// through this so keys never ship in the app binary.
-    private static let workerBaseURL = "https://your-worker-name.your-subdomain.workers.dev"
+    /// Base URL for the OpenClicky backend (the key-holding proxy). All API requests route
+    /// through this so keys never ship in the app binary. Configured in ~/.openclicky/shell.json.
+    private static var workerBaseURL: String { OpenClickyConfiguration.backendBaseURL }
+
+    /// Runs the `openclicky` CLI for the agent lane (gate + Codex thread).
+    private let openClickyAgentClient = OpenClickyAgentClient()
+
+    /// Codex thread reused across agent-lane requests in this session so follow-ups resume context.
+    private var lastAgentThreadId: String?
+
+    /// Latest milestone from a running agent turn ("ran: …", "started thread …"), shown in the panel.
+    @Published private(set) var agentActivityText: String?
+
+    /// Files the last agent turn created or changed.
+    @Published private(set) var lastAgentArtifacts: [String] = []
+
+    /// Agent mode: a cheap gate classifies each utterance; "do work" requests go to a Codex
+    /// thread via the OpenClicky CLI instead of the teacher (Claude + pointing) lane.
+    @Published var isAgentModeEnabled: Bool = UserDefaults.standard.object(forKey: "isOpenClickyAgentModeEnabled") == nil
+        ? true
+        : UserDefaults.standard.bool(forKey: "isOpenClickyAgentModeEnabled")
+
+    func setAgentModeEnabled(_ enabled: Bool) {
+        isAgentModeEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "isOpenClickyAgentModeEnabled")
+    }
 
     private lazy var claudeAPI: ClaudeAPI = {
         return ClaudeAPI(proxyURL: "\(Self.workerBaseURL)/chat", model: selectedModel)
@@ -156,20 +179,8 @@ final class CompanionManager: ObservableObject {
 
         hasSubmittedEmail = true
         UserDefaults.standard.set(true, forKey: "hasSubmittedEmail")
-
-        // Identify user in PostHog
-        PostHogSDK.shared.identify(trimmedEmail, userProperties: [
-            "email": trimmedEmail
-        ])
-
-        // Submit to FormSpark
-        Task {
-            var request = URLRequest(url: URL(string: "https://submit-form.com/RWbGJxmIs")!)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try? JSONSerialization.data(withJSONObject: ["email": trimmedEmail])
-            _ = try? await URLSession.shared.data(for: request)
-        }
+        // OpenClicky: upstream posted the email to the original developer's form and identified the
+        // user in PostHog. Neither happens here — the email stays on this machine.
     }
 
     func start() {
@@ -491,8 +502,9 @@ final class CompanionManager: ObservableObject {
             // Dismiss the menu bar panel so it doesn't cover the screen
             NotificationCenter.default.post(name: .clickyDismissPanel, object: nil)
 
-            // Cancel any in-progress response and TTS from a previous utterance
+            // Cancel any in-progress response, agent run, and TTS from a previous utterance
             currentResponseTask?.cancel()
+            openClickyAgentClient.cancel()
             elevenLabsTTSClient.stopPlayback()
             clearDetectedElementLocation()
 
@@ -596,6 +608,24 @@ final class CompanionManager: ObservableObject {
                 let screenCaptures = try await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()
 
                 guard !Task.isCancelled else { return }
+
+                // OpenClicky two-tier routing: the gate decides whether this is a quick question
+                // (teacher lane below: Claude + pointing) or real work (agent lane: Codex thread).
+                if isAgentModeEnabled && OpenClickyConfiguration.isConfigured {
+                    agentActivityText = "deciding…"
+                    let lane = await openClickyAgentClient.classifyLane(for: transcript)
+                    guard !Task.isCancelled else { return }
+                    print("🧭 OpenClicky gate: \(lane)")
+                    if lane == "agent" {
+                        try await runOpenClickyAgentLane(transcript: transcript, screenCaptures: screenCaptures)
+                        if !Task.isCancelled {
+                            voiceState = .idle
+                            scheduleTransientHideIfNeeded()
+                        }
+                        return
+                    }
+                    agentActivityText = nil
+                }
 
                 // Build image labels with the actual screenshot pixel dimensions
                 // so Claude's coordinate space matches the image it sees. We
@@ -725,6 +755,65 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    // MARK: - OpenClicky Agent Lane
+
+    /// Hands the request to a Codex thread through the `openclicky` CLI, attaching the cursor
+    /// screen as image context, then speaks the agent's final message. The spinner stays up for
+    /// the whole run; milestones are published to the panel via `agentActivityText`.
+    private func runOpenClickyAgentLane(transcript: String, screenCaptures: [CompanionScreenCapture]) async throws {
+        var screenshotPath: String?
+        if let cursorScreenCapture = screenCaptures.first(where: { $0.isCursorScreen }) ?? screenCaptures.first {
+            let screenshotURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("openclicky-\(UUID().uuidString).jpg")
+            if (try? cursorScreenCapture.imageData.write(to: screenshotURL)) != nil {
+                screenshotPath = screenshotURL.path
+            }
+        }
+
+        agentActivityText = "starting agent…"
+        print("🤖 OpenClicky agent lane: \(transcript)")
+        let result = try await openClickyAgentClient.runAgent(
+            task: transcript,
+            screenshotPath: screenshotPath,
+            threadId: lastAgentThreadId,
+            onEvent: { [weak self] milestone in
+                self?.agentActivityText = milestone
+            }
+        )
+        guard !Task.isCancelled else { return }
+
+        if let threadId = result.threadId {
+            lastAgentThreadId = threadId
+        }
+        lastAgentArtifacts = result.artifacts
+        agentActivityText = nil
+
+        var spokenText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if spokenText.isEmpty {
+            spokenText = result.status == "completed"
+                ? "done."
+                : "the agent stopped early: \(result.errorMessage ?? result.status)"
+        }
+        if !result.artifacts.isEmpty {
+            let fileCount = result.artifacts.count
+            spokenText += " i saved \(fileCount) \(fileCount == 1 ? "file" : "files")."
+        }
+
+        // Keep the teacher lane aware of what the agent did.
+        conversationHistory.append((userTranscript: transcript, assistantResponse: spokenText))
+        if conversationHistory.count > 10 {
+            conversationHistory.removeFirst(conversationHistory.count - 10)
+        }
+
+        do {
+            try await elevenLabsTTSClient.speakText(spokenText)
+            voiceState = .responding
+        } catch {
+            print("⚠️ TTS error after agent run: \(error)")
+            speakCreditsErrorFallback()
+        }
+    }
+
     /// If the cursor is in transient mode (user toggled "Show Clicky" off),
     /// waits for TTS playback and any pointing animation to finish, then
     /// fades out the overlay after a 1-second pause. Cancelled automatically
@@ -759,7 +848,7 @@ final class CompanionManager: ObservableObject {
     /// credits run out. Uses NSSpeechSynthesizer so it works even when
     /// ElevenLabs is down.
     private func speakCreditsErrorFallback() {
-        let utterance = "I'm all out of credits. Please DM Farza and tell him to bring me back to life."
+        let utterance = "Something went wrong talking to the OpenClicky backend. Check the backend and your token in the settings file."
         let synthesizer = NSSpeechSynthesizer()
         synthesizer.startSpeaking(utterance)
         voiceState = .responding

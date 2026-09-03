@@ -34,6 +34,36 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var sparkleUpdaterController: SPUStandardUpdaterController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // OpenClicky: headless check of the agent lane (gate + Codex run via the CLI) without any
+        // GUI, permissions, or screen capture. Used by scripted builds:
+        //   Clicky.app/Contents/MacOS/Clicky --openclicky-smoke-run "create a file called x.txt containing 'y'"
+        let launchArguments = CommandLine.arguments
+        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-smoke-run"), argumentIndex + 1 < launchArguments.count {
+            let transcript = launchArguments[argumentIndex + 1]
+            Task { @MainActor in
+                let agentClient = OpenClickyAgentClient()
+                let lane = await agentClient.classifyLane(for: transcript)
+                print("smoke: lane=\(lane)")
+                var exitCode: Int32 = 0
+                if lane == "agent" {
+                    do {
+                        let result = try await agentClient.runAgent(task: transcript, screenshotPath: nil, threadId: nil) { milestone in
+                            print("smoke: ▸ \(milestone)")
+                        }
+                        print("smoke: status=\(result.status) thread=\(result.threadId ?? "-")")
+                        print("smoke: text=\(result.text)")
+                        print("smoke: artifacts=\(result.artifacts)")
+                        if result.status != "completed" { exitCode = 2 }
+                    } catch {
+                        print("smoke: error=\(error.localizedDescription)")
+                        exitCode = 1
+                    }
+                }
+                exit(exitCode)
+            }
+            return
+        }
+
         print("🎯 Clicky: Starting...")
         print("🎯 Clicky: Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
 
@@ -49,7 +79,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         if !companionManager.hasCompletedOnboarding || !companionManager.allPermissionsGranted {
             menuBarPanelManager?.showPanelOnLaunch()
         }
-        registerAsLoginItemIfNeeded()
+        // OpenClicky: launching at login is opt-in (`registerAsLoginItem` in ~/.openclicky/shell.json).
+        if OpenClickyConfiguration.settings.registerAsLoginItem == true {
+            registerAsLoginItemIfNeeded()
+        }
         // startSparkleUpdater()
     }
 

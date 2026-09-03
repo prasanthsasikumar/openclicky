@@ -1,8 +1,10 @@
-# OpenClicky Shell (macOS, scaffold)
+# OpenClicky Shell (minimal SwiftPM panel)
 
-A menu-bar app (no Dock icon) with a floating panel that drives the `openclicky` CLI. This is the
-first step toward HeyClicky's notch HUD: it does not yet capture audio itself, render agent cards,
-or read the active document — it delegates everything to `agent/`.
+A menu-bar app (no Dock icon) with a floating panel that drives the `openclicky` CLI. **The primary
+native shell is now `macos/Clicky`** (the vendored open-source Clicky app with cursor buddy,
+push-to-talk, and pointing). This package stays as a dependency-free harness: it builds with
+`swift build`, needs no signing, and its `--smoke-run` mode exercises the CLI → Codex → backend
+chain headlessly.
 
 ```
 cd macos/OpenClickyShell

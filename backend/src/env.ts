@@ -15,6 +15,15 @@ export type Env = {
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_BASE_URL?: string;
   ANTHROPIC_MODEL?: string;
+  /** Native shell TTS (`/tts`): ElevenLabs when set, else OpenAI speech with OPENAI_TTS_MODEL/VOICE. */
+  ELEVENLABS_API_KEY?: string;
+  ELEVENLABS_VOICE_ID?: string;
+  ELEVENLABS_BASE_URL?: string;
+  OPENAI_TTS_MODEL?: string;
+  OPENAI_TTS_VOICE?: string;
+  /** Native shell streaming STT (`/transcribe-token`). Optional; the shell falls back to /agent/transcribe. */
+  ASSEMBLYAI_API_KEY?: string;
+  ASSEMBLYAI_BASE_URL?: string;
   SUPABASE_URL?: string;
   SUPABASE_JWT_SECRET?: string;
   SESSION_TOKEN_SECRET?: string;

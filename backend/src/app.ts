@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getEnv } from "./env.js";
 import { requireAuth, verifySupabaseJwt, issueSessionToken, bearerFrom, AuthError, type Principal } from "./auth.js";
-import { proxyOpenAI, proxyAnthropic, createRealtimeSession, transcribeAudio } from "./proxy.js";
+import { proxyOpenAI, proxyAnthropic, createRealtimeSession, transcribeAudio, synthesizeSpeech, assemblyAiToken } from "./proxy.js";
 import { SKILLS_MANIFEST } from "./skillsManifest.js";
 import { requestLogger, type LogSink } from "./log.js";
 
@@ -36,10 +36,18 @@ export function createApp(options: AppOptions = {}) {
     }
   });
 
-  // Everything else under /agent/*, /v1/* and /skills/* needs a Supabase JWT or a session token.
+  // Everything else under /agent/*, /v1/*, /skills/* and the native-shell routes needs a Supabase JWT or a session token.
   app.use("/agent/*", requireAuth);
   app.use("/v1/*", requireAuth);
   app.use("/skills/*", requireAuth);
+  app.use("/chat", requireAuth);
+  app.use("/tts", requireAuth);
+  app.use("/transcribe-token", requireAuth);
+
+  // Native shell (macos/Clicky, vendored from farzaa/clicky) speaks the original Worker contract.
+  app.post("/chat", (c) => proxyAnthropic(c)); // Claude vision + [POINT] pointing, streamed
+  app.post("/tts", (c) => synthesizeSpeech(c)); // ElevenLabs or OpenAI speech → audio/mpeg
+  app.post("/transcribe-token", (c) => assemblyAiToken(c)); // AssemblyAI streaming token (optional)
 
   app.post("/v1/chat/completions", (c) => proxyOpenAI(c, "/chat/completions")); // `ask` lane
   app.post("/v1/responses", (c) => proxyOpenAI(c, "/responses")); // Codex agent lane (Codex >= 0.15x is Responses-only)

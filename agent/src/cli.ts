@@ -163,12 +163,19 @@ withRunOptions(
       .command("do")
       .description("auto-route: a cheap gate model decides between `ask` and `run` (HeyClicky's two-tier routing)")
       .argument("<text...>", "what you said")
-      .option("--lane <lane>", "force a lane: ask | agent"),
+      .option("--lane <lane>", "force a lane: ask | agent")
+      .option("--gate-only", "only classify: print the lane and exit (for shells that run the lanes themselves)"),
   ),
 ).action(async (parts: string[], opts) => {
   const cfg = configFrom(opts);
   const text = parts.join(" ");
   try {
+    if (opts.gateOnly) {
+      const d = await gate(cfg, text);
+      if (opts.events || opts.json) emit({ type: "lane", lane: d.lane, gated: d.gated, reason: d.reason });
+      else process.stdout.write(`${d.lane}\n`);
+      return;
+    }
     let lane: Lane;
     if (opts.lane) {
       if (opts.lane !== "ask" && opts.lane !== "agent") fail("--lane must be ask or agent");

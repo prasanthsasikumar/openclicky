@@ -41,6 +41,8 @@ class ClaudeAPI {
         request.httpMethod = "POST"
         request.timeoutInterval = 120
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // The OpenClicky backend requires the user's token on every model call.
+        OpenClickyConfiguration.authorize(&request)
         return request
     }
 

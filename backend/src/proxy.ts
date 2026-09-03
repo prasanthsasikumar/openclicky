@@ -98,6 +98,44 @@ export async function transcribeAudio(c: Context): Promise<Response> {
   return c.json({ text: json.text ?? "" });
 }
 
+/**
+ * Text-to-speech for the native shell (upstream Clicky's `/tts` contract: JSON `{ text, ... }` in,
+ * `audio/mpeg` out). Uses ElevenLabs when configured, otherwise OpenAI speech.
+ */
+export async function synthesizeSpeech(c: Context): Promise<Response> {
+  const env = getEnv(c);
+  const req = await readJson(c);
+  const text = typeof req.text === "string" ? req.text : "";
+  if (!text.trim()) return c.json({ error: "body must be JSON with `text`" }, 400);
+  if (env.ELEVENLABS_API_KEY) {
+    const voiceId = env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
+    const base = (env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io").replace(/\/$/, "");
+    const upstream = await fetch(`${base}/v1/text-to-speech/${voiceId}`, {
+      method: "POST",
+      headers: { "xi-api-key": env.ELEVENLABS_API_KEY, "content-type": "application/json", accept: "audio/mpeg" },
+      body: JSON.stringify({ text, model_id: req.model_id ?? "eleven_flash_v2_5", voice_settings: req.voice_settings ?? { stability: 0.5, similarity_boost: 0.75 } }),
+    });
+    return passthrough(upstream);
+  }
+  if (!env.OPENAI_API_KEY) return c.json({ error: "backend missing ELEVENLABS_API_KEY or OPENAI_API_KEY" }, 502);
+  const base = (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+  const upstream = await fetch(base + "/audio/speech", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.OPENAI_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({ model: env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts", voice: env.OPENAI_TTS_VOICE || "marin", input: text, response_format: "mp3" }),
+  });
+  return passthrough(upstream);
+}
+
+/** Short-lived AssemblyAI streaming token for the native shell's push-to-talk (upstream `/transcribe-token`). */
+export async function assemblyAiToken(c: Context): Promise<Response> {
+  const env = getEnv(c);
+  if (!env.ASSEMBLYAI_API_KEY) return c.json({ error: "backend missing ASSEMBLYAI_API_KEY; use the openai or apple transcription provider" }, 501);
+  const base = (env.ASSEMBLYAI_BASE_URL || "https://streaming.assemblyai.com").replace(/\/$/, "");
+  const upstream = await fetch(`${base}/v3/token?expires_in_seconds=480`, { headers: { authorization: env.ASSEMBLYAI_API_KEY } });
+  return passthrough(upstream);
+}
+
 /** Anthropic Messages proxy. */
 export async function proxyAnthropic(c: Context): Promise<Response> {
   const env = getEnv(c);

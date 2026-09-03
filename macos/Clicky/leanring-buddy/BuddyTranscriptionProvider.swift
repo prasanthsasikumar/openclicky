@@ -43,9 +43,13 @@ enum BuddyTranscriptionProviderFactory {
     }
 
     private static func resolveProvider() -> any BuddyTranscriptionProvider {
-        let preferredProviderRawValue = AppBundleConfiguration
-            .stringValue(forKey: "VoiceTranscriptionProvider")?
-            .lowercased()
+        // OpenClicky: ~/.openclicky/shell.json `transcriptionProvider` wins; when the user has a
+        // backend token but no preference, default to transcription through the backend ("openai")
+        // since that needs no extra key. Otherwise fall back to the Info.plist value (upstream behavior).
+        let openClickyPreference = OpenClickyConfiguration.settings.transcriptionProvider?.lowercased()
+            ?? (OpenClickyConfiguration.isConfigured ? PreferredProvider.openAI.rawValue : nil)
+        let preferredProviderRawValue = openClickyPreference
+            ?? AppBundleConfiguration.stringValue(forKey: "VoiceTranscriptionProvider")?.lowercased()
         let preferredProvider = preferredProviderRawValue.flatMap(PreferredProvider.init(rawValue:))
 
         let assemblyAIProvider = AssemblyAIStreamingTranscriptionProvider()

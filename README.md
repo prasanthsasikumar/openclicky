@@ -12,7 +12,11 @@ plus a first native shell scaffold**. What works today:
   or Cloudflare Workers unchanged.
 - `skills/` + `config/` — the ported agent behavior contract and 15 skills, rendered into an isolated
   Codex home on every run; optional Composio / cua-driver MCP servers via env.
-- `macos/OpenClickyShell` — a menu-bar app with a floating ⌥Space panel that drives the CLI (scaffold).
+- `macos/Clicky` — the native shell: the original open-source Clicky app (MIT, vendored from
+  `farzaa/clicky`) with its cursor buddy, ScreenCaptureKit capture, push-to-talk, pointing, and
+  TTS, rerouted through the OpenClicky backend and given an **Agent mode** that hands "do work"
+  requests to a Codex thread via the CLI. `macos/OpenClickyShell` is a minimal SwiftPM panel kept
+  as a headless smoke harness.
 
 Not there yet: Realtime voice conversation in the shell, agent-card HUD, active-document reading,
 Composio/cua-driver themselves (only the wiring), paywall, analytics, crash reporting, auto-update.
@@ -53,7 +57,8 @@ Codex's environment and only ever presents the user's token; the shell does the 
 | `backend/src/app.ts`, `auth.ts`, `proxy.ts` | routes, Supabase/session auth, streaming proxies, Realtime secret, STT |
 | `backend/scripts/` | `mint-dev-jwt.mjs` (local auth), `build-skills-manifest.mjs` (→ `src/skillsManifest.ts`) |
 | `skills/` | `ModelInstructions.md` + 15 skills; regenerate with `npm run port-skills` |
-| `macos/OpenClickyShell/` | SwiftUI/AppKit menu-bar shell (see its README) |
+| `macos/Clicky/` | primary native shell, vendored `farzaa/clicky` + OpenClicky integration (`OPENCLICKY.md`) |
+| `macos/OpenClickyShell/` | minimal SwiftPM menu-bar panel used as a headless smoke harness |
 | `reference/`, `REVERSE-ENGINEERING.md`, `docs/superpowers/plans/` | reverse-engineering notes and the plans for each cut |
 
 ## Prerequisites
@@ -140,16 +145,37 @@ auto-accepted by default (the sandbox is `workspace-write`); `--approve` switche
 `on-request` and prompts you. Set `COMPOSIO_MCP_URL` / `CUA_DRIVER_BIN` to render the `composio` /
 `computer-use` MCP servers into the config.
 
-## Run the macOS shell
+## Run the macOS app
+
+The primary shell is `macos/Clicky`: the original Clicky app (`farzaa/clicky`, MIT, imported with
+`git subtree`) wired to OpenClicky. See `macos/Clicky/OPENCLICKY.md` for exactly what changed.
 
 ```bash
-cd macos/OpenClickyShell && swift build -c release
-.build/release/OpenClickyShell        # menu-bar icon; ⌥Space toggles the panel
+open macos/Clicky/leanring-buddy.xcodeproj     # set your signing team, then Run
 ```
 
-Configure `~/.openclicky/shell.json` (menu → Open Settings File) with `cliCommand`, `backendUrl`,
-`token`, `workspace`. The panel sends text to `openclicky do`, can attach a screenshot, and has a
-🎤 button for `openclicky voice`. Details and next steps in `macos/OpenClickyShell/README.md`.
+Configure `~/.openclicky/shell.json` (panel → Backend row, or create it by hand):
+
+```json
+{ "cliCommand": ["node", "/path/to/openclicky/agent/dist/cli.js"],
+  "backendUrl": "http://localhost:8787", "token": "<supabase jwt or session token>",
+  "workspace": "/Users/you/OpenClicky", "transcriptionProvider": "openai" }
+```
+
+Hold ctrl+option and speak. With **Agent mode** on (default), a cheap gate classifies each
+utterance: questions get the original teacher lane (Claude vision, spoken reply, the blue cursor
+flies to and points at UI elements); "make / fix / create / run…" goes to a Codex thread through
+`openclicky run --events` with the screenshot attached, and the final message is spoken. The
+thread is resumed across turns so follow-ups keep context. The panel shows live agent milestones
+and a "Reveal files" shortcut. Transcription, Claude, and TTS all go through the backend
+(`/agent/transcribe`, `/chat`, `/tts`); no keys live in the app. Analytics are off unless you add a
+PostHog key to Info.plist; launch-at-login is opt-in.
+
+The minimal SwiftPM panel is still available for headless checks:
+
+```bash
+cd macos/OpenClickyShell && swift build -c release && .build/release/OpenClickyShell   # ⌥Space toggles
+```
 
 ## Auth flow
 
@@ -181,8 +207,9 @@ with real keys, drop `--model gpt-5.2` (only the fake needs a classic-tools mode
 
 ## Next
 
-- Shell: native audio (today the Talk button runs `openclicky talk` as a subprocess), agent cards and
-  timeline from `--json`, active-document reader, permissions onboarding, app bundle + Sparkle.
+- Shell (`macos/Clicky`): stream agent milestones onto the cursor bubble, a text-input mode and
+  Keychain token entry (upstream PR #80 is a good template), Realtime `talk` inside the app,
+  active-document reader, Sparkle feed for our own releases.
 - Voice: verify `talk` against the real Realtime API (built against a fake server), wake word,
   spoken task-finished summaries, Deepgram/Whisper STT fallback.
 - Backend: `/agent/realtime/turn|warmup`, `/skills/create|activations`, Composio session brokering.

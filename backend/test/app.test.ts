@@ -32,6 +32,14 @@ beforeAll(async () => {
         res.writeHead(200, { "content-type": "application/json" });
         return void res.end(JSON.stringify({ text: "hello from whisper" }));
       }
+      if (req.url!.endsWith("/audio/speech") || req.url!.includes("/text-to-speech/")) {
+        res.writeHead(200, { "content-type": "audio/mpeg" });
+        return void res.end(Buffer.from("ID3fake-mp3"));
+      }
+      if (req.url!.startsWith("/v3/token")) {
+        res.writeHead(200, { "content-type": "application/json" });
+        return void res.end(JSON.stringify({ token: "aai_temp_token", expires_in_seconds: 480 }));
+      }
       res.writeHead(200, { "content-type": "text/event-stream" });
       res.write('data: {"chunk":1}\n\n');
       setTimeout(() => {
@@ -181,6 +189,40 @@ describe("app", () => {
     expect(artifacts.files).toContain("SKILL.md");
     expect(skills.find((s) => s.id === "pdf")!.kind).toBe("capability");
     expect(skills.some((s) => s.id === "powerpoint")).toBe(false);
+  });
+
+  it("serves the native shell's /chat, /tts and /transcribe-token contract", async () => {
+    expect((await call("/chat", { method: "POST" })).status).toBe(401);
+    expect((await call("/tts", { method: "POST" })).status).toBe(401);
+    expect((await call("/transcribe-token", { method: "POST" })).status).toBe(401);
+    const token = await jwt();
+
+    const chat = await call("/chat", json({ model: "claude-sonnet-4-6", stream: true, messages: [] }, token));
+    expect(chat.status).toBe(200);
+    await chat.text();
+    expect(seen.at(-1)).toMatchObject({ url: "/v1/messages", apiKey: "ak-upstream" });
+    expect(seen.at(-1)!.body.model).toBe("claude-sonnet-4-6");
+
+    // OpenAI speech when no ElevenLabs key
+    const tts = await call("/tts", json({ text: "hello there" }, token), { OPENAI_TTS_VOICE: "cedar" });
+    expect(tts.status).toBe(200);
+    expect(tts.headers.get("content-type")).toBe("audio/mpeg");
+    expect(Buffer.from(await tts.arrayBuffer()).toString()).toBe("ID3fake-mp3");
+    expect(seen.at(-1)).toMatchObject({ url: "/v1/audio/speech", auth: "Bearer sk-upstream" });
+    expect(seen.at(-1)!.body).toMatchObject({ input: "hello there", voice: "cedar", response_format: "mp3" });
+    // ElevenLabs when configured
+    const el = await call("/tts", json({ text: "hi" }, token), { ELEVENLABS_API_KEY: "xi-key", ELEVENLABS_VOICE_ID: "voice1", ELEVENLABS_BASE_URL: upstreamUrl });
+    expect(el.status).toBe(200);
+    await el.arrayBuffer();
+    expect(seen.at(-1)!.url).toBe("/v1/text-to-speech/voice1");
+    expect(seen.at(-1)!.body.text).toBe("hi");
+    expect((await call("/tts", json({}, token))).status).toBe(400);
+
+    expect((await call("/transcribe-token", { method: "POST", headers: { authorization: `Bearer ${token}` } })).status).toBe(501);
+    const tok = await call("/transcribe-token", { method: "POST", headers: { authorization: `Bearer ${token}` } }, { ASSEMBLYAI_API_KEY: "aai", ASSEMBLYAI_BASE_URL: upstreamUrl });
+    expect(tok.status).toBe(200);
+    expect(await tok.json()).toEqual({ token: "aai_temp_token", expires_in_seconds: 480 });
+    expect(seen.at(-1)!.auth).toBe("aai");
   });
 
   it("logs one structured entry per request with the principal (never the token)", async () => {

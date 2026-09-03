@@ -62,6 +62,14 @@ struct CompanionPanelView: View {
                 Spacer()
                     .frame(height: 16)
 
+                openClickySection
+                    .padding(.horizontal, 16)
+            }
+
+            if companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
+                Spacer()
+                    .frame(height: 16)
+
                 dmFarzaButton
                     .padding(.horizontal, 16)
             }
@@ -639,6 +647,106 @@ struct CompanionPanelView: View {
         }
         .buttonStyle(.plain)
         .pointerCursor()
+    }
+
+    // MARK: - OpenClicky Agent
+
+    /// Agent mode toggle, backend status, live agent activity, and a shortcut to the settings file.
+    private var openClickySection: some View {
+        VStack(spacing: 2) {
+            Text("OPENCLICKY")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(DS.Colors.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 6)
+
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape.2")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .frame(width: 16)
+
+                    Text("Agent mode")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(DS.Colors.textSecondary)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: Binding(
+                    get: { companionManager.isAgentModeEnabled },
+                    set: { companionManager.setAgentModeEnabled($0) }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .tint(DS.Colors.accent)
+                .scaleEffect(0.8)
+            }
+            .padding(.vertical, 4)
+
+            Button(action: { OpenClickyConfiguration.revealSettingsFile() }) {
+                HStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "server.rack")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .frame(width: 16)
+
+                        Text("Backend")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(DS.Colors.textSecondary)
+                    }
+
+                    Spacer()
+
+                    Text(OpenClickyConfiguration.isConfigured
+                         ? OpenClickyConfiguration.backendHostDescription
+                         : "no token — click to set up")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(OpenClickyConfiguration.isConfigured ? DS.Colors.textTertiary : DS.Colors.accent)
+                        .lineLimit(1)
+                }
+            }
+            .buttonStyle(.plain)
+            .pointerCursor()
+            .padding(.vertical, 4)
+
+            if let agentActivityText = companionManager.agentActivityText {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text(agentActivityText)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+            }
+
+            if !companionManager.lastAgentArtifacts.isEmpty {
+                Button(action: {
+                    let fileURLs = companionManager.lastAgentArtifacts.map { URL(fileURLWithPath: $0) }
+                    NSWorkspace.shared.activateFileViewerSelecting(fileURLs)
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .frame(width: 16)
+                        Text("Reveal \(companionManager.lastAgentArtifacts.count) file\(companionManager.lastAgentArtifacts.count == 1 ? "" : "s") from the last task")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(DS.Colors.textSecondary)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .padding(.vertical, 4)
+            }
+        }
     }
 
     // MARK: - DM Farza Button

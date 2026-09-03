@@ -13,10 +13,17 @@ enum ClickyAnalytics {
 
     // MARK: - Setup
 
+    /// OpenClicky: analytics are opt-in. Upstream shipped the original developer's PostHog key and
+    /// sent transcripts + responses to it; here nothing is set up unless `PostHogAPIKey` is present in
+    /// Info.plist. Before setup, every `PostHogSDK.shared.capture` call is a no-op.
     static func configure() {
+        guard let apiKey = AppBundleConfiguration.stringValue(forKey: "PostHogAPIKey") else {
+            print("📊 Analytics disabled (no PostHogAPIKey in Info.plist)")
+            return
+        }
         let config = PostHogConfig(
-            apiKey: "phc_xcQPygmhTMzzYh8wNW92CCwoXmnzqyChAixh8zgpqC3C",
-            host: "https://us.i.posthog.com"
+            apiKey: apiKey,
+            host: AppBundleConfiguration.stringValue(forKey: "PostHogHost") ?? "https://us.i.posthog.com"
         )
         PostHogSDK.shared.setup(config)
     }

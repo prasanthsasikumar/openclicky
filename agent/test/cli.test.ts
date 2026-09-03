@@ -99,6 +99,14 @@ describe("openclicky CLI", () => {
     expect(lines.at(-1)).toEqual({ type: "answer", text: "Hello from fake" });
   });
 
+  it("do --gate-only classifies without running a lane", async () => {
+    const plain = await runCli(["do", "make a file", "--gate-only"]);
+    expect(plain.code).toBe(0);
+    expect(plain.stdout).toBe("agent\n");
+    const ev = await runCli(["do", "what is up", "--gate-only", "--events"]);
+    expect(JSON.parse(ev.stdout.trim())).toEqual({ type: "lane", lane: "ask", gated: true, reason: "fake gate" });
+  });
+
   it.skipIf(!hasCodex)("run --events streams deltas and a result through the real codex binary", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cli-ws-"));
     const r = await runCli(["run", "say hi", "--events", "--cwd", ws, "--model", "gpt-5.2"]);
