@@ -20,7 +20,7 @@ A **native macOS AI voice assistant** (SwiftUI, not Electron) with:
 - **Supabase** for auth + a **Cloudflare Worker** (`api.heyclicky.com`) that proxies all model calls and holds the provider keys
 - **PostHog** (analytics), **Sentry** (crash + session replay), **Sparkle** (auto-update)
 
-Identity: `com.humansongs.clicky`, Developer `Farzain Majeed` (Farza, Buildspace). Internal codename `leanring-buddy`, closed repo `clicky-closed`, workspace `louisville-v1`.
+Identity: `com.humansongs.clicky`, Developer: the original vendor (see the MIT LICENSE in macos/OpenClicky). Internal codename `leanring-buddy`, closed repo `clicky-closed`, workspace `louisville-v1`.
 
 ---
 
@@ -338,7 +338,7 @@ Key doctrines to lift:
 
 - **PostHog** API key `phc_xcQPygmhTMzzYh8wNW92CCwoXmnzqyChAixh8zgpqC3C` @ `https://us.i.posthog.com`.
 - **Sentry** DSN → `o4511254886154240.ingest.us.sentry.io/4511254887137280` (key redacted).
-- **Sparkle** feed `https://farzaa.github.io/clicky-releases/appcast.xml`, Ed25519 pub key `2bZCRkVZa++RiAgbbZ08+asMwyKheOK9jkbJXu5mU6c=`, auto-check every 3600s.
+- **Sparkle** feed on the original vendor's GitHub Pages (`clicky-releases/appcast.xml`), Ed25519 pub key `2bZCRkVZa++RiAgbbZ08+asMwyKheOK9jkbJXu5mU6c=`, auto-check every 3600s.
 
 ---
 

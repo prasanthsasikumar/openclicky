@@ -12,8 +12,8 @@ plus a first native shell scaffold**. What works today:
   or Cloudflare Workers unchanged.
 - `skills/` + `config/` — the ported agent behavior contract and 15 skills, rendered into an isolated
   Codex home on every run; optional Composio / cua-driver MCP servers via env.
-- `macos/OpenClicky` — the native shell: a renamed fork of the original open-source Clicky app (MIT,
-  `farzaa/clicky`) with its cursor buddy, ScreenCaptureKit capture, push-to-talk, pointing, and
+- `macos/OpenClicky` — the native shell: a renamed fork of the original open-source Clicky app (MIT;
+  see its LICENSE) with its cursor buddy, ScreenCaptureKit capture, push-to-talk, pointing, and
   TTS, rerouted through the OpenClicky backend and given an **Agent mode** that hands "do work"
   requests to a Codex thread via the CLI. `macos/OpenClickyShell` is a minimal SwiftPM panel kept
   as a headless smoke harness.
@@ -57,7 +57,7 @@ Codex's environment and only ever presents the user's token; the shell does the 
 | `backend/src/app.ts`, `auth.ts`, `proxy.ts` | routes, Supabase/session auth, streaming proxies, Realtime secret, STT |
 | `backend/scripts/` | `mint-dev-jwt.mjs` (local auth), `build-skills-manifest.mjs` (→ `src/skillsManifest.ts`) |
 | `skills/` | `ModelInstructions.md` + 15 skills; regenerate with `npm run port-skills` |
-| `macos/OpenClicky/` | primary native shell, vendored `farzaa/clicky` + OpenClicky integration (`OPENCLICKY.md`) |
+| `macos/OpenClicky/` | primary native shell, renamed fork of the original open-source Clicky app + OpenClicky integration (`OPENCLICKY.md`) |
 | `macos/OpenClickyShell/` | minimal SwiftPM menu-bar panel used as a headless smoke harness |
 | `reference/`, `REVERSE-ENGINEERING.md`, `docs/superpowers/plans/` | reverse-engineering notes and the plans for each cut |
 
@@ -147,7 +147,7 @@ auto-accepted by default (the sandbox is `workspace-write`); `--approve` switche
 
 ## Run the macOS app
 
-The primary shell is `macos/OpenClicky`: a renamed fork of the original Clicky app (`farzaa/clicky`,
+The primary shell is `macos/OpenClicky`: a renamed fork of the original open-source Clicky app (MIT,
 MIT) wired to OpenClicky. See `macos/OpenClicky/OPENCLICKY.md` for the rename map and what changed.
 
 ```bash

@@ -1,10 +1,10 @@
 # OpenClicky macOS app — provenance and changes
 
-This app is a **fork** of [`farzaa/clicky`](https://github.com/farzaa/clicky) (MIT), imported at
+This app is a **fork** of the original open-source Clicky app (MIT; copyright holder in `LICENSE`), imported at
 upstream commit `a80fa80` and then renamed and rewired for OpenClicky. Upstream's `LICENSE` is kept.
 Because the project, targets, scheme, directories, bundle identifier, and product strings were all
 renamed (`leanring-buddy` → `OpenClicky`), upstream changes are no longer pulled with `git subtree`;
-port them by hand with `git log`/`git diff` against `https://github.com/farzaa/clicky`.
+port them by hand with `git log`/`git diff` against the upstream Clicky repository.
 
 Upstream is the "teacher next to your cursor" Clicky: Claude vision + `[POINT:x,y]` pointing,
 push-to-talk, ScreenCaptureKit, AssemblyAI streaming STT, ElevenLabs TTS. OpenClicky keeps that
@@ -23,7 +23,7 @@ shell and routes everything through the OpenClicky backend and agent. Integratio
 | `worker/` (Cloudflare proxy), `appcast.xml`, demo gif, per-user `xcuserdata` | removed — `backend/` replaces the Worker; Sparkle feed/key entries dropped from Info.plist (updater is not started) |
 
 Kept unchanged on purpose: `Assets.xcassets` (icon, onboarding images), sounds, `DesignSystem.swift`,
-the "DM Farza" feedback link, and the upstream `README.md`/`AGENTS.md` apart from the rename.
+and the upstream `AGENTS.md` apart from the rename. The upstream README, feedback link, and the original author's name were removed.
 
 ## Integration changes
 

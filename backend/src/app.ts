@@ -44,7 +44,7 @@ export function createApp(options: AppOptions = {}) {
   app.use("/tts", requireAuth);
   app.use("/transcribe-token", requireAuth);
 
-  // Native shell (macos/Clicky, vendored from farzaa/clicky) speaks the original Worker contract.
+  // Native shell (macos/OpenClicky, forked from the original open-source Clicky app) speaks its original Worker contract.
   app.post("/chat", (c) => proxyAnthropic(c)); // Claude vision + [POINT] pointing, streamed
   app.post("/tts", (c) => synthesizeSpeech(c)); // ElevenLabs or OpenAI speech → audio/mpeg
   app.post("/transcribe-token", (c) => assemblyAiToken(c)); // AssemblyAI streaming token (optional)
