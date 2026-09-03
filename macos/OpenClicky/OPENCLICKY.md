@@ -45,9 +45,10 @@ and the upstream `AGENTS.md` apart from the rename. The upstream README, feedbac
 | `OpenAIAudioTranscriptionProvider.swift` | Uploads to the backend's `POST /agent/transcribe` (JSON base64) instead of api.openai.com with a local key. Display name "OpenClicky". |
 | `BuddyTranscriptionProvider.swift` | `transcriptionProvider` from shell.json wins; defaults to the backend ("openai") when a token exists. |
 | `ClickyAnalytics.swift` | PostHog only when `PostHogAPIKey` is in Info.plist (upstream hardcoded the original key). |
-| `OpenClickyApp.swift` | Login-item registration is opt-in (`registerAsLoginItem`); `--openclicky-smoke-run "<text>"` runs gate + agent headlessly and exits. |
+| `OpenClickyApp.swift` | Login-item registration is opt-in (`registerAsLoginItem`); `--openclicky-smoke-run "<text>"` runs gate + agent headlessly and exits; `--openclicky-smoke-talk <seconds>` opens a Realtime session, plays the greeting, listens for that long and exits. |
 | `NotchHUD.swift` (new) | The notch HUD (HeyClicky's notch app): collapsed lip + handle under the notch, compact status strip while listening/thinking/speaking, and the full Home / Agents / Settings panel on hover or click. Window is sized per state and only the active layer is in the SwiftUI hierarchy (NSHostingView otherwise centers and clips oversized content). Hover is polled from the pointer position; SwiftUI's onHover is unreliable in a non-key panel. Lives on the screen with the hardware notch. |
 | `NotchHUDPanels.swift` (new) | Home (skills, integrations, shortcuts, Dock Cursor), Agents (thread cards from `openclicky threads list --json`, Open Agent), Settings (backend, agent mode, voice, cursor, support), and the top-right agent result card with Copy + "Follow up with agent". |
+| `RealtimeVoiceClient.swift` (new) | The in-app OpenAI Realtime loop: mints the ephemeral secret via `POST /agent/realtime/session`, WebSocket to `gpt-realtime`, push-to-talk (ctrl+option) or always-on server VAD, PCM16 24 kHz both ways, barge-in flushes playback, `send_to_agent` tool → `CompanionManager.performAgentTask`. Audio lives in `RealtimeAudioEngine` on its own dispatch queue: CoreAudio's first-time setup hops synchronously to the main queue, so configuring the engine from a main-actor task deadlocks. Voice processing (echo cancellation) is tried first and needs the mixer → output link made at the hardware format before the 24 kHz player is connected; plain capture is the fallback. |
 | `OverlayWindow.swift` | `flyingToDock` navigation mode: the buddy flies into the notch along the bezier arc, fades, and the HUD shows it as a badge; pointing while docked launches from the notch and returns there. Buddy color is red-orange (`DS.Colors.overlayCursorColor`). |
 
 Backend routes for this shell: `POST /chat` (Claude, streamed), `POST /tts` (ElevenLabs or OpenAI
@@ -68,3 +69,6 @@ speech), `POST /transcribe-token` (AssemblyAI, optional). All require the user's
 
 Headless compile check: `xcodebuild -project OpenClicky.xcodeproj -scheme OpenClicky build CODE_SIGNING_ALLOWED=NO`.
 Headless agent check: `OpenClicky.app/Contents/MacOS/OpenClicky --openclicky-smoke-run "create a file called x.txt containing 'y'"`.
+Headless voice check: `OpenClicky.app/Contents/MacOS/OpenClicky --openclicky-smoke-talk 12` (needs a real OpenAI key behind the backend; prints the greeting transcript and whatever you say).
+
+Settings → VOICE: "Realtime voice" (default on) switches push-to-talk to the Realtime loop; "Always listening" keeps the mic open with server-side turn detection so you can just talk.

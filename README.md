@@ -15,10 +15,12 @@ plus a first native shell scaffold**. What works today:
 - `macos/OpenClicky` — the native shell: a renamed fork of the original open-source Clicky app (MIT;
   see its LICENSE) with its cursor buddy, ScreenCaptureKit capture, push-to-talk, pointing, and
   TTS, rerouted through the OpenClicky backend and given an **Agent mode** that hands "do work"
-  requests to a Codex thread via the CLI. `macos/OpenClickyShell` is a minimal SwiftPM panel kept
+  requests to a Codex thread via the CLI. Push-to-talk runs on **OpenAI Realtime** in-process
+  (echo-cancelled AVAudioEngine, `send_to_agent` tool → Codex) with the transcribe + speak path as
+  the fallback when Realtime is off or unavailable. `macos/OpenClickyShell` is a minimal SwiftPM panel kept
   as a headless smoke harness.
 
-Not there yet: Realtime voice conversation in the shell, agent-card HUD, active-document reading,
+Not there yet: active-document reading,
 Composio/cua-driver themselves (only the wiring), paywall, analytics, crash reporting, auto-update.
 
 ## Architecture
@@ -243,10 +245,9 @@ with real keys, drop `--model gpt-5.2` (only the fake needs a classic-tools mode
 ## Next
 
 - Shell (`macos/OpenClicky`): stream agent milestones onto the cursor bubble, a text-input mode and
-  Keychain token entry (upstream PR #80 is a good template), Realtime `talk` inside the app,
-  active-document reader, Sparkle feed for our own releases.
-- Voice: verify `talk` against the real Realtime API (built against a fake server), wake word,
-  spoken task-finished summaries, Deepgram/Whisper STT fallback.
+  Keychain token entry (upstream PR #80 is a good template), active-document reader, Sparkle feed
+  for our own releases.
+- Voice: wake word, spoken task-finished summaries, Deepgram/Whisper STT fallback.
 - Backend: `/agent/realtime/turn|warmup`, `/skills/create|activations`, Composio session brokering.
 - Agent: Composio + cua-driver end-to-end once those services are configured; barge-in/always-on voice.
 

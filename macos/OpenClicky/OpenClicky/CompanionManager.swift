@@ -106,6 +106,98 @@ final class CompanionManager: ObservableObject {
         UserDefaults.standard.set(enabled, forKey: "isOpenClickyAgentModeEnabled")
     }
 
+    // MARK: - Realtime voice (OpenClicky fast lane)
+
+    /// Speech-to-speech over OpenAI Realtime instead of transcribe → Claude → TTS. On by default
+    /// when a backend token exists; falls back to the classic lane if the session cannot open.
+    @Published var isRealtimeVoiceEnabled: Bool = UserDefaults.standard.object(forKey: "isOpenClickyRealtimeVoiceEnabled") == nil
+        ? true
+        : UserDefaults.standard.bool(forKey: "isOpenClickyRealtimeVoiceEnabled")
+
+    /// Always-on listening (server VAD, barge-in) instead of push-to-talk.
+    @Published var isAlwaysListening: Bool = UserDefaults.standard.bool(forKey: "isOpenClickyAlwaysListening")
+
+    let realtimeVoiceClient = RealtimeVoiceClient()
+    private var realtimeLevelCancellable: AnyCancellable?
+    private var didGreetRealtime = false
+    private var didConfigureRealtimeCallbacks = false
+
+    private var usesRealtimeVoice: Bool { isRealtimeVoiceEnabled && OpenClickyConfiguration.isConfigured }
+
+    func setRealtimeVoiceEnabled(_ enabled: Bool) {
+        isRealtimeVoiceEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "isOpenClickyRealtimeVoiceEnabled")
+        if enabled { warmUpRealtimeVoice() } else { realtimeVoiceClient.disconnect(reason: "realtime voice turned off") }
+    }
+
+    func setAlwaysListening(_ enabled: Bool) {
+        isAlwaysListening = enabled
+        UserDefaults.standard.set(enabled, forKey: "isOpenClickyAlwaysListening")
+        warmUpRealtimeVoice()
+    }
+
+    /// Open the Realtime session now so the first key press only starts audio (HeyClicky's warm-up).
+    private func warmUpRealtimeVoice() {
+        guard usesRealtimeVoice else { return }
+        configureRealtimeCallbacksIfNeeded()
+        let mode: RealtimeVoiceClient.TurnMode = isAlwaysListening ? .alwaysOn : .pushToTalk
+        realtimeVoiceClient.disconnect(reason: nil)
+        realtimeVoiceClient.keepWarm(mode: mode)
+        if isAlwaysListening {
+            Task { [weak self] in
+                guard let self else { return }
+                try? await self.realtimeVoiceClient.connectIfNeeded(mode: .alwaysOn)
+                self.realtimeVoiceClient.startListeningContinuously()
+                if !self.didGreetRealtime {
+                    self.didGreetRealtime = true
+                    self.realtimeVoiceClient.requestResponse(instructions: "Greet the user in English in one short sentence as OpenClicky.")
+                }
+            }
+        }
+    }
+
+    private func configureRealtimeCallbacksIfNeeded() {
+        guard !didConfigureRealtimeCallbacks else { return }
+        didConfigureRealtimeCallbacks = true
+        realtimeVoiceClient.onTranscript = { [weak self] role, text in
+            guard let self else { return }
+            switch role {
+            case .user:
+                self.lastTranscript = text
+                print("🗣️ (realtime) \(text)")
+            case .assistant:
+                self.conversationHistory.append((userTranscript: self.lastTranscript ?? "", assistantResponse: text))
+                if self.conversationHistory.count > 10 { self.conversationHistory.removeFirst(self.conversationHistory.count - 10) }
+                print("🔊 (realtime) \(text)")
+            }
+        }
+        realtimeVoiceClient.onResponseStarted = { [weak self] in
+            guard let self, self.usesRealtimeVoice else { return }
+            if self.voiceState != .listening { self.voiceState = .responding }
+        }
+        realtimeVoiceClient.onResponseFinished = { [weak self] in
+            guard let self, self.usesRealtimeVoice, self.voiceState != .listening else { return }
+            self.voiceState = .idle
+            self.scheduleTransientHideIfNeeded()
+        }
+        realtimeVoiceClient.onEvent = { line in print("🎙️ \(line)") }
+        realtimeVoiceClient.onAgentTask = { [weak self] task in
+            guard let self else { return "OpenClicky is not available." }
+            self.agentActivityText = "starting agent…"
+            let screenCaptures = (try? await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()) ?? []
+            do {
+                return try await self.performAgentTask(transcript: task, screenCaptures: screenCaptures)
+            } catch {
+                self.agentActivityText = nil
+                return "The agent could not run: \(error.localizedDescription)"
+            }
+        }
+        realtimeLevelCancellable = realtimeVoiceClient.$inputLevel.sink { [weak self] level in
+            guard let self, self.usesRealtimeVoice, self.voiceState == .listening else { return }
+            self.currentAudioPowerLevel = level
+        }
+    }
+
     // MARK: - Notch HUD + docked cursor (OpenClicky)
 
     /// The notch HUD: a lip under the notch that opens on hover / while busy.
@@ -330,6 +422,11 @@ final class CompanionManager: ObservableObject {
 
         // OpenClicky: the notch HUD is always available; it needs no permissions.
         notchHUDManager.show(companionManager: self)
+
+        // OpenClicky: keep the Realtime voice session warm so talking is instant.
+        if hasCompletedOnboarding && allPermissionsGranted {
+            warmUpRealtimeVoice()
+        }
     }
 
     /// Called by BlueCursorView after the buddy finishes its pointing
@@ -372,6 +469,7 @@ final class CompanionManager: ObservableObject {
 
     func stop() {
         notchHUDManager.hide()
+        realtimeVoiceClient.disconnect(reason: nil)
         globalPushToTalkShortcutMonitor.stop()
         buddyDictationManager.cancelCurrentDictation()
         overlayWindowManager.hideOverlay()
@@ -555,6 +653,10 @@ final class CompanionManager: ObservableObject {
     }
 
     private func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
+        if usesRealtimeVoice {
+            handleRealtimeShortcutTransition(transition)
+            return
+        }
         switch transition {
         case .pressed:
             guard !buddyDictationManager.isDictationInProgress else { return }
@@ -831,12 +933,70 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    // MARK: - Realtime push-to-talk
+
+    private func handleRealtimeShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
+        switch transition {
+        case .pressed:
+            guard !showOnboardingVideo else { return }
+            transientHideTask?.cancel()
+            transientHideTask = nil
+            if !isClickyCursorEnabled && !isOverlayVisible && !isCursorDocked {
+                overlayWindowManager.hasShownOverlayBefore = true
+                overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+                isOverlayVisible = true
+            }
+            NotificationCenter.default.post(name: .clickyDismissPanel, object: nil)
+            currentResponseTask?.cancel()
+            openClickyAgentClient.cancel()
+            elevenLabsTTSClient.stopPlayback()
+            systemSpeechSynthesizer.stopSpeaking(at: .immediate)
+            clearDetectedElementLocation()
+            ClickyAnalytics.trackPushToTalkStarted()
+            voiceState = .listening
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.realtimeVoiceClient.connectIfNeeded(mode: self.isAlwaysListening ? .alwaysOn : .pushToTalk)
+                    guard self.voiceState == .listening else { return }
+                    self.realtimeVoiceClient.beginPushToTalk()
+                } catch {
+                    print("⚠️ Realtime unavailable (\(error.localizedDescription))")
+                    self.voiceState = .idle
+                    self.speakWithSystemVoice("Realtime voice is unavailable right now. Check the backend.")
+                }
+            }
+        case .released:
+            ClickyAnalytics.trackPushToTalkReleased()
+            guard voiceState == .listening else { return }
+            voiceState = .processing
+            realtimeVoiceClient.endPushToTalk()
+        case .none:
+            break
+        }
+    }
+
     // MARK: - OpenClicky Agent Lane
 
     /// Hands the request to a Codex thread through the `openclicky` CLI, attaching the cursor
     /// screen as image context, then speaks the agent's final message. The spinner stays up for
     /// the whole run; milestones are published to the panel via `agentActivityText`.
     private func runOpenClickyAgentLane(transcript: String, screenCaptures: [CompanionScreenCapture]) async throws {
+        let spokenText = try await performAgentTask(transcript: transcript, screenCaptures: screenCaptures)
+        guard !Task.isCancelled else { return }
+        do {
+            try await elevenLabsTTSClient.speakText(spokenText)
+            voiceState = .responding
+        } catch {
+            print("⚠️ TTS via backend failed after agent run (\(error.localizedDescription)); using the system voice")
+            speakWithSystemVoice(spokenText)
+        }
+    }
+
+    /// The agent lane core, shared by the classic voice path and the Realtime `send_to_agent` tool:
+    /// attach the cursor screen, run the Codex thread (resumed across turns), publish milestones and
+    /// the result card, and return the sentence to speak.
+    private func performAgentTask(transcript: String, screenCaptures: [CompanionScreenCapture]) async throws -> String {
         var screenshotPath: String?
         if let cursorScreenCapture = screenCaptures.first(where: { $0.isCursorScreen }) ?? screenCaptures.first {
             let screenshotURL = FileManager.default.temporaryDirectory
@@ -856,7 +1016,6 @@ final class CompanionManager: ObservableObject {
                 self?.agentActivityText = milestone
             }
         )
-        guard !Task.isCancelled else { return }
 
         if let threadId = result.threadId {
             lastAgentThreadId = threadId
@@ -888,14 +1047,7 @@ final class CompanionManager: ObservableObject {
         if conversationHistory.count > 10 {
             conversationHistory.removeFirst(conversationHistory.count - 10)
         }
-
-        do {
-            try await elevenLabsTTSClient.speakText(spokenText)
-            voiceState = .responding
-        } catch {
-            print("⚠️ TTS via backend failed after agent run (\(error.localizedDescription)); using the system voice")
-            speakWithSystemVoice(spokenText)
-        }
+        return spokenText
     }
 
     /// If the cursor is in transient mode (user toggled "Show OpenClicky" off),

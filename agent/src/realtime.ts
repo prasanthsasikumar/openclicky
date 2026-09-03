@@ -10,7 +10,7 @@ import type { AgentConfig } from "./config.js";
  * Audio I/O is delegated to ffmpeg (capture) and ffplay (playback) so this stays dependency-free.
  */
 
-export const TALK_INSTRUCTIONS = `You are OpenClicky, a friendly, fast macOS voice assistant. Keep spoken replies short (one or two sentences).
+export const TALK_INSTRUCTIONS = `You are OpenClicky, a friendly, fast macOS voice assistant. Speak English unless the user speaks another language. Keep spoken replies short (one or two sentences).
 Answer quick questions yourself. For anything that requires doing work on the computer — creating or editing files or code,
 running commands, using apps or integrations, research with sources, multi-step tasks — call the send_to_agent tool with a clear,
 self-contained task description, then tell the user in one sentence what happened. Never pretend work was done without the tool.
@@ -131,7 +131,7 @@ export class RealtimeSession {
     ws.send(JSON.stringify(sessionUpdate({ voice: this.opts.voice, instructions: this.opts.instructions })));
     if (this.opts.greet !== false) {
       // Say hello right away so the user hears the session is live before speaking.
-      ws.send(JSON.stringify({ type: "response.create", response: { instructions: "Greet the user in one short sentence as OpenClicky and ask what they need." } }));
+      ws.send(JSON.stringify({ type: "response.create", response: { instructions: "Greet the user in English in one short sentence as OpenClicky and ask what they need." } }));
     }
     this.startMic();
   }

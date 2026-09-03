@@ -64,6 +64,36 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-smoke-talk"), argumentIndex + 1 < launchArguments.count {
+            // Headless Realtime check: connect, greet, listen for N seconds, print transcripts, exit.
+            let seconds = Double(launchArguments[argumentIndex + 1]) ?? 10
+            setvbuf(stdout, nil, _IONBF, 0)
+            print("smoke: starting (\(seconds)s)")
+            Task { @MainActor in
+                let client = RealtimeVoiceClient()
+                client.onEvent = { print("smoke: ▸ \($0)") }
+                client.onTranscript = { role, text in print("smoke: \(role == .user ? "you" : "openclicky"): \(text)") }
+                client.onAgentTask = { task in "smoke agent would run: \(task)" }
+                do {
+                    try await withThrowingTaskGroup(of: Void.self) { group in
+                        group.addTask { try await client.connectIfNeeded(mode: .alwaysOn) }
+                        group.addTask { try await Task.sleep(nanoseconds: 20_000_000_000); throw RealtimeVoiceError.backend("connect timed out after 20 s") }
+                        try await group.next()
+                        group.cancelAll()
+                    }
+                    client.startListeningContinuously()
+                    client.requestResponse(instructions: "Greet the user in English in one short sentence as OpenClicky.")
+                    try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                    client.disconnect(reason: "smoke done")
+                    exit(0)
+                } catch {
+                    print("smoke: error=\(error.localizedDescription)")
+                    exit(1)
+                }
+            }
+            return
+        }
+
         print("🎯 OpenClicky: Starting...")
         print("🎯 OpenClicky: Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
 

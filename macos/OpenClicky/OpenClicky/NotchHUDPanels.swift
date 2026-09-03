@@ -177,9 +177,9 @@ struct NotchHomeView: View {
                 .foregroundColor(Color.white.opacity(0.75))
                 .padding(.top, 1)
                 shortcutRow(title: "Talk", keys: ["⌃ control", "⌥ option"])
-                shortcutRow(title: "Text", keys: ["soon"])
-                shortcutRow(title: "Dictate", keys: ["soon"])
-                shortcutRow(title: "Hands-free", keys: ["soon"])
+                shortcutRow(title: "Text", keys: ["result card"])
+                shortcutRow(title: "Hands-free", keys: [companionManager.isAlwaysListening ? "on" : "settings"])
+                shortcutRow(title: "Voice", keys: [companionManager.isRealtimeVoiceEnabled ? "realtime" : "classic"])
 
                 Spacer(minLength: 4)
 
@@ -440,7 +440,15 @@ struct NotchSettingsView: View {
                     settingRow(systemImage: "cpu", title: "Model", value: OpenClickyConfiguration.agentModelOverride ?? "backend default")
                 }
                 section("VOICE") {
-                    settingRow(systemImage: "mic.badge.waveform", title: "Speech to text", value: companionManager.buddyDictationManager.transcriptionProviderDisplayName)
+                    toggleRow(systemImage: "bolt.fill", title: "Realtime voice", detail: "Speech-to-speech over OpenAI Realtime (fast)", isOn: Binding(
+                        get: { companionManager.isRealtimeVoiceEnabled },
+                        set: { companionManager.setRealtimeVoiceEnabled($0) }
+                    ))
+                    toggleRow(systemImage: "ear", title: "Always listening", detail: "Hands-free with barge-in (Realtime only)", isOn: Binding(
+                        get: { companionManager.isAlwaysListening },
+                        set: { companionManager.setAlwaysListening($0) }
+                    ))
+                    settingRow(systemImage: "mic.badge.waveform", title: "Speech to text", value: companionManager.isRealtimeVoiceEnabled ? "Realtime" : companionManager.buddyDictationManager.transcriptionProviderDisplayName)
                     settingRow(systemImage: "keyboard", title: "Talk shortcut", value: "⌃ control + ⌥ option")
                 }
                 section("CURSOR") {
