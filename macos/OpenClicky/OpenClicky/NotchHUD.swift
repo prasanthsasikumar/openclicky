@@ -75,7 +75,7 @@ final class NotchHUDModel: ObservableObject {
         switch activeTab {
         case .home: return geometry.notchHeight + 198
         case .agents: return geometry.notchHeight + 380
-        case .settings: return geometry.notchHeight + 520
+        case .settings: return geometry.notchHeight + 590
         }
     }
 
@@ -194,35 +194,97 @@ final class NotchHUDWindow: NSPanel {
 
 // MARK: - Manager
 
-/// Owns the HUD window, keeps it centered on the notch of the main screen, and sizes it to the
-/// current state so its transparent area never blocks clicks elsewhere.
+/// Owns one HUD window per screen. The screen with the hardware notch hosts the primary HUD (the
+/// cursor docks there); every other display gets the same island drawn as a pill under its menu
+/// bar, so the HUD is reachable wherever the pointer is. Each window is sized to its state so the
+/// transparent area never blocks clicks elsewhere.
 @MainActor
 final class NotchHUDManager {
-    let model: NotchHUDModel
-    private var window: NotchHUDWindow?
-    private var hostingView: NSView?
+    private final class Instance {
+        let screenID: CGDirectDisplayID
+        let model: NotchHUDModel
+        let window: NotchHUDWindow
+        let hostingView: NSView
+
+        init(screenID: CGDirectDisplayID, model: NotchHUDModel, window: NotchHUDWindow, hostingView: NSView) {
+            self.screenID = screenID
+            self.model = model
+            self.window = window
+            self.hostingView = hostingView
+        }
+    }
+
+    private var instances: [Instance] = []
+    private weak var companionManager: CompanionManager?
+    private var isShown = false
+    private var isBusy = false
     private var screenChangeObserver: NSObjectProtocol?
     private var clickOutsideMonitor: Any?
     private var hoverPollTimer: Timer?
     private var busyCancellables = Set<AnyCancellable>()
 
-    /// The screen the HUD lives on: the one with a hardware notch, else the menu-bar screen.
+    /// The screen the primary HUD lives on: the one with a hardware notch, else the menu-bar screen.
     /// (`NSScreen.main` follows keyboard focus and can be an external display.)
-    private static var hudScreen: NSScreen? {
+    private static var primaryScreen: NSScreen? {
         NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.screens.first
     }
 
-    init() {
-        let screen = Self.hudScreen
-        let geometry = screen.map(NotchGeometry.forScreen) ?? NotchGeometry(screenFrame: .zero, hasHardwareNotch: false, notchWidth: 190, notchHeight: 24)
-        model = NotchHUDModel(geometry: geometry)
-        model.onLayoutChanged = { [weak self] in self?.resizeWindow() }
+    private static func screenID(of screen: NSScreen) -> CGDirectDisplayID {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     }
 
-    var dockPoint: CGPoint { model.geometry.dockPoint }
+    private var primaryInstance: Instance? {
+        instances.first(where: { $0.model.geometry.hasHardwareNotch }) ?? instances.first
+    }
+
+    /// Where the docked buddy lives (primary screen).
+    var dockPoint: CGPoint {
+        if let primaryInstance { return primaryInstance.model.geometry.dockPoint }
+        let geometry = Self.primaryScreen.map(NotchGeometry.forScreen)
+            ?? NotchGeometry(screenFrame: .zero, hasHardwareNotch: false, notchWidth: 190, notchHeight: 24)
+        return geometry.dockPoint
+    }
 
     func show(companionManager: CompanionManager) {
-        if window == nil {
+        self.companionManager = companionManager
+        isShown = true
+        if screenChangeObserver == nil {
+            observeScreenChanges()
+            observeBusyState(of: companionManager)
+            installClickOutsideMonitor()
+            startHoverPolling()
+        }
+        syncInstancesWithScreens()
+        for instance in instances {
+            resizeWindow(instance)
+            instance.window.orderFrontRegardless()
+        }
+    }
+
+    func hide() {
+        isShown = false
+        instances.forEach { $0.window.orderOut(nil) }
+    }
+
+    /// Creates a HUD for every attached screen and drops the ones whose screen went away.
+    private func syncInstancesWithScreens() {
+        guard let companionManager else { return }
+        let screens = NSScreen.screens
+        let liveIDs = Set(screens.map(Self.screenID(of:)))
+        for instance in instances where !liveIDs.contains(instance.screenID) {
+            instance.window.orderOut(nil)
+        }
+        instances.removeAll { !liveIDs.contains($0.screenID) }
+
+        for screen in screens {
+            let screenID = Self.screenID(of: screen)
+            let geometry = NotchGeometry.forScreen(screen)
+            if let existing = instances.first(where: { $0.screenID == screenID }) {
+                if existing.model.geometry != geometry { existing.model.geometry = geometry }
+                continue
+            }
+            let model = NotchHUDModel(geometry: geometry)
+            model.setBusy(isBusy)
             let hudWindow = NotchHUDWindow()
             // The window frame must stay authoritative. An NSHostingView used directly as the
             // content view re-fits the window to SwiftUI's fitting size (the hidden full panel),
@@ -235,20 +297,15 @@ final class NotchHUDManager {
             hostingView.frame = containerView.bounds
             containerView.addSubview(hostingView)
             hudWindow.contentView = containerView
-            self.hostingView = hostingView
-            window = hudWindow
-            observeScreenChanges()
-            observeBusyState(of: companionManager)
-            installClickOutsideMonitor()
-            startHoverPolling()
+            let instance = Instance(screenID: screenID, model: model, window: hudWindow, hostingView: hostingView)
+            model.onLayoutChanged = { [weak self, weak instance] in
+                guard let self, let instance else { return }
+                self.resizeWindow(instance)
+            }
+            instances.append(instance)
+            resizeWindow(instance)
+            if isShown { hudWindow.orderFrontRegardless() }
         }
-        refreshGeometry()
-        resizeWindow()
-        window?.orderFrontRegardless()
-    }
-
-    func hide() {
-        window?.orderOut(nil)
     }
 
     private func observeBusyState(of companionManager: CompanionManager) {
@@ -257,7 +314,11 @@ final class NotchHUDManager {
             .combineLatest(companionManager.$agentActivityText)
             .map { voiceState, agentActivityText in voiceState != .idle || agentActivityText != nil }
             .removeDuplicates()
-            .sink { [weak self] busy in self?.model.setBusy(busy) }
+            .sink { [weak self] busy in
+                guard let self else { return }
+                self.isBusy = busy
+                self.instances.forEach { $0.model.setBusy(busy) }
+            }
             .store(in: &busyCancellables)
     }
 
@@ -268,8 +329,9 @@ final class NotchHUDManager {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.refreshGeometry()
-                self?.resizeWindow()
+                guard let self else { return }
+                self.syncInstancesWithScreens()
+                self.instances.forEach { self.resizeWindow($0) }
             }
         }
     }
@@ -278,41 +340,39 @@ final class NotchHUDManager {
     private func installClickOutsideMonitor() {
         clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.model.expansion == .full else { return }
-                self.model.close()
+                guard let self else { return }
+                for instance in self.instances where instance.model.expansion == .full {
+                    instance.model.close()
+                }
             }
         }
     }
 
     /// SwiftUI's onHover does not fire reliably in a non-key window of a background app, so the
-    /// pointer is polled against the island's current on-screen rectangle instead.
+    /// pointer is polled against each island's current on-screen rectangle instead.
     private func startHoverPolling() {
         hoverPollTimer?.invalidate()
         hoverPollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                let geometry = self.model.geometry
-                let hoverMargin: CGFloat = self.model.expansion == .collapsed ? 6 : 14
-                let islandRect = NSRect(
-                    x: geometry.notchRect.midX - self.model.width / 2 - hoverMargin,
-                    y: geometry.screenFrame.maxY - self.model.height - hoverMargin,
-                    width: self.model.width + hoverMargin * 2,
-                    height: self.model.height + hoverMargin
-                )
-                self.model.setHovering(islandRect.contains(NSEvent.mouseLocation))
+                let mouseLocation = NSEvent.mouseLocation
+                for instance in self.instances {
+                    let model = instance.model
+                    let geometry = model.geometry
+                    let hoverMargin: CGFloat = model.expansion == .collapsed ? 6 : 14
+                    let islandRect = NSRect(
+                        x: geometry.notchRect.midX - model.width / 2 - hoverMargin,
+                        y: geometry.screenFrame.maxY - model.height - hoverMargin,
+                        width: model.width + hoverMargin * 2,
+                        height: model.height + hoverMargin
+                    )
+                    model.setHovering(islandRect.contains(mouseLocation))
+                }
             }
         }
     }
 
-    private func refreshGeometry() {
-        guard let screen = Self.hudScreen else { return }
-        let geometry = NotchGeometry.forScreen(screen)
-        if geometry != model.geometry {
-            model.geometry = geometry
-        }
-    }
-
-    private func currentTargetFrame() -> NSRect {
+    private func targetFrame(for model: NotchHUDModel) -> NSRect {
         let geometry = model.geometry
         let hoverMargin: CGFloat = 16
         let width = model.width + hoverMargin * 2
@@ -325,30 +385,30 @@ final class NotchHUDManager {
         )
     }
 
-    private func resizeWindow() {
-        guard let window else { return }
-        let frame = currentTargetFrame()
+    private func resizeWindow(_ instance: Instance) {
+        let window = instance.window
+        let frame = targetFrame(for: instance.model)
         let isGrowing = frame.width >= window.frame.width && frame.height >= window.frame.height
         if isGrowing {
             window.setFrame(frame, display: true)
-            fitHostingViewToWindow()
+            fitHostingViewToWindow(instance)
         } else {
             // Shrink after the closing animation so the content is not clipped mid-spring.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-                guard let self else { return }
-                window.setFrame(self.currentTargetFrame(), display: true)
-                self.fitHostingViewToWindow()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self, weak instance] in
+                guard let self, let instance else { return }
+                instance.window.setFrame(self.targetFrame(for: instance.model), display: true)
+                self.fitHostingViewToWindow(instance)
             }
         }
     }
 
     /// NSHostingView neither autoresizes nor honors edge constraints against its own fitting size,
     /// so its frame is set by hand after every window resize.
-    private func fitHostingViewToWindow() {
-        guard let window, let hostingView, let containerView = window.contentView else { return }
-        hostingView.frame = containerView.bounds
-        hostingView.needsLayout = true
-        hostingView.layoutSubtreeIfNeeded()
+    private func fitHostingViewToWindow(_ instance: Instance) {
+        guard let containerView = instance.window.contentView else { return }
+        instance.hostingView.frame = containerView.bounds
+        instance.hostingView.needsLayout = true
+        instance.hostingView.layoutSubtreeIfNeeded()
     }
 }
 

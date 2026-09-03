@@ -57,6 +57,15 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private let audio = RealtimeAudioEngine()
     private var isAudioWired = false
     private var isForwardingMicrophone = false
+    private var currentMode: TurnMode = .pushToTalk
+    private var pushToTalkArmed = false
+    private var idlePauseTask: Task<Void, Never>?
+    private var microphoneAppends = 0
+
+    /// Capture/send statistics for diagnostics.
+    func debugSummary() async -> String {
+        "mic: \(await audio.debugSummary()); appends sent \(microphoneAppends); forwarding \(isForwardingMicrophone); connected \(isConnected)"
+    }
     private var pushToTalkTailTask: Task<Void, Never>?
     private var assistantTranscriptBuffer = ""
     private var responseInProgress = false
@@ -113,7 +122,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         keepWarmTask?.cancel()
         keepWarmTask = nil
         stopForwardingMicrophone()
+        pushToTalkArmed = false
+        idlePauseTask?.cancel()
         flushPlayback()
+        audio.pause()
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         if isConnected { isConnected = false }
@@ -141,7 +153,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         let task = urlSession.webSocketTask(with: socketRequest)
         webSocketTask = task
         task.resume()
-        try await startAudioIfNeeded()
+        currentMode = mode
+        // Push-to-talk only opens the microphone while the shortcut is held; always-on keeps it open.
+        if mode == .alwaysOn { try await startAudioIfNeeded() }
         try send(sessionUpdate(mode: mode))
         isConnected = true
         log("realtime connected (\(model), \(mode == .pushToTalk ? "push-to-talk" : "always on"))")
@@ -185,14 +199,28 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     func beginPushToTalk() {
         pushToTalkTailTask?.cancel()
         pushToTalkTailTask = nil
+        idlePauseTask?.cancel()
+        idlePauseTask = nil
         if responseInProgress { try? send(["type": "response.cancel"]) }
         flushPlayback()
         try? send(["type": "input_audio_buffer.clear"])
-        startForwardingMicrophone()
+        pushToTalkArmed = true
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.startAudioIfNeeded()
+            } catch {
+                self.log("microphone unavailable: \(error.localizedDescription)")
+                return
+            }
+            guard self.pushToTalkArmed else { return }
+            self.startForwardingMicrophone()
+        }
     }
 
     /// Shortcut released: keep the mic open 400 ms so the last word is not clipped, then commit.
     func endPushToTalk() {
+        pushToTalkArmed = false
         pushToTalkTailTask?.cancel()
         pushToTalkTailTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
@@ -200,20 +228,44 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             self.stopForwardingMicrophone()
             try? self.send(["type": "input_audio_buffer.commit"])
             try? self.send(["type": "response.create"])
+            self.scheduleIdlePauseIfNeeded()
         }
     }
 
     /// Always-on: stream continuously; the server decides the turns.
     func startListeningContinuously() {
-        startForwardingMicrophone()
+        idlePauseTask?.cancel()
+        idlePauseTask = nil
+        Task { [weak self] in
+            guard let self else { return }
+            try? await self.startAudioIfNeeded()
+            self.startForwardingMicrophone()
+        }
     }
 
     func stopListening() {
         stopForwardingMicrophone()
+        scheduleIdlePauseIfNeeded()
+    }
+
+    /// Push-to-talk: once nothing is being captured, generated or played, release the microphone
+    /// so the system's recording indicator goes away between turns.
+    private func scheduleIdlePauseIfNeeded() {
+        guard currentMode == .pushToTalk else { return }
+        idlePauseTask?.cancel()
+        idlePauseTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled, let self else { return }
+            guard !self.isForwardingMicrophone, !self.responseInProgress, !self.isSpeaking, !self.pushToTalkArmed else { return }
+            self.audio.pause()
+        }
     }
 
     /// Speak something proactively (used for the greeting on first connect).
     func requestResponse(instructions: String? = nil) {
+        idlePauseTask?.cancel()
+        idlePauseTask = nil
+        Task { [weak self] in try? await self?.startAudioIfNeeded() }
         var body: [String: Any] = ["type": "response.create"]
         if let instructions { body["response"] = ["instructions": instructions] }
         try? send(body)
@@ -223,7 +275,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     private func startAudioIfNeeded() async throws {
         let microphoneAuthorization = AVCaptureDevice.authorizationStatus(for: .audio)
-        log("microphone authorization: \(microphoneAuthorization.rawValue) (3 = authorized)")
+        if !isAudioWired { log("microphone authorization: \(microphoneAuthorization.rawValue) (3 = authorized)") }
         guard microphoneAuthorization != .denied, microphoneAuthorization != .restricted else {
             throw RealtimeVoiceError.audio("microphone access is denied for OpenClicky (System Settings → Privacy & Security → Microphone)")
         }
@@ -234,18 +286,32 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                     guard let self else { return }
                     self.inputLevel = level
                     guard self.isForwardingMicrophone else { return }
+                    self.microphoneAppends += 1
                     try? self.send(["type": "input_audio_buffer.append", "audio": pcm16.base64EncodedString()])
                 }
             }
             audio.onPlaybackActiveChanged = { [weak self] isPlaying in
-                Task { @MainActor in self?.isSpeaking = isPlaying }
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.isSpeaking = isPlaying
+                    if !isPlaying { self.scheduleIdlePauseIfNeeded() }
+                }
             }
         }
-        log(try await audio.start())
+        let description = try await audio.start()
+        if description != "audio already running" { log(description) }
     }
 
     private func startForwardingMicrophone() {
         isForwardingMicrophone = true
+    }
+
+    /// Test hook (`--openclicky-smoke-talk-file`): feed PCM16 mono 24 kHz as if the microphone
+    /// produced it, through the same forwarding path.
+    func injectMicrophoneAudio(pcm16: Data) {
+        guard isForwardingMicrophone else { return }
+        microphoneAppends += 1
+        try? send(["type": "input_audio_buffer.append", "audio": pcm16.base64EncodedString()])
     }
 
     private func stopForwardingMicrophone() {
@@ -299,6 +365,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
               let type = event["type"] as? String else { return }
         switch type {
         case "input_audio_buffer.speech_started":
+            log("listening…")
             flushPlayback()
             if responseInProgress { try? send(["type": "response.cancel"]) }
         case "conversation.item.input_audio_transcription.completed":
@@ -306,6 +373,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { onTranscript?(.user, trimmed) }
             }
+        case "input_audio_buffer.speech_stopped", "input_audio_buffer.committed", "session.created", "session.updated":
+            log(type)
         case "response.created":
             responseInProgress = true
             assistantTranscriptBuffer = ""
@@ -323,6 +392,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case "response.done":
             responseInProgress = false
             onResponseFinished?()
+            scheduleIdlePauseIfNeeded()
         case "error":
             let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? text
             log("realtime error: \(message)")
@@ -389,8 +459,22 @@ final class RealtimeAudioEngine: @unchecked Sendable {
     private var engine = AVAudioEngine()
     private var playerNode = AVAudioPlayerNode()
     private var converter: AVAudioConverter?
+    private var monoFormat: AVAudioFormat?
     private var isRunning = false
     private var queuedBuffers = 0
+    private var tapCount = 0
+    private var framesOut = 0
+    private var peakLevel: CGFloat = 0
+    private var peakOut: CGFloat = 0
+
+    /// One-line capture statistics (for --openclicky-smoke-talk and bug reports).
+    func debugSummary() async -> String {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                continuation.resume(returning: "taps \(self.tapCount), frames out \(self.framesOut), peak in \(String(format: "%.3f", self.peakLevel)) out \(String(format: "%.3f", self.peakOut)), engine running \(self.engine.isRunning)")
+            }
+        }
+    }
 
     /// Starts capture and playback; returns a one-line description of the configuration.
     func start() async throws -> String {
@@ -426,9 +510,23 @@ final class RealtimeAudioEngine: @unchecked Sendable {
         queue.async { self.tearDown() }
     }
 
+    /// Releases the microphone (the menu bar indicator goes off) but keeps the graph configured
+    /// so the next `start()` is a fast engine restart instead of a full setup.
+    func pause() {
+        queue.async {
+            guard self.isRunning, self.engine.isRunning else { return }
+            self.playerNode.stop()
+            self.queuedBuffers = 0
+            self.engine.stop()
+        }
+    }
+
     func enqueue(pcm16 data: Data) {
         queue.async {
             guard self.isRunning else { return }
+            if !self.engine.isRunning {
+                do { try self.engine.start() } catch { return }
+            }
             let sampleCount = data.count / MemoryLayout<Int16>.size
             guard sampleCount > 0,
                   let buffer = AVAudioPCMBuffer(pcmFormat: Self.playbackFormat, frameCapacity: AVAudioFrameCount(sampleCount)),
@@ -489,9 +587,14 @@ final class RealtimeAudioEngine: @unchecked Sendable {
         guard hardwareFormat.sampleRate > 0, hardwareFormat.channelCount > 0 else {
             throw RealtimeVoiceError.audio("no microphone input available")
         }
-        guard let converter = AVAudioConverter(from: hardwareFormat, to: Self.pcm16Format) else {
+        // The voice-processing input reports 5 identical channels; AVAudioConverter turns a
+        // multi-channel → mono conversion into silence, so channel 0 is copied into a mono buffer
+        // first and only the sample rate / sample format are converted.
+        guard let monoFormat = AVAudioFormat(standardFormatWithSampleRate: hardwareFormat.sampleRate, channels: 1),
+              let converter = AVAudioConverter(from: monoFormat, to: Self.pcm16Format) else {
             throw RealtimeVoiceError.audio("cannot convert \(hardwareFormat) to PCM16 24 kHz")
         }
+        self.monoFormat = monoFormat
         self.converter = converter
         inputNode.installTap(onBus: 0, bufferSize: 2400, format: hardwareFormat) { [weak self] buffer, _ in
             self?.handleMicrophoneBuffer(buffer)
@@ -507,13 +610,25 @@ final class RealtimeAudioEngine: @unchecked Sendable {
         engine = AVAudioEngine()
         playerNode = AVAudioPlayerNode()
         converter = nil
+        monoFormat = nil
         queuedBuffers = 0
         isRunning = false
     }
 
     /// Audio thread: convert to PCM16 mono 24 kHz and hand the bytes to the client.
     private func handleMicrophoneBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let converter, let onMicrophoneFrame else { return }
+        queue.async { self.tapCount += 1 }
+        guard let converter, let monoFormat, let onMicrophoneFrame else { return }
+        let mono: AVAudioPCMBuffer
+        if buffer.format.channelCount == 1 && buffer.format.commonFormat == .pcmFormatFloat32 {
+            mono = buffer
+        } else {
+            guard let copy = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: buffer.frameLength),
+                  let source = buffer.floatChannelData?[0], let target = copy.floatChannelData?[0] else { return }
+            target.update(from: source, count: Int(buffer.frameLength))
+            copy.frameLength = buffer.frameLength
+            mono = copy
+        }
         let ratio = Self.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
         guard let converted = AVAudioPCMBuffer(pcmFormat: Self.pcm16Format, frameCapacity: capacity) else { return }
@@ -526,11 +641,17 @@ final class RealtimeAudioEngine: @unchecked Sendable {
             }
             consumedInput = true
             outStatus.pointee = .haveData
-            return buffer
+            return mono
         }
         guard conversionError == nil, converted.frameLength > 0, let channel = converted.int16ChannelData else { return }
         let data = Data(bytes: channel[0], count: Int(converted.frameLength) * MemoryLayout<Int16>.size)
-        onMicrophoneFrame(data, Self.rmsLevel(of: buffer))
+        let level = Self.rmsLevel(of: buffer)
+        let frameCount = Int(converted.frameLength)
+        var outPeak: Int16 = 0
+        for index in 0..<frameCount { outPeak = max(outPeak, abs(channel[0][index])) }
+        let outLevel = CGFloat(outPeak) / 32768
+        queue.async { self.framesOut += frameCount; self.peakLevel = max(self.peakLevel, level); self.peakOut = max(self.peakOut, outLevel) }
+        onMicrophoneFrame(data, level)
     }
 
     private static func rmsLevel(of buffer: AVAudioPCMBuffer) -> CGFloat {

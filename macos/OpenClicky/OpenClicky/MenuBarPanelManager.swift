@@ -12,6 +12,7 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 extension Notification.Name {
@@ -30,6 +31,7 @@ final class MenuBarPanelManager: NSObject {
     private var panel: NSPanel?
     private var clickOutsideMonitor: Any?
     private var dismissPanelObserver: NSObjectProtocol?
+    private var iconVisibilityCancellable: AnyCancellable?
 
     private let companionManager: CompanionManager
     private let panelWidth: CGFloat = 320
@@ -38,7 +40,13 @@ final class MenuBarPanelManager: NSObject {
     init(companionManager: CompanionManager) {
         self.companionManager = companionManager
         super.init()
-        createStatusItem()
+        if companionManager.isMenuBarIconVisible { createStatusItem() }
+        iconVisibilityCancellable = companionManager.$isMenuBarIconVisible
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] visible in
+                if visible { self?.createStatusItem() } else { self?.removeStatusItem() }
+            }
 
         dismissPanelObserver = NotificationCenter.default.addObserver(
             forName: .clickyDismissPanel,
@@ -60,7 +68,13 @@ final class MenuBarPanelManager: NSObject {
 
     // MARK: - Status Item
 
+    private func removeStatusItem() {
+        if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+        statusItem = nil
+    }
+
     private func createStatusItem() {
+        guard statusItem == nil else { return }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         guard let button = statusItem?.button else { return }
@@ -177,10 +191,16 @@ final class MenuBarPanelManager: NSObject {
 
     private func positionPanelBelowStatusItem() {
         guard let panel else { return }
-        guard let buttonWindow = statusItem?.button?.window else { return }
-
-        let statusItemFrame = buttonWindow.frame
         let gapBelowMenuBar: CGFloat = 4
+        // Without a status item (the default), the panel hangs from the top-right of the screen.
+        let statusItemFrame: NSRect
+        if let buttonWindow = statusItem?.button?.window {
+            statusItemFrame = buttonWindow.frame
+        } else {
+            let screen = NSScreen.main ?? NSScreen.screens.first
+            let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            statusItemFrame = NSRect(x: visibleFrame.maxX - 24 - panelWidth / 2, y: visibleFrame.maxY, width: 24, height: 24)
+        }
 
         // Calculate the panel's content height from the hosting view's fitting size
         // so the panel snugly wraps the SwiftUI content instead of using a fixed height.

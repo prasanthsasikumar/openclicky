@@ -117,6 +117,15 @@ final class CompanionManager: ObservableObject {
     /// Always-on listening (server VAD, barge-in) instead of push-to-talk.
     @Published var isAlwaysListening: Bool = UserDefaults.standard.bool(forKey: "isOpenClickyAlwaysListening")
 
+    /// The menu bar icon is off by default: the notch HUD is the app's home. The onboarding /
+    /// permissions panel still opens on its own when something needs attention.
+    @Published var isMenuBarIconVisible: Bool = UserDefaults.standard.bool(forKey: "isOpenClickyMenuBarIconVisible")
+
+    func setMenuBarIconVisible(_ visible: Bool) {
+        isMenuBarIconVisible = visible
+        UserDefaults.standard.set(visible, forKey: "isOpenClickyMenuBarIconVisible")
+    }
+
     let realtimeVoiceClient = RealtimeVoiceClient()
     private var realtimeLevelCancellable: AnyCancellable?
     private var didGreetRealtime = false

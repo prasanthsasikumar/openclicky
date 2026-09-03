@@ -461,6 +461,12 @@ struct NotchSettingsView: View {
                         set: { companionManager.setClickyCursorEnabled($0) }
                     ))
                 }
+                section("MENU BAR") {
+                    toggleRow(systemImage: "menubar.rectangle", title: "Menu bar icon", detail: "Off by default: this HUD is OpenClicky's home", isOn: Binding(
+                        get: { companionManager.isMenuBarIconVisible },
+                        set: { companionManager.setMenuBarIconVisible($0) }
+                    ))
+                }
                 section("SUPPORT") {
                     actionRow(systemImage: "arrow.triangle.2.circlepath", title: "Check for updates", detail: "Not configured in this build") {}
                     actionRow(systemImage: "ladybug", title: "Report a bug", detail: "Opens the project's issue tracker") {
