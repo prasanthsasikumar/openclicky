@@ -22,7 +22,15 @@ shell and routes everything through the OpenClicky backend and agent. Integratio
 | "Clicky" in UI, prompts, permission strings | "OpenClicky" |
 | `worker/` (Cloudflare proxy), `appcast.xml`, demo gif, per-user `xcuserdata` | removed — `backend/` replaces the Worker; Sparkle feed/key entries dropped from Info.plist (updater is not started) |
 
-Kept unchanged on purpose: `Assets.xcassets` (icon, onboarding images), sounds, `DesignSystem.swift`,
+Also removed (personal media, third-party leftovers, or bypasses of the backend): the hosted intro
+video (a Mux stream of the original author; onboarding now runs the pointing demo and the
+"press control + option" prompt instead), `ff.mp3`/`eshop.mp3`/`enter.mp3` (copyrighted game music),
+`steve.jpg`, the `codex-*`/`makesomething-*`/`git-tools-prompt` screenshots and Discord/Google logos
+(unused, from an earlier project), `OpenAIAPI.swift` and `ElementLocationDetector.swift` (unused clients
+that called OpenAI/Anthropic directly with a local key), `scripts/release.sh` + `dmg-background.png`
+(pointed at another person's releases repo), and a stale inner `AGENTS.md` describing a different app.
+
+Kept unchanged on purpose: the app icon and accent color, `DesignSystem.swift`,
 and the upstream `AGENTS.md` apart from the rename. The upstream README, feedback link, and the original author's name were removed.
 
 ## Integration changes
