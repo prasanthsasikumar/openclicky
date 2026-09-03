@@ -67,6 +67,10 @@ speech), `POST /transcribe-token` (AssemblyAI, optional). All require the user's
    `DEVELOPMENT_TEAM` until you pick yours), run.
 4. Hold ctrl+option, speak. Questions get the pointing teacher; "make/fix/create…" goes to the agent.
 
+Only `/Applications/OpenClicky.app` should exist: Spotlight indexes build products too, so every
+`release.sh` install ends with `scripts/clean-stray-builds.sh` (also `npm run clean:mac-builds`),
+which deletes OpenClicky.app bundles in Xcode's DerivedData and the repo `build/` folder.
+
 Headless compile check: `xcodebuild -project OpenClicky.xcodeproj -scheme OpenClicky build CODE_SIGNING_ALLOWED=NO`.
 Headless agent check: `OpenClicky.app/Contents/MacOS/OpenClicky --openclicky-smoke-run "create a file called x.txt containing 'y'"`.
 Headless voice check: `OpenClicky.app/Contents/MacOS/OpenClicky --openclicky-smoke-talk 12` (needs a real OpenAI key behind the backend; prints the greeting transcript and whatever you say).

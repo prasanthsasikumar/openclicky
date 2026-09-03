@@ -107,6 +107,9 @@ if [[ -n "$INSTALL_DIR" ]]; then
   rm -rf "$INSTALL_DIR/$APP_NAME.app"
   ditto "$APP_PATH" "$INSTALL_DIR/$APP_NAME.app"
   xattr -dr com.apple.quarantine "$INSTALL_DIR/$APP_NAME.app" 2>/dev/null || true
+  # Build products elsewhere show up in Spotlight as extra "OpenClicky" entries; keep only this one.
+  echo "▸ removing stray build copies"
+  bash "$SCRIPT_DIR/clean-stray-builds.sh"
 fi
 
 # 5. GitHub release.
