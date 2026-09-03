@@ -171,6 +171,18 @@ and a "Reveal files" shortcut. Transcription, Claude, and TTS all go through the
 (`/agent/transcribe`, `/chat`, `/tts`); no keys live in the app. Analytics are off unless you add a
 PostHog key to Info.plist; launch-at-login is opt-in.
 
+### Releases and your local install
+
+```bash
+npm run release:mac            # Release build, signed, verified, zip + dmg, installed to /Applications
+npm run release:mac:publish    # …and tag vX.Y.Z (from macos/OpenClicky/VERSION) + GitHub release
+```
+
+The script signs with your Apple Development certificate by default (fine for this Mac; other
+Macs must right-click → Open). For public downloads set `OPENCLICKY_SIGN_IDENTITY="Developer ID
+Application: …"` and, once `xcrun notarytool store-credentials` is set up, `OPENCLICKY_NOTARY_PROFILE`.
+Bump `macos/OpenClicky/VERSION` before publishing. Releases: https://github.com/prasanthsasikumar/openclicky/releases
+
 The minimal SwiftPM panel is still available for headless checks:
 
 ```bash

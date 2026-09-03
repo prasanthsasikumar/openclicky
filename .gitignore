@@ -9,3 +9,4 @@ dist/
 .DS_Store
 macos/OpenClicky/OpenClicky.xcodeproj/xcuserdata/
 macos/OpenClicky/OpenClicky.xcodeproj/project.xcworkspace/xcuserdata/
+macos/OpenClicky/build/

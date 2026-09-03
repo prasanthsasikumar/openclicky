@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+#
+# Build, sign, install, and publish OpenClicky for macOS.
+#
+#   scripts/release.sh                 # build + sign + install to /Applications (no GitHub release)
+#   scripts/release.sh --publish       # ...and tag + create a GitHub release with the zip and dmg
+#   scripts/release.sh --version 0.3.0 # override the version (default: VERSION file)
+#
+# Signing (in priority order):
+#   OPENCLICKY_SIGN_IDENTITY  e.g. "Developer ID Application: Your Org (TEAMID)" — distribution builds
+#   default                   "Apple Development" with OPENCLICKY_TEAM_ID (runs on this Mac; other Macs
+#                             must right-click → Open, since it is not notarized)
+# Notarization (Developer ID only): set OPENCLICKY_NOTARY_PROFILE to a `xcrun notarytool store-credentials`
+# profile name and the dmg/zip are notarized and stapled.
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_DIR="$(cd "$APP_DIR/../.." && pwd)"
+SCHEME="OpenClicky"
+APP_NAME="OpenClicky"
+BUILD_DIR="$APP_DIR/build"
+DERIVED_DATA="$BUILD_DIR/DerivedData"
+EXPORT_DIR="$BUILD_DIR/export"
+INSTALL_DIR="${OPENCLICKY_INSTALL_DIR:-/Applications}"
+TEAM_ID="${OPENCLICKY_TEAM_ID:-3U4384584Z}"
+SIGN_IDENTITY="${OPENCLICKY_SIGN_IDENTITY:-Apple Development}"
+NOTARY_PROFILE="${OPENCLICKY_NOTARY_PROFILE:-}"
+GITHUB_REPO="${OPENCLICKY_GITHUB_REPO:-prasanthsasikumar/openclicky}"
+
+PUBLISH=0
+VERSION="$(tr -d '[:space:]' < "$APP_DIR/VERSION")"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --publish) PUBLISH=1 ;;
+    --version) VERSION="$2"; shift ;;
+    --no-install) INSTALL_DIR="" ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+BUILD_NUMBER="$(git -C "$REPO_DIR" rev-list --count HEAD)"
+COMMIT="$(git -C "$REPO_DIR" rev-parse --short HEAD)"
+TAG="v$VERSION"
+
+echo "▸ OpenClicky $VERSION (build $BUILD_NUMBER, $COMMIT) — signing as '$SIGN_IDENTITY' team $TEAM_ID"
+rm -rf "$EXPORT_DIR"
+mkdir -p "$EXPORT_DIR"
+
+# 1. Build a Release app, signed. Signing here (not in an archive/export step) keeps the script
+#    dependency-free; hardened runtime is on so a Developer ID build can be notarized as-is.
+xcodebuild \
+  -project "$APP_DIR/OpenClicky.xcodeproj" \
+  -scheme "$SCHEME" \
+  -configuration Release \
+  -derivedDataPath "$DERIVED_DATA" \
+  -allowProvisioningUpdates \
+  build \
+  MARKETING_VERSION="$VERSION" \
+  CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+  DEVELOPMENT_TEAM="$TEAM_ID" \
+  CODE_SIGN_STYLE=Automatic \
+  CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
+  ENABLE_HARDENED_RUNTIME=YES \
+  OTHER_CODE_SIGN_FLAGS="--timestamp" \
+  -quiet
+APP_PATH="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
+[[ -d "$APP_PATH" ]] || { echo "build product missing: $APP_PATH" >&2; exit 1; }
+
+echo "▸ verifying signature"
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+codesign -dvv "$APP_PATH" 2>&1 | grep -E '^(Authority|TeamIdentifier|Identifier)=' | sed 's/^/    /'
+
+# 2. Package: zip (Sparkle/GitHub friendly) and a dmg.
+ZIP_PATH="$EXPORT_DIR/$APP_NAME-$VERSION.zip"
+DMG_PATH="$EXPORT_DIR/$APP_NAME-$VERSION.dmg"
+ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+DMG_STAGING="$EXPORT_DIR/dmg"
+mkdir -p "$DMG_STAGING"
+cp -R "$APP_PATH" "$DMG_STAGING/"
+ln -s /Applications "$DMG_STAGING/Applications"
+hdiutil create -quiet -volname "$APP_NAME $VERSION" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_PATH"
+rm -rf "$DMG_STAGING"
+
+# 3. Notarize (Developer ID builds only).
+if [[ -n "$NOTARY_PROFILE" ]]; then
+  echo "▸ notarizing"
+  xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$APP_PATH"
+  ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+  xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$DMG_PATH"
+fi
+echo "▸ artifacts:"
+ls -la "$ZIP_PATH" "$DMG_PATH" | sed 's/^/    /'
+
+# 4. Install locally so Spotlight can launch it.
+if [[ -n "$INSTALL_DIR" ]]; then
+  echo "▸ installing to $INSTALL_DIR/$APP_NAME.app"
+  pkill -x "$APP_NAME" 2>/dev/null || true
+  sleep 0.5
+  rm -rf "$INSTALL_DIR/$APP_NAME.app"
+  ditto "$APP_PATH" "$INSTALL_DIR/$APP_NAME.app"
+  xattr -dr com.apple.quarantine "$INSTALL_DIR/$APP_NAME.app" 2>/dev/null || true
+fi
+
+# 5. GitHub release.
+if [[ $PUBLISH -eq 1 ]]; then
+  echo "▸ publishing $TAG to $GITHUB_REPO"
+  if ! git -C "$REPO_DIR" rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+    git -C "$REPO_DIR" tag -a "$TAG" -m "OpenClicky $VERSION"
+    git -C "$REPO_DIR" push -q origin "$TAG"
+  fi
+  NOTES_FILE="$EXPORT_DIR/notes.md"
+  {
+    echo "OpenClicky $VERSION (build $BUILD_NUMBER, $COMMIT)."
+    echo
+    if [[ "$SIGN_IDENTITY" == Apple\ Development* ]]; then
+      echo "Signed with an Apple Development certificate and not notarized: on another Mac, right-click the app → Open the first time."
+    else
+      echo "Signed with Developer ID${NOTARY_PROFILE:+ and notarized}."
+    fi
+    echo
+    echo "Requires macOS 14.2+, the OpenClicky backend, and \`~/.openclicky/shell.json\` (see README)."
+  } > "$NOTES_FILE"
+  if gh release view "$TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
+    gh release upload "$TAG" "$ZIP_PATH" "$DMG_PATH" --repo "$GITHUB_REPO" --clobber
+  else
+    gh release create "$TAG" "$ZIP_PATH" "$DMG_PATH" --repo "$GITHUB_REPO" --title "OpenClicky $VERSION" --notes-file "$NOTES_FILE"
+  fi
+  gh release view "$TAG" --repo "$GITHUB_REPO" --json url --jq .url
+fi
+echo "▸ done"
