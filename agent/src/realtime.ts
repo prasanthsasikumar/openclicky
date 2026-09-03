@@ -39,6 +39,14 @@ export interface RealtimeSessionOptions {
   playerCommand?: string[];
   /** Bytes per input_audio_buffer.append (default 4800 = 100 ms). */
   frameBytes?: number;
+  /** Speak a short greeting as soon as the session is configured (default true). */
+  greet?: boolean;
+  /**
+   * Keep sending mic audio while OpenClicky speaks (default false). Without acoustic echo
+   * cancellation the model hears itself through the speakers, so the mic is muted during playback
+   * plus a short tail; turn this on with a headset to allow barge-in.
+   */
+  fullDuplex?: boolean;
   onTranscript?: (role: "user" | "assistant", text: string) => void;
   onEvent?: (line: string) => void;
   /** Runs the agent for a send_to_agent tool call and returns the summary spoken back. */
@@ -80,6 +88,8 @@ export class RealtimeSession {
   private mic?: ChildProcess;
   private player?: ChildProcess;
   private assistantBuffer = "";
+  /** Wall-clock time (ms) until which queued assistant audio is still playing. */
+  private playbackEndsAtMs = 0;
   private closed = false;
   private closeWaiters: Array<() => void> = [];
 
@@ -107,8 +117,9 @@ export class RealtimeSession {
     const url = `${base}?model=${encodeURIComponent(model)}`;
     this.log(`connecting ${url}`);
 
-    // Browser-style auth: the ephemeral key travels in the subprotocol list (Node's WebSocket has no custom headers).
-    const ws = new WebSocket(url, ["realtime", `openai-insecure-api-key.${secret.value}`, "openai-beta.realtime-v1"]);
+    // Browser-style auth: the ephemeral key travels in the subprotocol list (Node's WebSocket has no custom
+    // headers). No `openai-beta.realtime-v1` here: that subprotocol selects the retired beta API.
+    const ws = new WebSocket(url, ["realtime", `openai-insecure-api-key.${secret.value}`]);
     this.ws = ws;
     await new Promise<void>((resolve, reject) => {
       ws.addEventListener("open", () => resolve(), { once: true });
@@ -118,6 +129,10 @@ export class RealtimeSession {
     ws.addEventListener("close", () => this.finish("websocket closed"));
     ws.addEventListener("error", () => this.finish("websocket error"));
     ws.send(JSON.stringify(sessionUpdate({ voice: this.opts.voice, instructions: this.opts.instructions })));
+    if (this.opts.greet !== false) {
+      // Say hello right away so the user hears the session is live before speaking.
+      ws.send(JSON.stringify({ type: "response.create", response: { instructions: "Greet the user in one short sentence as OpenClicky and ask what they need." } }));
+    }
     this.startMic();
   }
 
@@ -157,6 +172,7 @@ export class RealtimeSession {
       while (pending.length >= frame) {
         const f = pending.subarray(0, frame);
         pending = pending.subarray(frame);
+        if (!this.opts.fullDuplex && Date.now() < this.playbackEndsAtMs + 300) continue; // half-duplex: don't feed our own voice back
         this.send({ type: "input_audio_buffer.append", audio: f.toString("base64") });
       }
     });
@@ -171,7 +187,10 @@ export class RealtimeSession {
     const cmd = this.opts.playerCommand ?? defaultPlayerCommand();
     const p = spawn(cmd[0], cmd.slice(1), { stdio: ["pipe", "ignore", "pipe"] });
     p.stdin!.on("error", () => {});
-    p.stderr!.on("data", (d: Buffer) => this.log(`player: ${String(d).trim()}`));
+    p.stderr!.on("data", (d: Buffer) => {
+      const text = String(d).replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").trim();
+      if (text) this.log(`player: ${text}`);
+    });
     this.player = p;
     return p;
   }
@@ -203,6 +222,7 @@ export class RealtimeSession {
         break;
       case "input_audio_buffer.speech_started":
         this.stopPlayer(); // barge-in
+        this.playbackEndsAtMs = 0;
         this.log("listening…");
         break;
       case "conversation.item.input_audio_transcription.completed":
@@ -221,7 +241,12 @@ export class RealtimeSession {
       }
       case "response.output_audio.delta":
       case "response.audio.delta":
-        if (ev.delta) this.ensurePlayer().stdin!.write(Buffer.from(ev.delta, "base64"));
+        if (ev.delta) {
+          const bytes = Buffer.from(ev.delta, "base64");
+          this.ensurePlayer().stdin!.write(bytes);
+          const durationMs = (bytes.length / 48000) * 1000;
+          this.playbackEndsAtMs = Math.max(this.playbackEndsAtMs, Date.now()) + durationMs;
+        }
         break;
       case "response.function_call_arguments.done":
         await this.onToolCall(ev);

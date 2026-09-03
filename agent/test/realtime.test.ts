@@ -85,6 +85,8 @@ describe("realtime", () => {
       cfg,
       realtimeUrl: wsUrl,
       voice: "marin",
+      greet: false,
+      fullDuplex: true,
       // fake mic: 4800-byte frames of silence every 30 ms; fake player: append stdin to a file
       micCommand: ["node", "-e", "setInterval(()=>process.stdout.write(Buffer.alloc(4800)),30)"],
       playerCommand: ["node", "-e", `process.stdin.on("data",d=>require("fs").appendFileSync(${JSON.stringify(playedFile)},d))`],

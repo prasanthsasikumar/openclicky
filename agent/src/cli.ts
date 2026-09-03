@@ -247,6 +247,7 @@ program
   .option("--model <model>", "Codex model override for agent tasks")
   .option("--seconds <n>", "hang up after N seconds (default: until Ctrl-C)")
   .option("--no-agent", "answer only; never hand work to the agent")
+  .option("--full-duplex", "keep the mic open while OpenClicky speaks (use with a headset; enables barge-in)")
   .option("--verbose")
   .action(async (opts) => {
     const cfg = configFrom(opts);
@@ -255,6 +256,7 @@ program
     const session = new RealtimeSession({
       cfg,
       voice: opts.voice,
+      fullDuplex: Boolean(opts.fullDuplex),
       micCommand: defaultMicCommand(cfg.ffmpegBin, opts.device),
       onEvent: note,
       onTranscript: (role, text) => process.stdout.write(`${role === "user" ? "you" : "openclicky"}: ${text}\n`),
