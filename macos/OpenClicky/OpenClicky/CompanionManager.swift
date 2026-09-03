@@ -190,6 +190,9 @@ final class CompanionManager: ObservableObject {
             self.scheduleTransientHideIfNeeded()
         }
         realtimeVoiceClient.onEvent = { line in print("🎙️ \(line)") }
+        realtimeVoiceClient.screenContextProvider = {
+            await CompanionScreenCaptureUtility.captureCursorScreenContext()
+        }
         realtimeVoiceClient.onAgentTask = { [weak self] task in
             guard let self else { return "OpenClicky is not available." }
             self.agentActivityText = "starting agent…"

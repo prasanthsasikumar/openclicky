@@ -77,6 +77,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 client.onEvent = { print("smoke: ▸ \($0)") }
                 client.onTranscript = { role, text in print("smoke: \(role == .user ? "you" : "openclicky"): \(text)") }
                 client.onAgentTask = { task in "smoke agent would run: \(task)" }
+                client.screenContextProvider = { await CompanionScreenCaptureUtility.captureCursorScreenContext() }
                 client.onResponseFinished = { finished = true }
                 do {
                     let pcm = try Self.loadPCM16Mono24k(path: filePath)
@@ -84,6 +85,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                     try await client.connectIfNeeded(mode: .pushToTalk)
                     print("smoke: connected in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
                     client.beginPushToTalk()
+                    var waitedForMic = 0
+                    while !client.isCapturing && waitedForMic < 40 {
+                        try? await Task.sleep(nanoseconds: 50_000_000)
+                        waitedForMic += 1
+                    }
                     let chunk = 4800 // 100 ms
                     var offset = 0
                     while offset < pcm.count {

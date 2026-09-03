@@ -41,6 +41,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     var onResponseStarted: (() -> Void)?
     var onResponseFinished: (() -> Void)?
     /// Runs the agent for a `send_to_agent` tool call; the returned text is spoken by the model.
+
+    /// Supplies the screen context attached to every turn: a JPEG of the cursor screen plus a short
+    /// caption (pointer position, screen size). Nil → the turn goes out without an image.
+    var screenContextProvider: (() async -> (jpeg: Data, caption: String)?)?
+    /// True while microphone audio is being streamed to the server.
+    @Published private(set) var isCapturing = false
     var onAgentTask: ((String) async -> String)?
 
     private(set) var turnMode: TurnMode = .pushToTalk
@@ -74,7 +80,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     static let defaultInstructions = """
     You are OpenClicky, a friendly, fast macOS voice assistant. Speak English unless the user speaks another language. \
-    Keep spoken replies short (one or two sentences). Answer quick questions yourself. For anything that requires doing \
+    Keep spoken replies short (one or two sentences). Every request comes with a screenshot of the user's current screen \
+    (with the pointer position noted): "this", "here", "that" refer to what is on screen, usually near the pointer. Look \
+    at the screenshot and answer about it directly; never say you cannot see the screen and never mention a camera. \
+    Answer quick questions yourself. For anything that requires doing \
     work on the computer — creating or editing files or code, running commands, using apps or integrations, research, \
     multi-step tasks — first say one short sentence acknowledging it, then call the send_to_agent tool with a clear, \
     self-contained task, and afterwards tell the user in one sentence what happened. Never pretend work was done without \
@@ -155,7 +164,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         task.resume()
         currentMode = mode
         // Push-to-talk only opens the microphone while the shortcut is held; always-on keeps it open.
-        if mode == .alwaysOn { try await startAudioIfNeeded() }
+        // The graph is built once here (and released right away) so key-down is a fast engine restart.
+        try await startAudioIfNeeded()
+        if mode == .pushToTalk { audio.pause() }
         try send(sessionUpdate(mode: mode))
         isConnected = true
         log("realtime connected (\(model), \(mode == .pushToTalk ? "push-to-talk" : "always on"))")
@@ -171,7 +182,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case .pushToTalk:
             input["turn_detection"] = NSNull()
         case .alwaysOn:
-            input["turn_detection"] = ["type": "server_vad", "silence_duration_ms": 600, "create_response": true, "interrupt_response": true]
+            // create_response is off: the screen capture is attached when the server commits the
+            // utterance, then the response is requested (see input_audio_buffer.committed).
+            input["turn_detection"] = ["type": "server_vad", "silence_duration_ms": 600, "create_response": false, "interrupt_response": true]
         }
         var output: [String: Any] = ["format": ["type": "audio/pcm", "rate": Int(Self.sampleRate)]]
         if let voice { output["voice"] = voice }
@@ -207,6 +220,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         pushToTalkArmed = true
         Task { [weak self] in
             guard let self else { return }
+            let started = Date()
             do {
                 try await self.startAudioIfNeeded()
             } catch {
@@ -214,6 +228,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 return
             }
             guard self.pushToTalkArmed else { return }
+            self.log("microphone open in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
             self.startForwardingMicrophone()
         }
     }
@@ -226,6 +241,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
             self.stopForwardingMicrophone()
+            await self.attachScreenContext()
             try? self.send(["type": "input_audio_buffer.commit"])
             try? self.send(["type": "response.create"])
             self.scheduleIdlePauseIfNeeded()
@@ -246,6 +262,26 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     func stopListening() {
         stopForwardingMicrophone()
         scheduleIdlePauseIfNeeded()
+    }
+
+    /// Adds the current screen to the conversation so the model can answer "what is this?".
+    private func attachScreenContext() async {
+        guard let screenContextProvider else { return }
+        let started = Date()
+        guard let context = await screenContextProvider() else {
+            log("no screen context (screen recording permission?)")
+            return
+        }
+        let item: [String: Any] = [
+            "type": "message",
+            "role": "user",
+            "content": [
+                ["type": "input_text", "text": "[Screen context, not spoken] \(context.caption)"],
+                ["type": "input_image", "image_url": "data:image/jpeg;base64,\(context.jpeg.base64EncodedString())"],
+            ],
+        ]
+        try? send(["type": "conversation.item.create", "item": item])
+        log("screen attached (\(context.jpeg.count / 1024) KB, \(Int(Date().timeIntervalSince(started) * 1000)) ms)")
     }
 
     /// Push-to-talk: once nothing is being captured, generated or played, release the microphone
@@ -304,6 +340,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     private func startForwardingMicrophone() {
         isForwardingMicrophone = true
+        isCapturing = true
     }
 
     /// Test hook (`--openclicky-smoke-talk-file`): feed PCM16 mono 24 kHz as if the microphone
@@ -316,6 +353,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     private func stopForwardingMicrophone() {
         isForwardingMicrophone = false
+        isCapturing = false
         inputLevel = 0
     }
 
@@ -373,7 +411,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { onTranscript?(.user, trimmed) }
             }
-        case "input_audio_buffer.speech_stopped", "input_audio_buffer.committed", "session.created", "session.updated":
+        case "input_audio_buffer.committed":
+            log(type)
+            if currentMode == .alwaysOn {
+                await attachScreenContext()
+                try? send(["type": "response.create"])
+            }
+        case "input_audio_buffer.speech_stopped", "session.created", "session.updated":
             log(type)
         case "response.created":
             responseInProgress = true

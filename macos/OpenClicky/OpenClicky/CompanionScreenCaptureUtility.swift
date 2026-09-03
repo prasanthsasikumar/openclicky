@@ -24,6 +24,20 @@ struct CompanionScreenCapture {
 @MainActor
 enum CompanionScreenCaptureUtility {
 
+    /// The cursor screen as Realtime screen context: JPEG + a caption with the pointer position
+    /// in screenshot pixels (origin top-left) so "this" can be resolved to what is under the pointer.
+    static func captureCursorScreenContext() async -> (jpeg: Data, caption: String)? {
+        guard let captures = try? await captureAllScreensAsJPEG(),
+              let capture = captures.first(where: { $0.isCursorScreen }) ?? captures.first else { return nil }
+        let mouse = NSEvent.mouseLocation
+        let scaleX = CGFloat(capture.screenshotWidthInPixels) / max(capture.displayFrame.width, 1)
+        let scaleY = CGFloat(capture.screenshotHeightInPixels) / max(capture.displayFrame.height, 1)
+        let pointerX = Int((mouse.x - capture.displayFrame.minX) * scaleX)
+        let pointerY = Int((capture.displayFrame.maxY - mouse.y) * scaleY)
+        let caption = "Screenshot of the user's screen (\(capture.screenshotWidthInPixels)×\(capture.screenshotHeightInPixels) px). The pointer is at (\(pointerX), \(pointerY)) from the top-left."
+        return (capture.imageData, caption)
+    }
+
     /// Captures all connected displays as JPEG data, labeling each with
     /// whether the user's cursor is on that screen. This gives the AI
     /// full context across multiple monitors.
