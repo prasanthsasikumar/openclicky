@@ -153,6 +153,9 @@ struct BlueCursorView: View {
     /// Timer driving the frame-by-frame bezier arc flight animation.
     /// Invalidated when the flight completes, is canceled, or the view disappears.
     @State private var navigationAnimationTimer: Timer?
+    /// Bumped on every pointing start/retarget so the delayed fly-back of an earlier point
+    /// (e.g. step 1 of a Realtime walkthrough) cannot pull the buddy off the current target.
+    @State private var pointingGeneration = 0
 
     /// Scale factor applied to the buddy triangle during flight. Grows to ~1.3x
     /// at the midpoint of the arc and shrinks back to 1.0x on landing, creating
@@ -499,6 +502,15 @@ struct BlueCursorView: View {
         let mouseLocation = NSEvent.mouseLocation
         cursorPositionWhenNavigationStarted = convertScreenPointToSwiftUICoordinates(mouseLocation)
 
+        // Retarget while already pointing (the next step of a walkthrough): drop the bubble and
+        // invalidate the pending fly-back, then fly on from where the buddy is now.
+        if buddyNavigationMode == .pointingAtTarget {
+            pointingGeneration += 1
+            navigationBubbleText = ""
+            navigationBubbleOpacity = 0.0
+            navigationBubbleScale = 1.0
+        }
+
         // Enter navigation mode — stop cursor following
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = false
@@ -592,6 +604,8 @@ struct BlueCursorView: View {
     /// scale-in entrance and variable-speed character streaming.
     private func startPointingAtElement() {
         buddyNavigationMode = .pointingAtTarget
+        pointingGeneration += 1
+        let generation = pointingGeneration
 
         // Rotate back to default pointer angle now that we've arrived
         triangleRotationDegrees = -35.0
@@ -609,12 +623,12 @@ struct BlueCursorView: View {
             ?? "right here!"
 
         streamNavigationBubbleCharacter(phrase: pointerPhrase, characterIndex: 0) {
-            // All characters streamed — hold for 3 seconds, then fly back
+            // All characters streamed — hold for 3 seconds, then fly back (unless retargeted since)
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                guard self.buddyNavigationMode == .pointingAtTarget else { return }
+                guard self.buddyNavigationMode == .pointingAtTarget, self.pointingGeneration == generation else { return }
                 self.navigationBubbleOpacity = 0.0
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    guard self.buddyNavigationMode == .pointingAtTarget else { return }
+                    guard self.buddyNavigationMode == .pointingAtTarget, self.pointingGeneration == generation else { return }
                     self.startFlyingBackToCursor()
                 }
             }

@@ -12,11 +12,22 @@
 //  - Push-to-talk: audio streams while the shortcut is held; on release a 400 ms tail is kept,
 //    then the buffer is committed and a response requested. Always-on: server VAD turns.
 //  - `send_to_agent` tool calls hand real work to the Codex agent lane and speak the result.
+//  - `point_at` tool calls fly the cursor buddy to a spot in the screenshot attached to the turn,
+//    one call per step, so the model can point while it explains.
 //
 
 import AVFoundation
 import Combine
 import Foundation
+
+/// The screen context attached to a Realtime turn: the JPEG the model sees, a caption with the
+/// pointer position, and the capture it came from (display frame + pixel size) so `point_at`
+/// coordinates can be mapped back onto the display.
+struct RealtimeScreenContext {
+    let jpeg: Data
+    let caption: String
+    let capture: CompanionScreenCapture
+}
 
 @MainActor
 final class RealtimeVoiceClient: NSObject, ObservableObject {
@@ -44,7 +55,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     /// Supplies the screen context attached to every turn: a JPEG of the cursor screen plus a short
     /// caption (pointer position, screen size). Nil → the turn goes out without an image.
-    var screenContextProvider: (() async -> (jpeg: Data, caption: String)?)?
+    var screenContextProvider: (() async -> RealtimeScreenContext?)?
+    /// A `point_at` tool call: screenshot pixel coordinates (origin top-left), the model's 1–3 word
+    /// label, and the capture the coordinates refer to (the last one attached to the conversation).
+    var onPointAt: ((CGPoint, String, CompanionScreenCapture) -> Void)?
+    /// The capture behind the most recently attached screen context; `point_at` maps onto it.
+    private(set) var lastScreenCapture: CompanionScreenCapture?
     /// True while microphone audio is being streamed to the server.
     @Published private(set) var isCapturing = false
     var onAgentTask: ((String) async -> String)?
@@ -83,7 +99,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     Keep spoken replies short (one or two sentences). Every request comes with a screenshot of the user's current screen \
     (with the pointer position noted): "this", "here", "that" refer to what is on screen, usually near the pointer. Look \
     at the screenshot and answer about it directly; never say you cannot see the screen and never mention a camera. \
-    Answer quick questions yourself. For anything that requires doing \
+    Answer quick questions yourself. When the user asks how to do something, where something is, or what to \
+    click, point at it with the point_at tool while you explain — one call per step, in order, and keep \
+    speaking between calls. Do not point for general questions or things they are obviously already looking \
+    at. For anything that requires doing \
     work on the computer — creating or editing files or code, running commands, using apps or integrations, research, \
     multi-step tasks — first say one short sentence acknowledging it, then call the send_to_agent tool with a clear, \
     self-contained task, and afterwards tell the user in one sentence what happened. Never pretend work was done without \
@@ -194,12 +213,26 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             "description": "Hand a task that requires doing work (files, code, commands, apps, research) to the OpenClicky agent. Returns a short result summary.",
             "parameters": ["type": "object", "properties": ["task": ["type": "string", "description": "A clear, self-contained description of what to do."]], "required": ["task"]],
         ]
+        let pointTool: [String: Any] = [
+            "type": "function",
+            "name": "point_at",
+            "description": "Fly the on-screen cursor buddy to a UI element in the attached screenshot and show a short label. Use it while you explain: one call per step, in order, as you say each step. Coordinates are pixels in the screenshot, origin top-left.",
+            "parameters": [
+                "type": "object",
+                "properties": [
+                    "x": ["type": "integer", "description": "Horizontal pixel in the screenshot, from the left edge."],
+                    "y": ["type": "integer", "description": "Vertical pixel in the screenshot, from the top edge."],
+                    "label": ["type": "string", "description": "1-3 words naming the element, e.g. 'export button'"],
+                ],
+                "required": ["x", "y", "label"],
+            ],
+        ]
         return [
             "type": "session.update",
             "session": [
                 "type": "realtime",
                 "instructions": instructions,
-                "tools": [tool],
+                "tools": [tool, pointTool],
                 "tool_choice": "auto",
                 "audio": ["input": input, "output": output],
             ],
@@ -281,6 +314,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             ],
         ]
         try? send(["type": "conversation.item.create", "item": item])
+        lastScreenCapture = context.capture
         log("screen attached (\(context.jpeg.count / 1024) KB, \(Int(Date().timeIntervalSince(started) * 1000)) ms)")
     }
 
@@ -448,15 +482,40 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private func handleToolCall(_ event: [String: Any]) async {
         let callId = event["call_id"] as? String ?? ""
         let name = event["name"] as? String ?? ""
+        var arguments: [String: Any] = [:]
+        if let argumentsText = event["arguments"] as? String,
+           let parsed = try? JSONSerialization.jsonObject(with: Data(argumentsText.utf8)) as? [String: Any] {
+            arguments = parsed
+        }
         var output = "unknown tool \(name)"
-        if name == "send_to_agent" {
-            var task = ""
-            if let argumentsText = event["arguments"] as? String,
-               let arguments = try? JSONSerialization.jsonObject(with: Data(argumentsText.utf8)) as? [String: Any] {
-                task = arguments["task"] as? String ?? ""
-            }
+        switch name {
+        case "send_to_agent":
+            let task = arguments["task"] as? String ?? ""
             log("agent task: \(task)")
             output = await onAgentTask?(task) ?? "The agent lane is not available in this session."
+        case "point_at":
+            // Coordinates come as integers (or occasionally as numeric strings); label is free text.
+            let number = { (value: Any?) -> Double? in
+                if let n = value as? NSNumber { return n.doubleValue }
+                if let s = value as? String { return Double(s.trimmingCharacters(in: .whitespaces)) }
+                return nil
+            }
+            let label = (arguments["label"] as? String ?? "here").trimmingCharacters(in: .whitespacesAndNewlines)
+            if let x = number(arguments["x"]), let y = number(arguments["y"]) {
+                if let capture = lastScreenCapture {
+                    let location = CompanionManager.screenLocation(forScreenshotPoint: CGPoint(x: x, y: y), in: capture)
+                    log("point_at (\(Int(x)), \(Int(y))) \"\(label)\" → screen (\(Int(location.x)), \(Int(location.y)))\(onPointAt == nil ? " (no handler)" : "")")
+                    onPointAt?(CGPoint(x: x, y: y), label, capture)
+                    output = "pointing at \(label)"
+                } else {
+                    log("point_at ignored: no screenshot attached to this turn")
+                    output = "no screenshot attached; describe the location in words"
+                }
+            } else {
+                output = "point_at needs integer x and y"
+            }
+        default:
+            break
         }
         try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(output.prefix(4000))]])
         try? send(["type": "response.create"])

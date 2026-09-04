@@ -193,6 +193,9 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceClient.screenContextProvider = {
             await CompanionScreenCaptureUtility.captureCursorScreenContext()
         }
+        realtimeVoiceClient.onPointAt = { [weak self] screenshotPoint, label, capture in
+            self?.pointAt(screenshotPoint: screenshotPoint, label: label, in: capture)
+        }
         realtimeVoiceClient.onAgentTask = { [weak self] task in
             guard let self else { return "OpenClicky is not available." }
             self.agentActivityText = "starting agent…"
@@ -305,6 +308,47 @@ final class CompanionManager: ObservableObject {
     /// Opens the result card for a thread (Agents tab → Open Agent).
     func openAgentResultCard(threadId: String) {
         agentResultPanelManager.show(threadId: threadId, companionManager: self)
+    }
+
+    // MARK: - Pointing (shared by the Claude teacher lane and the Realtime `point_at` tool)
+
+    /// Maps a point in a screenshot's pixel space (origin top-left) onto AppKit global screen
+    /// coordinates (origin bottom-left of the main display) for the display that was captured.
+    /// Out-of-range coordinates are clamped to the screenshot.
+    nonisolated static func screenLocation(forScreenshotPoint point: CGPoint, in capture: CompanionScreenCapture) -> CGPoint {
+        let screenshotWidth = CGFloat(max(capture.screenshotWidthInPixels, 1))
+        let screenshotHeight = CGFloat(max(capture.screenshotHeightInPixels, 1))
+        let displayWidth = CGFloat(capture.displayWidthInPoints)
+        let displayHeight = CGFloat(capture.displayHeightInPoints)
+        let displayFrame = capture.displayFrame
+
+        let clampedX = max(0, min(point.x, screenshotWidth))
+        let clampedY = max(0, min(point.y, screenshotHeight))
+
+        // Scale from screenshot pixels to display points, then flip to AppKit's bottom-left origin.
+        let displayLocalX = clampedX * (displayWidth / screenshotWidth)
+        let displayLocalY = clampedY * (displayHeight / screenshotHeight)
+        let appKitY = displayHeight - displayLocalY
+
+        return CGPoint(x: displayLocalX + displayFrame.origin.x, y: appKitY + displayFrame.origin.y)
+    }
+
+    /// Fly the buddy to `screenshotPoint` on the captured display and show `label` in its bubble.
+    /// Safe to call while a reply is being spoken (Realtime `point_at`) or once the teacher lane
+    /// has its answer; a second call while the buddy is already pointing retargets it.
+    func pointAt(screenshotPoint: CGPoint, label: String?, in capture: CompanionScreenCapture) {
+        // The spinner (processing) hides the triangle, so the flight would be invisible; the
+        // buddy is visible in idle and responding.
+        if voiceState == .processing { voiceState = .idle }
+        launchDockedCursorForPointing()
+
+        let location = Self.screenLocation(forScreenshotPoint: screenshotPoint, in: capture)
+        let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+        detectedElementBubbleText = (trimmedLabel?.isEmpty == false) ? trimmedLabel : nil
+        detectedElementDisplayFrame = capture.displayFrame
+        detectedElementScreenLocation = location
+        ClickyAnalytics.trackElementPointed(elementLabel: trimmedLabel)
+        print("🎯 Element pointing: (\(Int(screenshotPoint.x)), \(Int(screenshotPoint.y))) → \"\(trimmedLabel ?? "element")\"")
     }
 
     /// While docked, pointing needs the buddy on screen: launch it from the notch, let the
@@ -845,16 +889,6 @@ final class CompanionManager: ObservableObject {
                 let parseResult = Self.parsePointingCoordinates(from: fullResponseText)
                 let spokenText = parseResult.spokenText
 
-                // Handle element pointing if Claude returned coordinates.
-                // Switch to idle BEFORE setting the location so the triangle
-                // becomes visible and can fly to the target. Without this, the
-                // spinner hides the triangle and the flight animation is invisible.
-                let hasPointCoordinate = parseResult.coordinate != nil
-                if hasPointCoordinate {
-                    voiceState = .idle
-                    launchDockedCursorForPointing()
-                }
-
                 // Pick the screen capture matching Claude's screen number,
                 // falling back to the cursor screen if not specified.
                 let targetScreenCapture: CompanionScreenCapture? = {
@@ -865,38 +899,8 @@ final class CompanionManager: ObservableObject {
                     return screenCaptures.first(where: { $0.isCursorScreen })
                 }()
 
-                if let pointCoordinate = parseResult.coordinate,
-                   let targetScreenCapture {
-                    // Claude's coordinates are in the screenshot's pixel space
-                    // (top-left origin, e.g. 1280x831). Scale to the display's
-                    // point space (e.g. 1512x982), then convert to AppKit global coords.
-                    let screenshotWidth = CGFloat(targetScreenCapture.screenshotWidthInPixels)
-                    let screenshotHeight = CGFloat(targetScreenCapture.screenshotHeightInPixels)
-                    let displayWidth = CGFloat(targetScreenCapture.displayWidthInPoints)
-                    let displayHeight = CGFloat(targetScreenCapture.displayHeightInPoints)
-                    let displayFrame = targetScreenCapture.displayFrame
-
-                    // Clamp to screenshot coordinate space
-                    let clampedX = max(0, min(pointCoordinate.x, screenshotWidth))
-                    let clampedY = max(0, min(pointCoordinate.y, screenshotHeight))
-
-                    // Scale from screenshot pixels to display points
-                    let displayLocalX = clampedX * (displayWidth / screenshotWidth)
-                    let displayLocalY = clampedY * (displayHeight / screenshotHeight)
-
-                    // Convert from top-left origin (screenshot) to bottom-left origin (AppKit)
-                    let appKitY = displayHeight - displayLocalY
-
-                    // Convert display-local coords to global screen coords
-                    let globalLocation = CGPoint(
-                        x: displayLocalX + displayFrame.origin.x,
-                        y: appKitY + displayFrame.origin.y
-                    )
-
-                    detectedElementScreenLocation = globalLocation
-                    detectedElementDisplayFrame = displayFrame
-                    ClickyAnalytics.trackElementPointed(elementLabel: parseResult.elementLabel)
-                    print("🎯 Element pointing: (\(Int(pointCoordinate.x)), \(Int(pointCoordinate.y))) → \"\(parseResult.elementLabel ?? "element")\"")
+                if let pointCoordinate = parseResult.coordinate, let targetScreenCapture {
+                    pointAt(screenshotPoint: pointCoordinate, label: parseResult.elementLabel, in: targetScreenCapture)
                 } else {
                     print("🎯 Element pointing: \(parseResult.elementLabel ?? "no element")")
                 }
@@ -1286,21 +1290,8 @@ final class CompanionManager: ObservableObject {
                     return
                 }
 
-                let screenshotWidth = CGFloat(cursorScreenCapture.screenshotWidthInPixels)
-                let screenshotHeight = CGFloat(cursorScreenCapture.screenshotHeightInPixels)
-                let displayWidth = CGFloat(cursorScreenCapture.displayWidthInPoints)
-                let displayHeight = CGFloat(cursorScreenCapture.displayHeightInPoints)
                 let displayFrame = cursorScreenCapture.displayFrame
-
-                let clampedX = max(0, min(pointCoordinate.x, screenshotWidth))
-                let clampedY = max(0, min(pointCoordinate.y, screenshotHeight))
-                let displayLocalX = clampedX * (displayWidth / screenshotWidth)
-                let displayLocalY = clampedY * (displayHeight / screenshotHeight)
-                let appKitY = displayHeight - displayLocalY
-                let globalLocation = CGPoint(
-                    x: displayLocalX + displayFrame.origin.x,
-                    y: appKitY + displayFrame.origin.y
-                )
+                let globalLocation = Self.screenLocation(forScreenshotPoint: pointCoordinate, in: cursorScreenCapture)
 
                 // Set custom bubble text so the pointing animation uses Claude's
                 // comment instead of a random phrase
