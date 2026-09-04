@@ -297,6 +297,8 @@ Two sets:
 
 Skill file format is the **same Hermes SKILL.md format**: YAML frontmatter (`name`, `description`) + markdown body. This is the format to adopt for OpenClicky.
 
+**(C) What the changelog adds** (research 2026-09-04; the full mirror is in `reference/upstream/heyclicky-changelog.md`, kept current by `scripts/upstream-watch.mjs`). The bundle above is only the agent layer. HeyClicky also carries **app-teaching skills for 89 apps with browser-site matching**, injected "based on the program you're in" (v1.0.26, v1.0.28; served from the `/programs` route, never in the bundle), and a **community skills library** of about 100 skills: hover the notch, "Add skill", one click to activate; "Create a skill" types what it should do and the model writes it (v1.0.33); Skills 2.0 added capability-aware creation, a "My Skills" filter and approval emails (v1.0.34–36); team-private sharing came in v1.0.44 (`/skills/create`, `/skills/creations`, `/skills/activations/sync`). OpenClicky now implements: the agent layer (`skills/`), an app-teaching layer (`app-skills/`, 16 apps/sites, matched by bundle id or URL host and injected into the voice prompts), and a local user library with one-click activation and "Create a skill" through `POST /skills/create`. Not implemented: the approval queue, the "My Skills" filter, team sharing, and server-side activation sync.
+
 ---
 
 ## 10. The agent behavior contract (ClickyModelInstructions.md)
