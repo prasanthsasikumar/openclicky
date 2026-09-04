@@ -64,6 +64,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// True while microphone audio is being streamed to the server.
     @Published private(set) var isCapturing = false
     var onAgentTask: ((String) async -> String)?
+    /// Builds the session instructions for the next turn: the base prompt plus the skills that
+    /// apply right now (the app in front, the user's activated skills). Read at connect and before
+    /// every turn; only a change is sent to the server as `session.update`.
+    var instructionsProvider: (() -> String)?
+    /// The instructions the server currently holds, so unchanged turns send nothing.
+    private var sentInstructions = ""
 
     private(set) var turnMode: TurnMode = .pushToTalk
     private var voice: String?
@@ -165,6 +171,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         responseInProgress = false
         needsContinuationAfterResponse = false
         lastScreenCapture = nil
+        sentInstructions = ""
         if let reason { log(reason) }
     }
 
@@ -174,7 +181,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         secretRequest.httpMethod = "POST"
         secretRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         OpenClickyConfiguration.authorize(&secretRequest)
-        secretRequest.httpBody = try JSONSerialization.data(withJSONObject: ["voice": voice as Any, "instructions": instructions].compactMapValues { $0 })
+        secretRequest.httpBody = try JSONSerialization.data(withJSONObject: ["voice": voice as Any, "instructions": currentInstructions()].compactMapValues { $0 })
         let (secretData, secretResponse) = try await urlSession.data(for: secretRequest)
         guard let httpResponse = secretResponse as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode),
               let secretJSON = try JSONSerialization.jsonObject(with: secretData) as? [String: Any],
@@ -234,11 +241,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 "required": ["x", "y", "label"],
             ],
         ]
+        let text = currentInstructions()
+        sentInstructions = text
         return [
             "type": "session.update",
             "session": [
                 "type": "realtime",
-                "instructions": instructions,
+                "instructions": text,
                 "tools": [tool, pointTool],
                 "tool_choice": "auto",
                 "audio": ["input": input, "output": output],
@@ -248,6 +257,28 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     // MARK: - Push-to-talk / always-on control
 
+    // MARK: - Instructions (skills)
+
+    private func currentInstructions() -> String {
+        instructionsProvider?() ?? instructions
+    }
+
+    /// Re-send the session instructions when the provider's output changed (a different app is in
+    /// front, a skill was toggled). Called at key-down / speech start so the change is on the
+    /// server before the reply is requested; an unchanged prompt sends nothing.
+    func refreshInstructionsIfNeeded() {
+        guard isConnected else { return }
+        let text = currentInstructions()
+        guard text != sentInstructions else { return }
+        do {
+            try send(["type": "session.update", "session": ["type": "realtime", "instructions": text]])
+            sentInstructions = text
+            log("instructions updated (\(text.count) chars)")
+        } catch {
+            log("instructions update failed: \(error.localizedDescription)")
+        }
+    }
+
     /// Shortcut pressed: interrupt any reply and stream the microphone.
     func beginPushToTalk() {
         pushToTalkTailTask?.cancel()
@@ -255,6 +286,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         idlePauseTask?.cancel()
         idlePauseTask = nil
         if responseInProgress { cancelActiveResponse() }
+        refreshInstructionsIfNeeded()
         flushPlayback()
         try? send(["type": "input_audio_buffer.clear"])
         pushToTalkArmed = true
@@ -447,6 +479,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             log("listening…")
             flushPlayback()
             if responseInProgress { cancelActiveResponse() }
+            if currentMode == .alwaysOn { refreshInstructionsIfNeeded() }
         case "conversation.item.input_audio_transcription.completed":
             if let transcript = event["transcript"] as? String {
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)

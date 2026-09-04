@@ -130,6 +130,8 @@ final class CompanionManager: ObservableObject {
     }
 
     let realtimeVoiceClient = RealtimeVoiceClient()
+    /// The user's skill library (~/.openclicky/skills) plus the bundled app-teaching skills.
+    let skillLibraryStore = SkillLibraryStore()
     private var realtimeLevelCancellable: AnyCancellable?
     private var didGreetRealtime = false
     private var didConfigureRealtimeCallbacks = false
@@ -196,6 +198,9 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceClient.screenContextProvider = {
             await CompanionScreenCaptureUtility.captureCursorScreenContext()
         }
+        realtimeVoiceClient.instructionsProvider = { [weak self] in
+            Self.composeTalkInstructions(base: RealtimeVoiceClient.defaultInstructions, skillsBlock: self?.talkSkillsBlock() ?? "")
+        }
         realtimeVoiceClient.onPointAt = { [weak self] screenshotPoint, label, capture in
             self?.pointAt(screenshotPoint: screenshotPoint, label: label, in: capture)
         }
@@ -214,6 +219,24 @@ final class CompanionManager: ObservableObject {
             guard let self, self.usesRealtimeVoice, self.voiceState == .listening else { return }
             self.currentAudioPowerLevel = level
         }
+    }
+
+    // MARK: - Skills in the talk lanes (OpenClicky)
+
+    /// The prompt block for the skills that apply to this turn: the user's activated talk skills
+    /// plus the app-teaching skill matching the app (or browser site) in front. Empty when none.
+    func talkSkillsBlock() -> String {
+        let front = FrontmostAppObserver.current(excludingBundleIdentifier: Bundle.main.bundleIdentifier)
+        let appSkill = AppSkillMatcher.match(front, in: skillLibraryStore.appSkills.filter { $0.isForTalk })
+        let block = SkillPromptBuilder.build(activeSkills: skillLibraryStore.activeTalkSkills, appSkill: appSkill, front: front)
+        if let appSkill { print("🧩 Skills: app skill \"\(appSkill.name)\" for \(front.bundleIdentifier ?? "?")\(front.url?.host.map { " / " + $0 } ?? "")") }
+        return block
+    }
+
+    /// Base prompt + skills block, separated by a blank line; the base alone when there is nothing to add.
+    nonisolated static func composeTalkInstructions(base: String, skillsBlock: String) -> String {
+        let trimmed = skillsBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? base : base + "\n\n" + trimmed
     }
 
     // MARK: - Notch HUD + docked cursor (OpenClicky)
@@ -881,7 +904,7 @@ final class CompanionManager: ObservableObject {
 
                 let (fullResponseText, _) = try await claudeAPI.analyzeImageStreaming(
                     images: labeledImages,
-                    systemPrompt: Self.companionVoiceResponseSystemPrompt,
+                    systemPrompt: Self.composeTalkInstructions(base: Self.companionVoiceResponseSystemPrompt, skillsBlock: talkSkillsBlock()),
                     conversationHistory: historyForAPI,
                     userPrompt: transcript,
                     onTextChunk: { _ in
