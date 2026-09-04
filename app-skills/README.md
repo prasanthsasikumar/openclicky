@@ -40,8 +40,10 @@ surfaces: [talk]
 - `surfaces`: keep `[talk]` for app skills. (`agent` would expose the file to the Codex agent lane,
   which app-teaching notes are not written for.)
 - Precedence: a matching site skill wins over the browser's own app skill, so a Gmail tab in Safari
-  gets the Gmail notes rather than the Safari notes. Among several matches the first in directory
-  order wins, so keep host lists specific.
+  gets the Gmail notes rather than the Safari notes. Among several site matches the most specific
+  site wins (the longest matching site string, so `mail.google.com` beats `google.com`); ties fall
+  back to alphabetical folder-id order. For `apps`, the first skill in alphabetical folder order whose
+  bundle id matches wins.
 
 ## Writing guidelines
 

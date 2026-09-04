@@ -11,7 +11,7 @@ The workspace switcher is the narrow column at the far left (Home, DMs, Activity
 
 ## Common tasks
 - Jump to a channel or person: command-K, then type the name.
-- Search messages: click the search bar at the top, or command-G.
+- Search messages: click the search bar at the top of the window.
 - Reply in thread: hover the message, click the speech-bubble icon in the hover toolbar at its right.
 - Start a huddle: the headphones button in the header at the top-right of the channel.
 - Attach a file: the plus button at the left of the composer, or drag the file in.
