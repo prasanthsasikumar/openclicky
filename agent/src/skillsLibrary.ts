@@ -37,9 +37,12 @@ export function readActivations(dir: string): Activations {
   }
 }
 
+/** Atomic: write a sibling temp file, then rename — a torn write must never read back as "nothing active". */
 function writeActivations(dir: string, active: string[]) {
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(activationsPath(dir), JSON.stringify({ active: [...new Set(active)], updatedAt: new Date().toISOString() }, null, 2) + "\n");
+  const tmp = path.join(dir, `.activations.${process.pid}.${Date.now()}.tmp`);
+  fs.writeFileSync(tmp, JSON.stringify({ active: [...new Set(active)], updatedAt: new Date().toISOString() }, null, 2) + "\n");
+  fs.renameSync(tmp, activationsPath(dir));
 }
 
 export function listLibrary(dir: string): LibrarySkill[] {
@@ -77,7 +80,12 @@ export function syncActiveDir(dir: string): string[] {
     }
     if (!ok) {
       fs.rmSync(link, { recursive: true, force: true });
-      fs.symlinkSync(path.join(libraryDir(dir), id), link);
+      try {
+        fs.symlinkSync(path.join(libraryDir(dir), id), link);
+      } catch (e) {
+        // A concurrent sync (the macOS app and the CLI share this dir) may have just created it.
+        if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      }
     }
   }
   return wanted;
@@ -94,11 +102,20 @@ export function createSkillFiles(dir: string, markdown: string): LibrarySkill {
   const parsed = parseSkillMarkdown(markdown);
   if (!parsed) throw new Error("SKILL.md needs frontmatter with name and description");
   const base = slugify(parsed.name);
+  fs.mkdirSync(libraryDir(dir), { recursive: true });
+  // Claim the id by creating the leaf directory non-recursively: EEXIST means taken, try the next suffix.
   let id = base;
-  let n = 2;
-  while (fs.existsSync(path.join(libraryDir(dir), id))) id = `${base}-${n++}`;
-  const skillPath = path.join(libraryDir(dir), id);
-  fs.mkdirSync(skillPath, { recursive: true });
+  let skillPath = path.join(libraryDir(dir), id);
+  for (let n = 2; ; n++) {
+    try {
+      fs.mkdirSync(skillPath);
+      break;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      id = `${base}-${n}`;
+      skillPath = path.join(libraryDir(dir), id);
+    }
+  }
   fs.writeFileSync(path.join(skillPath, "SKILL.md"), markdown.endsWith("\n") ? markdown : markdown + "\n");
   setActive(dir, id, true);
   return { ...parsed, id, path: skillPath, active: true };

@@ -3,6 +3,7 @@ import http from "node:http";
 import { SignJWT } from "jose";
 import { createApp } from "../src/app.js";
 import type { Env } from "../src/env.js";
+import { parseSkillMarkdown } from "../src/skillMarkdown.js";
 
 type Seen = { url: string; auth?: string; apiKey?: string; contentType?: string; raw: string; body: Record<string, unknown> };
 const MOCK_SKILL = "```markdown\n---\nname: Reply In My Voice\ndescription: Draft email replies in the user's own voice.\nsurfaces: [talk, agent]\n---\n# Reply In My Voice\n\n## Use When\nThe user asks for a reply.\n```";
@@ -27,7 +28,7 @@ beforeAll(async () => {
       });
       if (req.url!.endsWith("/chat/completions") && b.includes('"stream":false')) {
         // Non-streaming chat: POST /skills/create asks the model for a SKILL.md.
-        const content = b.includes("BROKEN") ? "no frontmatter" : MOCK_SKILL;
+        const content = b.includes("BROKEN") ? "no frontmatter" : b.includes("COMMENTED") ? MOCK_SKILL.replace("surfaces: [talk, agent]", "surfaces: [talk]   # talk = applies when chatting") : MOCK_SKILL;
         res.writeHead(200, { "content-type": "application/json" });
         return void res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content } }] }));
       }
@@ -219,6 +220,13 @@ describe("app", () => {
     expect((await call("/skills/create", json({ request: "BROKEN" }, await jwt()))).status).toBe(502);
     expect((await call("/skills/create", json({ request: "x" }, await jwt()), { OPENAI_API_KEY: "" })).status).toBe(503);
     expect((await call("/skills/create", json({ request: "x" }, await jwt()), { OPENAI_MODEL: "", SKILL_CREATE_MODEL: "" })).status).toBe(503);
+  });
+  it("tolerates a model that echoes a trailing comment on the surfaces line", async () => {
+    const r = await call("/skills/create", json({ request: "COMMENTED" }, await jwt()));
+    expect(r.status).toBe(200);
+    const { markdown } = await r.json();
+    expect(markdown).toContain("surfaces: [talk]   # talk");
+    expect(parseSkillMarkdown(markdown)!.surfaces).toEqual(["talk"]);
   });
   it("uses SKILL_CREATE_MODEL over OPENAI_MODEL when set", async () => {
     const r = await call("/skills/create", json({ request: "x" }, await jwt()), { SKILL_CREATE_MODEL: "gpt-skills" });

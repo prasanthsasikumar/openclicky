@@ -9,7 +9,7 @@ const tpl = `{{MODEL_LINE}}\nbase_url = "{{BACKEND_URL}}/v1"\npath = "{{OPENCLIC
 
 describe("renderCodexConfig", () => {
   it("fills placeholders and omits model line when unset", () => {
-    const out = renderCodexConfig(tpl, { root: "/r", backendUrl: "http://x/", workspace: "/w" });
+    const out = renderCodexConfig(tpl, { root: "/r", backendUrl: "http://x/", workspace: "/w", userSkillsActive: "/u/active" });
     expect(out).toContain('base_url = "http://x/v1"');
     expect(out).toContain('path = "/r/skills"');
     expect(out).toContain('[projects."/w"]');
@@ -17,7 +17,7 @@ describe("renderCodexConfig", () => {
     expect(out).not.toMatch(/^model = /m);
   });
   it("emits model line when set", () => {
-    const out = renderCodexConfig(tpl, { root: "/r", backendUrl: "http://x", workspace: "/w", model: "gpt-5.6-luna" });
+    const out = renderCodexConfig(tpl, { root: "/r", backendUrl: "http://x", workspace: "/w", model: "gpt-5.6-luna", userSkillsActive: "/u/active" });
     expect(out).toMatch(/^model = "gpt-5.6-luna"/m);
   });
 });
@@ -25,7 +25,7 @@ describe("renderCodexConfig", () => {
 describe("renderMcpServers", () => {
   it("renders nothing by default", () => {
     expect(renderMcpServers({})).toBe("");
-    expect(renderCodexConfig("a\n{{MCP_SERVERS}}\nb", { root: "/r", backendUrl: "x", workspace: "/w" })).toBe("a\n\nb");
+    expect(renderCodexConfig("a\n{{MCP_SERVERS}}\nb", { root: "/r", backendUrl: "x", workspace: "/w", userSkillsActive: "/u/active" })).toBe("a\n\nb");
   });
   it("renders composio and computer-use blocks when configured", () => {
     const out = renderMcpServers({ composioMcpUrl: "https://mcp.example/composio", cuaDriverBin: "/opt/cua-driver" });

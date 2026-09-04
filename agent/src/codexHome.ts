@@ -11,7 +11,7 @@ export interface RenderVars {
   composioMcpUrl?: string;
   cuaDriverBin?: string;
   /** Directory of symlinks to the user's activated skills (see skillsLibrary.ts). */
-  userSkillsActive?: string;
+  userSkillsActive: string;
 }
 
 const tomlString = (s: string) => JSON.stringify(s);
@@ -53,7 +53,7 @@ export function renderCodexConfig(template: string, v: RenderVars): string {
     .replaceAll("{{OPENCLICKY_ROOT}}", v.root)
     .replaceAll("{{BACKEND_URL}}", v.backendUrl.replace(/\/+$/, ""))
     .replaceAll("{{WORKSPACE}}", v.workspace)
-    .replaceAll("{{USER_SKILLS_ACTIVE}}", v.userSkillsActive ?? "")
+    .replaceAll("{{USER_SKILLS_ACTIVE}}", v.userSkillsActive)
     .replaceAll("{{MCP_SERVERS}}", renderMcpServers(v));
 }
 

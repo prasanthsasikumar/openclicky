@@ -12,9 +12,11 @@ const SYSTEM = `You write skills for OpenClicky, a Mac voice assistant. A skill 
 ---
 name: <Short Title Case name>
 description: <one sentence: what it does and when to use it>
-surfaces: [talk, agent]   # talk = applies when the user is chatting/asking; agent = applies when the agent does work. Use [talk] for styles/knowledge, [agent] for operational workflows, both when unsure.
+surfaces: [talk, agent]
 ---
 <body: ≤ 600 words. Headings: Use When, Steps/Rules, Voice or Style (if relevant), Do Not.>
+
+surfaces: "talk" applies when the user is chatting or asking; "agent" applies when the agent does work. Use [talk] for styles and knowledge, [agent] for operational workflows, [talk, agent] when unsure. Do not add comments after the value.
 Only rely on capabilities from this list: {{CAPS}}. Never invent tools or integrations. Output the file only, no commentary.`;
 
 export async function createSkill(c: Context): Promise<Response> {

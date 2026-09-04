@@ -11,8 +11,17 @@ export interface ParsedSkill {
   body: string;
 }
 
+/** Drop a trailing `# comment` from a scalar value (quoted strings are left alone). */
+function stripComment(v: string): string {
+  const t = v.trim();
+  if (/^["']/.test(t)) return t;
+  return t.replace(/\s+#.*$/, "").trim();
+}
+
+/** Inline list `[a, "b"]` — anything after the closing bracket (e.g. a `# comment`) is ignored. */
 function parseList(v: string): string[] {
-  const inner = v.trim().replace(/^\[/, "").replace(/\]$/, "");
+  const m = /^\[([^\]]*)\]/.exec(v.trim());
+  const inner = m ? m[1] : stripComment(v);
   return inner
     .split(",")
     .map((s) => s.trim().replace(/^["']|["']$/g, ""))
@@ -25,7 +34,7 @@ export function parseSkillMarkdown(md: string): ParsedSkill | null {
   const fm: Record<string, string> = {};
   for (const line of m[1].split(/\r?\n/)) {
     const kv = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-    if (kv) fm[kv[1]] = kv[2].trim().replace(/^(["'])(.*)\1$/, "$2");
+    if (kv) fm[kv[1]] = stripComment(kv[2]).replace(/^(["'])(.*)\1$/, "$2");
   }
   if (!fm.name || !fm.description) return null;
   const surfaces = fm.surfaces ? parseList(fm.surfaces) : ["talk", "agent"];

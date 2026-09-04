@@ -17,6 +17,12 @@ describe("parseSkillMarkdown", () => {
     expect(s.surfaces).toEqual(["talk"]);
     expect(s.body).toContain("# figma");
   });
+  it("ignores trailing comments after inline lists and scalars", () => {
+    const s = parseSkillMarkdown(md("x", "surfaces: [talk, agent]   # talk = chatting; agent = doing work\napps: [com.a.b] # comment\n"))!;
+    expect(s.surfaces).toEqual(["talk", "agent"]);
+    expect(s.apps).toEqual(["com.a.b"]);
+    expect(parseSkillMarkdown("---\nname: x # not part of the name\ndescription: \"keep # inside quotes\"\n---\n")).toMatchObject({ name: "x", description: "keep # inside quotes" });
+  });
   it("defaults surfaces to talk+agent and rejects missing frontmatter", () => {
     expect(parseSkillMarkdown(md("x"))!.surfaces).toEqual(["talk", "agent"]);
     expect(parseSkillMarkdown("# no frontmatter")).toBeNull();
