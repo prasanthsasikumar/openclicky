@@ -9,6 +9,7 @@ import { gate, type Lane } from "./gate.js";
 import { captureScreen } from "./screenshot.js";
 import { recordAudio, transcribe } from "./audio.js";
 import { RealtimeSession, defaultMicCommand } from "./realtime.js";
+import { listLibrary, setActive, createSkillFiles } from "./skillsLibrary.js";
 
 const program = new Command();
 program
@@ -351,6 +352,55 @@ threads
     try {
       await withThreadAgent(opts, (a) => a.archiveThread(id));
       process.stdout.write(`archived ${id}\n`);
+    } catch (e) {
+      fail((e as Error).message);
+    }
+  });
+
+const skills = program.command("skills").description("the user's skill library (~/.openclicky/skills): activated skills apply to talk and agent runs");
+
+skills
+  .command("list")
+  .description("list library skills and whether they are active")
+  .option("--json", "print JSON")
+  .action((opts) => {
+    const list = listLibrary(resolveConfig().userSkillsDir);
+    if (opts.json) return void process.stdout.write(JSON.stringify(list, null, 2) + "\n");
+    if (!list.length) return void process.stdout.write("no skills yet — try: openclicky skills create \"reply to emails in my voice\"\n");
+    for (const s of list) process.stdout.write(`${s.active ? "[on] " : "[off]"} ${s.id.padEnd(28)} ${s.name} — ${s.description.slice(0, 90)}\n`);
+  });
+
+const toggleSkill = (id: string, on: boolean) => {
+  const dir = resolveConfig().userSkillsDir;
+  if (!listLibrary(dir).some((s) => s.id === id)) fail(`no skill "${id}" in ${dir}/library`);
+  setActive(dir, id, on);
+  process.stdout.write(`${on ? "activated" : "deactivated"} ${id}\n`);
+};
+skills.command("activate").description("activate a skill").argument("<id>").action((id: string) => toggleSkill(id, true));
+skills.command("deactivate").description("deactivate a skill").argument("<id>").action((id: string) => toggleSkill(id, false));
+skills.command("path").description("print the library directory").action(() => void process.stdout.write(resolveConfig().userSkillsDir + "\n"));
+
+skills
+  .command("create")
+  .description("draft a SKILL.md from a one-line request via the backend, save and activate it")
+  .argument("<request>", "what the skill should do")
+  .option("--capability <name...>", "capabilities the skill may rely on (e.g. composio, computer-use)")
+  .option("--backend-url <url>", "env BACKEND_URL")
+  .option("--token <token>", "env OPENCLICKY_TOKEN")
+  .action(async (request: string, opts) => {
+    const cfg = configFrom(opts);
+    if (!cfg.token) fail("missing token: set OPENCLICKY_TOKEN or pass --token");
+    try {
+      const r = await fetch(`${cfg.backendUrl}/skills/create`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${cfg.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ request, capabilities: opts.capability ?? [] }),
+      });
+      if (!r.ok) fail(`skill creation failed (${r.status}): ${(await r.text()).slice(0, 300)}`);
+      const { markdown } = (await r.json()) as { markdown: string };
+      const skill = createSkillFiles(cfg.userSkillsDir, markdown);
+      note(`saved ${skill.path}/SKILL.md (active)`);
+      process.stdout.write(skill.id + "\n");
     } catch (e) {
       fail((e as Error).message);
     }

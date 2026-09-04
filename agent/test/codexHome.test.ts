@@ -56,4 +56,12 @@ describe("ensureCodexHome", () => {
     expect(text).toMatch(/^\[mcp_servers\.composio\]\nurl = "https:\/\/mcp\.example\/c"/m);
     expect(text).toMatch(/^\[mcp_servers\.computer-use\]\ncommand = "\/opt\/cua"/m);
   });
+  it("renders the user skills active dir and creates it", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-home-"));
+    const userSkillsDir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-user-skills-"));
+    const cfg = resolveConfig({ codexHome: home, backendUrl: "http://127.0.0.1:1", workspace: "/tmp/ws", userSkillsDir });
+    const text = fs.readFileSync(ensureCodexHome(cfg).configPath, "utf8");
+    expect(text).toContain(`path = "${path.join(userSkillsDir, "active")}"`);
+    expect(fs.existsSync(path.join(userSkillsDir, "active"))).toBe(true);
+  });
 });

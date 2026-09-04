@@ -3,6 +3,7 @@ import { getEnv } from "./env.js";
 import { requireAuth, verifySupabaseJwt, issueSessionToken, bearerFrom, AuthError, type Principal } from "./auth.js";
 import { proxyOpenAI, proxyAnthropic, createRealtimeSession, transcribeAudio, synthesizeSpeech, assemblyAiToken } from "./proxy.js";
 import { SKILLS_MANIFEST } from "./skillsManifest.js";
+import { createSkill } from "./skillsCreate.js";
 import { requestLogger, type LogSink } from "./log.js";
 
 export interface AppOptions {
@@ -57,10 +58,12 @@ export function createApp(options: AppOptions = {}) {
   app.post("/agent/realtime/session", (c) => createRealtimeSession(c));
   app.post("/agent/transcribe", (c) => transcribeAudio(c));
 
-  // Skill library: the bundled skill set, generated from skills/ at build time.
+  // Skill library: the bundled agent skills + app-teaching skills, generated from skills/ and app-skills/ at build time.
   app.get("/skills/library", (c) => c.json({ skills: SKILLS_MANIFEST }));
+  // "Create a skill": draft one SKILL.md from a one-line request; the client stores + activates it.
+  app.post("/skills/create", (c) => createSkill(c));
 
-  // TODO(next cut): /agent/realtime/turn|warmup, /skills/create|activations, /codex-thread-launch — see REVERSE-ENGINEERING.md §8.
+  // TODO(next cut): /agent/realtime/turn|warmup, /skills/activations/sync, /codex-thread-launch — see REVERSE-ENGINEERING.md §8.
   return app;
 }
 

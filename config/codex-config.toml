@@ -1,7 +1,7 @@
 # OpenClicky Codex CLI config template (derived from reference/codex-config.toml, HeyClicky v1.0.48).
 #
 # Rendered by agent/src/codexHome.ts into $OPENCLICKY_CODEX_HOME/config.toml on every run.
-# Placeholders (double-brace): MODEL_LINE, OPENCLICKY_ROOT, BACKEND_URL, WORKSPACE, MCP_SERVERS.
+# Placeholders (double-brace): MODEL_LINE, OPENCLICKY_ROOT, BACKEND_URL, WORKSPACE, MCP_SERVERS, USER_SKILLS_ACTIVE.
 #
 # Verified against Codex CLI 0.152.1 (`codex app-server --strict-config`).
 
@@ -33,6 +33,11 @@ url = "https://developers.openai.com/mcp"
 
 [[skills.config]]
 path = "{{OPENCLICKY_ROOT}}/skills"
+enabled = true
+
+# User library (HUD "Add skills" / `openclicky skills`): symlinks to activated skills only.
+[[skills.config]]
+path = "{{USER_SKILLS_ACTIVE}}"
 enabled = true
 
 # `clicky-crons` intentionally removed: Remote Tasks / scheduled crons are out of scope for this cut.

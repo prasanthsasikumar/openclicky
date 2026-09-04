@@ -4,6 +4,8 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-5.5
 OPENAI_REALTIME_MODEL=gpt-realtime
 OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
+# Model used by POST /skills/create to draft a SKILL.md (default: OPENAI_MODEL).
+SKILL_CREATE_MODEL=
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 SUPABASE_URL=https://your-project.supabase.co

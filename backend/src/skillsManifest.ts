@@ -3,8 +3,12 @@ export interface SkillManifestEntry {
   id: string;
   name: string;
   description: string;
-  kind: "workflow" | "capability";
+  kind: "workflow" | "capability" | "app";
   files: string[];
+  /** App-teaching skills only: bundle identifiers, browser host suffixes, prompt surfaces. */
+  apps?: string[];
+  sites?: string[];
+  surfaces?: string[];
 }
 
 export const SKILLS_MANIFEST: SkillManifestEntry[] = [
@@ -32,12 +36,142 @@ export const SKILLS_MANIFEST: SkillManifestEntry[] = [
     ]
   },
   {
+    "id": "figma",
+    "name": "Figma",
+    "description": "Teaching notes for Figma — toolbar, layers panel, properties panel, prototyping, exporting, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.figma.Desktop"
+    ],
+    "sites": [
+      "figma.com"
+    ],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "finder",
+    "name": "Finder",
+    "description": "Teaching notes for the macOS Finder — sidebar, toolbar, views, file operations, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.apple.finder"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
     "id": "frontend-design",
     "name": "frontend-design",
     "description": "Build or improve frontend UI for websites, apps, dashboards, landing pages, and local previews. Use when the user asks for a working interface, visual redesign, UI polish, layout fixes, responsive behavior, or purposeful animation/micro-interactions. Do not use for static documents, Google Workspace tasks, or GUI clicking through an existing app.",
     "kind": "capability",
     "files": [
       "SKILL.md"
+    ]
+  },
+  {
+    "id": "github",
+    "name": "GitHub",
+    "description": "Teaching notes for github.com — repository tabs, code view, pull requests, issues, actions, settings, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [],
+    "sites": [
+      "github.com"
+    ],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "gmail",
+    "name": "Gmail",
+    "description": "Teaching notes for Gmail in the browser — inbox layout, compose, search operators, labels, filters, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [],
+    "sites": [
+      "mail.google.com"
+    ],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "google-chrome",
+    "name": "Google Chrome",
+    "description": "Teaching notes for Google Chrome on macOS — omnibox, tabs, extensions, profiles, DevTools, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.google.Chrome"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "google-docs",
+    "name": "Google Docs",
+    "description": "Teaching notes for Google Docs in the browser — menus, toolbar, outline, comments, sharing, export, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [],
+    "sites": [
+      "docs.google.com"
+    ],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "mail",
+    "name": "Mail",
+    "description": "Teaching notes for Apple Mail — mailboxes sidebar, message list, viewer, compose window, filters, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.apple.mail"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "notes",
+    "name": "Notes",
+    "description": "Teaching notes for Apple Notes — folders, notes list, editor toolbar, checklists, tables, sharing, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.apple.Notes"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
     ]
   },
   {
@@ -131,6 +265,56 @@ export const SKILLS_MANIFEST: SkillManifestEntry[] = [
     ]
   },
   {
+    "id": "preview",
+    "name": "Preview",
+    "description": "Teaching notes for Preview — viewing PDFs and images, the markup toolbar, sidebar thumbnails, annotations, signing, export, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.apple.Preview"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "safari",
+    "name": "Safari",
+    "description": "Teaching notes for Safari — the toolbar, tabs, sidebar, reader and privacy controls, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.apple.Safari"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "slack",
+    "name": "Slack",
+    "description": "Teaching notes for Slack — sidebar, channels, message composer, threads, search, huddles, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.tinyspeck.slackmacGap"
+    ],
+    "sites": [
+      "app.slack.com"
+    ],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
     "id": "spreadsheet",
     "name": "spreadsheet",
     "description": "Use when tasks involve creating, editing, analyzing, or formatting spreadsheets (`.xlsx`, `.csv`, `.tsv`) with formula-aware workflows, cached recalculation, and visual review.",
@@ -141,6 +325,39 @@ export const SKILLS_MANIFEST: SkillManifestEntry[] = [
       "references/examples/openpyxl/create_spreadsheet_with_styling.py",
       "references/examples/openpyxl/read_existing_spreadsheet.py",
       "references/examples/openpyxl/styling_spreadsheet.py"
+    ]
+  },
+  {
+    "id": "system-settings",
+    "name": "System Settings",
+    "description": "Teaching notes for macOS System Settings — sidebar sections, search, permissions panes, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.apple.systempreferences"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "terminal",
+    "name": "Terminal",
+    "description": "Teaching notes for Terminal and iTerm2 — windows, tabs, panes, profiles, shell basics, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.apple.Terminal",
+      "com.googlecode.iterm2"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
     ]
   },
   {
@@ -156,6 +373,54 @@ export const SKILLS_MANIFEST: SkillManifestEntry[] = [
       "assets/vercel-small.svg",
       "assets/vercel.png",
       "scripts/deploy.sh"
+    ]
+  },
+  {
+    "id": "vscode",
+    "name": "Visual Studio Code",
+    "description": "Teaching notes for VS Code — activity bar, sidebar, editor groups, panel, command palette, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.microsoft.VSCode"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "xcode",
+    "name": "Xcode",
+    "description": "Teaching notes for Xcode — navigator, editor, inspectors, toolbar, running and debugging, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.apple.dt.Xcode"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
+    "id": "youtube",
+    "name": "YouTube",
+    "description": "Teaching notes for youtube.com — the header, guide sidebar, player controls, playlists, subscriptions, and what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [],
+    "sites": [
+      "youtube.com"
+    ],
+    "surfaces": [
+      "talk"
     ]
   }
 ];

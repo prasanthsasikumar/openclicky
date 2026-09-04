@@ -5,6 +5,7 @@ import { createApp } from "../src/app.js";
 import type { Env } from "../src/env.js";
 
 type Seen = { url: string; auth?: string; apiKey?: string; contentType?: string; raw: string; body: Record<string, unknown> };
+const MOCK_SKILL = "```markdown\n---\nname: Reply In My Voice\ndescription: Draft email replies in the user's own voice.\nsurfaces: [talk, agent]\n---\n# Reply In My Voice\n\n## Use When\nThe user asks for a reply.\n```";
 let upstream: http.Server;
 let upstreamUrl: string;
 const seen: Seen[] = [];
@@ -24,6 +25,12 @@ beforeAll(async () => {
         raw: b,
         body: b && isJson ? JSON.parse(b) : {},
       });
+      if (req.url!.endsWith("/chat/completions") && b.includes('"stream":false')) {
+        // Non-streaming chat: POST /skills/create asks the model for a SKILL.md.
+        const content = b.includes("BROKEN") ? "no frontmatter" : MOCK_SKILL;
+        res.writeHead(200, { "content-type": "application/json" });
+        return void res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content } }] }));
+      }
       if (req.url!.endsWith("/realtime/client_secrets")) {
         res.writeHead(200, { "content-type": "application/json" });
         return void res.end(JSON.stringify({ value: "ek_test_secret", expires_at: 1234, session: JSON.parse(b).session }));
@@ -182,13 +189,48 @@ describe("app", () => {
     const r = await call("/skills/library", { headers: { authorization: `Bearer ${await jwt()}` } });
     expect(r.status).toBe(200);
     const { skills } = (await r.json()) as { skills: { id: string; name: string; description: string; kind: string; files: string[] }[] };
-    expect(skills.length).toBe(15);
+    expect(skills.filter((s) => s.kind !== "app").length).toBe(15); // agent skills; app-teaching skills are extra
     const artifacts = skills.find((s) => s.id === "openclicky-artifacts")!;
     expect(artifacts.name).toBe("openclicky-artifacts");
     expect(artifacts.kind).toBe("workflow");
     expect(artifacts.files).toContain("SKILL.md");
     expect(skills.find((s) => s.id === "pdf")!.kind).toBe("capability");
     expect(skills.some((s) => s.id === "powerpoint")).toBe(false);
+  });
+
+  it("creates a skill from a one-line request", async () => {
+    const r = await call("/skills/create", json({ request: "reply to emails in my voice", capabilities: ["gmail"] }, await jwt()));
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j).toMatchObject({ id: "reply-in-my-voice", name: "Reply In My Voice", description: "Draft email replies in the user's own voice." });
+    expect(j.markdown.startsWith("---\n")).toBe(true);
+    expect(j.markdown).not.toContain("```");
+    const sent = seen.at(-1)!;
+    expect(sent.url).toBe("/v1/chat/completions");
+    expect(sent.auth).toBe("Bearer sk-upstream");
+    expect(sent.body.stream).toBe(false);
+    expect(sent.body.model).toBe("gpt-test");
+    expect(JSON.stringify(sent.body.messages)).toContain("gmail");
+    expect(JSON.stringify(sent.body.messages)).toContain("openclicky-email-assistant");
+  });
+  it("rejects bad bodies and invalid model output", async () => {
+    expect((await call("/skills/create", { method: "POST" })).status).toBe(401);
+    expect((await call("/skills/create", json({}, await jwt()))).status).toBe(400);
+    expect((await call("/skills/create", json({ request: "BROKEN" }, await jwt()))).status).toBe(502);
+    expect((await call("/skills/create", json({ request: "x" }, await jwt()), { OPENAI_API_KEY: "" })).status).toBe(503);
+    expect((await call("/skills/create", json({ request: "x" }, await jwt()), { OPENAI_MODEL: "", SKILL_CREATE_MODEL: "" })).status).toBe(503);
+  });
+  it("uses SKILL_CREATE_MODEL over OPENAI_MODEL when set", async () => {
+    const r = await call("/skills/create", json({ request: "x" }, await jwt()), { SKILL_CREATE_MODEL: "gpt-skills" });
+    expect(r.status).toBe(200);
+    expect(seen.at(-1)!.body.model).toBe("gpt-skills");
+  });
+  it("serves app skills in the library manifest", async () => {
+    const r = await call("/skills/library", { headers: { authorization: `Bearer ${await jwt()}` } });
+    const { skills } = await r.json();
+    expect(skills.some((s: any) => s.kind === "app" && s.apps?.length)).toBe(true);
+    expect(skills.some((s: any) => s.kind === "app" && s.sites?.length)).toBe(true);
+    expect(skills.every((s: any) => s.kind !== "app" || s.surfaces?.includes("talk"))).toBe(true);
   });
 
   it("serves the native shell's /chat, /tts and /transcribe-token contract", async () => {

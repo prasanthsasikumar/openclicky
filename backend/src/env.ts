@@ -12,6 +12,8 @@ export type Env = {
   OPENAI_REALTIME_MODEL?: string;
   /** Speech-to-text model used by POST /agent/transcribe (default gpt-4o-mini-transcribe). */
   OPENAI_TRANSCRIBE_MODEL?: string;
+  /** Model used by POST /skills/create to draft a SKILL.md (default: OPENAI_MODEL). */
+  SKILL_CREATE_MODEL?: string;
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_BASE_URL?: string;
   ANTHROPIC_MODEL?: string;

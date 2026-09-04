@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { AgentConfig } from "./config.js";
+import { activeDir, syncActiveDir } from "./skillsLibrary.js";
 
 export interface RenderVars {
   root: string;
@@ -9,6 +10,8 @@ export interface RenderVars {
   model?: string;
   composioMcpUrl?: string;
   cuaDriverBin?: string;
+  /** Directory of symlinks to the user's activated skills (see skillsLibrary.ts). */
+  userSkillsActive?: string;
 }
 
 const tomlString = (s: string) => JSON.stringify(s);
@@ -50,18 +53,21 @@ export function renderCodexConfig(template: string, v: RenderVars): string {
     .replaceAll("{{OPENCLICKY_ROOT}}", v.root)
     .replaceAll("{{BACKEND_URL}}", v.backendUrl.replace(/\/+$/, ""))
     .replaceAll("{{WORKSPACE}}", v.workspace)
+    .replaceAll("{{USER_SKILLS_ACTIVE}}", v.userSkillsActive ?? "")
     .replaceAll("{{MCP_SERVERS}}", renderMcpServers(v));
 }
 
 /**
  * Materialize the isolated CODEX_HOME: create the directory and (re)write config.toml from the
- * template so the backend URL, skills path, MCP servers, and trusted workspace are always current.
+ * template so the backend URL, skills paths, MCP servers, and trusted workspace are always current.
+ * Also syncs the user's `active/` skills dir so Codex sees exactly the activated skills.
  */
 export function ensureCodexHome(cfg: AgentConfig): { configPath: string } {
   const templatePath = path.join(cfg.root, "config", "codex-config.toml");
   const template = fs.readFileSync(templatePath, "utf8");
   fs.mkdirSync(cfg.codexHome, { recursive: true });
   const configPath = path.join(cfg.codexHome, "config.toml");
+  syncActiveDir(cfg.userSkillsDir);
   fs.writeFileSync(
     configPath,
     renderCodexConfig(template, {
@@ -71,6 +77,7 @@ export function ensureCodexHome(cfg: AgentConfig): { configPath: string } {
       model: cfg.model,
       composioMcpUrl: cfg.composioMcpUrl,
       cuaDriverBin: cfg.cuaDriverBin,
+      userSkillsActive: activeDir(cfg.userSkillsDir),
     }),
   );
   return { configPath };

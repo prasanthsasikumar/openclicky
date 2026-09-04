@@ -24,6 +24,8 @@ export interface AgentConfig {
   cuaDriverBin?: string;
   /** ffmpeg binary used for microphone capture in the voice lane. */
   ffmpegBin: string;
+  /** The user's skill library root (library/, active/, activations.json). Shared with the macOS app. */
+  userSkillsDir: string;
 }
 
 /** Repo root: agent/src/config.ts or agent/dist/config.js → ../../ */
@@ -48,5 +50,6 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     composioMcpUrl: flags.composioMcpUrl ?? env.COMPOSIO_MCP_URL ?? undefined,
     cuaDriverBin: flags.cuaDriverBin ?? env.CUA_DRIVER_BIN ?? undefined,
     ffmpegBin: flags.ffmpegBin ?? env.OPENCLICKY_FFMPEG_BIN ?? "ffmpeg",
+    userSkillsDir: path.resolve(flags.userSkillsDir ?? env.OPENCLICKY_USER_SKILLS_DIR ?? path.join(home, ".openclicky", "skills")),
   };
 }
