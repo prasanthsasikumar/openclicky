@@ -26,7 +26,8 @@ final class SkillLibraryStore: ObservableObject {
     let userSkillsDirectory: URL
     let appSkillsDirectory: URL
 
-    private var libraryWatcher: DispatchSourceFileSystemObject?
+    /// Watches `library/` (skills added or removed) and the root (activations.json rewritten by the CLI).
+    private var watchers: [DispatchSourceFileSystemObject] = []
     private var reloadDebounce: DispatchWorkItem?
 
     var libraryDirectory: URL { userSkillsDirectory.appendingPathComponent("library", isDirectory: true) }
@@ -48,11 +49,11 @@ final class SkillLibraryStore: ObservableObject {
         self.appSkillsDirectory = appSkillsDirectory
         ensureDirectories()
         reload()
-        if watch { startWatchingLibrary() }
+        if watch { startWatching() }
     }
 
     deinit {
-        libraryWatcher?.cancel()
+        watchers.forEach { $0.cancel() }
     }
 
     // MARK: - Reading
@@ -64,6 +65,9 @@ final class SkillLibraryStore: ObservableObject {
         let known = Set(librarySkills.map(\.id))
         activeIds = Set(readActivations().filter { known.contains($0) })
         appSkills = SkillFile.load(directory: appSkillsDirectory)
+        // A fresh read succeeded: a stale error from an earlier link/save failure no longer applies.
+        // syncActiveDirectory sets it again if linking still fails.
+        lastError = nil
         syncActiveDirectory()
     }
 
@@ -230,21 +234,27 @@ final class SkillLibraryStore: ObservableObject {
         return out.isEmpty ? "skill" : out
     }
 
-    private func startWatchingLibrary() {
-        let descriptor = open(libraryDirectory.path, O_EVTONLY)
-        guard descriptor >= 0 else { return }
-        // Events are delivered on the main queue because reload() mutates @Published state on the main actor.
-        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: [.write, .rename, .delete], queue: .main)
-        source.setEventHandler { [weak self] in
-            guard let self else { return }
-            self.reloadDebounce?.cancel()
-            let work = DispatchWorkItem { [weak self] in self?.reload() }
-            self.reloadDebounce = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    private func startWatching() {
+        // library/ for skills added or removed; the root for activations.json rewritten by the CLI
+        // (`openclicky skills activate|deactivate`) so the HUD toggles follow.
+        for directory in [libraryDirectory, userSkillsDirectory] {
+            let descriptor = open(directory.path, O_EVTONLY)
+            guard descriptor >= 0 else { continue }
+            // Events are delivered on the main queue because reload() mutates @Published state on the main actor.
+            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: [.write, .rename, .delete], queue: .main)
+            source.setEventHandler { [weak self] in self?.scheduleReload() }
+            source.setCancelHandler { close(descriptor) }
+            source.resume()
+            watchers.append(source)
         }
-        source.setCancelHandler { close(descriptor) }
-        source.resume()
-        libraryWatcher = source
+    }
+
+    /// One reload per burst of file events (both watchers share the 300 ms debounce).
+    private func scheduleReload() {
+        reloadDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.reload() }
+        reloadDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 }
 

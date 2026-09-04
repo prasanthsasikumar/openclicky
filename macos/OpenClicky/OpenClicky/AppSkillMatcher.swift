@@ -14,19 +14,23 @@ struct FrontAppContext: Equatable {
     /// The front browser tab's URL when it could be read (Accessibility), else nil.
     var url: URL?
     var windowTitle: String?
+    /// True for the known browsers; only then is the window title searched for a site.
+    var isBrowser: Bool = false
 }
 
 enum AppSkillMatcher {
 
-    /// Order: a site skill matching the URL host (exact or `.suffix`), then a site skill named in
-    /// the window title, then the app skill for the bundle identifier. Among site matches the most
-    /// specific site wins (`mail.google.com` beats `google.com`); otherwise the first listed skill.
+    /// Order: a site skill matching the URL host (exact or `.suffix`), then (browsers only) a site
+    /// skill named in the window title, then the app skill for the bundle identifier. Among site
+    /// matches the most specific site wins (`mail.google.com` beats `google.com`); otherwise the
+    /// first listed skill. The title fallback is limited to browsers so a Terminal titled
+    /// "ssh — github.com" keeps the terminal skill.
     static func match(_ ctx: FrontAppContext, in skills: [SkillFile]) -> SkillFile? {
         if let host = ctx.url?.host?.lowercased(),
            let bySite = bestSiteMatch(in: skills, where: { hostMatches(host, site: $0) }) {
             return bySite
         }
-        if let title = ctx.windowTitle?.lowercased(), !title.isEmpty,
+        if ctx.isBrowser, let title = ctx.windowTitle?.lowercased(), !title.isEmpty,
            let byTitle = bestSiteMatch(in: skills, where: { title.contains($0.lowercased()) }) {
             return byTitle
         }

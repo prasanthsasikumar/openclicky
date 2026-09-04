@@ -273,15 +273,18 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         instructionsProvider?() ?? instructions
     }
 
-    /// Re-send the session instructions when the provider's output changed (a different app is in
-    /// front, a skill was toggled). Called at key-down / speech start so the change is on the
-    /// server before the reply is requested; an unchanged prompt sends nothing.
+    /// Re-send the session when the provider's instructions changed (a different app is in front,
+    /// a skill was toggled). Called from the push-to-talk tail (before the screen is attached and
+    /// the reply requested) and at speech start in always-on. The provider walks the front app's
+    /// Accessibility tree, so this must never sit on the key-down path in front of the mic open.
+    /// The full session payload (tools, audio formats) is re-sent so nothing depends on the server
+    /// merging a partial update; an unchanged prompt sends nothing.
     func refreshInstructionsIfNeeded() {
         guard isConnected else { return }
         let text = currentInstructions()
         guard text != sentInstructions else { return }
         do {
-            try send(["type": "session.update", "session": ["type": "realtime", "instructions": text]])
+            try send(sessionUpdate(mode: currentMode, instructions: text))
             sentInstructions = text
             log("instructions updated (\(text.count) chars)")
         } catch {
@@ -312,9 +315,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             self.log("microphone open in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
             self.startForwardingMicrophone()
         }
-        // After the mic-open task is queued: the provider walks the front app's Accessibility tree,
-        // and the update only has to reach the server before the response is requested at key-up.
-        refreshInstructionsIfNeeded()
+        // No instructions refresh here: the Task above cannot start until this main-actor function
+        // returns, so any work done here delays the mic open. The refresh runs in the key-up tail.
     }
 
     /// Shortcut released: keep the mic open 400 ms so the last word is not clipped, then commit.
@@ -325,6 +327,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
             self.stopForwardingMicrophone()
+            // Skills for the app in front go up before the screen and the response request.
+            self.refreshInstructionsIfNeeded()
             await self.attachScreenContext()
             try? self.send(["type": "input_audio_buffer.commit"])
             self.requestTurnResponse()
@@ -526,10 +530,17 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             let status = (event["response"] as? [String: Any])?["status"] as? String
             let wantsContinuation = needsContinuationAfterResponse
             needsContinuationAfterResponse = false
+            var continued = false
             if wantsContinuation, status != "cancelled" {
                 // Tool outputs were added during this response: ask for the follow-up once.
-                try? send(["type": "response.create"])
-            } else {
+                do {
+                    try send(["type": "response.create"])
+                    continued = true
+                } catch {
+                    log("continuation failed: \(error.localizedDescription)")
+                }
+            }
+            if !continued {
                 onResponseFinished?()
                 scheduleIdlePauseIfNeeded()
             }

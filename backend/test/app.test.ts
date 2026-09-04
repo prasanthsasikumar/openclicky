@@ -221,6 +221,14 @@ describe("app", () => {
     expect((await call("/skills/create", json({ request: "x" }, await jwt()), { OPENAI_API_KEY: "" })).status).toBe(503);
     expect((await call("/skills/create", json({ request: "x" }, await jwt()), { OPENAI_MODEL: "", SKILL_CREATE_MODEL: "" })).status).toBe(503);
   });
+  it("caps the request and capability sizes", async () => {
+    const token = await jwt();
+    expect((await call("/skills/create", json({ request: "x".repeat(2001) }, token))).status).toBe(400);
+    expect((await call("/skills/create", json({ request: "ok", capabilities: Array(21).fill("gmail") }, token))).status).toBe(400);
+    expect((await call("/skills/create", json({ request: "ok", capabilities: ["y".repeat(65)] }, token))).status).toBe(400);
+    expect((await call("/skills/create", json({ request: "ok", capabilities: "gmail" }, token))).status).toBe(400);
+    expect((await call("/skills/create", json({ request: "ok", capabilities: ["gmail"] }, token))).status).toBe(200);
+  });
   it("tolerates a model that echoes a trailing comment on the surfaces line", async () => {
     const r = await call("/skills/create", json({ request: "COMMENTED" }, await jwt()));
     expect(r.status).toBe(200);

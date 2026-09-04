@@ -67,7 +67,12 @@ export function ensureCodexHome(cfg: AgentConfig): { configPath: string } {
   const template = fs.readFileSync(templatePath, "utf8");
   fs.mkdirSync(cfg.codexHome, { recursive: true });
   const configPath = path.join(cfg.codexHome, "config.toml");
-  syncActiveDir(cfg.userSkillsDir);
+  // A broken user skills dir must not stop the agent: warn and run with whatever active/ holds.
+  try {
+    syncActiveDir(cfg.userSkillsDir);
+  } catch (e) {
+    process.stderr.write(`warning: user skills not synced: ${(e as Error).message}\n`);
+  }
   fs.writeFileSync(
     configPath,
     renderCodexConfig(template, {

@@ -35,8 +35,8 @@ surfaces: [talk]
 - `sites`: URL hosts. A site matches when the browser's current host is equal to the entry or ends
   with `"." + entry`. So `google.com` would match `mail.google.com`, `docs.google.com` and every other
   Google host — list the specific host you mean (`mail.google.com`) unless you really want the whole
-  domain. Omit for apps with no web version. When the browser URL is unavailable, the window title is
-  searched for the site string as a fallback.
+  domain. Omit for apps with no web version. When a browser's URL is unavailable, its window title is
+  searched for the site string as a fallback (browsers only; other apps match by bundle id).
 - `surfaces`: keep `[talk]` for app skills. (`agent` would expose the file to the Codex agent lane,
   which app-teaching notes are not written for.)
 - Precedence: a matching site skill wins over the browser's own app skill, so a Gmail tab in Safari

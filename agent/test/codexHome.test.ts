@@ -64,4 +64,20 @@ describe("ensureCodexHome", () => {
     expect(text).toContain(`path = "${path.join(userSkillsDir, "active")}"`);
     expect(fs.existsSync(path.join(userSkillsDir, "active"))).toBe(true);
   });
+  it("still writes config.toml when the user skills dir is unusable", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-home-"));
+    const userSkillsDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "oc-bad-skills-")), "skills");
+    fs.writeFileSync(userSkillsDir, "not a directory");
+    const warnings: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { warnings.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try {
+      const cfg = resolveConfig({ codexHome: home, backendUrl: "http://127.0.0.1:1", workspace: "/tmp/ws", userSkillsDir });
+      const text = fs.readFileSync(ensureCodexHome(cfg).configPath, "utf8");
+      expect(text).toContain(`path = "${path.join(userSkillsDir, "active")}"`);
+    } finally {
+      process.stderr.write = orig;
+    }
+    expect(warnings.join("")).toMatch(/warning: user skills not synced/);
+  });
 });

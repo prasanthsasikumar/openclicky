@@ -19,10 +19,23 @@ surfaces: [talk, agent]
 surfaces: "talk" applies when the user is chatting or asking; "agent" applies when the agent does work. Use [talk] for styles and knowledge, [agent] for operational workflows, [talk, agent] when unsure. Do not add comments after the value.
 Only rely on capabilities from this list: {{CAPS}}. Never invent tools or integrations. Output the file only, no commentary.`;
 
+// Both fields are interpolated into a model call billed to the backend key: keep them bounded.
+const MAX_REQUEST_CHARS = 2000;
+const MAX_CAPABILITIES = 20;
+const MAX_CAPABILITY_CHARS = 64;
+
 export async function createSkill(c: Context): Promise<Response> {
   const env = getEnv(c);
   const body = (await c.req.json().catch(() => ({}))) as { request?: unknown; capabilities?: unknown };
   if (typeof body.request !== "string" || !body.request.trim()) return c.json({ error: "request (string) is required" }, 400);
+  if (body.request.length > MAX_REQUEST_CHARS) return c.json({ error: `request is longer than ${MAX_REQUEST_CHARS} characters` }, 400);
+  if (body.capabilities !== undefined) {
+    const ok =
+      Array.isArray(body.capabilities) &&
+      body.capabilities.length <= MAX_CAPABILITIES &&
+      body.capabilities.every((x) => typeof x === "string" && x.length <= MAX_CAPABILITY_CHARS);
+    if (!ok) return c.json({ error: `capabilities must be at most ${MAX_CAPABILITIES} strings of ${MAX_CAPABILITY_CHARS} characters` }, 400);
+  }
   const model = env.SKILL_CREATE_MODEL || env.OPENAI_MODEL;
   if (!env.OPENAI_API_KEY || !model) {
     return c.json({ error: "skill creation needs OPENAI_API_KEY and OPENAI_MODEL (or SKILL_CREATE_MODEL) on the backend" }, 503);

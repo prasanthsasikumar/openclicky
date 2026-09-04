@@ -42,6 +42,7 @@ enum FrontmostAppObserver {
         var context = FrontAppContext()
         context.bundleIdentifier = app.bundleIdentifier
         context.appName = app.localizedName
+        context.isBrowser = app.bundleIdentifier.map(browserBundleIdentifiers.contains) ?? false
         guard AXIsProcessTrusted() else { return context }
         let application = AXUIElementCreateApplication(app.processIdentifier)
         // A hung or busy browser must not block push-to-talk key-down: cap every AX round trip.
@@ -51,7 +52,7 @@ enum FrontmostAppObserver {
         }
         AXUIElementSetMessagingTimeout(window, 0.25)
         context.windowTitle = copyString(window, kAXTitleAttribute)
-        if let bundle = app.bundleIdentifier, browserBundleIdentifiers.contains(bundle) {
+        if context.isBrowser {
             context.url = frontTabURL(of: window)
         }
         return context

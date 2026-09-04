@@ -47,7 +47,9 @@ parser rules: `agent/src/skillMarkdown.ts`, `backend/src/skillMarkdown.ts`, `Ski
 | App-teaching skills | `app-skills/<id>/SKILL.md` (repo), `surfaces: [talk]` | The Mac app, per voice turn, the one matching the frontmost app or site |
 | User library | `~/.openclicky/skills/library/<id>/SKILL.md` | Activated ones only: Codex through `~/.openclicky/skills/active/`, and the voice prompts when `surfaces` includes `talk` |
 
-The user library root can be moved with `OPENCLICKY_USER_SKILLS_DIR` (CLI and app read it). The app
+The user library root can be moved with `OPENCLICKY_USER_SKILLS_DIR` (the CLI reads it from its
+environment; the app only sees it when launched from a shell that exports it, not from Finder or
+Spotlight). The app
 finds `app-skills/` through the `appSkillsPath` key in `~/.openclicky/shell.json`, else next to the
 CLI it runs (`…/agent/dist/cli.js` → repo root), else `~/.openclicky/app-skills`.
 
@@ -56,16 +58,18 @@ CLI it runs (`…/agent/dist/cli.js` → repo root), else `~/.openclicky/app-ski
 At every push-to-talk key-down the app reads the frontmost application:
 
 1. Bundle identifier and localized name (`NSWorkspace`).
-2. For browsers (Safari, Chrome, Arc, Edge, Brave, Firefox) the front tab's URL through the
-   Accessibility API, and the window title. This needs the Accessibility permission; without it the
-   title is still available and the browser's own skill is used.
+2. For browsers (Safari, Chrome, Arc, Edge, Brave, Firefox) the front tab's URL and the window
+   title through the Accessibility API. This needs the Accessibility permission; without it only
+   the bundle id and app name are known, so the browser's own app skill is used.
 
 Then `AppSkillMatcher` picks one skill, in this order:
 
 1. A `sites` entry matching the URL host: equal, or the host ends with `.` + entry. So `google.com`
    matches `mail.google.com` and `docs.google.com`, and `notgoogle.com` does not. Among several
    matches the most specific site wins (the longest matching entry), then alphabetical folder id.
-2. A `sites` entry found in the lowercase window title (fallback when there is no URL).
+2. Browsers only: a `sites` entry found in the lowercase window title (fallback when the URL
+   could not be read). Other apps never match by title, so a Terminal window titled
+   `ssh — github.com` keeps the terminal skill.
 3. An `apps` entry equal to the bundle identifier; first alphabetical folder wins.
 
 A site skill therefore beats the browser's app skill: a Gmail tab in Safari gets the Gmail notes.

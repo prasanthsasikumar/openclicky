@@ -77,12 +77,21 @@ struct SkillTests {
     }
 
     @Test func fallsBackToWindowTitleThenBundleIdentifier() {
-        let titleOnly = FrontAppContext(bundleIdentifier: "com.google.Chrome", appName: nil, url: nil, windowTitle: "Inbox (3) - MAIL.GOOGLE.COM")
+        let titleOnly = FrontAppContext(bundleIdentifier: "com.google.Chrome", appName: nil, url: nil, windowTitle: "Inbox (3) - MAIL.GOOGLE.COM", isBrowser: true)
         #expect(AppSkillMatcher.match(titleOnly, in: skills)?.id == "gmail")
         let plainBrowser = FrontAppContext(bundleIdentifier: "com.google.Chrome", appName: nil, url: URL(string: "https://example.org/"), windowTitle: "Example")
         #expect(AppSkillMatcher.match(plainBrowser, in: skills)?.id == "google-chrome")
         let ide = FrontAppContext(bundleIdentifier: "com.apple.dt.Xcode", appName: "Xcode", url: nil, windowTitle: "Project")
         #expect(AppSkillMatcher.match(ide, in: skills)?.id == "xcode")
+    }
+
+    @Test func windowTitleFallbackIsBrowsersOnly() {
+        let github = SkillFile.parse(markdown(name: "GitHub", extra: "sites: [github.com]\nsurfaces: [talk]\n"), id: "github")!
+        let terminal = SkillFile.parse(markdown(name: "Terminal", extra: "apps: [com.apple.Terminal]\nsurfaces: [talk]\n"), id: "terminal")!
+        let ssh = FrontAppContext(bundleIdentifier: "com.apple.Terminal", appName: "Terminal", url: nil, windowTitle: "ssh — github.com", isBrowser: false)
+        #expect(AppSkillMatcher.match(ssh, in: [github, terminal])?.id == "terminal")
+        let browserTitle = FrontAppContext(bundleIdentifier: "com.google.Chrome", appName: nil, url: nil, windowTitle: "openclicky - github.com", isBrowser: true)
+        #expect(AppSkillMatcher.match(browserTitle, in: [github, terminal, chrome])?.id == "github")
     }
 
     @Test func returnsNilWhenNothingMatches() {

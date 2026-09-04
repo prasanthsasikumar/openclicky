@@ -5,6 +5,8 @@ on:
 permissions: { contents: write, issues: write }
 jobs:
   watch:
+    # Forks should not open issues on themselves; only the canonical repo runs the watcher.
+    if: github.repository == 'prasanthsasikumar/openclicky'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,4 +16,7 @@ jobs:
         env: { GH_TOKEN: ${{ github.token }} }
       - run: |
           git config user.name "upstream-watch[bot]"; git config user.email "actions@github.com"
-          git add reference/upstream && git diff --cached --quiet || git commit -m "chore(upstream): record new HeyClicky release [skip ci]" && git push
+          git add reference/upstream
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(upstream): record new HeyClicky release [skip ci]" && git push
+          fi

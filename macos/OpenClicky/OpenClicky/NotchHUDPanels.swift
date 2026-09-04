@@ -271,7 +271,7 @@ struct SkillLibrarySection: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 110)
+                    .frame(maxHeight: 96)
                 }
             }
             .padding(.top, 6)
@@ -299,7 +299,9 @@ struct SkillLibrarySection: View {
                 Text(error)
                     .font(.system(size: 9.5))
                     .foregroundColor(Color(hex: "#FF6B6B"))
-                    .lineLimit(2)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(error)
                     .padding(.top, 2)
             }
         }
