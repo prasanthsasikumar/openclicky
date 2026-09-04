@@ -1,244 +1,278 @@
 {
-  "appcast": "https://farzaa.github.io/clicky-releases/appcast.xml",
-  "changelog": "https://www.heyclicky.com/changelog",
   "seen": {
     "1.0.48": {
       "build": "57",
       "date": "Aug 25, 2026",
       "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.0.48/HeyClicky.dmg",
       "title": "Walkthroughs go the distance",
-      "recordedAt": "2026-09-04T07:29:54.203Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.47": {
       "build": "56",
       "date": "Aug 13, 2026",
       "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.0.47/HeyClicky.dmg",
       "title": "Whole-document understanding",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.46": {
       "build": "55",
       "date": "Aug 1, 2026",
       "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.0.46/HeyClicky.dmg",
       "title": "More reliable voice",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.45": {
       "build": "",
       "date": "Jul 31, 2026",
       "url": "",
       "title": "Faster realtime voice",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.44": {
       "build": "",
       "date": "Jul 23, 2026",
       "url": "",
       "title": "HeyClicky for teams",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.43": {
       "build": "",
       "date": "Jul 22, 2026",
       "url": "",
       "title": "Agent retries and routing fixes",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.42": {
       "build": "",
       "date": "Jul 20, 2026",
       "url": "",
       "title": "Reliability fixes across the board",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.41": {
       "build": "",
       "date": "Jul 20, 2026",
       "url": "",
       "title": "A new face, agents unstuck",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.40": {
       "build": "",
       "date": "Jul 17, 2026",
       "url": "",
       "title": "A hands-on tutorial in onboarding",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.39": {
       "build": "",
       "date": "Jul 15, 2026",
       "url": "",
       "title": "Dictation polish, and a privacy step",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.38": {
       "build": "",
       "date": "Jul 14, 2026",
       "url": "",
       "title": "Dictation tuning",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.37": {
       "build": "",
       "date": "Jul 14, 2026",
       "url": "",
       "title": "Dictation, and screen-aware dictation",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.34-36": {
       "build": "",
       "date": "Jul 13, 2026",
       "url": "",
       "title": "The road to dictation",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.33": {
       "build": "",
       "date": "Jul 6, 2026",
       "url": "",
       "title": "Spatial context, skills, proactive agents, memory",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.32": {
       "build": "",
       "date": "Jul 4, 2026",
       "url": "",
       "title": "Delete your account, if you must",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.31": {
       "build": "",
       "date": "Jul 1, 2026",
       "url": "",
       "title": "Claude Fable 5 by default",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.30": {
       "build": "",
       "date": "Jun 29, 2026",
       "url": "",
       "title": "A quick fix",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.29": {
       "build": "",
       "date": "Jun 28, 2026",
       "url": "",
       "title": "Yearly billing",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.28": {
       "build": "",
       "date": "Jun 23, 2026",
       "url": "",
       "title": "HeyClicky learned 89 apps",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.27": {
       "build": "",
       "date": "Jun 20, 2026",
       "url": "",
       "title": "Notch only",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.26": {
       "build": "",
       "date": "Jun 19, 2026",
       "url": "",
       "title": "Draw on your screen, realtime computer use",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.25": {
       "build": "",
       "date": "Jun 18, 2026",
       "url": "",
       "title": "Draw for HeyClicky",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.24": {
       "build": "",
       "date": "Jun 14, 2026",
       "url": "",
       "title": "No more frozen keyboards",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.23": {
       "build": "",
       "date": "Jun 8, 2026",
       "url": "",
       "title": "Drag files into the notch",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.22": {
       "build": "",
       "date": "Jun 1, 2026",
       "url": "",
       "title": "Interrupt me anytime",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.21": {
       "build": "",
       "date": "May 30, 2026",
       "url": "",
       "title": "Clicky is now HeyClicky",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.20": {
       "build": "",
       "date": "May 19, 2026",
       "url": "",
       "title": "A sleep fix",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.19": {
       "build": "",
       "date": "May 16, 2026",
       "url": "",
       "title": "Small tunings",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.16-18": {
       "build": "",
       "date": "May 14, 2026",
       "url": "",
       "title": "Notch follow-ups",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.15": {
       "build": "",
       "date": "May 13, 2026",
       "url": "",
       "title": "A home in the notch",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.12": {
       "build": "",
       "date": "May 4, 2026",
       "url": "",
       "title": "HeyClicky can click",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.11": {
       "build": "",
       "date": "Apr 30, 2026",
       "url": "",
       "title": "Google Workspace, and shortcuts your way",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0.10": {
       "build": "",
       "date": "Apr 27, 2026",
       "url": "",
       "title": "HeyClicky agents",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     },
     "1.0": {
       "build": "",
       "date": "Apr 6, 2026",
       "url": "",
       "title": "Introducing HeyClicky",
-      "recordedAt": "2026-09-04T07:29:54.204Z"
+      "recordedAt": "2026-09-04T07:38:01.725Z",
+      "issue": null
     }
-  }
+  },
+  "appcast": "https://farzaa.github.io/clicky-releases/appcast.xml",
+  "changelog": "https://www.heyclicky.com/changelog"
 }

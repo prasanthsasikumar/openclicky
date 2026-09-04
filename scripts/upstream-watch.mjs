@@ -8,7 +8,8 @@
 // Usage: node scripts/upstream-watch.mjs [--write] [--issues]
 //   (no flags)  print versions not yet recorded in reference/upstream/heyclicky-versions.json
 //   --write     record them there and prepend their entries to reference/upstream/heyclicky-changelog.md
-//   --issues    open one GitHub issue per new version (needs `gh` + GH_TOKEN), label `upstream`
+//   --issues    open one GitHub issue per new version (needs `gh` + GH_TOKEN), label `upstream`; implies --write
+//               and records the issue URL per version, so a failed `gh` call is retried next run, never duplicated
 // Exit code is 0 unless a fetch fails. Pure parsers are exported for tests; main() only runs
 // when the file is executed directly.
 import fs from "node:fs";
@@ -41,15 +42,18 @@ export function decode(html) {
 }
 
 /** Inner HTML of the first element whose class attribute contains `cls` (elements do not nest same-class). */
+/** `class="…"` attribute that contains `cls` as a whole token (so `cl-group` never matches `cl-group-head`). */
+const classAttr = (cls) => `class="(?:[^"]*\\s)?${cls}(?:\\s[^"]*)?"`;
+
 function firstByClass(html, cls) {
-  const re = new RegExp(`<([a-z0-9]+)[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>([\\s\\S]*?)<\\/\\1>`, "i");
+  const re = new RegExp(`<([a-z0-9]+)[^>]*${classAttr(cls)}[^>]*>([\\s\\S]*?)<\\/\\1>`, "i");
   const m = re.exec(html);
   return m ? m[2] : "";
 }
 
 /** Split `html` into the chunks that start with an opening tag carrying class `cls` (chunk = up to the next such tag). */
 function splitByClass(html, cls) {
-  const re = new RegExp(`<[a-z0-9]+[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>`, "gi");
+  const re = new RegExp(`<[a-z0-9]+[^>]*${classAttr(cls)}[^>]*>`, "gi");
   const starts = [];
   let m;
   while ((m = re.exec(html))) starts.push(m.index);
@@ -166,6 +170,13 @@ async function fetchText(url) {
   return r.text();
 }
 
+function saveState(state) {
+  state.seen = Object.fromEntries(Object.entries(state.seen).sort(([a], [b]) => compareVersionsDesc(a, b)));
+  fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+  fs.writeFileSync(STATE_FILE, JSON.stringify({ ...state, appcast: APPCAST_URL, changelog: CHANGELOG_URL }, null, 2) + "\n");
+}
+
+/** Record the new versions (issue: null until one is opened) and persist. */
 function writeState(state, fresh) {
   for (const v of fresh) {
     state.seen[v.version] = {
@@ -174,11 +185,15 @@ function writeState(state, fresh) {
       url: v.appcast?.url ?? "",
       title: v.entry?.title ?? "",
       recordedAt: new Date().toISOString(),
+      issue: null,
     };
   }
-  state.seen = Object.fromEntries(Object.entries(state.seen).sort(([a], [b]) => compareVersionsDesc(a, b)));
-  fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-  fs.writeFileSync(STATE_FILE, JSON.stringify({ appcast: APPCAST_URL, changelog: CHANGELOG_URL, ...state }, null, 2) + "\n");
+  saveState(state);
+}
+
+/** Which of this run's new versions still need a GitHub issue: those recorded without one. Never re-opens for older versions. */
+export function planIssues(state, fresh) {
+  return fresh.filter((v) => !state?.seen?.[v.version]?.issue);
 }
 
 function writeLog(fresh) {
@@ -189,14 +204,33 @@ function writeLog(fresh) {
   fs.writeFileSync(LOG_FILE, header + sections + (body ? "\n" + body : ""));
 }
 
-function openIssues(fresh) {
-  execFileSync("gh", ["label", "create", "upstream", "--color", "B60205", "--description", "HeyClicky upstream release", "--force"], { stdio: "inherit" });
-  for (const v of fresh) {
+/**
+ * Open one issue per planned version. State is already written, and each success is persisted
+ * immediately (`issue: <url>`), so a failure mid-way never causes duplicates on the next run.
+ * Failures are logged and skipped; the exit code stays 0.
+ */
+function openIssues(state, planned) {
+  if (!planned.length) return;
+  const gh = (args) => execFileSync("gh", args, { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" });
+  try {
+    gh(["label", "create", "upstream", "--color", "B60205", "--description", "HeyClicky upstream release", "--force"]);
+  } catch (e) {
+    console.error(`upstream-watch: could not ensure the "upstream" label (${e.message.split("\n")[0]}); trying issues anyway`);
+  }
+  for (const v of planned) {
     const body = renderEntry(v.entry, v.appcast) + "\n## Port checklist\n- [ ] Read the entry\n- [ ] Decide what to port\n- [ ] Link the PR\n";
     const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "upstream-")), "body.md");
     fs.writeFileSync(tmp, body);
     const title = `HeyClicky v${v.version} released${v.entry?.title ? `: ${v.entry.title}` : ""}`;
-    execFileSync("gh", ["issue", "create", "--title", title, "--label", "upstream", "--body-file", tmp], { stdio: "inherit" });
+    try {
+      const out = gh(["issue", "create", "--title", title, "--label", "upstream", "--body-file", tmp]).trim();
+      const url = out.split("\n").reverse().find((l) => /^https?:\/\//.test(l)) ?? "opened";
+      state.seen[v.version].issue = url;
+      saveState(state);
+      console.log(`issue: v${v.version} → ${url}`);
+    } catch (e) {
+      console.error(`upstream-watch: issue for v${v.version} failed (${e.message.split("\n")[0]}); will retry next run`);
+    }
   }
 }
 
@@ -213,12 +247,14 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
   for (const v of fresh) console.log(`new: v${v.version}${v.entry?.title ? ` — ${v.entry.title}` : ""}${v.entry?.date ? ` (${v.entry.date})` : ""}${v.appcast ? "" : " [changelog only]"}${v.entry ? "" : " [appcast only]"}`);
-  if (issues) openIssues(fresh);
-  if (write) {
+  // --issues implies --write: the state must be on disk before any issue exists, or a failure
+  // between the two would open the same issue again tomorrow.
+  if (write || issues) {
     writeLog(fresh);
     writeState(state, fresh);
     console.log(`recorded ${fresh.length} version(s) in ${path.relative(root, STATE_FILE)} and ${path.relative(root, LOG_FILE)}`);
   }
+  if (issues) openIssues(state, planIssues(state, fresh));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

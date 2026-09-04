@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 // @ts-expect-error — plain ESM script at the repo root, no types
-import { parseAppcast, parseChangelog, renderEntry, findNew } from "../../scripts/upstream-watch.mjs";
+import { parseAppcast, parseChangelog, renderEntry, findNew, planIssues } from "../../scripts/upstream-watch.mjs";
 
 const fx = (n: string) => fs.readFileSync(new URL(`./fixtures/${n}`, import.meta.url), "utf8");
 
@@ -59,5 +59,26 @@ describe("upstream-watch", () => {
     const fresh = findNew({ seen: {} }, items, []);
     expect(fresh.map((v: { version: string }) => v.version)).toEqual(["1.0.48", "1.0.47"]);
     expect(renderEntry(undefined, items[0])).toMatch(/^## v1\.0\.48 \(Tue, 25 Aug 2026 20:56:10 \+0530\)/);
+  });
+
+  it("matches class tokens exactly (cl-group is not cut at a cl-group-note child)", () => {
+    const html = `<article class="cl-entry"><span class="cl-version">v<!-- -->9.9.9</span><span class="cl-date">Jan 1, 2027</span>
+      <h2 class="cl-title">T</h2><div class="cl-group"><h3 class="cl-group-head">new</h3><ul class="cl-items">
+      <li><span class="cl-item-text"><strong class="cl-item-lead">First: </strong>one</span></li>
+      <div class="cl-group-note">a note that carries the cl-group prefix</div>
+      <li><span class="cl-item-text"><strong class="cl-item-lead">Second: </strong>two</span></li></ul></div>
+      <div class="cl-group"><h3 class="cl-group-head">fixed</h3><ul class="cl-items"><li><span class="cl-item-text">bare</span></li></ul></div></article>`;
+    const [e] = parseChangelog(html);
+    expect(e.groups.map((g: { head: string }) => g.head)).toEqual(["new", "fixed"]);
+    expect(e.groups[0].items.map((i: { lead: string }) => i.lead)).toEqual(["First", "Second"]);
+    expect(e.groups[1].items[0]).toEqual({ lead: "", text: "bare" });
+  });
+
+  it("plans issues only for new versions that have none recorded", () => {
+    const fresh = [{ version: "1.0.49" }, { version: "1.0.48" }];
+    const state = { seen: { "1.0.49": { issue: null }, "1.0.48": { issue: "https://github.com/x/y/issues/7" } } };
+    expect(planIssues(state, fresh).map((v: { version: string }) => v.version)).toEqual(["1.0.49"]);
+    expect(planIssues({ seen: {} }, fresh)).toHaveLength(2); // not yet recorded → planned
+    expect(planIssues(state, [])).toEqual([]); // versions seen earlier are never re-opened
   });
 });
