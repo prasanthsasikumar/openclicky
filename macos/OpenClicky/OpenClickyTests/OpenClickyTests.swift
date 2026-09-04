@@ -8,6 +8,7 @@
 import Testing
 @testable import OpenClicky
 
+@MainActor
 struct OpenClickyTests {
 
     @Test func firstPermissionRequestUsesSystemPromptOnly() async throws {
