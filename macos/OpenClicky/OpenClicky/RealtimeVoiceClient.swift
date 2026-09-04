@@ -102,6 +102,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// point fires while it is still talking, but the continuation `response.create` is sent only
     /// once, on `response.done` — a second one while a response is active is rejected by the server.
     private var needsContinuationAfterResponse = false
+    /// Id of the response the server is generating right now (`response.created`), so tool calls
+    /// can be matched to it; nil between responses.
+    private var activeResponseId: String?
+    /// Responses we cancelled (barge-in). Their late tool calls still get an output item, but
+    /// must never arm a continuation — the server's `response.done` for them is status "cancelled".
+    private var cancelledResponseIds: Set<String> = []
 
     private static let sampleRate: Double = RealtimeAudioEngine.sampleRate
 
@@ -170,6 +176,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         if isConnected { isConnected = false }
         responseInProgress = false
         needsContinuationAfterResponse = false
+        activeResponseId = nil
+        cancelledResponseIds.removeAll()
         lastScreenCapture = nil
         sentInstructions = ""
         if let reason { log(reason) }
@@ -315,7 +323,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             self.stopForwardingMicrophone()
             await self.attachScreenContext()
             try? self.send(["type": "input_audio_buffer.commit"])
-            try? self.send(["type": "response.create"])
+            self.requestTurnResponse()
             self.scheduleIdlePauseIfNeeded()
         }
     }
@@ -489,12 +497,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             log(type)
             if currentMode == .alwaysOn {
                 await attachScreenContext()
-                try? send(["type": "response.create"])
+                requestTurnResponse()
             }
         case "input_audio_buffer.speech_stopped", "session.created", "session.updated":
             log(type)
         case "response.created":
             responseInProgress = true
+            activeResponseId = (event["response"] as? [String: Any])?["id"] as? String
             assistantTranscriptBuffer = ""
             onResponseStarted?()
         case "response.output_audio.delta", "response.audio.delta":
@@ -509,9 +518,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             await handleToolCall(event)
         case "response.done":
             responseInProgress = false
-            if needsContinuationAfterResponse {
+            activeResponseId = nil
+            let status = (event["response"] as? [String: Any])?["status"] as? String
+            let wantsContinuation = needsContinuationAfterResponse
+            needsContinuationAfterResponse = false
+            if wantsContinuation, status != "cancelled" {
                 // Tool outputs were added during this response: ask for the follow-up once.
-                needsContinuationAfterResponse = false
                 try? send(["type": "response.create"])
             } else {
                 onResponseFinished?()
@@ -568,19 +580,41 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         }
         // The output goes out immediately; the follow-up response is requested once, on response.done.
         try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(output.prefix(4000))]])
-        if responseInProgress {
-            needsContinuationAfterResponse = true
+        let responseId = event["response_id"] as? String
+        if let responseId, cancelledResponseIds.contains(responseId) {
+            // A late call from a response we cancelled (barge-in): the output is in the conversation
+            // for the next turn, but nothing may follow the cancel.
+            log("tool output for cancelled response \(responseId): no continuation")
+        } else if responseInProgress {
+            if responseId == nil || responseId == activeResponseId {
+                needsContinuationAfterResponse = true
+            } else {
+                // Belongs to an earlier, already finished response while a newer one is active:
+                // the active response will pick the output up; requesting now would collide.
+                log("tool output for inactive response \(responseId ?? "?"): no continuation")
+            }
         } else {
-            // The response already ended (event ordering can put arguments.done after done): continue now.
+            // No response is active (event ordering can put arguments.done after done): continue now.
             try? send(["type": "response.create"])
         }
     }
 
     /// Barge-in: cancel the active response and drop any continuation queued for it, so no
-    /// stray `response.create` follows the cancel.
+    /// stray `response.create` follows the cancel. The response is remembered as cancelled so its
+    /// tool calls that are still in flight cannot re-arm the continuation.
     private func cancelActiveResponse() {
         needsContinuationAfterResponse = false
+        if let activeResponseId { cancelledResponseIds.insert(activeResponseId) }
+        activeResponseId = nil
+        responseInProgress = false
         try? send(["type": "response.cancel"])
+    }
+
+    /// Request the reply for a committed user turn. Any continuation queued for tool outputs of
+    /// the previous response is dropped: this create supersedes it (one create per turn).
+    private func requestTurnResponse() {
+        needsContinuationAfterResponse = false
+        try? send(["type": "response.create"])
     }
 
     private func log(_ line: String) {

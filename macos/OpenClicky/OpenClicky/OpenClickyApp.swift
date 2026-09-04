@@ -90,6 +90,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                     let started = Date()
                     try await client.connectIfNeeded(mode: .pushToTalk)
                     print("smoke: connected in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+                    // Installed after connect (like a skill toggled / app switch mid-session) so the
+                    // key-down refresh has a changed prompt to send: expect `instructions updated (N chars)`.
+                    client.instructionsProvider = {
+                        RealtimeVoiceClient.defaultInstructions + "\n\n## Skill: smoke\nAlways mention the word 'harness' once."
+                    }
                     client.beginPushToTalk()
                     var waitedForMic = 0
                     while !client.isCapturing && waitedForMic < 40 {
