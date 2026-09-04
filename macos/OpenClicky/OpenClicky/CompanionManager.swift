@@ -51,6 +51,9 @@ final class CompanionManager: ObservableObject {
     /// Custom speech bubble text for the pointing animation. When set,
     /// BlueCursorView uses this instead of a random pointer phrase.
     @Published var detectedElementBubbleText: String?
+    /// Bumped on every `pointAt` so the overlay re-flies even when the model points at the
+    /// same coordinates twice in a row (the location alone would not change).
+    @Published var detectedElementPointToken: Int = 0
 
     // MARK: - Onboarding Video State (shared across all screen overlays)
 
@@ -322,8 +325,9 @@ final class CompanionManager: ObservableObject {
         let displayHeight = CGFloat(capture.displayHeightInPoints)
         let displayFrame = capture.displayFrame
 
-        let clampedX = max(0, min(point.x, screenshotWidth))
-        let clampedY = max(0, min(point.y, screenshotHeight))
+        // NaN would survive min/max; treat it as the origin. Infinite values clamp to the edges.
+        let clampedX = point.x.isNaN ? 0 : max(0, min(point.x, screenshotWidth))
+        let clampedY = point.y.isNaN ? 0 : max(0, min(point.y, screenshotHeight))
 
         // Scale from screenshot pixels to display points, then flip to AppKit's bottom-left origin.
         let displayLocalX = clampedX * (displayWidth / screenshotWidth)
@@ -347,8 +351,10 @@ final class CompanionManager: ObservableObject {
         detectedElementBubbleText = (trimmedLabel?.isEmpty == false) ? trimmedLabel : nil
         detectedElementDisplayFrame = capture.displayFrame
         detectedElementScreenLocation = location
+        detectedElementPointToken &+= 1
         ClickyAnalytics.trackElementPointed(elementLabel: trimmedLabel)
-        print("🎯 Element pointing: (\(Int(screenshotPoint.x)), \(Int(screenshotPoint.y))) → \"\(trimmedLabel ?? "element")\"")
+        let formatted = { (value: CGFloat) in String(format: "%.0f", value) }
+        print("🎯 Element pointing: (\(formatted(screenshotPoint.x)), \(formatted(screenshotPoint.y))) → \"\(trimmedLabel ?? "element")\"")
     }
 
     /// While docked, pointing needs the buddy on screen: launch it from the notch, let the
@@ -1298,6 +1304,7 @@ final class CompanionManager: ObservableObject {
                 detectedElementBubbleText = parseResult.spokenText
                 detectedElementScreenLocation = globalLocation
                 detectedElementDisplayFrame = displayFrame
+                detectedElementPointToken &+= 1
                 print("🎯 Onboarding demo: pointing at \"\(parseResult.elementLabel ?? "element")\" — \"\(parseResult.spokenText)\"")
             } catch {
                 print("⚠️ Onboarding demo error: \(error)")

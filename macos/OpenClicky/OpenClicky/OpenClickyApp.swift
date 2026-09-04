@@ -78,6 +78,12 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 client.onTranscript = { role, text in print("smoke: \(role == .user ? "you" : "openclicky"): \(text)") }
                 client.onAgentTask = { task in "smoke agent would run: \(task)" }
                 client.screenContextProvider = { await CompanionScreenCaptureUtility.captureCursorScreenContext() }
+                client.onPointAt = { screenshotPoint, label, capture in
+                    // No overlay in the smoke harness: print what the buddy would fly to.
+                    let screenLocation = CompanionManager.screenLocation(forScreenshotPoint: screenshotPoint, in: capture)
+                    let formatted = { (value: CGFloat) in String(format: "%.0f", value) }
+                    print("🎯 Element pointing: (\(formatted(screenshotPoint.x)), \(formatted(screenshotPoint.y))) → \"\(label)\" → screen (\(formatted(screenLocation.x)), \(formatted(screenLocation.y)))")
+                }
                 client.onResponseFinished = { finished = true }
                 do {
                     let pcm = try Self.loadPCM16Mono24k(path: filePath)

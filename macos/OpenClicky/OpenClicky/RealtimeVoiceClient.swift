@@ -91,6 +91,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private var pushToTalkTailTask: Task<Void, Never>?
     private var assistantTranscriptBuffer = ""
     private var responseInProgress = false
+    /// Set when a tool output was sent during the current response. A model may emit several
+    /// tool calls in one response (e.g. `point_at` per step); each output goes out at once so the
+    /// point fires while it is still talking, but the continuation `response.create` is sent only
+    /// once, on `response.done` — a second one while a response is active is rejected by the server.
+    private var needsContinuationAfterResponse = false
 
     private static let sampleRate: Double = RealtimeAudioEngine.sampleRate
 
@@ -158,6 +163,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         webSocketTask = nil
         if isConnected { isConnected = false }
         responseInProgress = false
+        needsContinuationAfterResponse = false
+        lastScreenCapture = nil
         if let reason { log(reason) }
     }
 
@@ -247,7 +254,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         pushToTalkTailTask = nil
         idlePauseTask?.cancel()
         idlePauseTask = nil
-        if responseInProgress { try? send(["type": "response.cancel"]) }
+        if responseInProgress { cancelActiveResponse() }
         flushPlayback()
         try? send(["type": "input_audio_buffer.clear"])
         pushToTalkArmed = true
@@ -439,7 +446,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case "input_audio_buffer.speech_started":
             log("listening…")
             flushPlayback()
-            if responseInProgress { try? send(["type": "response.cancel"]) }
+            if responseInProgress { cancelActiveResponse() }
         case "conversation.item.input_audio_transcription.completed":
             if let transcript = event["transcript"] as? String {
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -469,8 +476,14 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             await handleToolCall(event)
         case "response.done":
             responseInProgress = false
-            onResponseFinished?()
-            scheduleIdlePauseIfNeeded()
+            if needsContinuationAfterResponse {
+                // Tool outputs were added during this response: ask for the follow-up once.
+                needsContinuationAfterResponse = false
+                try? send(["type": "response.create"])
+            } else {
+                onResponseFinished?()
+                scheduleIdlePauseIfNeeded()
+            }
         case "error":
             let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? text
             log("realtime error: \(message)")
@@ -500,11 +513,14 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 if let s = value as? String { return Double(s.trimmingCharacters(in: .whitespaces)) }
                 return nil
             }
-            let label = (arguments["label"] as? String ?? "here").trimmingCharacters(in: .whitespacesAndNewlines)
-            if let x = number(arguments["x"]), let y = number(arguments["y"]) {
+            var label = (arguments["label"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if label.isEmpty { label = "here" }
+            // The model controls these numbers: reject non-finite values before any Int conversion.
+            if let x = number(arguments["x"]), let y = number(arguments["y"]), x.isFinite, y.isFinite {
                 if let capture = lastScreenCapture {
                     let location = CompanionManager.screenLocation(forScreenshotPoint: CGPoint(x: x, y: y), in: capture)
-                    log("point_at (\(Int(x)), \(Int(y))) \"\(label)\" → screen (\(Int(location.x)), \(Int(location.y)))\(onPointAt == nil ? " (no handler)" : "")")
+                    let formatted = { (value: CGFloat) in String(format: "%.0f", value) }
+                    log("point_at (\(formatted(x)), \(formatted(y))) \"\(label)\" → screen (\(formatted(location.x)), \(formatted(location.y)))\(onPointAt == nil ? " (no handler)" : "")")
                     onPointAt?(CGPoint(x: x, y: y), label, capture)
                     output = "pointing at \(label)"
                 } else {
@@ -512,13 +528,26 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                     output = "no screenshot attached; describe the location in words"
                 }
             } else {
-                output = "point_at needs integer x and y"
+                output = "invalid coordinates: point_at needs finite integer x and y"
             }
         default:
             break
         }
+        // The output goes out immediately; the follow-up response is requested once, on response.done.
         try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(output.prefix(4000))]])
-        try? send(["type": "response.create"])
+        if responseInProgress {
+            needsContinuationAfterResponse = true
+        } else {
+            // The response already ended (event ordering can put arguments.done after done): continue now.
+            try? send(["type": "response.create"])
+        }
+    }
+
+    /// Barge-in: cancel the active response and drop any continuation queued for it, so no
+    /// stray `response.create` follows the cancel.
+    private func cancelActiveResponse() {
+        needsContinuationAfterResponse = false
+        try? send(["type": "response.cancel"])
     }
 
     private func log(_ line: String) {

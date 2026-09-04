@@ -387,10 +387,10 @@ struct BlueCursorView: View {
             navigationAnimationTimer?.invalidate()
             companionManager.tearDownOnboardingVideo()
         }
-        .onChange(of: companionManager.detectedElementScreenLocation) { newLocation in
-            // When a UI element location is detected, navigate the buddy to
-            // that position so it points at the element.
-            guard let screenLocation = newLocation,
+        .onChange(of: companionManager.detectedElementPointToken) { _ in
+            // Every pointAt bumps the token, so repeated coordinates re-fly too. The location
+            // is read from the manager (it is set before the token is bumped).
+            guard let screenLocation = companionManager.detectedElementScreenLocation,
                   let displayFrame = companionManager.detectedElementDisplayFrame else {
                 return
             }

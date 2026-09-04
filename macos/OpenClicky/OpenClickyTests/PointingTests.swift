@@ -44,6 +44,13 @@ struct PointingTests {
         #expect(farRight == CGPoint(x: 2560, y: 1600))
     }
 
+    @Test func nonFiniteCoordinatesDoNotTrap() {
+        let nan = CompanionManager.screenLocation(forScreenshotPoint: CGPoint(x: CGFloat.nan, y: CGFloat.nan), in: capture())
+        #expect(nan == CGPoint(x: 0, y: 1600))
+        let infinite = CompanionManager.screenLocation(forScreenshotPoint: CGPoint(x: CGFloat.infinity, y: -CGFloat.infinity), in: capture())
+        #expect(infinite == CGPoint(x: 2560, y: 1600))
+    }
+
     @Test func offsetsBySecondaryDisplayOrigin() {
         let location = CompanionManager.screenLocation(forScreenshotPoint: CGPoint(x: 640, y: 400), in: capture(origin: CGPoint(x: 2560, y: -300)))
         #expect(location == CGPoint(x: 3840, y: 500))
