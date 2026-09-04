@@ -1,0 +1,17 @@
+name: upstream-watch
+on:
+  schedule: [{ cron: "17 6 * * *" }]
+  workflow_dispatch:
+permissions: { contents: write, issues: write }
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/upstream-watch.mjs --write --issues
+        env: { GH_TOKEN: ${{ github.token }} }
+      - run: |
+          git config user.name "upstream-watch[bot]"; git config user.email "actions@github.com"
+          git add reference/upstream && git diff --cached --quiet || git commit -m "chore(upstream): record new HeyClicky release [skip ci]" && git push

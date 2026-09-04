@@ -14,7 +14,8 @@
     "port-skills": "node scripts/port-skills.mjs",
     "release:mac": "bash macos/OpenClicky/scripts/release.sh",
     "release:mac:publish": "bash macos/OpenClicky/scripts/release.sh --publish",
-    "clean:mac-builds": "bash macos/OpenClicky/scripts/clean-stray-builds.sh"
+    "clean:mac-builds": "bash macos/OpenClicky/scripts/clean-stray-builds.sh",
+    "upstream:check": "node scripts/upstream-watch.mjs --write"
   },
   "engines": {
     "node": ">=22"
