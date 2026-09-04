@@ -73,7 +73,7 @@ final class NotchHUDModel: ObservableObject {
     var compactHeight: CGFloat { geometry.notchHeight + compactContentHeight }
     var fullHeight: CGFloat {
         switch activeTab {
-        case .home: return geometry.notchHeight + 198
+        case .home: return geometry.notchHeight + 300
         case .agents: return geometry.notchHeight + 380
         case .settings: return geometry.notchHeight + 590
         }

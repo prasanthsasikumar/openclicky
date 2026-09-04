@@ -128,21 +128,7 @@ struct NotchHomeView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Add skills")
-                    .font(.system(size: 13.5, weight: .bold))
-                    .foregroundColor(.white)
-                Text("Skills give OpenClicky superpowers")
-                    .font(.system(size: 10.5))
-                    .foregroundColor(Color.white.opacity(0.55))
-
-                HStack(spacing: 8) {
-                    skillTile(systemImage: "text.viewfinder", label: "Screen")
-                    skillTile(systemImage: "doc.text", label: "Docs")
-                    skillTile(systemImage: "chevron.left.forwardslash.chevron.right", label: "Code")
-                    skillTile(systemImage: "magnifyingglass", label: "Research")
-                    addTile(help: "Skills live in the repository's skills/ folder") { OpenClickyConfiguration.revealSettingsFile() }
-                }
-                .padding(.top, 10)
+                SkillLibrarySection(store: companionManager.skillLibraryStore)
 
                 Text("Active integrations")
                     .font(.system(size: 11.5, weight: .semibold))
@@ -214,28 +200,6 @@ struct NotchHomeView: View {
         .padding(.bottom, 14)
     }
 
-    private func skillTile(systemImage: String, label: String) -> some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 15, weight: .medium))
-            .foregroundColor(.white)
-            .frame(width: 40, height: 40)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.10)))
-            .help(label)
-    }
-
-    private func addTile(help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(Color.white.opacity(0.8))
-                .frame(width: 40, height: 40)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.10)))
-        }
-        .buttonStyle(.plain)
-        .pointerCursor()
-        .help(help)
-    }
-
     private func integrationIcon(systemImage: String, tint: Color, title: String, isOn: Bool) -> some View {
         Image(systemName: systemImage)
             .font(.system(size: 11, weight: .semibold))
@@ -258,6 +222,125 @@ struct NotchHomeView: View {
                         .padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.white.opacity(0.12)))
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Skill library (Home)
+
+/// HeyClicky's "Add skills" surface: the app-teaching skills are automatic, the user's library is
+/// toggled here, and "Create a skill…" drafts a new SKILL.md through the backend and activates it.
+struct SkillLibrarySection: View {
+    @ObservedObject var store: SkillLibraryStore
+    @State private var request = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Add skills")
+                    .font(.system(size: 13.5, weight: .bold))
+                    .foregroundColor(.white)
+                Spacer(minLength: 0)
+                Button(action: { NSWorkspace.shared.open(store.userSkillsDirectory) }) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundColor(Color.white.opacity(0.7))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .help("Open the skills folder (~/.openclicky/skills)")
+            }
+            Text("\(store.appSkills.count) app skills · auto by app")
+                .font(.system(size: 10.5))
+                .foregroundColor(Color.white.opacity(0.55))
+
+            Group {
+                if store.librarySkills.isEmpty {
+                    Text("No skills yet — type what one should do")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(Color.white.opacity(0.45))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 10)
+                } else {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        VStack(spacing: 2) {
+                            ForEach(store.librarySkills, id: \.id) { skill in
+                                skillRow(skill)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 110)
+                }
+            }
+            .padding(.top, 6)
+
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles").font(.system(size: 10)).foregroundColor(Color.white.opacity(0.6))
+                TextField("Create a skill…", text: $request)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white)
+                    .onSubmit(create)
+                    .disabled(store.isCreating)
+                if store.isCreating {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "return").font(.system(size: 9.5)).foregroundColor(Color.white.opacity(0.35))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.10)))
+            .padding(.top, 6)
+
+            if let error = store.lastError {
+                Text(error)
+                    .font(.system(size: 9.5))
+                    .foregroundColor(Color(hex: "#FF6B6B"))
+                    .lineLimit(2)
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    private func skillRow(_ skill: SkillFile) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(skill.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                Text(skill.description)
+                    .font(.system(size: 9.5))
+                    .foregroundColor(Color.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Toggle("", isOn: Binding(
+                get: { store.activeIds.contains(skill.id) },
+                set: { store.setActive(skill.id, $0) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .help(store.activeIds.contains(skill.id) ? "Active for talk and agent" : "Inactive")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.06)))
+    }
+
+    private func create() {
+        let text = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !store.isCreating else { return }
+        Task { @MainActor in
+            do {
+                _ = try await store.createSkill(request: text)
+                request = ""
+            } catch {
+                // The store publishes `lastError`; nothing else to do here.
             }
         }
     }
