@@ -74,6 +74,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private(set) var turnMode: TurnMode = .pushToTalk
     private var voice: String?
     private var instructions: String
+    /// The prompt this client was created with; providers compose their skills block onto it.
+    var baseInstructions: String { instructions }
 
     private var webSocketTask: URLSessionWebSocketTask?
     private lazy var urlSession = URLSession(configuration: .default)
@@ -189,7 +191,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         secretRequest.httpMethod = "POST"
         secretRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         OpenClickyConfiguration.authorize(&secretRequest)
-        secretRequest.httpBody = try JSONSerialization.data(withJSONObject: ["voice": voice as Any, "instructions": currentInstructions()].compactMapValues { $0 })
+        let connectInstructions = currentInstructions()
+        secretRequest.httpBody = try JSONSerialization.data(withJSONObject: ["voice": voice as Any, "instructions": connectInstructions].compactMapValues { $0 })
         let (secretData, secretResponse) = try await urlSession.data(for: secretRequest)
         guard let httpResponse = secretResponse as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode),
               let secretJSON = try JSONSerialization.jsonObject(with: secretData) as? [String: Any],
@@ -208,13 +211,14 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         // The graph is built once here (and released right away) so key-down is a fast engine restart.
         try await startAudioIfNeeded()
         if mode == .pushToTalk { audio.pause() }
-        try send(sessionUpdate(mode: mode))
+        try send(sessionUpdate(mode: mode, instructions: connectInstructions))
+        sentInstructions = connectInstructions
         isConnected = true
         log("realtime connected (\(model), \(mode == .pushToTalk ? "push-to-talk" : "always on"))")
         receiveLoop(task)
     }
 
-    private func sessionUpdate(mode: TurnMode) -> [String: Any] {
+    private func sessionUpdate(mode: TurnMode, instructions text: String) -> [String: Any] {
         var input: [String: Any] = [
             "format": ["type": "audio/pcm", "rate": Int(Self.sampleRate)],
             "transcription": ["model": "gpt-4o-mini-transcribe"],
@@ -249,8 +253,6 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 "required": ["x", "y", "label"],
             ],
         ]
-        let text = currentInstructions()
-        sentInstructions = text
         return [
             "type": "session.update",
             "session": [
@@ -294,7 +296,6 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         idlePauseTask?.cancel()
         idlePauseTask = nil
         if responseInProgress { cancelActiveResponse() }
-        refreshInstructionsIfNeeded()
         flushPlayback()
         try? send(["type": "input_audio_buffer.clear"])
         pushToTalkArmed = true
@@ -311,6 +312,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             self.log("microphone open in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
             self.startForwardingMicrophone()
         }
+        // After the mic-open task is queued: the provider walks the front app's Accessibility tree,
+        // and the update only has to reach the server before the response is requested at key-up.
+        refreshInstructionsIfNeeded()
     }
 
     /// Shortcut released: keep the mic open 400 ms so the last word is not clipped, then commit.

@@ -199,7 +199,8 @@ final class CompanionManager: ObservableObject {
             await CompanionScreenCaptureUtility.captureCursorScreenContext()
         }
         realtimeVoiceClient.instructionsProvider = { [weak self] in
-            Self.composeTalkInstructions(base: RealtimeVoiceClient.defaultInstructions, skillsBlock: self?.talkSkillsBlock() ?? "")
+            guard let self else { return RealtimeVoiceClient.defaultInstructions }
+            return Self.composeTalkInstructions(base: self.realtimeVoiceClient.baseInstructions, skillsBlock: self.talkSkillsBlock())
         }
         realtimeVoiceClient.onPointAt = { [weak self] screenshotPoint, label, capture in
             self?.pointAt(screenshotPoint: screenshotPoint, label: label, in: capture)
