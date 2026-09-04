@@ -27,6 +27,8 @@ struct OpenClickyShellSettings: Codable {
     /// Optional MCP servers for the agent (rendered into the Codex config by the CLI).
     var composioMcpUrl: String? = nil
     var cuaDriverBin: String? = nil
+    /// Directory of app-teaching skills (`app-skills/` in the repo). Defaults to the checkout the CLI runs from.
+    var appSkillsPath: String? = nil
 }
 
 enum OpenClickyConfiguration {
@@ -94,6 +96,32 @@ enum OpenClickyConfiguration {
     static var cliCommand: [String] { settings.cliCommand }
     static var workspacePath: String { NSString(string: settings.workspace).expandingTildeInPath }
     static var agentModelOverride: String? { settings.model.isEmpty ? nil : settings.model }
+
+    /// The user's skill library: `library/<id>/SKILL.md`, `active/` symlinks, `activations.json`.
+    /// Same layout as the CLI's `agent/src/skillsLibrary.ts`, so both sides see the same skills.
+    static var userSkillsDirectory: URL {
+        let environment = ProcessInfo.processInfo.environment
+        if let override = environment["OPENCLICKY_USER_SKILLS_DIR"], !override.isEmpty {
+            return URL(fileURLWithPath: NSString(string: override).expandingTildeInPath, isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSString(string: "~/.openclicky/skills").expandingTildeInPath, isDirectory: true)
+    }
+
+    /// App-teaching skills (`app-skills/` in the checkout): `appSkillsPath` from shell.json, else derived from
+    /// the CLI path (`…/agent/dist/cli.js` → `…/app-skills`), else `~/.openclicky/app-skills`.
+    static var appSkillsDirectory: URL {
+        if let configured = settings.appSkillsPath?.trimmingCharacters(in: .whitespacesAndNewlines), !configured.isEmpty {
+            return URL(fileURLWithPath: NSString(string: configured).expandingTildeInPath, isDirectory: true)
+        }
+        if let cliPath = settings.cliCommand.last, cliPath.hasSuffix(".js") {
+            let cliURL = URL(fileURLWithPath: NSString(string: cliPath).expandingTildeInPath)
+            // agent/dist/cli.js → agent/dist → agent → repo root
+            let root = cliURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            let candidate = root.appendingPathComponent("app-skills", isDirectory: true)
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return URL(fileURLWithPath: NSString(string: "~/.openclicky/app-skills").expandingTildeInPath, isDirectory: true)
+    }
 
     /// Adds the bearer token every backend request needs.
     static func authorize(_ request: inout URLRequest) {

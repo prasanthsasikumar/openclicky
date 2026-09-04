@@ -1,0 +1,235 @@
+//
+//  SkillLibraryStore.swift
+//  OpenClicky
+//
+//  The user's skill library as the notch HUD and the talk lanes see it. Reads and writes the same
+//  files as the CLI (`agent/src/skillsLibrary.ts`):
+//
+//    <userSkillsDirectory>/library/<id>/SKILL.md   one folder per skill (created here or dropped in by hand)
+//    <userSkillsDirectory>/activations.json        { "active": [ids], "updatedAt": ISO-8601 }
+//    <userSkillsDirectory>/active/<id> → library/<id>   symlinks for activated skills only; Codex loads this dir
+//
+//  App-teaching skills (`app-skills/` in the checkout) are read-only here and matched by frontmost app.
+//
+
+import Combine
+import Foundation
+
+@MainActor
+final class SkillLibraryStore: ObservableObject {
+    @Published private(set) var librarySkills: [SkillFile] = []
+    @Published private(set) var activeIds: Set<String> = []
+    @Published private(set) var appSkills: [SkillFile] = []
+    @Published var lastError: String?
+    @Published var isCreating = false
+
+    let userSkillsDirectory: URL
+    let appSkillsDirectory: URL
+
+    private var libraryWatcher: DispatchSourceFileSystemObject?
+    private var libraryWatcherDescriptor: Int32 = -1
+    private var reloadDebounce: DispatchWorkItem?
+
+    var libraryDirectory: URL { userSkillsDirectory.appendingPathComponent("library", isDirectory: true) }
+    var activeDirectory: URL { userSkillsDirectory.appendingPathComponent("active", isDirectory: true) }
+    var activationsURL: URL { userSkillsDirectory.appendingPathComponent("activations.json") }
+
+    /// Activated skills that apply to the voice / teacher prompts.
+    var activeTalkSkills: [SkillFile] {
+        librarySkills.filter { activeIds.contains($0.id) && $0.isForTalk }
+    }
+
+    convenience init() {
+        self.init(userSkillsDirectory: OpenClickyConfiguration.userSkillsDirectory,
+                  appSkillsDirectory: OpenClickyConfiguration.appSkillsDirectory)
+    }
+
+    init(userSkillsDirectory: URL, appSkillsDirectory: URL, watch: Bool = true) {
+        self.userSkillsDirectory = userSkillsDirectory
+        self.appSkillsDirectory = appSkillsDirectory
+        ensureDirectories()
+        reload()
+        if watch { startWatchingLibrary() }
+    }
+
+    deinit {
+        libraryWatcher?.cancel()
+    }
+
+    // MARK: - Reading
+
+    /// Re-reads the library, the activations, and the app skills; drops stale `active/` links.
+    func reload() {
+        ensureDirectories()
+        librarySkills = SkillFile.load(directory: libraryDirectory)
+        let known = Set(librarySkills.map(\.id))
+        activeIds = Set(readActivations().filter { known.contains($0) })
+        appSkills = SkillFile.load(directory: appSkillsDirectory)
+        syncActiveDirectory()
+    }
+
+    private func readActivations() -> [String] {
+        guard let data = try? Data(contentsOf: activationsURL),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let active = object["active"] as? [Any] else { return [] }
+        return active.compactMap { $0 as? String }
+    }
+
+    // MARK: - Activation
+
+    func setActive(_ id: String, _ on: Bool) {
+        var ids = readActivations().filter { $0 != id }
+        if on { ids.append(id) }
+        do {
+            try writeActivations(ids)
+            lastError = nil
+        } catch {
+            lastError = "Could not save activations: \(error.localizedDescription)"
+        }
+        reload()
+    }
+
+    private func writeActivations(_ ids: [String]) throws {
+        var seen = Set<String>()
+        let unique = ids.filter { seen.insert($0).inserted }
+        let payload: [String: Any] = ["active": unique, "updatedAt": ISO8601DateFormatter().string(from: Date())]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+        try (String(decoding: data, as: UTF8.self) + "\n").write(to: activationsURL, atomically: true, encoding: .utf8)
+    }
+
+    /// `active/` holds exactly one symlink per activated existing skill (mirrors `syncActiveDir` in the CLI).
+    private func syncActiveDirectory() {
+        let fileManager = FileManager.default
+        let wanted = librarySkills.map(\.id).filter { activeIds.contains($0) }
+        let existing = (try? fileManager.contentsOfDirectory(atPath: activeDirectory.path)) ?? []
+        for entry in existing where !wanted.contains(entry) {
+            try? fileManager.removeItem(at: activeDirectory.appendingPathComponent(entry))
+        }
+        for id in wanted {
+            let link = activeDirectory.appendingPathComponent(id)
+            let target = libraryDirectory.appendingPathComponent(id, isDirectory: true)
+            if let current = try? fileManager.destinationOfSymbolicLink(atPath: link.path), current == target.path { continue }
+            try? fileManager.removeItem(at: link)
+            try? fileManager.createSymbolicLink(atPath: link.path, withDestinationPath: target.path)
+        }
+    }
+
+    // MARK: - Creating
+
+    /// Writes a SKILL.md into the library under a unique id derived from its name and activates it.
+    @discardableResult
+    func importSkill(markdown: String) throws -> SkillFile {
+        guard let parsed = SkillFile.parse(markdown, id: "pending") else {
+            throw SkillLibraryError.invalidMarkdown
+        }
+        ensureDirectories()
+        let base = Self.slugify(parsed.name)
+        var id = base
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: libraryDirectory.appendingPathComponent(id).path) {
+            id = "\(base)-\(suffix)"
+            suffix += 1
+        }
+        let folder = libraryDirectory.appendingPathComponent(id, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let text = markdown.hasSuffix("\n") ? markdown : markdown + "\n"
+        try text.write(to: folder.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        setActive(id, true)
+        guard let skill = librarySkills.first(where: { $0.id == id }) else { throw SkillLibraryError.invalidMarkdown }
+        return skill
+    }
+
+    /// "Create a skill": the backend drafts the SKILL.md from a one-line request; we store and activate it.
+    func createSkill(request: String) async throws -> SkillFile {
+        let trimmed = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw SkillLibraryError.emptyRequest }
+        guard OpenClickyConfiguration.isConfigured else { throw SkillLibraryError.notConfigured }
+        isCreating = true
+        lastError = nil
+        defer { isCreating = false }
+
+        var capabilities: [String] = []
+        if let composio = OpenClickyConfiguration.settings.composioMcpUrl, !composio.isEmpty { capabilities.append("composio") }
+        if let cua = OpenClickyConfiguration.settings.cuaDriverBin, !cua.isEmpty { capabilities.append("computer-use") }
+
+        var urlRequest = URLRequest(url: URL(string: "\(OpenClickyConfiguration.backendBaseURL)/skills/create")!)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 90
+        OpenClickyConfiguration.authorize(&urlRequest)
+        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: ["request": trimmed, "capabilities": capabilities])
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: urlRequest)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let object = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            guard (200..<300).contains(status) else {
+                let message = object["error"] as? String ?? "backend returned \(status)"
+                throw SkillLibraryError.backend(message)
+            }
+            guard let markdown = object["markdown"] as? String else { throw SkillLibraryError.backend("no markdown in response") }
+            return try importSkill(markdown: markdown)
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func ensureDirectories() {
+        let fileManager = FileManager.default
+        try? fileManager.createDirectory(at: libraryDirectory, withIntermediateDirectories: true)
+        try? fileManager.createDirectory(at: activeDirectory, withIntermediateDirectories: true)
+    }
+
+    /// Mirrors `slugify` in agent/src/skillMarkdown.ts: lowercase, non-alphanumerics → "-", trimmed, never empty.
+    static func slugify(_ name: String) -> String {
+        var out = ""
+        var pendingDash = false
+        for scalar in name.lowercased().unicodeScalars {
+            let isAlnum = (scalar >= "a" && scalar <= "z") || (scalar >= "0" && scalar <= "9")
+            if isAlnum {
+                if pendingDash, !out.isEmpty { out.append("-") }
+                pendingDash = false
+                out.unicodeScalars.append(scalar)
+            } else {
+                pendingDash = true
+            }
+        }
+        return out.isEmpty ? "skill" : out
+    }
+
+    private func startWatchingLibrary() {
+        let descriptor = open(libraryDirectory.path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+        libraryWatcherDescriptor = descriptor
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: [.write, .rename, .delete], queue: .main)
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.reloadDebounce?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.reload() }
+            self.reloadDebounce = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+        }
+        source.setCancelHandler { close(descriptor) }
+        source.resume()
+        libraryWatcher = source
+    }
+}
+
+enum SkillLibraryError: LocalizedError {
+    case invalidMarkdown
+    case emptyRequest
+    case notConfigured
+    case backend(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidMarkdown: return "The skill file needs frontmatter with a name and a description."
+        case .emptyRequest: return "Describe what the skill should do."
+        case .notConfigured: return "Add your OpenClicky token in shell.json first."
+        case .backend(let message): return message
+        }
+    }
+}
