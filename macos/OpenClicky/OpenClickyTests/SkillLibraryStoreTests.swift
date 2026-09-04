@@ -102,6 +102,19 @@ struct SkillLibraryStoreTests {
         #expect(store.librarySkills.map(\.id) == ["foo", "foo-2", "foo-3"])
     }
 
+    @Test func failedActivationSaveKeepsItsError() throws {
+        let (store, root) = try makeStore()
+        _ = try store.importSkill(markdown: markdown(name: "Keep"))
+        // Make the activations file unwritable: replace it with a directory of the same name.
+        try FileManager.default.removeItem(at: store.activationsURL)
+        try FileManager.default.createDirectory(at: store.activationsURL, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        store.setActive("keep", false)
+        #expect(store.lastError?.contains("Could not save activations") == true)
+        store.reload()
+        #expect(store.lastError == nil)
+    }
+
     @Test func invalidMarkdownIsRejected() throws {
         let (store, _) = try makeStore()
         #expect(throws: SkillLibraryError.self) { try store.importSkill(markdown: "# no frontmatter") }

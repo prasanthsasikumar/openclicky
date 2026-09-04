@@ -55,7 +55,7 @@ CLI it runs (`…/agent/dist/cli.js` → repo root), else `~/.openclicky/app-ski
 
 ## How matching works (app-teaching skills)
 
-At every push-to-talk key-down the app reads the frontmost application:
+On every push-to-talk release (in the 400 ms tail before the reply is requested, so the mic open at key-down stays fast) the app reads the frontmost application:
 
 1. Bundle identifier and localized name (`NSWorkspace`).
 2. For browsers (Safari, Chrome, Arc, Edge, Brave, Firefox) the front tab's URL and the window

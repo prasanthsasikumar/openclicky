@@ -59,15 +59,16 @@ final class SkillLibraryStore: ObservableObject {
     // MARK: - Reading
 
     /// Re-reads the library, the activations, and the app skills; drops stale `active/` links.
-    func reload() {
+    /// `clearingErrors`: an explicit reload (launch, user action) drops a stale `lastError` from an
+    /// earlier failure; a background reload (directory watcher, the reload after a failed save) keeps
+    /// it so the HUD still shows what went wrong. `syncActiveDirectory` sets it again if linking fails.
+    func reload(clearingErrors: Bool = true) {
         ensureDirectories()
         librarySkills = SkillFile.load(directory: libraryDirectory)
         let known = Set(librarySkills.map(\.id))
         activeIds = Set(readActivations().filter { known.contains($0) })
         appSkills = SkillFile.load(directory: appSkillsDirectory)
-        // A fresh read succeeded: a stale error from an earlier link/save failure no longer applies.
-        // syncActiveDirectory sets it again if linking still fails.
-        lastError = nil
+        if clearingErrors { lastError = nil }
         syncActiveDirectory()
     }
 
@@ -85,11 +86,11 @@ final class SkillLibraryStore: ObservableObject {
         if on { ids.append(id) }
         do {
             try writeActivations(ids)
-            lastError = nil
+            reload()
         } catch {
             lastError = "Could not save activations: \(error.localizedDescription)"
+            reload(clearingErrors: false)
         }
-        reload()
     }
 
     private func writeActivations(_ ids: [String]) throws {
@@ -252,7 +253,7 @@ final class SkillLibraryStore: ObservableObject {
     /// One reload per burst of file events (both watchers share the 300 ms debounce).
     private func scheduleReload() {
         reloadDebounce?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.reload() }
+        let work = DispatchWorkItem { [weak self] in self?.reload(clearingErrors: false) }
         reloadDebounce = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }

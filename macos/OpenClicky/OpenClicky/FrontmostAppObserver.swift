@@ -2,9 +2,9 @@
 //  FrontmostAppObserver.swift
 //  OpenClicky
 //
-//  What the user is looking at when they press push-to-talk: the frontmost app and, for browsers,
+//  What the user is looking at when they release push-to-talk: the frontmost app and, for browsers,
 //  the front tab's URL (Accessibility API) so `AppSkillMatcher` can pick the matching app skill.
-//  Synchronous and bounded — it runs on key-down.
+//  Synchronous and bounded — it runs in the key-up tail, never in front of the mic open.
 //
 
 import AppKit
@@ -45,7 +45,7 @@ enum FrontmostAppObserver {
         context.isBrowser = app.bundleIdentifier.map(browserBundleIdentifiers.contains) ?? false
         guard AXIsProcessTrusted() else { return context }
         let application = AXUIElementCreateApplication(app.processIdentifier)
-        // A hung or busy browser must not block push-to-talk key-down: cap every AX round trip.
+        // A hung or busy browser must not stall the push-to-talk turn: cap every AX round trip.
         AXUIElementSetMessagingTimeout(application, 0.25)
         guard let window = copyElement(application, kAXFocusedWindowAttribute) ?? copyElement(application, kAXMainWindowAttribute) else {
             return context
@@ -72,7 +72,7 @@ enum FrontmostAppObserver {
         return nil
     }
 
-    /// Breadth-first search for the first AXWebArea, bounded so a huge accessibility tree cannot stall key-down.
+    /// Breadth-first search for the first AXWebArea, bounded so a huge accessibility tree cannot stall the turn.
     private static func findWebArea(from root: AXUIElement, maxDepth: Int, maxNodes: Int) -> AXUIElement? {
         var queue: [(AXUIElement, Int)] = [(root, 0)]
         var visited = 0

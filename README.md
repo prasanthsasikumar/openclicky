@@ -228,7 +228,7 @@ calls in one reply make a short walkthrough (one point per step); a repeated poi
 results go out at once, and the reply continues with a single `response.create` after the model's
 turn ends, so batched calls do not race.
 
-**Skills in the voice prompts.** At every key-down the app looks at the frontmost app (bundle id;
+**Skills in the voice prompts.** When you release the shortcut (before the reply is requested; never at key-down, which must open the mic fast) the app looks at the frontmost app (bundle id;
 for browsers the front tab's URL through Accessibility, falling back to the window title), picks
 the matching app-teaching skill, adds your activated talk skills, and sends the combined
 instructions to the Realtime session (`session.update`, only when the text changed; the log shows
