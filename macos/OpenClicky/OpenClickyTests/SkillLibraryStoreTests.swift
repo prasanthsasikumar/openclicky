@@ -86,6 +86,22 @@ struct SkillLibraryStoreTests {
         #expect(SkillLibraryStore.slugify("日本語") == "skill")
     }
 
+    @Test func importNeverWritesIntoAFolderItDidNotCreate() throws {
+        let (store, _) = try makeStore()
+        for existing in ["foo", "foo-2"] {
+            let folder = store.libraryDirectory.appendingPathComponent(existing, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try markdown(name: "Original \(existing)").write(to: folder.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        let imported = try store.importSkill(markdown: markdown(name: "Foo"))
+        #expect(imported.id == "foo-3")
+        for existing in ["foo", "foo-2"] {
+            let text = try String(contentsOf: store.libraryDirectory.appendingPathComponent("\(existing)/SKILL.md"), encoding: .utf8)
+            #expect(text.contains("name: Original \(existing)"))
+        }
+        #expect(store.librarySkills.map(\.id) == ["foo", "foo-2", "foo-3"])
+    }
+
     @Test func invalidMarkdownIsRejected() throws {
         let (store, _) = try makeStore()
         #expect(throws: SkillLibraryError.self) { try store.importSkill(markdown: "# no frontmatter") }

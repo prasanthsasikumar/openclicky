@@ -27,7 +27,6 @@ final class SkillLibraryStore: ObservableObject {
     let appSkillsDirectory: URL
 
     private var libraryWatcher: DispatchSourceFileSystemObject?
-    private var libraryWatcherDescriptor: Int32 = -1
     private var reloadDebounce: DispatchWorkItem?
 
     var libraryDirectory: URL { userSkillsDirectory.appendingPathComponent("library", isDirectory: true) }
@@ -110,7 +109,13 @@ final class SkillLibraryStore: ObservableObject {
             let target = libraryDirectory.appendingPathComponent(id, isDirectory: true)
             if let current = try? fileManager.destinationOfSymbolicLink(atPath: link.path), current == target.path { continue }
             try? fileManager.removeItem(at: link)
-            try? fileManager.createSymbolicLink(atPath: link.path, withDestinationPath: target.path)
+            do {
+                try fileManager.createSymbolicLink(atPath: link.path, withDestinationPath: target.path)
+            } catch let error as NSError where Self.isAlreadyExists(error) {
+                continue // another writer (the CLI) linked it first
+            } catch {
+                lastError = "Could not link \(id) into active/: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -124,14 +129,21 @@ final class SkillLibraryStore: ObservableObject {
         }
         ensureDirectories()
         let base = Self.slugify(parsed.name)
+        // Claim the id by creating its directory non-recursively: EEXIST means another writer (the CLI, a
+        // hand-dropped folder) owns it, so try the next suffix. Never write SKILL.md into a folder we did not create.
         var id = base
         var suffix = 2
-        while FileManager.default.fileExists(atPath: libraryDirectory.appendingPathComponent(id).path) {
-            id = "\(base)-\(suffix)"
-            suffix += 1
+        var folder = libraryDirectory.appendingPathComponent(id, isDirectory: true)
+        while true {
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+                break
+            } catch let error as NSError where Self.isAlreadyExists(error) {
+                id = "\(base)-\(suffix)"
+                suffix += 1
+                folder = libraryDirectory.appendingPathComponent(id, isDirectory: true)
+            }
         }
-        let folder = libraryDirectory.appendingPathComponent(id, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let text = markdown.hasSuffix("\n") ? markdown : markdown + "\n"
         try text.write(to: folder.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
         setActive(id, true)
@@ -142,8 +154,11 @@ final class SkillLibraryStore: ObservableObject {
     /// "Create a skill": the backend drafts the SKILL.md from a one-line request; we store and activate it.
     func createSkill(request: String) async throws -> SkillFile {
         let trimmed = request.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw SkillLibraryError.emptyRequest }
-        guard OpenClickyConfiguration.isConfigured else { throw SkillLibraryError.notConfigured }
+        guard !trimmed.isEmpty else { throw fail(.emptyRequest) }
+        guard OpenClickyConfiguration.isConfigured,
+              let endpoint = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/skills/create") else {
+            throw fail(.notConfigured)
+        }
         isCreating = true
         lastError = nil
         defer { isCreating = false }
@@ -152,7 +167,7 @@ final class SkillLibraryStore: ObservableObject {
         if let composio = OpenClickyConfiguration.settings.composioMcpUrl, !composio.isEmpty { capabilities.append("composio") }
         if let cua = OpenClickyConfiguration.settings.cuaDriverBin, !cua.isEmpty { capabilities.append("computer-use") }
 
-        var urlRequest = URLRequest(url: URL(string: "\(OpenClickyConfiguration.backendBaseURL)/skills/create")!)
+        var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.timeoutInterval = 90
@@ -164,7 +179,8 @@ final class SkillLibraryStore: ObservableObject {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let object = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
             guard (200..<300).contains(status) else {
-                let message = object["error"] as? String ?? "backend returned \(status)"
+                let bodyText = String(decoding: data.prefix(300), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                let message = object["error"] as? String ?? (bodyText.isEmpty ? "backend returned \(status)" : "backend \(status): \(bodyText)")
                 throw SkillLibraryError.backend(message)
             }
             guard let markdown = object["markdown"] as? String else { throw SkillLibraryError.backend("no markdown in response") }
@@ -176,6 +192,20 @@ final class SkillLibraryStore: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    /// Records the error for the HUD and returns it for throwing.
+    private func fail(_ error: SkillLibraryError) -> SkillLibraryError {
+        lastError = error.localizedDescription
+        return error
+    }
+
+    /// `NSFileWriteFileExistsError` (Foundation) or `EEXIST` (POSIX) — the path is already taken.
+    static func isAlreadyExists(_ error: NSError) -> Bool {
+        if error.domain == NSCocoaErrorDomain, error.code == NSFileWriteFileExistsError { return true }
+        if error.domain == NSPOSIXErrorDomain, error.code == Int(EEXIST) { return true }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError { return isAlreadyExists(underlying) }
+        return false
+    }
 
     private func ensureDirectories() {
         let fileManager = FileManager.default
@@ -203,7 +233,7 @@ final class SkillLibraryStore: ObservableObject {
     private func startWatchingLibrary() {
         let descriptor = open(libraryDirectory.path, O_EVTONLY)
         guard descriptor >= 0 else { return }
-        libraryWatcherDescriptor = descriptor
+        // Events are delivered on the main queue because reload() mutates @Published state on the main actor.
         let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: [.write, .rename, .delete], queue: .main)
         source.setEventHandler { [weak self] in
             guard let self else { return }
