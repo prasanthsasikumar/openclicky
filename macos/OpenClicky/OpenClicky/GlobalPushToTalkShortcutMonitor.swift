@@ -13,7 +13,14 @@ import CoreGraphics
 import Foundation
 
 final class GlobalPushToTalkShortcutMonitor: ObservableObject {
+    /// Talk (control + option) press / release, as before.
     let shortcutTransitionPublisher = PassthroughSubject<BuddyPushToTalkShortcut.ShortcutTransition, Never>()
+    /// The other HeyClicky shortcuts: text composer (control ×2), dictation (fn + control held),
+    /// hands-free toggle (fn + control ×2).
+    let companionShortcutPublisher = PassthroughSubject<CompanionShortcutEvent, Never>()
+
+    /// Recognises all four shortcuts from the tap's modifier and key events (main thread only).
+    private var shortcutRecognizer = CompanionShortcutRecognizer()
 
     private var globalEventTap: CFMachPort?
     private var globalEventTapRunLoopSource: CFRunLoopSource?
@@ -85,6 +92,7 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
 
     func stop() {
         isShortcutCurrentlyPressed = false
+        shortcutRecognizer.reset()
 
         if let globalEventTapRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), globalEventTapRunLoopSource, .commonModes)
@@ -108,23 +116,35 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
             return Unmanaged.passUnretained(event)
         }
 
+        let recognizerEventKind: CompanionShortcutRecognizer.EventKind?
+        switch eventType {
+        case .flagsChanged: recognizerEventKind = .flagsChanged
+        case .keyDown: recognizerEventKind = .keyDown
+        case .keyUp: recognizerEventKind = .keyUp
+        default: recognizerEventKind = nil
+        }
+        guard let recognizerEventKind else { return Unmanaged.passUnretained(event) }
+
         let eventKeyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-        let shortcutTransition = BuddyPushToTalkShortcut.shortcutTransition(
-            for: eventType,
+        let modifierFlags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue)).intersection(.deviceIndependentFlagsMask)
+        let shortcutEvents = shortcutRecognizer.handle(
+            recognizerEventKind,
             keyCode: eventKeyCode,
-            modifierFlagsRawValue: event.flags.rawValue,
-            wasShortcutPreviouslyPressed: isShortcutCurrentlyPressed
+            modifierFlags: modifierFlags,
+            at: ProcessInfo.processInfo.systemUptime
         )
 
-        switch shortcutTransition {
-        case .none:
-            break
-        case .pressed:
-            isShortcutCurrentlyPressed = true
-            shortcutTransitionPublisher.send(.pressed)
-        case .released:
-            isShortcutCurrentlyPressed = false
-            shortcutTransitionPublisher.send(.released)
+        for shortcutEvent in shortcutEvents {
+            switch shortcutEvent {
+            case .talkPressed:
+                isShortcutCurrentlyPressed = true
+                shortcutTransitionPublisher.send(.pressed)
+            case .talkReleased:
+                isShortcutCurrentlyPressed = false
+                shortcutTransitionPublisher.send(.released)
+            case .dictatePressed, .dictateReleased, .textComposerRequested, .handsFreeToggleRequested:
+                companionShortcutPublisher.send(shortcutEvent)
+            }
         }
 
         return Unmanaged.passUnretained(event)

@@ -2,6 +2,7 @@
 name: Gmail
 description: Teaching notes for Gmail in the browser — inbox layout, compose, search operators, labels, filters, and what to point at.
 sites: [mail.google.com]
+integration: gmail
 surfaces: [talk]
 ---
 

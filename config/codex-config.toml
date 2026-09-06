@@ -43,7 +43,8 @@ enabled = true
 # `clicky-crons` intentionally removed: Remote Tasks / scheduled crons are out of scope for this cut.
 #
 # Optional MCP servers, rendered only when configured on the agent side:
-#   COMPOSIO_MCP_URL  -> [mcp_servers.composio]      (external integrations; bearer = OPENCLICKY_SESSION_TOKEN)
+#   COMPOSIO_MCP_URL  -> [mcp_servers.composio]      (external integrations; header x-consumer-api-key = COMPOSIO_API_KEY,
+#                                                     else Codex MCP OAuth: `codex mcp login composio` once)
 #   CUA_DRIVER_BIN    -> [mcp_servers.computer-use]  (Computer Use via cua-driver --socket)
 {{MCP_SERVERS}}
 

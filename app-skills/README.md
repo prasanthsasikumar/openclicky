@@ -37,6 +37,9 @@ surfaces: [talk]
   Google host — list the specific host you mean (`mail.google.com`) unless you really want the whole
   domain. Omit for apps with no web version. When a browser's URL is unavailable, its window title is
   searched for the site string as a fallback (browsers only; other apps match by bundle id).
+- `integration`: the Composio toolkit slug (`gmail`, `youtube`, `github`, `slack`, `figma`, `googledocs`)
+  when the app has an account worth connecting. Only skills with this key get the "Connect <app> to
+  OpenClicky" card in the notch HUD; leave it out for plain apps (Terminal, Finder, Xcode…).
 - `surfaces`: keep `[talk]` for app skills. (`agent` would expose the file to the Codex agent lane,
   which app-teaching notes are not written for.)
 - Precedence: a matching site skill wins over the browser's own app skill, so a Gmail tab in Safari

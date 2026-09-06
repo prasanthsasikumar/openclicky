@@ -3,6 +3,7 @@ name: Figma
 description: Teaching notes for Figma — toolbar, layers panel, properties panel, prototyping, exporting, and what to point at.
 apps: [com.figma.Desktop]
 sites: [figma.com]
+integration: figma
 surfaces: [talk]
 ---
 

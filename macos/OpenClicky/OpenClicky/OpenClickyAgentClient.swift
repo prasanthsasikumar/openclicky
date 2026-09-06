@@ -100,6 +100,18 @@ final class OpenClickyAgentClient {
         return try JSONDecoder().decode(OpenClickyThreadDetail.self, from: data)
     }
 
+    /// Whether the agent's Composio MCP server is configured and Codex is logged into it.
+    func integrationsStatus() async throws -> OpenClickyIntegrationsStatus {
+        let data = try await captureStandardOutput(arguments: ["integrations", "status", "--json"])
+        return try JSONDecoder().decode(OpenClickyIntegrationsStatus.self, from: data)
+    }
+
+    /// Logs Codex into the Composio MCP server: opens Composio's authorization page in the browser and
+    /// returns once the user has finished there (or fails after the CLI's own timeout).
+    func loginIntegration(_ server: String = "composio") async throws {
+        _ = try await captureStandardOutput(arguments: ["integrations", "login", server])
+    }
+
     /// Runs a CLI command that prints a single JSON document and returns its stdout.
     private func captureStandardOutput(arguments: [String]) async throws -> Data {
         let cliCommand = OpenClickyConfiguration.cliCommand
@@ -279,4 +291,10 @@ private final class EventCollector {
             break
         }
     }
+}
+
+/// `openclicky integrations status --json`.
+struct OpenClickyIntegrationsStatus: Decodable {
+    let configured: Bool
+    let loggedIn: Bool
 }

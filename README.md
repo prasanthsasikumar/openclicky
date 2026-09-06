@@ -19,6 +19,8 @@ plus a first native shell scaffold**. What works today:
   Activated skills reach both talk and the Codex agent.
 - **Pointing from Realtime voice**: the voice model gets a `point_at` tool, so "where is the export
   button?" flies the buddy to it while the answer is spoken, one call per step for walkthroughs.
+- **HeyClicky's four shortcuts**: hold ⌃⌥ to talk, tap ⌃ twice to type a request into the notch,
+  hold fn+⌃ to dictate into whatever app is in front, tap fn+⌃ twice for hands-free listening.
 - `scripts/upstream-watch.mjs` + a daily GitHub Action — follow HeyClicky releases (appcast +
   changelog) and open an issue per new version so features can be ported here.
 - `macos/OpenClicky` — the native shell: a renamed fork of the original open-source Clicky app (MIT;
@@ -189,6 +191,38 @@ auto-accepted by default (the sandbox is `workspace-write`); `--approve` switche
 `on-request` and prompts you. Set `COMPOSIO_MCP_URL` / `CUA_DRIVER_BIN` to render the `composio` /
 `computer-use` MCP servers into the config.
 
+### Composio (account integrations: Gmail, YouTube, GitHub, Slack, …)
+
+Composio hosts one MCP server, Composio Connect, that reaches 1000+ apps through a handful of meta-tools
+(`COMPOSIO_SEARCH_TOOLS`, `COMPOSIO_MANAGE_CONNECTIONS`, `COMPOSIO_MULTI_EXECUTE_TOOL`, …). The agent asks it to
+connect an account and you approve an OAuth link in the browser once. The free tier is 20,000 tool calls a
+month with no card (paid plans start at $29/month for 200,000 calls).
+
+1. Sign up at [composio.dev](https://composio.dev) (the login below must use the same email).
+2. Point the agent at Composio Connect in `~/.openclicky/shell.json` and restart the app:
+
+   ```json
+   { "composioMcpUrl": "https://connect.composio.dev/mcp" }
+   ```
+
+   (Running the CLI by hand: `COMPOSIO_MCP_URL`.) The Codex config gains `[mcp_servers.composio]` marked
+   `required`, so a turn never starts before its tools are listed.
+3. Log Codex into Composio once per machine — it opens Composio's authorization page:
+
+   ```bash
+   openclicky integrations login      # or: CODEX_HOME=~/.openclicky/codex-home codex mcp login composio
+   openclicky integrations status     # "Composio: logged in"
+   ```
+
+   The token lives in the macOS keychain ("Codex MCP Credentials"), not in the repo or shell.json.
+4. Open Gmail or YouTube: the "Connect <app> to OpenClicky" card appears; **Yes** hands the agent the
+   connection, which opens Composio's authorization link for that account. After that, ask for things
+   like "retrieve comments on my latest video" and the agent uses the connected account.
+
+A Composio consumer key (`composioApiKey` in shell.json / `COMPOSIO_API_KEY`) is also accepted and sent as
+the `x-consumer-api-key` header instead of the OAuth login; Composio Connect rejected the key tried here,
+so OAuth is the documented path.
+
 ## Run the macOS app
 
 The primary shell is `macos/OpenClicky`: a renamed fork of the original open-source Clicky app (MIT,
@@ -233,7 +267,18 @@ for browsers the front tab's URL through Accessibility, falling back to the wind
 the matching app-teaching skill, adds your activated talk skills, and sends the combined
 instructions to the Realtime session (`session.update`, only when the text changed; the log shows
 `instructions updated (N chars)`). The Claude teacher lane appends the same block to its system
-prompt. The notch HUD's Home tab lists the library with on/off toggles and a "Create a skill" field.
+prompt. The notch HUD's Home tab shows the library as tiles (click one to toggle it) and a "+" tile that
+opens the "Create a skill" field.
+
+The first time an app or site whose app-teaching skill names an `integration` (a Composio toolkit:
+Gmail, YouTube, GitHub, Slack, Figma, Google Docs) comes to the front, the island opens a
+**Connect \<app\> to OpenClicky** card (two app icons, No / Not now / Yes, and a scrolling row of example
+prompts read from the skill). Plain apps such as Terminal or Finder never get the card. "Yes" keeps the
+skill and, when `COMPOSIO_MCP_URL` is set, hands the agent the job of connecting the account through
+Composio; without Composio the card says so and offers to open `shell.json`. "No" leaves the skill out
+of the voice prompts from then on (remembered in the app's defaults, reset with
+`defaults delete org.openclicky.app appSkillConnectDecisions`), "Not now" hides the card until the app
+next launches.
 
 ### Releases and your local install
 

@@ -9,6 +9,7 @@ export interface RenderVars {
   workspace: string;
   model?: string;
   composioMcpUrl?: string;
+  composioApiKey?: string;
   cuaDriverBin?: string;
   /** Directory of symlinks to the user's activated skills (see skillsLibrary.ts). */
   userSkillsActive: string;
@@ -17,16 +18,25 @@ export interface RenderVars {
 const tomlString = (s: string) => JSON.stringify(s);
 
 /** TOML for the optional MCP servers (mirrors reference/codex-config.toml, keys stay server-side). */
-export function renderMcpServers(v: Pick<RenderVars, "composioMcpUrl" | "cuaDriverBin">): string {
+export function renderMcpServers(v: Pick<RenderVars, "composioMcpUrl" | "composioApiKey" | "cuaDriverBin">): string {
   const blocks: string[] = [];
   if (v.composioMcpUrl) {
     blocks.push(
       [
         "[mcp_servers.composio]",
         `url = ${tomlString(v.composioMcpUrl)}`,
-        // The Composio MCP endpoint is expected to sit behind the OpenClicky backend (or accept the
-        // same session token); the agent never holds a Composio key.
-        'bearer_token_env_var = "OPENCLICKY_SESSION_TOKEN"',
+        // With a consumer key (COMPOSIO_API_KEY) Codex sends it as Composio's `x-consumer-api-key`
+        // header. Without one the server is left to Codex's MCP OAuth: `codex mcp login composio`
+        // (run once with this CODEX_HOME; `openclicky integrations login`) stores the token in
+        // CODEX_HOME and Composio Connect's login page does the rest.
+        ...(v.composioApiKey ? [`http_headers = { "x-consumer-api-key" = ${tomlString(v.composioApiKey)} }`] : []),
+        // Codex starts the first turn without waiting for optional servers, so the model would see no
+        // Composio tools on the turn that needs them; `required` makes it wait (and fail loudly).
+        "required = true",
+        // The headless doctrine auto-accepts approvals (the user's instruction is the approval); with
+        // approval_policy = "never" Codex would otherwise auto-reject Composio's approval-gated tools.
+        'default_tools_approval_mode = "approve"',
+        "startup_timeout_sec = 30.0",
         "tool_timeout_sec = 120.0",
       ].join("\n"),
     );
@@ -81,6 +91,7 @@ export function ensureCodexHome(cfg: AgentConfig): { configPath: string } {
       workspace: cfg.workspace,
       model: cfg.model,
       composioMcpUrl: cfg.composioMcpUrl,
+      composioApiKey: cfg.composioApiKey,
       cuaDriverBin: cfg.cuaDriverBin,
       userSkillsActive: activeDir(cfg.userSkillsDir),
     }),

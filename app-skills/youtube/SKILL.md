@@ -2,6 +2,7 @@
 name: YouTube
 description: Teaching notes for youtube.com — the header, guide sidebar, player controls, playlists, subscriptions, and what to point at.
 sites: [youtube.com]
+integration: youtube
 surfaces: [talk]
 ---
 

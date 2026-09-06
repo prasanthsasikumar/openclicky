@@ -2,6 +2,7 @@
 name: Google Docs
 description: Teaching notes for Google Docs in the browser — menus, toolbar, outline, comments, sharing, export, and what to point at.
 sites: [docs.google.com]
+integration: googledocs
 surfaces: [talk]
 ---
 

@@ -2,6 +2,7 @@
 name: GitHub
 description: Teaching notes for github.com — repository tabs, code view, pull requests, issues, actions, settings, and what to point at.
 sites: [github.com]
+integration: github
 surfaces: [talk]
 ---
 

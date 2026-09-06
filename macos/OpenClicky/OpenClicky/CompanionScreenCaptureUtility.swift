@@ -116,6 +116,14 @@ enum CompanionScreenCaptureUtility {
                 continue
             }
 
+            // The model's coordinates are pixels in the image it sees, so the size recorded here
+            // must be the image's real size — not the size that was asked for. A capture that comes
+            // back at another size (native pixels instead of the scaled request) would otherwise
+            // put every pointed-at element off by that ratio.
+            if cgImage.width != configuration.width || cgImage.height != configuration.height {
+                print("📸 Screen capture came back \(cgImage.width)×\(cgImage.height) px (asked for \(configuration.width)×\(configuration.height)); using the real size for pointing")
+            }
+
             let screenLabel: String
             if sortedDisplays.count == 1 {
                 screenLabel = "user's screen (cursor is here)"
@@ -132,8 +140,8 @@ enum CompanionScreenCaptureUtility {
                 displayWidthInPoints: Int(displayFrame.width),
                 displayHeightInPoints: Int(displayFrame.height),
                 displayFrame: displayFrame,
-                screenshotWidthInPixels: configuration.width,
-                screenshotHeightInPixels: configuration.height
+                screenshotWidthInPixels: cgImage.width,
+                screenshotHeightInPixels: cgImage.height
             ))
         }
 

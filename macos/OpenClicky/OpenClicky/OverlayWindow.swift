@@ -85,6 +85,13 @@ struct NavigationBubbleSizePreferenceKey: PreferenceKey {
     }
 }
 
+struct CaptionBubbleSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 /// The buddy's behavioral mode. Controls whether it follows the cursor,
 /// is flying toward a detected UI element, or is pointing at an element.
 enum BuddyNavigationMode {
@@ -129,6 +136,8 @@ struct BlueCursorView: View {
     @State private var welcomeText: String = ""
     @State private var showWelcome: Bool = true
     @State private var bubbleSize: CGSize = .zero
+    /// Measured size of the caption bubble (it wraps), for placing it beside the buddy.
+    @State private var captionBubbleSize: CGSize = .zero
     @State private var bubbleOpacity: Double = 1.0
     @State private var cursorOpacity: Double = 0.0
 
@@ -235,31 +244,39 @@ struct BlueCursorView: View {
                 .animation(.easeInOut(duration: 2.0), value: companionManager.onboardingVideoOpacity)
                 .allowsHitTesting(false)
 
-            // Onboarding prompt — "press control + option and say hi" streamed after video ends
-            if isCursorOnThisScreen && companionManager.showOnboardingPrompt && !companionManager.onboardingPromptText.isEmpty {
-                Text(companionManager.onboardingPromptText)
+            // Caption typed out next to the buddy: the onboarding prompt ("press control + option
+            // and introduce yourself"), the Home tab's (i) explanation, hands-free feedback. Wraps
+            // at 300 pt and flips to the buddy's left when it would run off the screen.
+            if isCursorOnThisScreen && companionManager.isCursorCaptionVisible && !companionManager.cursorCaptionText.isEmpty {
+                let fitsToTheRight = cursorPosition.x + 10 + captionBubbleSize.width <= screenFrame.width - 12
+                Text(companionManager.cursorCaptionText)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white)
+                    .multilineTextAlignment(.leading)
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(DS.Colors.overlayCursorColor)
                             .shadow(color: DS.Colors.overlayCursorColor.opacity(0.5), radius: 6, x: 0, y: 0)
                     )
-                    .fixedSize()
+                    .fixedSize(horizontal: false, vertical: true)
                     .overlay(
                         GeometryReader { geo in
                             Color.clear
-                                .preference(key: SizePreferenceKey.self, value: geo.size)
+                                .preference(key: CaptionBubbleSizePreferenceKey.self, value: geo.size)
                         }
                     )
-                    .opacity(companionManager.onboardingPromptOpacity)
-                    .position(x: cursorPosition.x + 10 + (bubbleSize.width / 2), y: cursorPosition.y + 18)
+                    .frame(width: 300, alignment: fitsToTheRight ? .leading : .trailing)
+                    .opacity(companionManager.cursorCaptionOpacity)
+                    .position(
+                        x: fitsToTheRight ? cursorPosition.x + 10 + 150 : cursorPosition.x - 10 - 150,
+                        y: cursorPosition.y + 12 + (captionBubbleSize.height / 2)
+                    )
                     .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                    .animation(.easeOut(duration: 0.4), value: companionManager.onboardingPromptOpacity)
-                    .onPreferenceChange(SizePreferenceKey.self) { newSize in
-                        bubbleSize = newSize
+                    .animation(.easeOut(duration: 0.4), value: companionManager.cursorCaptionOpacity)
+                    .onPreferenceChange(CaptionBubbleSizePreferenceKey.self) { newSize in
+                        captionBubbleSize = newSize
                     }
             }
 
@@ -403,10 +420,15 @@ struct BlueCursorView: View {
 
             startNavigatingToElement(screenLocation: screenLocation)
         }
-        .onChange(of: companionManager.cursorDockTargetScreenLocation) { dockTarget in
-            // OpenClicky: the user asked the buddy to dock in the notch — fly there.
-            guard let dockTarget, screenFrame.contains(dockTarget) else { return }
-            startFlyingToDock(screenLocation: dockTarget)
+        .onChange(of: companionManager.cursorDockRequestToken) { _ in
+            // OpenClicky: the user asked the buddy to dock in the notch. The overlay that is showing
+            // the buddy starts the flight; the manager splits it at display edges if need be.
+            guard buddyIsVisibleOnThisScreen else { return }
+            companionManager.beginCursorFlight(.toDock, fromScreenFrame: screenFrame)
+        }
+        .onChange(of: companionManager.cursorFlightLeg) { flightLeg in
+            guard let flightLeg, flightLeg.screenFrame == screenFrame else { return }
+            performFlightLeg(flightLeg)
         }
     }
 
@@ -422,6 +444,11 @@ struct BlueCursorView: View {
             // If another screen's BlueCursorView is navigating to an element,
             // hide the cursor on this screen to prevent a duplicate buddy
             if companionManager.detectedElementScreenLocation != nil {
+                return false
+            }
+            // Likewise while another screen's overlay is flying the buddy (docking, or
+            // returning to a mouse that moved screens).
+            if let flightLeg = companionManager.cursorFlightLeg, flightLeg.screenFrame != screenFrame {
                 return false
             }
             return isCursorOnThisScreen
@@ -669,13 +696,20 @@ struct BlueCursorView: View {
     /// Flies the buddy back to the current cursor position after pointing is done —
     /// or back into the notch when it is docked there (OpenClicky).
     private func startFlyingBackToCursor() {
-        if companionManager.isCursorDocked, let dockTarget = companionManager.cursorDockTargetScreenLocation, screenFrame.contains(dockTarget) {
+        if companionManager.isCursorDocked {
             navigationBubbleText = ""
             navigationBubbleOpacity = 0.0
-            startFlyingToDock(screenLocation: dockTarget)
+            companionManager.beginCursorFlight(.toDock, fromScreenFrame: screenFrame)
             return
         }
         let mouseLocation = NSEvent.mouseLocation
+        if !screenFrame.contains(mouseLocation) {
+            // The mouse is on another display: fly to this display's edge, then across that one.
+            navigationBubbleText = ""
+            navigationBubbleOpacity = 0.0
+            companionManager.beginCursorFlight(.toMouse, fromScreenFrame: screenFrame)
+            return
+        }
         let cursorInSwiftUI = convertScreenPointToSwiftUICoordinates(mouseLocation)
         let cursorWithTrackingOffset = CGPoint(x: cursorInSwiftUI.x + 35, y: cursorInSwiftUI.y + 25)
 
@@ -691,28 +725,73 @@ struct BlueCursorView: View {
 
     // MARK: - Docking (OpenClicky)
 
-    /// Flies the buddy into the notch along a high arc, tip pointing up, then fades it out
-    /// and hands over to the notch HUD, which shows the docked badge.
-    private func startFlyingToDock(screenLocation: CGPoint) {
+    /// Animates one leg of a buddy flight on this display (see `CursorFlightPlanner`): into the
+    /// notch, or back to a mouse that is on another display. A non-final leg ends at this
+    /// display's edge and hands over to the destination display's overlay.
+    private func performFlightLeg(_ flightLeg: CursorFlightLeg) {
         guard !showWelcome || welcomeText.isEmpty else { return }
         navigationAnimationTimer?.invalidate()
-        buddyNavigationMode = .flyingToDock
-        isReturningToCursor = false
+        pointingGeneration += 1
         navigationBubbleText = ""
         navigationBubbleOpacity = 0.0
+        navigationBubbleScale = 1.0
 
-        let dockTargetInSwiftUI = convertScreenPointToSwiftUICoordinates(screenLocation)
-        animateBezierFlightArc(to: dockTargetInSwiftUI) {
-            guard self.buddyNavigationMode == .flyingToDock else { return }
-            // Settle tip-up under the notch, then slip inside.
-            self.triangleRotationDegrees = 0
-            withAnimation(.easeIn(duration: 0.22)) {
-                self.cursorOpacity = 0.0
-                self.buddyFlightScale = 0.6
+        if let startScreenLocation = flightLeg.startScreenLocation {
+            // Continuing a flight from another display: appear at the edge it left from.
+            cursorPosition = convertScreenPointToSwiftUICoordinates(startScreenLocation)
+        }
+        cursorOpacity = 1.0
+
+        var destination = convertScreenPointToSwiftUICoordinates(flightLeg.endScreenLocation)
+        switch flightLeg.purpose {
+        case .toDock:
+            buddyNavigationMode = .flyingToDock
+            isReturningToCursor = false
+        case .toMouse:
+            if flightLeg.isFinalLeg {
+                // Land where cursor following would put the buddy; a big mouse move cancels it.
+                destination = CGPoint(x: destination.x + 35, y: destination.y + 25)
+                cursorPositionWhenNavigationStarted = convertScreenPointToSwiftUICoordinates(NSEvent.mouseLocation)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                self.companionManager.finishDockingCursor()
+            buddyNavigationMode = .navigatingToTarget
+            isReturningToCursor = flightLeg.isFinalLeg
+        }
+
+        animateBezierFlightArc(to: destination) {
+            guard self.companionManager.cursorFlightLeg == flightLeg else { return }
+            if !flightLeg.isFinalLeg {
+                // Slip off this display's edge; the destination display's overlay continues.
+                switch flightLeg.purpose {
+                case .toDock:
+                    self.cursorOpacity = 0.0
+                case .toMouse:
+                    self.buddyNavigationMode = .followingCursor
+                    self.isReturningToCursor = false
+                    self.triangleRotationDegrees = -35.0
+                }
+                self.companionManager.continueCursorFlight(afterLeg: flightLeg)
+                return
             }
+            switch flightLeg.purpose {
+            case .toDock:
+                self.settleIntoDock()
+            case .toMouse:
+                self.finishNavigationAndResumeFollowing()
+            }
+        }
+    }
+
+    /// The end of the docking flight: settle tip-up under the notch, slip inside, then hand over
+    /// to the notch HUD, which shows the docked badge.
+    private func settleIntoDock() {
+        guard buddyNavigationMode == .flyingToDock else { return }
+        triangleRotationDegrees = 0
+        withAnimation(.easeIn(duration: 0.22)) {
+            cursorOpacity = 0.0
+            buddyFlightScale = 0.6
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            self.companionManager.finishDockingCursor()
         }
     }
 
@@ -739,6 +818,7 @@ struct BlueCursorView: View {
         navigationBubbleOpacity = 0.0
         navigationBubbleScale = 1.0
         companionManager.clearDetectedElementLocation()
+        companionManager.finishCursorFlight(onScreenFrame: screenFrame)
     }
 
     // MARK: - Welcome Animation

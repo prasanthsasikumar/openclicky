@@ -172,7 +172,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         pushToTalkArmed = false
         idlePauseTask?.cancel()
         flushPlayback()
-        audio.pause()
+        audio.release()
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         if isConnected { isConnected = false }
@@ -336,6 +336,30 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         }
     }
 
+    /// A typed turn (the notch composer): the text goes into the conversation together with the
+    /// current screen, then a reply is requested exactly like a released push-to-talk. The reply
+    /// is spoken, so the audio graph is started for playback.
+    func sendTextTurn(_ text: String) async {
+        pushToTalkTailTask?.cancel()
+        pushToTalkTailTask = nil
+        idlePauseTask?.cancel()
+        idlePauseTask = nil
+        if responseInProgress { cancelActiveResponse() }
+        flushPlayback()
+        Task { [weak self] in try? await self?.startAudioIfNeeded() }
+        refreshInstructionsIfNeeded()
+        await attachScreenContext()
+        let item: [String: Any] = [
+            "type": "message",
+            "role": "user",
+            "content": [["type": "input_text", "text": text]],
+        ]
+        try? send(["type": "conversation.item.create", "item": item])
+        requestTurnResponse()
+        scheduleIdlePauseIfNeeded()
+        log("text turn: \(text)")
+    }
+
     /// Always-on: stream continuously; the server decides the turns.
     func startListeningContinuously() {
         idlePauseTask?.cancel()
@@ -351,6 +375,28 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         stopForwardingMicrophone()
         scheduleIdlePauseIfNeeded()
     }
+
+    /// Frees the microphone for another capture path. fn + control dictation records through its
+    /// own AVAudioEngine, and while this client's voice-processing input unit exists — even
+    /// paused, as it is from launch until the first talk turn — that other engine reads silence.
+    /// Returns once the graph is torn down. `resumeListeningAfterDictation()` puts always-on back.
+    func releaseMicrophoneForDictation() async {
+        idlePauseTask?.cancel()
+        idlePauseTask = nil
+        wasListeningContinuouslyBeforeDictation = isForwardingMicrophone && currentMode == .alwaysOn
+        stopForwardingMicrophone()
+        await audio.releaseNow()
+        log("microphone released for dictation")
+    }
+
+    func resumeListeningAfterDictation() {
+        guard wasListeningContinuouslyBeforeDictation else { return }
+        wasListeningContinuouslyBeforeDictation = false
+        guard isConnected, currentMode == .alwaysOn else { return }
+        startListeningContinuously()
+        log("always-on listening resumed after dictation")
+    }
+    private var wasListeningContinuouslyBeforeDictation = false
 
     /// Adds the current screen to the conversation so the model can answer "what is this?".
     private func attachScreenContext() async {
@@ -374,7 +420,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     }
 
     /// Push-to-talk: once nothing is being captured, generated or played, release the microphone
-    /// so the system's recording indicator goes away between turns.
+    /// so the system's recording indicator goes away between turns. After half a minute idle the
+    /// engine is torn down completely: a stopped voice-processing unit still sits on the output
+    /// device, and other apps' audio only returns to normal once it is gone.
     private func scheduleIdlePauseIfNeeded() {
         guard currentMode == .pushToTalk else { return }
         idlePauseTask?.cancel()
@@ -383,6 +431,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             guard !Task.isCancelled, let self else { return }
             guard !self.isForwardingMicrophone, !self.responseInProgress, !self.isSpeaking, !self.pushToTalkArmed else { return }
             self.audio.pause()
+            try? await Task.sleep(nanoseconds: 28_500_000_000)
+            guard !Task.isCancelled, !self.isForwardingMicrophone, !self.responseInProgress, !self.isSpeaking, !self.pushToTalkArmed else { return }
+            self.audio.release()
+            self.log("audio released after idle")
         }
     }
 
@@ -735,6 +787,25 @@ final class RealtimeAudioEngine: @unchecked Sendable {
         }
     }
 
+    /// Tears the whole graph down (voice-processing unit included) so nothing of ours touches the
+    /// audio system between turns; the next `start()` is a full setup.
+    func release() {
+        queue.async {
+            guard self.isRunning else { return }
+            self.tearDown()
+        }
+    }
+
+    /// `release()`, but returns once the graph is gone (another engine is about to open the mic).
+    func releaseNow() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async {
+                if self.isRunning { self.tearDown() }
+                continuation.resume()
+            }
+        }
+    }
+
     func enqueue(pcm16 data: Data) {
         queue.async {
             guard self.isRunning else { return }
@@ -781,6 +852,14 @@ final class RealtimeAudioEngine: @unchecked Sendable {
         var notes: [String] = []
         if voiceProcessing {
             try inputNode.setVoiceProcessingEnabled(true)
+            // Apple's voice-processing unit ducks every other app's audio while it runs (the user's
+            // music went quiet or silent whenever OpenClicky listened or spoke). Keep echo
+            // cancellation, drop the ducking to its minimum and skip the "advanced" (harder) ducking.
+            inputNode.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+                enableAdvancedDucking: false,
+                duckingLevel: .min
+            )
+            notes.append("other-audio ducking min")
         }
         engine.attach(playerNode)
         // With voice processing on, the output unit only initializes when the mixer → output link

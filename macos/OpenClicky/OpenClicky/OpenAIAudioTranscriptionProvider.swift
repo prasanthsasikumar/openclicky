@@ -50,6 +50,22 @@ final class OpenAIAudioTranscriptionProvider: BuddyTranscriptionProvider {
             onError: onError
         )
     }
+
+    /// On near-silent audio the model sometimes returns its own prompt (verbatim or nearly). A
+    /// transcript that is mostly made of the prompt's words is not something the user said.
+    static func looksLikeEchoedPrompt(_ transcriptText: String, prompt: String?) -> Bool {
+        guard let prompt else { return false }
+        let words = { (text: String) -> [String] in
+            text.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count > 2 }
+        }
+        let transcriptWords = words(transcriptText)
+        guard transcriptWords.count >= 4 else { return false }
+        let promptWords = Set(words(prompt))
+        let sharedWordCount = transcriptWords.filter { promptWords.contains($0) }.count
+        return Double(sharedWordCount) / Double(transcriptWords.count) >= 0.8
+    }
 }
 
 private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscriptionSession {
@@ -74,6 +90,10 @@ private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscription
     private let urlSession: URLSession
 
     private var bufferedPCM16AudioData = Data()
+    /// Loudest sample magnitude seen (0…32767): audio that never rises above the noise floor is
+    /// not uploaded, because the model answers silence with its prompt or a made-up phrase.
+    private var peakSampleMagnitude: Int16 = 0
+    private static let silencePeakThreshold: Int16 = 400
     private var hasRequestedFinalTranscript = false
     private var hasDeliveredFinalTranscript = false
     private var isCancelled = false
@@ -103,9 +123,15 @@ private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscription
             return
         }
 
+        let bufferPeak = audioPCM16Data.withUnsafeBytes { rawBuffer -> Int16 in
+            rawBuffer.bindMemory(to: Int16.self).reduce(Int16(0)) { peak, sample in
+                max(peak, sample == Int16.min ? Int16.max : abs(sample))
+            }
+        }
         stateQueue.async {
             guard !self.hasRequestedFinalTranscript, !self.isCancelled else { return }
             self.bufferedPCM16AudioData.append(audioPCM16Data)
+            self.peakSampleMagnitude = max(self.peakSampleMagnitude, bufferPeak)
         }
     }
 
@@ -115,6 +141,16 @@ private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscription
             self.hasRequestedFinalTranscript = true
 
             let bufferedPCM16AudioData = self.bufferedPCM16AudioData
+            let recordedSeconds = Double(bufferedPCM16AudioData.count) / Double(Self.targetSampleRate * MemoryLayout<Int16>.size)
+            let peakSampleMagnitude = self.peakSampleMagnitude
+            print("[OpenAI Transcription] recorded \(String(format: "%.1f", recordedSeconds)) s, peak \(peakSampleMagnitude)/32767")
+            if peakSampleMagnitude < Self.silencePeakThreshold {
+                print("[OpenAI Transcription] audio is silent (the microphone may be held by another engine); not uploading")
+                self.transcriptionUploadTask = Task { [weak self] in
+                    self?.deliverFinalTranscript("")
+                }
+                return
+            }
             self.transcriptionUploadTask = Task { [weak self] in
                 await self?.transcribeBufferedAudio(bufferedPCM16AudioData)
             }
@@ -149,8 +185,13 @@ private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscription
         )
 
         do {
-            let transcriptText = try await requestTranscription(for: wavAudioData)
+            var transcriptText = try await requestTranscription(for: wavAudioData)
             guard !stateQueue.sync(execute: { isCancelled }) else { return }
+
+            if Self.looksLikeEchoedPrompt(transcriptText, prompt: transcriptionPromptText()) {
+                print("[OpenAI Transcription] the model echoed its prompt instead of transcribing; treating as silence")
+                transcriptText = ""
+            }
 
             if !transcriptText.isEmpty {
                 onTranscriptUpdate(transcriptText)
@@ -219,6 +260,10 @@ private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscription
         """
     }
 
+    private static func looksLikeEchoedPrompt(_ transcriptText: String, prompt: String?) -> Bool {
+        OpenAIAudioTranscriptionProvider.looksLikeEchoedPrompt(transcriptText, prompt: prompt)
+    }
+
     private func deliverFinalTranscript(_ transcriptText: String) {
         guard !hasDeliveredFinalTranscript else { return }
         hasDeliveredFinalTranscript = true
@@ -226,6 +271,12 @@ private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscription
     }
 
     deinit {
-        cancel()
+        // Not `cancel()`: that enqueues a block capturing `self` on the state queue, and releasing
+        // that block after this deinit has run trips Swift's "deallocated with non-zero retain
+        // count" abort (the app quit right after every dictation). Nothing else can still be queued
+        // here — pending blocks hold `self` strongly and would have kept it alive — so only the
+        // upload needs stopping.
+        transcriptionUploadTask?.cancel()
+        urlSession.invalidateAndCancel()
     }
 }

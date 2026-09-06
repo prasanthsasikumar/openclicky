@@ -11,7 +11,8 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-enum FrontmostAppObserver {
+// Not main-actor bound (the default here): the connect-card poll runs it off the main thread.
+nonisolated enum FrontmostAppObserver {
     static let browserBundleIdentifiers: Set<String> = [
         "com.apple.Safari",
         "com.apple.SafariTechnologyPreview",

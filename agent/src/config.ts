@@ -20,6 +20,9 @@ export interface AgentConfig {
   verbose: boolean;
   /** Composio MCP server URL; when set, the `composio` MCP server is rendered into the Codex config. */
   composioMcpUrl?: string;
+  /** Composio consumer API key (`ck_…`, dashboard.composio.dev); sent as `x-consumer-api-key`. Without it
+   *  Codex's MCP OAuth login (`codex mcp login composio`) authenticates the server. */
+  composioApiKey?: string;
   /** Path to cua-driver; when set, the `computer-use` MCP server is rendered into the Codex config. */
   cuaDriverBin?: string;
   /** ffmpeg binary used for microphone capture in the voice lane. */
@@ -48,6 +51,7 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     root: flags.root ?? repoRoot(),
     verbose: flags.verbose ?? env.OPENCLICKY_VERBOSE === "1",
     composioMcpUrl: flags.composioMcpUrl ?? env.COMPOSIO_MCP_URL ?? undefined,
+    composioApiKey: flags.composioApiKey ?? env.COMPOSIO_API_KEY ?? undefined,
     cuaDriverBin: flags.cuaDriverBin ?? env.CUA_DRIVER_BIN ?? undefined,
     ffmpegBin: flags.ffmpegBin ?? env.OPENCLICKY_FFMPEG_BIN ?? "ffmpeg",
     userSkillsDir: path.resolve(flags.userSkillsDir ?? env.OPENCLICKY_USER_SKILLS_DIR ?? path.join(home, ".openclicky", "skills")),

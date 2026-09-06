@@ -24,7 +24,7 @@ struct NotchFullPanelView: View {
                 .frame(height: 24)
                 .padding(.horizontal, 14)
                 .padding(.top, 5)
-                .frame(height: model.geometry.notchHeight, alignment: .top)
+                .frame(height: model.topBandHeight, alignment: .top)
 
             Group {
                 switch model.activeTab {
@@ -121,19 +121,50 @@ struct NotchTabBar: View {
 
 // MARK: - Home
 
+/// HeyClicky's Home tab, to the pixel: "Add skills" with a row of skill tiles and a "+" tile on
+/// the left, the ⌘ Shortcuts list on the right, and "Active integrations" with Dock Cursor along
+/// the bottom. The whole panel is 512 × 232 pt including the menu-bar band.
 struct NotchHomeView: View {
     @ObservedObject var companionManager: CompanionManager
     @ObservedObject var model: NotchHUDModel
 
     var body: some View {
-        HStack(alignment: .top, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                SkillLibrarySection(store: companionManager.skillLibraryStore)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 18) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Add skills")
+                        .font(.system(size: 13.5, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Skills give OpenClicky superpowers")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(Color.white.opacity(0.55))
+                    SkillTilesRow(store: companionManager.skillLibraryStore)
+                        .padding(.top, 9)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text("Active integrations")
-                    .font(.system(size: 11.5, weight: .semibold))
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "command").font(.system(size: 10, weight: .semibold))
+                        Text("Shortcuts").font(.system(size: 11.5, weight: .semibold))
+                    }
                     .foregroundColor(Color.white.opacity(0.75))
-                    .padding(.top, 16)
+                    .padding(.top, 1)
+                    // HeyClicky's four shortcuts, recognised by CompanionShortcutRecognizer.
+                    shortcutRow(title: "Talk", keys: ["⌃ control", "⌥ option"])
+                    shortcutRow(title: "Text", keys: ["⌃ control", "2×"])
+                    shortcutRow(title: "Dictate", keys: ["fn", "⌃ control"])
+                    shortcutRow(title: companionManager.isAlwaysListening ? "Hands-free ●" : "Hands-free", keys: ["fn", "⌃ control", "2×"])
+                }
+                .frame(width: 180, alignment: .leading)
+            }
+
+            Spacer(minLength: 6)
+
+            Text("Active integrations")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundColor(Color.white.opacity(0.75))
+            HStack(spacing: 8) {
                 HStack(spacing: 6) {
                     integrationIcon(systemImage: "link", tint: Color(hex: "#7C6CFF"), title: "Composio", isOn: OpenClickyConfiguration.settings.composioMcpUrl != nil)
                     integrationIcon(systemImage: "cursorarrow.rays", tint: Color(hex: "#38BDF8"), title: "Computer Use", isOn: OpenClickyConfiguration.settings.cuaDriverBin != nil)
@@ -151,50 +182,36 @@ struct NotchHomeView: View {
                 }
                 .padding(7)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: "#161616")))
-                .padding(.top, 4)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 5) {
-                    Image(systemName: "command").font(.system(size: 10, weight: .semibold))
-                    Text("Shortcuts").font(.system(size: 11.5, weight: .semibold))
+                Button(action: { companionManager.setCursorDocked(!companionManager.isCursorDocked) }) {
+                    Text(companionManager.isCursorDocked ? "Release Cursor" : "Dock Cursor")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color(hex: "#262626")))
                 }
-                .foregroundColor(Color.white.opacity(0.75))
-                .padding(.top, 1)
-                shortcutRow(title: "Talk", keys: ["⌃ control", "⌥ option"])
-                shortcutRow(title: "Text", keys: ["result card"])
-                shortcutRow(title: "Hands-free", keys: [companionManager.isAlwaysListening ? "on" : "settings"])
-                shortcutRow(title: "Voice", keys: [companionManager.isRealtimeVoiceEnabled ? "realtime" : "classic"])
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .disabled(companionManager.voiceState != .idle)
 
-                Spacer(minLength: 4)
-
-                HStack(spacing: 6) {
-                    Spacer(minLength: 0)
-                    Button(action: { companionManager.setCursorDocked(!companionManager.isCursorDocked) }) {
-                        Text(companionManager.isCursorDocked ? "Release Cursor" : "Dock Cursor")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(Capsule().fill(Color(hex: "#262626")))
-                    }
-                    .buttonStyle(.plain)
-                    .pointerCursor()
-                    .disabled(companionManager.voiceState != .idle)
-
-                    Button(action: { model.select(.settings) }) {
-                        Image(systemName: "info")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 26, height: 26)
-                            .background(Circle().fill(Color(hex: "#262626")))
-                    }
-                    .buttonStyle(.plain)
-                    .pointerCursor()
+                // (i): the buddy types out what OpenClicky does, next to itself (or in this island
+                // while it is docked). The panel closes so the buddy is in view.
+                Button(action: {
+                    model.close()
+                    companionManager.explainWhatOpenClickyDoes()
+                }) {
+                    Image(systemName: "info")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color(hex: "#262626")))
                 }
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .help("What does OpenClicky do?")
             }
-            .frame(width: 190, alignment: .leading)
+            .padding(.top, 6)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 14)
@@ -227,73 +244,47 @@ struct NotchHomeView: View {
     }
 }
 
-// MARK: - Skill library (Home)
+// MARK: - Skill tiles (Home)
 
-/// HeyClicky's "Add skills" surface: the app-teaching skills are automatic, the user's library is
-/// toggled here, and "Create a skill…" drafts a new SKILL.md through the backend and activates it.
-struct SkillLibrarySection: View {
+/// HeyClicky's "Add skills" row: one 40 pt tile per library skill (click toggles it; a blue check
+/// marks an active one) and a "+" tile. The "+" swaps the row for the "Create a skill…" field,
+/// which drafts a new SKILL.md through the backend and activates it. The app-teaching skills are
+/// automatic and have no tile.
+struct SkillTilesRow: View {
     @ObservedObject var store: SkillLibraryStore
+    @State private var isComposing = false
     @State private var request = ""
+    @FocusState private var isRequestFieldFocused: Bool
+
+    private let tileSize: CGFloat = 40
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Add skills")
-                    .font(.system(size: 13.5, weight: .bold))
-                    .foregroundColor(.white)
-                Spacer(minLength: 0)
-                Button(action: { NSWorkspace.shared.open(store.userSkillsDirectory) }) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundColor(Color.white.opacity(0.7))
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(.plain)
-                .pointerCursor()
-                .help("Open the skills folder (~/.openclicky/skills)")
-            }
-            Text("\(store.appSkills.count) app skills · auto by app")
-                .font(.system(size: 10.5))
-                .foregroundColor(Color.white.opacity(0.55))
-
-            Group {
-                if store.librarySkills.isEmpty {
-                    Text("No skills yet — type what one should do")
-                        .font(.system(size: 10.5))
-                        .foregroundColor(Color.white.opacity(0.45))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 10)
-                } else {
-                    ScrollView(.vertical, showsIndicators: true) {
-                        VStack(spacing: 2) {
-                            ForEach(store.librarySkills, id: \.id) { skill in
-                                skillRow(skill)
-                            }
+            if isComposing || store.isCreating {
+                composer
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(store.librarySkills, id: \.id) { skill in
+                            skillTile(skill)
+                        }
+                        Button(action: { isComposing = true; isRequestFieldFocused = true }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(Color.white.opacity(0.85))
+                                .frame(width: tileSize, height: tileSize)
+                                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.10)))
+                        }
+                        .buttonStyle(.plain)
+                        .pointerCursor()
+                        .help("Create a skill, or open the skills folder from the tile's menu")
+                        .contextMenu {
+                            Button("Open skills folder") { NSWorkspace.shared.open(store.userSkillsDirectory) }
                         }
                     }
-                    .frame(maxHeight: 96)
                 }
+                .frame(height: tileSize)
             }
-            .padding(.top, 6)
-
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles").font(.system(size: 10)).foregroundColor(Color.white.opacity(0.6))
-                TextField("Create a skill…", text: $request)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white)
-                    .onSubmit(create)
-                    .disabled(store.isCreating)
-                if store.isCreating {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Image(systemName: "return").font(.system(size: 9.5)).foregroundColor(Color.white.opacity(0.35))
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.10)))
-            .padding(.top, 6)
 
             if let error = store.lastError {
                 Text(error)
@@ -302,36 +293,62 @@ struct SkillLibrarySection: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .help(error)
-                    .padding(.top, 2)
             }
         }
     }
 
-    private func skillRow(_ skill: SkillFile) -> some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(skill.name)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                Text(skill.description)
-                    .font(.system(size: 9.5))
-                    .foregroundColor(Color.white.opacity(0.55))
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            Toggle("", isOn: Binding(
-                get: { store.activeIds.contains(skill.id) },
-                set: { store.setActive(skill.id, $0) }
-            ))
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .help(store.activeIds.contains(skill.id) ? "Active for talk and agent" : "Inactive")
+    private func skillTile(_ skill: SkillFile) -> some View {
+        let isActive = store.activeIds.contains(skill.id)
+        return Button(action: { store.setActive(skill.id, !isActive) }) {
+            Text(String(skill.name.prefix(1)).uppercased())
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(isActive ? .white : Color.white.opacity(0.7))
+                .frame(width: tileSize, height: tileSize)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isActive ? Color.white.opacity(0.16) : Color.white.opacity(0.08)))
+                .overlay(alignment: .topTrailing) {
+                    if isActive {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 14, height: 14)
+                            .background(Circle().fill(DS.Colors.blue500))
+                            .offset(x: 4, y: -4)
+                    }
+                }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.06)))
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .help("\(skill.name) — \(skill.description)\n\(isActive ? "Active for talk and agent. Click to turn off." : "Off. Click to activate.")")
+    }
+
+    private var composer: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles").font(.system(size: 10)).foregroundColor(Color.white.opacity(0.6))
+            TextField("Create a skill…", text: $request)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white)
+                .focused($isRequestFieldFocused)
+                .onSubmit(create)
+                .onExitCommand { isComposing = false }
+                .disabled(store.isCreating)
+            if store.isCreating {
+                ProgressView().controlSize(.mini)
+            } else {
+                Button(action: { isComposing = false; request = "" }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(Color.white.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .help("Cancel")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(height: tileSize)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.10)))
     }
 
     private func create() {
@@ -341,8 +358,9 @@ struct SkillLibrarySection: View {
             do {
                 _ = try await store.createSkill(request: text)
                 request = ""
+                isComposing = false
             } catch {
-                // The store publishes `lastError`; nothing else to do here.
+                // The store publishes `lastError`; the composer stays open so the user can retry.
             }
         }
     }
@@ -534,7 +552,10 @@ struct NotchSettingsView: View {
                         set: { companionManager.setAlwaysListening($0) }
                     ))
                     settingRow(systemImage: "mic.badge.waveform", title: "Speech to text", value: companionManager.isRealtimeVoiceEnabled ? "Realtime" : companionManager.buddyDictationManager.transcriptionProviderDisplayName)
-                    settingRow(systemImage: "keyboard", title: "Talk shortcut", value: "⌃ control + ⌥ option")
+                    settingRow(systemImage: "keyboard", title: "Talk shortcut", value: "hold ⌃ control + ⌥ option")
+                    settingRow(systemImage: "text.cursor", title: "Text shortcut", value: "tap ⌃ control twice")
+                    settingRow(systemImage: "character.cursor.ibeam", title: "Dictate shortcut", value: "hold fn + ⌃ control (types into the app in front)")
+                    settingRow(systemImage: "ear.badge.waveform", title: "Hands-free shortcut", value: "tap fn + ⌃ control twice")
                 }
                 section("CURSOR") {
                     toggleRow(systemImage: "arrow.up.to.line.compact", title: "Dock cursor in the notch", detail: "The buddy lives in the HUD", isOn: Binding(

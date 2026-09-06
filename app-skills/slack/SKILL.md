@@ -3,6 +3,7 @@ name: Slack
 description: Teaching notes for Slack — sidebar, channels, message composer, threads, search, huddles, and what to point at.
 apps: [com.tinyspeck.slackmacGap]
 sites: [app.slack.com]
+integration: slack
 surfaces: [talk]
 ---
 

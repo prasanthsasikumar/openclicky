@@ -109,11 +109,12 @@ instructions each time they change.
 
 Three ways, all producing the same files:
 
-- **Notch HUD**: hover the notch, Home tab, type what the skill should do into "Create a skill" and
-  press return. The app posts your line to `POST /skills/create`; the backend asks the model
+- **Notch HUD**: hover the notch, Home tab, click the "+" tile, type what the skill should do into
+  "Create a skill" and press return. The app posts your line to `POST /skills/create`; the backend asks the model
   (`SKILL_CREATE_MODEL`, else `OPENAI_MODEL`) for a SKILL.md that only relies on the capabilities it
-  is told about, validates it, and the app saves it to `library/<id>/` and activates it. Toggles in
-  the same list activate and deactivate; the folder button opens `~/.openclicky/skills`.
+  is told about, validates it, and the app saves it to `library/<id>/` and activates it. Clicking a
+  skill tile activates or deactivates it (a blue check marks an active one); right-click the "+" tile to
+  open `~/.openclicky/skills`.
 - **CLI**: `openclicky skills create "reply to emails in my voice"` (prints the id), then
   `openclicky skills list | activate <id> | deactivate <id> | path`.
 - **By hand**: drop a folder with a `SKILL.md` into `~/.openclicky/skills/library/` and activate it

@@ -4,6 +4,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { resolveConfig, type AgentConfig } from "./config.js";
 import { CodexAgent, type ApprovalRequest, type ApprovalDecision, type RunResult } from "./codex.js";
+import { ensureCodexHome } from "./codexHome.js";
 import { ask } from "./ask.js";
 import { gate, type Lane } from "./gate.js";
 import { captureScreen } from "./screenshot.js";
@@ -356,6 +357,85 @@ threads
       fail((e as Error).message);
     }
   });
+
+// Account integrations (Composio through Codex's MCP OAuth). The macOS app's "Connect <app>" card
+// calls these: `login` once per machine, then the agent's composio tools can connect single apps.
+const integrations = program.command("integrations").description("account integrations (Composio MCP through Codex OAuth)");
+
+/** `codex mcp <args>` against OpenClicky's CODEX_HOME; the config is (re)rendered first. */
+async function codexMcp(cfg: AgentConfig, args: string[], onLine?: (line: string) => void): Promise<{ code: number; output: string }> {
+  ensureCodexHome(cfg);
+  const { spawn } = await import("node:child_process");
+  return new Promise((resolve, reject) => {
+    const child = spawn(cfg.codexBin, ["mcp", ...args], { env: { ...process.env, CODEX_HOME: cfg.codexHome }, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    let pending = "";
+    const consume = (chunk: Buffer) => {
+      output += chunk.toString();
+      pending += chunk.toString();
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) onLine?.(line);
+    };
+    child.stdout.on("data", consume);
+    child.stderr.on("data", consume);
+    child.once("error", (e) => reject(new Error(`failed to start ${cfg.codexBin}: ${e.message}`)));
+    child.once("close", (code) => {
+      if (pending) onLine?.(pending);
+      resolve({ code: code ?? 1, output });
+    });
+  });
+}
+
+withCommonOptions(integrations.command("status").description("MCP servers and whether Composio is logged in")).action(
+  async (opts) => {
+    try {
+      const cfg = configFrom(opts);
+      const { code, output } = await codexMcp(cfg, ["list", "--json"]);
+      if (code !== 0) fail(output.trim() || `codex mcp list exited ${code}`);
+      const servers = JSON.parse(output) as Array<Record<string, any>>;
+      const composio = servers.find((s) => s.name === "composio");
+      const status = {
+        configured: Boolean(cfg.composioMcpUrl),
+        composio: composio ?? null,
+        // Codex reports "OAuth" once `codex mcp login composio` has stored a token; a consumer key needs no login.
+        loggedIn: Boolean(cfg.composioApiKey) || /o_?auth/i.test(String(composio?.auth_status ?? composio?.authStatus ?? "")),
+      };
+      if (opts.json) return void process.stdout.write(JSON.stringify(status, null, 2) + "\n");
+      process.stdout.write(
+        !status.configured ? "Composio: not configured (set COMPOSIO_MCP_URL)\n" : status.loggedIn ? "Composio: logged in\n" : "Composio: configured, not logged in (run `openclicky integrations login`)\n",
+      );
+    } catch (e) {
+      fail((e as Error).message);
+    }
+  },
+);
+
+withCommonOptions(
+  integrations
+    .command("login")
+    .description("log Codex into the Composio MCP server (opens Composio's authorization page)")
+    .argument("[server]", "MCP server name", "composio")
+    .option("--no-open", "print the authorization URL instead of opening the browser"),
+).action(async (server: string, opts) => {
+  try {
+    const cfg = configFrom(opts);
+    if (server === "composio" && !cfg.composioMcpUrl) fail("Composio is not configured: set COMPOSIO_MCP_URL (composioMcpUrl in shell.json)");
+    const { code, output } = await codexMcp(cfg, ["login", server], (line) => {
+      const url = line.match(/https?:\/\/\S+/)?.[0];
+      if (url && opts.open !== false) {
+        process.stdout.write(`opening ${url}\n`);
+        // Codex only prints the URL; open it so the user lands on Composio's page.
+        void import("node:child_process").then(({ spawn }) => spawn("open", [url], { stdio: "ignore" }).unref());
+      } else if (line.trim()) {
+        process.stdout.write(line + "\n");
+      }
+    });
+    if (code !== 0) fail(output.trim() || `codex mcp login exited ${code}`);
+  } catch (e) {
+    fail((e as Error).message);
+  }
+});
 
 const skills = program.command("skills").description("the user's skill library (~/.openclicky/skills): activated skills apply to talk and agent runs");
 

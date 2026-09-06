@@ -20,6 +20,9 @@ struct SkillFile: Equatable {
     let sites: [String]
     /// Where the skill is injected: "talk" (voice / teacher prompts) and/or "agent" (Codex).
     let surfaces: Set<String>
+    /// The Composio toolkit behind the app ("gmail", "youtube"), for app-teaching skills whose app has
+    /// an account to connect. Only these skills get the "Connect <app>" card; nil for plain apps.
+    let integration: String?
     let body: String
 
     var isForTalk: Bool { surfaces.contains("talk") }
@@ -54,6 +57,7 @@ struct SkillFile: Equatable {
             apps: fields["apps"].map(parseList) ?? [],
             sites: fields["sites"].map(parseList) ?? [],
             surfaces: Set(surfaces),
+            integration: fields["integration"].flatMap { $0.isEmpty ? nil : $0 },
             body: String(text[bodyRange]).trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }

@@ -29,9 +29,15 @@ describe("renderMcpServers", () => {
   });
   it("renders composio and computer-use blocks when configured", () => {
     const out = renderMcpServers({ composioMcpUrl: "https://mcp.example/composio", cuaDriverBin: "/opt/cua-driver" });
-    expect(out).toContain('[mcp_servers.composio]\nurl = "https://mcp.example/composio"\nbearer_token_env_var = "OPENCLICKY_SESSION_TOKEN"');
+    expect(out).toContain('[mcp_servers.composio]\nurl = "https://mcp.example/composio"\nrequired = true\ndefault_tools_approval_mode = "approve"\nstartup_timeout_sec = 30.0\ntool_timeout_sec = 120.0');
+    expect(out).not.toContain("bearer_token_env_var");
     expect(out).toContain('[mcp_servers.computer-use]\ncommand = "/opt/cua-driver"\nargs = ["--socket"]');
     expect(out).toContain('CUA_DRIVER_EMBEDDED = "1"');
+  });
+  it("sends the Composio consumer key as a header when configured", () => {
+    const out = renderMcpServers({ composioMcpUrl: "https://connect.composio.dev/mcp", composioApiKey: "ck_test" });
+    expect(out).toContain('[mcp_servers.composio]\nurl = "https://connect.composio.dev/mcp"\nhttp_headers = { "x-consumer-api-key" = "ck_test" }\nrequired = true');
+    expect(out).not.toContain("bearer_token_env_var");
   });
 });
 

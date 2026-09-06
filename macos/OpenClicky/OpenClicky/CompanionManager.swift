@@ -66,9 +66,9 @@ final class CompanionManager: ObservableObject {
     // MARK: - Onboarding Prompt Bubble
 
     /// Text streamed character-by-character on the cursor after the onboarding video ends.
-    @Published var onboardingPromptText: String = ""
-    @Published var onboardingPromptOpacity: Double = 0.0
-    @Published var showOnboardingPrompt: Bool = false
+    @Published var cursorCaptionText: String = ""
+    @Published var cursorCaptionOpacity: Double = 0.0
+    @Published var isCursorCaptionVisible: Bool = false
 
     let buddyDictationManager = BuddyDictationManager()
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
@@ -228,7 +228,9 @@ final class CompanionManager: ObservableObject {
     /// plus the app-teaching skill matching the app (or browser site) in front. Empty when none.
     func talkSkillsBlock() -> String {
         let front = FrontmostAppObserver.current(excludingBundleIdentifier: Bundle.main.bundleIdentifier)
-        let appSkill = AppSkillMatcher.match(front, in: skillLibraryStore.appSkills.filter { $0.isForTalk })
+        // Apps the user answered "No" to on the connect card keep their skill out of the prompt.
+        let declinedSkillIds = appConnectPromptController.declinedSkillIds
+        let appSkill = AppSkillMatcher.match(front, in: skillLibraryStore.appSkills.filter { $0.isForTalk && !declinedSkillIds.contains($0.id) })
         let block = SkillPromptBuilder.build(activeSkills: skillLibraryStore.activeTalkSkills, appSkill: appSkill, front: front)
         if let appSkill { print("🧩 Skills: app skill \"\(appSkill.name)\" for \(front.bundleIdentifier ?? "?")\(front.url?.host.map { " / " + $0 } ?? "")") }
         return block
@@ -245,16 +247,26 @@ final class CompanionManager: ObservableObject {
     /// The notch HUD: a lip under the notch that opens on hover / while busy.
     let notchHUDManager = NotchHUDManager()
 
+    /// Opens the "Connect <app> to OpenClicky" card in the HUD when a supported app or site comes to the front.
+    let appConnectPromptController = AppConnectPromptController()
+
     /// True while the buddy lives in the notch HUD instead of following the mouse.
     @Published private(set) var isCursorDocked: Bool = false
 
-    /// Set to start the docking flight; observed by BlueCursorView on the screen that owns the point.
-    @Published var cursorDockTargetScreenLocation: CGPoint?
+    /// Bumped when the user docks the buddy. The overlay that is showing the buddy answers by
+    /// starting a `.toDock` flight from its own screen (see `beginCursorFlight`).
+    @Published private(set) var cursorDockRequestToken: Int = 0
+
+    /// The leg of a buddy flight in progress, if any. Each display has its own overlay, so a
+    /// flight to another display is split at the display edges; the overlay whose screen matches
+    /// `screenFrame` animates the leg and reports back when it is done.
+    @Published private(set) var cursorFlightLeg: CursorFlightLeg?
+    private var cursorFlightSequence = 0
 
     /// Where a freshly shown overlay should start the buddy (the notch) before flying out.
     var cursorLaunchOriginScreenLocation: CGPoint?
 
-    private var isDockingInProgress = false
+    private(set) var isDockingInProgress = false
 
     /// Dock the buddy in the notch, or release it back to the mouse.
     func setCursorDocked(_ docked: Bool) {
@@ -273,12 +285,19 @@ final class CompanionManager: ObservableObject {
         transientHideTask?.cancel()
         transientHideTask = nil
         clearDetectedElementLocation()
-        // Set on the next runloop turn so a freshly created overlay observes the change.
-        let dockPoint = notchHUDManager.dockPoint
+        dismissCursorCaption()
+        // Bumped on the next runloop turn so a freshly created overlay observes the change.
         DispatchQueue.main.async {
-            self.cursorDockTargetScreenLocation = dockPoint
+            self.cursorDockRequestToken &+= 1
         }
-        print("🎯 Docking cursor to notch at \(dockPoint)")
+        // Both legs of the longest flight take under 3.5 s. If no overlay picked the request up
+        // (the pointer between displays, say), dock without the flight rather than hang.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+            guard let self, self.isDockingInProgress else { return }
+            print("🎯 Docking without a flight (no overlay animated it)")
+            self.finishDockingCursor()
+        }
+        print("🎯 Docking cursor to notch at \(notchHUDManager.dockPoint)")
     }
 
     /// Called by the overlay once the flight into the notch has finished.
@@ -288,20 +307,91 @@ final class CompanionManager: ObservableObject {
         UserDefaults.standard.set(true, forKey: "isOpenClickyCursorDocked")
         overlayWindowManager.hideOverlay()
         isOverlayVisible = false
-        cursorDockTargetScreenLocation = nil
+        cursorFlightLeg = nil
+        clearDetectedElementLocation()
     }
 
     private func undockCursorFromNotch() {
         guard isCursorDocked else { return }
         isCursorDocked = false
         UserDefaults.standard.set(false, forKey: "isOpenClickyCursorDocked")
-        cursorDockTargetScreenLocation = nil
+        cursorFlightLeg = nil
+        notchHUDManager.clearCaption()
         // Re-create the overlay with the buddy starting at the notch; it flies to the mouse.
         cursorLaunchOriginScreenLocation = notchHUDManager.dockPoint
         overlayWindowManager.hasShownOverlayBefore = true
         overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
         isOverlayVisible = true
         print("🎯 Cursor released from the notch")
+    }
+
+    // MARK: Cursor flights between displays
+
+    /// Starts a flight from the overlay on `fromScreenFrame` to the notch (`.toDock`) or to the
+    /// mouse pointer (`.toMouse`). When the destination is on another display the flight gets two
+    /// legs: to the nearest edge of this display, then across the destination display.
+    func beginCursorFlight(_ purpose: CursorFlightLeg.Purpose, fromScreenFrame: CGRect) {
+        guard cursorFlightLeg == nil else { return }
+        let (destination, destinationScreenFrame) = cursorFlightDestination(for: purpose, fallbackScreenFrame: fromScreenFrame)
+        cursorFlightSequence += 1
+        cursorFlightLeg = CursorFlightPlanner.firstLeg(
+            purpose: purpose,
+            fromScreenFrame: fromScreenFrame,
+            destination: destination,
+            destinationScreenFrame: destinationScreenFrame,
+            sequence: cursorFlightSequence
+        )
+    }
+
+    /// Called by the overlay that finished a non-final leg: the destination display's overlay
+    /// takes over from the matching edge.
+    func continueCursorFlight(afterLeg finishedLeg: CursorFlightLeg) {
+        guard finishedLeg == cursorFlightLeg, !finishedLeg.isFinalLeg else { return }
+        let (destination, destinationScreenFrame) = cursorFlightDestination(for: finishedLeg.purpose, fallbackScreenFrame: finishedLeg.screenFrame)
+        cursorFlightSequence += 1
+        cursorFlightLeg = CursorFlightPlanner.finalLeg(
+            purpose: finishedLeg.purpose,
+            afterExitPoint: finishedLeg.endScreenLocation,
+            destination: destination,
+            destinationScreenFrame: destinationScreenFrame,
+            sequence: cursorFlightSequence
+        )
+    }
+
+    /// Called by the overlay when the flight it was animating ended (or was cancelled).
+    func finishCursorFlight(onScreenFrame screenFrame: CGRect) {
+        guard let cursorFlightLeg, cursorFlightLeg.screenFrame == screenFrame else { return }
+        self.cursorFlightLeg = nil
+    }
+
+    private func cursorFlightDestination(for purpose: CursorFlightLeg.Purpose, fallbackScreenFrame: CGRect) -> (CGPoint, CGRect) {
+        switch purpose {
+        case .toDock:
+            return (notchHUDManager.dockPoint, notchHUDManager.dockScreenFrame)
+        case .toMouse:
+            let mouseLocation = NSEvent.mouseLocation
+            let mouseScreenFrame = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })?.frame ?? fallbackScreenFrame
+            return (mouseLocation, mouseScreenFrame)
+        }
+    }
+
+    /// The connect card's "Yes": make sure Codex is logged into Composio (opens Composio's page in
+    /// the browser the first time on this Mac), then hand the agent the account-connection task.
+    private func connectIntegrationThenRun(_ task: String) {
+        Task { @MainActor in
+            do {
+                let status = try await openClickyAgentClient.integrationsStatus()
+                if status.configured && !status.loggedIn {
+                    agentActivityText = "Signing in to Composio…"
+                    try await openClickyAgentClient.loginIntegration()
+                    agentActivityText = nil
+                }
+            } catch {
+                agentActivityText = nil
+                print("⚠️ Composio login failed: \(error.localizedDescription)")
+            }
+            submitTextToAgent(task)
+        }
     }
 
     /// Text entry point into the agent lane (result-card follow-ups, future text mode). Captures the
@@ -386,7 +476,7 @@ final class CompanionManager: ObservableObject {
     private func launchDockedCursorForPointing() {
         guard isCursorDocked, !isOverlayVisible else { return }
         cursorLaunchOriginScreenLocation = notchHUDManager.dockPoint
-        cursorDockTargetScreenLocation = notchHUDManager.dockPoint
+        cursorFlightLeg = nil
         overlayWindowManager.hasShownOverlayBefore = true
         overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
         isOverlayVisible = true
@@ -508,6 +598,11 @@ final class CompanionManager: ObservableObject {
 
         // OpenClicky: the notch HUD is always available; it needs no permissions.
         notchHUDManager.show(companionManager: self)
+        appConnectPromptController.start(
+            skillLibraryStore: skillLibraryStore,
+            notchHUDManager: notchHUDManager,
+            submitToAgent: { [weak self] task in self?.connectIntegrationThenRun(task) }
+        )
 
         // OpenClicky: keep the Realtime voice session warm so talking is instant.
         if hasCompletedOnboarding && allPermissionsGranted {
@@ -554,6 +649,7 @@ final class CompanionManager: ObservableObject {
     }
 
     func stop() {
+        appConnectPromptController.stop()
         notchHUDManager.hide()
         realtimeVoiceClient.disconnect(reason: nil)
         globalPushToTalkShortcutMonitor.stop()
@@ -564,6 +660,8 @@ final class CompanionManager: ObservableObject {
         currentResponseTask?.cancel()
         currentResponseTask = nil
         shortcutTransitionCancellable?.cancel()
+        companionShortcutCancellable?.cancel()
+        dismissCursorCaption()
         voiceStateCancellable?.cancel()
         audioPowerCancellable?.cancel()
         accessibilityCheckTimer?.invalidate()
@@ -716,6 +814,10 @@ final class CompanionManager: ObservableObject {
                     self.voiceState = .processing
                 } else {
                     self.voiceState = .idle
+                    // A dictation session that ended without a transcript (error, nothing said).
+                    if self.isDictatingToFrontApp && !self.buddyDictationManager.isDictationInProgress {
+                        self.finishDictationToFrontApp()
+                    }
                     // If the user pressed and released the hotkey without
                     // saying anything, no response task runs — schedule the
                     // transient hide here so the overlay doesn't get stuck.
@@ -736,6 +838,169 @@ final class CompanionManager: ObservableObject {
             .sink { [weak self] transition in
                 self?.handleShortcutTransition(transition)
             }
+        companionShortcutCancellable = globalPushToTalkShortcutMonitor
+            .companionShortcutPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] shortcutEvent in
+                self?.handleCompanionShortcut(shortcutEvent)
+            }
+    }
+
+    // MARK: - Text, Dictate, Hands-free (HeyClicky's other shortcuts)
+
+    private var companionShortcutCancellable: AnyCancellable?
+
+    /// True while fn + control dictation is recording or transcribing: the words are typed into
+    /// the app in front, not asked of OpenClicky.
+    @Published private(set) var isDictatingToFrontApp = false
+
+    private func handleCompanionShortcut(_ shortcutEvent: CompanionShortcutEvent) {
+        switch shortcutEvent {
+        case .textComposerRequested:
+            openTextComposer()
+        case .handsFreeToggleRequested:
+            toggleHandsFree()
+        case .dictatePressed:
+            beginDictationToFrontApp()
+        case .dictateReleased(let wasTap):
+            endDictationToFrontApp(discardingTranscript: wasTap)
+        case .talkPressed, .talkReleased:
+            // Delivered through shortcutTransitionPublisher.
+            break
+        }
+    }
+
+    /// Control tapped twice: the notch island opens a one-line text field.
+    func openTextComposer() {
+        guard !showOnboardingVideo else { return }
+        notchHUDManager.openTextComposer()
+    }
+
+    /// A typed request goes where a spoken one would: the Realtime session (it answers out loud,
+    /// points, and can call the agent) or, without Realtime, the Claude teacher lane.
+    func submitTypedRequest(_ text: String) {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return }
+        transientHideTask?.cancel()
+        transientHideTask = nil
+        if !isClickyCursorEnabled && !isOverlayVisible && !isCursorDocked {
+            overlayWindowManager.hasShownOverlayBefore = true
+            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+            isOverlayVisible = true
+        }
+        currentResponseTask?.cancel()
+        openClickyAgentClient.cancel()
+        elevenLabsTTSClient.stopPlayback()
+        systemSpeechSynthesizer.stopSpeaking(at: .immediate)
+        clearDetectedElementLocation()
+        dismissCursorCaption()
+        lastTranscript = trimmedText
+        ClickyAnalytics.trackUserMessageSent(transcript: trimmedText)
+        print("⌨️ Typed request: \(trimmedText)")
+
+        guard usesRealtimeVoice else {
+            sendTranscriptToClaudeWithScreenshot(transcript: trimmedText)
+            return
+        }
+        voiceState = .processing
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.realtimeVoiceClient.connectIfNeeded(mode: self.isAlwaysListening ? .alwaysOn : .pushToTalk)
+                await self.realtimeVoiceClient.sendTextTurn(trimmedText)
+            } catch {
+                print("⚠️ Realtime unavailable for the typed request (\(error.localizedDescription)); using the teacher lane")
+                self.sendTranscriptToClaudeWithScreenshot(transcript: trimmedText)
+            }
+        }
+    }
+
+    /// fn + control tapped twice: always-on listening on or off (Realtime only).
+    func toggleHandsFree() {
+        guard usesRealtimeVoice else {
+            streamCursorCaption("hands-free needs realtime voice — turn it on in settings", holdSeconds: 6)
+            return
+        }
+        setAlwaysListening(!isAlwaysListening)
+        let feedback = isAlwaysListening
+            ? "hands-free is on — just talk, i'm listening. tap fn + control twice to stop."
+            : "hands-free is off. hold control + option to talk."
+        if isCursorDocked {
+            notchHUDManager.showCaption(feedback, holdSeconds: 5)
+        } else {
+            streamCursorCaption(feedback, holdSeconds: 6)
+        }
+        print("👂 Hands-free \(isAlwaysListening ? "on" : "off")")
+    }
+
+    /// fn + control held: record through the classic dictation pipeline (upload transcription),
+    /// then type the words into the app in front.
+    private func beginDictationToFrontApp() {
+        guard !showOnboardingVideo, !isDictatingToFrontApp else { return }
+        guard !buddyDictationManager.isDictationInProgress else { return }
+        guard voiceState == .idle || voiceState == .responding else { return }
+        isDictatingToFrontApp = true
+        transientHideTask?.cancel()
+        transientHideTask = nil
+        if !isClickyCursorEnabled && !isOverlayVisible && !isCursorDocked {
+            overlayWindowManager.hasShownOverlayBefore = true
+            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+            isOverlayVisible = true
+        }
+        elevenLabsTTSClient.stopPlayback()
+        systemSpeechSynthesizer.stopSpeaking(at: .immediate)
+        dismissCursorCaption()
+        print("⌨️ Dictation to the front app started")
+
+        pendingKeyboardShortcutStartTask?.cancel()
+        pendingKeyboardShortcutStartTask = Task {
+            // The Realtime engine's voice-processing input must be gone first, or the dictation
+            // engine records silence (and the transcription model then echoes its prompt).
+            await realtimeVoiceClient.releaseMicrophoneForDictation()
+            guard !Task.isCancelled else { return }
+            await buddyDictationManager.startPushToTalkFromKeyboardShortcut(
+                currentDraftText: "",
+                updateDraftText: { _ in },
+                submitDraftText: { [weak self] finalTranscript in
+                    self?.typeDictatedTextIntoFrontApp(finalTranscript)
+                }
+            )
+        }
+    }
+
+    private func endDictationToFrontApp(discardingTranscript: Bool) {
+        guard isDictatingToFrontApp else { return }
+        pendingKeyboardShortcutStartTask?.cancel()
+        pendingKeyboardShortcutStartTask = nil
+        if discardingTranscript {
+            // A tap (or half of a hands-free double tap): nothing worth typing was said.
+            buddyDictationManager.cancelCurrentDictation(preserveDraftText: false)
+            finishDictationToFrontApp()
+            return
+        }
+        buddyDictationManager.stopPushToTalkFromKeyboardShortcut()
+        // isDictatingToFrontApp clears when the transcript is typed or the session ends.
+    }
+
+    /// Dictation is over (typed, empty, cancelled, or failed): hands the microphone back.
+    private func finishDictationToFrontApp() {
+        guard isDictatingToFrontApp else { return }
+        isDictatingToFrontApp = false
+        realtimeVoiceClient.resumeListeningAfterDictation()
+    }
+
+    private func typeDictatedTextIntoFrontApp(_ transcript: String) {
+        finishDictationToFrontApp()
+        let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        ClickyAnalytics.trackUserMessageSent(transcript: "[dictation] \(text.count) chars")
+        switch FrontAppTextInserter.insert(text) {
+        case .typed:
+            print("⌨️ Dictation typed \(text.count) chars into \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "the front app")")
+        case .leftOnPasteboard:
+            print("⌨️ Dictation could not type (no Accessibility permission); text is on the pasteboard")
+            streamCursorCaption("i couldn't type that in — it's on your clipboard, press ⌘V. (allow accessibility for openclicky to fix this)", holdSeconds: 8)
+        }
     }
 
     private func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
@@ -771,16 +1036,8 @@ final class CompanionManager: ObservableObject {
             systemSpeechSynthesizer.stopSpeaking(at: .immediate)
             clearDetectedElementLocation()
 
-            // Dismiss the onboarding prompt if it's showing
-            if showOnboardingPrompt {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    onboardingPromptOpacity = 0.0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    self.showOnboardingPrompt = false
-                    self.onboardingPromptText = ""
-                }
-            }
+            // Dismiss the onboarding prompt / caption if it's showing
+            dismissCursorCaption()
     
 
             ClickyAnalytics.trackPushToTalkStarted()
@@ -984,7 +1241,8 @@ final class CompanionManager: ObservableObject {
     private func handleRealtimeShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
         switch transition {
         case .pressed:
-            guard !showOnboardingVideo else { return }
+            guard !showOnboardingVideo, !isDictatingToFrontApp else { return }
+            dismissCursorCaption()
             transientHideTask?.cancel()
             transientHideTask = nil
             if !isClickyCursorEnabled && !isOverlayVisible && !isCursorDocked {
@@ -1118,6 +1376,12 @@ final class CompanionManager: ObservableObject {
                 guard !Task.isCancelled else { return }
             }
 
+            // Wait for a caption the buddy is still typing out or holding
+            while isCursorCaptionVisible {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                guard !Task.isCancelled else { return }
+            }
+
             // Pause 1s after everything finishes, then fade out
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
@@ -1217,7 +1481,7 @@ final class CompanionManager: ObservableObject {
         ClickyAnalytics.trackOnboardingDemoTriggered()
         performOnboardingDemoInteraction()
         DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
-            guard let self, !self.showOnboardingPrompt else { return }
+            guard let self, !self.isCursorCaptionVisible else { return }
             self.startOnboardingPromptStream()
         }
     }
@@ -1237,36 +1501,84 @@ final class CompanionManager: ObservableObject {
     }
 
     private func startOnboardingPromptStream() {
-        let message = "press control + option and introduce yourself"
-        onboardingPromptText = ""
-        showOnboardingPrompt = true
-        onboardingPromptOpacity = 0.0
+        streamCursorCaption("press control + option and introduce yourself")
+    }
+
+    // MARK: - Cursor caption (typewriter text next to the buddy)
+
+    private var cursorCaptionTypingTimer: Timer?
+    private var cursorCaptionDismissWorkItem: DispatchWorkItem?
+
+    /// Types `message` out next to the buddy one character at a time (the onboarding prompt, the
+    /// Home tab's (i), hands-free feedback), holds it for `holdSeconds`, then fades it out.
+    func streamCursorCaption(_ message: String, holdSeconds: TimeInterval = 10) {
+        cursorCaptionTypingTimer?.invalidate()
+        cursorCaptionDismissWorkItem?.cancel()
+        cursorCaptionText = ""
+        isCursorCaptionVisible = true
+        cursorCaptionOpacity = 0.0
 
         withAnimation(.easeIn(duration: 0.4)) {
-            onboardingPromptOpacity = 1.0
+            cursorCaptionOpacity = 1.0
         }
 
-        var currentIndex = 0
-        Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { timer in
-            guard currentIndex < message.count else {
+        let characters = Array(message)
+        var nextCharacterIndex = 0
+        cursorCaptionTypingTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            guard nextCharacterIndex < characters.count else {
                 timer.invalidate()
-                // Auto-dismiss after 10 seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
-                    guard self.showOnboardingPrompt else { return }
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        self.onboardingPromptOpacity = 0.0
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        self.showOnboardingPrompt = false
-                        self.onboardingPromptText = ""
-                    }
-                }
+                self.scheduleCursorCaptionDismiss(after: holdSeconds)
                 return
             }
-            let index = message.index(message.startIndex, offsetBy: currentIndex)
-            self.onboardingPromptText.append(message[index])
-            currentIndex += 1
+            self.cursorCaptionText.append(characters[nextCharacterIndex])
+            nextCharacterIndex += 1
         }
+    }
+
+    private func scheduleCursorCaptionDismiss(after seconds: TimeInterval) {
+        cursorCaptionDismissWorkItem?.cancel()
+        let dismissWorkItem = DispatchWorkItem { [weak self] in self?.dismissCursorCaption() }
+        cursorCaptionDismissWorkItem = dismissWorkItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: dismissWorkItem)
+    }
+
+    func dismissCursorCaption() {
+        cursorCaptionTypingTimer?.invalidate()
+        cursorCaptionTypingTimer = nil
+        cursorCaptionDismissWorkItem?.cancel()
+        cursorCaptionDismissWorkItem = nil
+        guard isCursorCaptionVisible else { return }
+        withAnimation(.easeOut(duration: 0.3)) {
+            cursorCaptionOpacity = 0.0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self, self.cursorCaptionOpacity == 0.0 else { return }
+            self.isCursorCaptionVisible = false
+            self.cursorCaptionText = ""
+        }
+    }
+
+    /// The Home tab's (i): the buddy types out what OpenClicky does, next to itself. While the
+    /// buddy is docked the text types out in the notch island instead; a hidden buddy is shown
+    /// for the duration.
+    func explainWhatOpenClickyDoes() {
+        let message = "hi, i'm openclicky. hold control + option and ask about anything on your screen — "
+            + "i'll answer out loud and point at what you need. tap control twice to type instead, "
+            + "hold fn + control to dictate into any app, and real work goes to the agent."
+        if isCursorDocked {
+            notchHUDManager.showCaption(message)
+            return
+        }
+        if !isOverlayVisible {
+            transientHideTask?.cancel()
+            transientHideTask = nil
+            overlayWindowManager.hasShownOverlayBefore = true
+            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+            isOverlayVisible = true
+        }
+        streamCursorCaption(message, holdSeconds: 8)
+        scheduleTransientHideIfNeeded()
     }
 
     /// Gradually raises an AVPlayer's volume from its current level to the
