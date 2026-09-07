@@ -22,6 +22,21 @@ export type Env = {
   /** Prepended to model names without a "/" on the OpenAI / Anthropic routes (e.g. "openai/", "anthropic/"). */
   OPENAI_MODEL_PREFIX?: string;
   ANTHROPIC_MODEL_PREFIX?: string;
+  /** BYOK: where a user's own keys are sent (defaults: the vendors' APIs). Overridable for tests. */
+  BYOK_OPENAI_BASE_URL?: string;
+  BYOK_ANTHROPIC_BASE_URL?: string;
+  /** Anthropic model used for "default" on BYOK requests (Anthropic's own id, no OpenRouter prefix). */
+  BYOK_ANTHROPIC_MODEL?: string;
+  /** Supabase service key (server-side, bypasses RLS): enables the billing store. Without it nothing is metered. */
+  SUPABASE_SERVICE_KEY?: string;
+  /** Free-tier allowance for signed-in users with no subscription row (default 200). */
+  FREE_MONTHLY_CREDITS?: string;
+  /** Stripe (subscriptions). Checkout and portal need STRIPE_SECRET_KEY; the webhook needs STRIPE_WEBHOOK_SECRET. */
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_SUCCESS_URL?: string;
+  STRIPE_CANCEL_URL?: string;
+  STRIPE_PORTAL_RETURN_URL?: string;
   /** Native shell TTS (`/tts`): ElevenLabs when set, else OpenAI speech with OPENAI_TTS_MODEL/VOICE. */
   ELEVENLABS_API_KEY?: string;
   ELEVENLABS_VOICE_ID?: string;
