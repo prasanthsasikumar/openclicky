@@ -32,6 +32,12 @@ struct OpenClickyShellSettings: Codable {
     var cuaDriverBin: String? = nil
     /// Directory of app-teaching skills (`app-skills/` in the repo). Defaults to the checkout the CLI runs from.
     var appSkillsPath: String? = nil
+    /// Bring your own key: your OpenAI key (and optionally an Anthropic key for the Claude lanes).
+    /// Sent to the backend with every request in `x-openclicky-*` headers; the backend runs the
+    /// request on them instead of its own keys and meters nothing. Leave empty to use OpenClicky's
+    /// keys under your plan.
+    var openaiApiKey: String? = nil
+    var anthropicApiKey: String? = nil
 }
 
 enum OpenClickyConfiguration {
@@ -126,23 +132,54 @@ enum OpenClickyConfiguration {
         return URL(fileURLWithPath: NSString(string: "~/.openclicky/app-skills").expandingTildeInPath, isDirectory: true)
     }
 
-    /// Adds the bearer token every backend request needs.
+    // MARK: - Bring your own key
+
+    private static func cleaned(_ value: String?) -> String? {
+        let trimmedValue = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? nil : trimmedValue
+    }
+
+    /// The `x-openclicky-*` headers carrying the user's own provider keys (empty when they use OpenClicky's).
+    static func providerKeyHeaders(from settings: OpenClickyShellSettings = settings) -> [String: String] {
+        var headers: [String: String] = [:]
+        if let openaiApiKey = cleaned(settings.openaiApiKey) { headers["x-openclicky-openai-key"] = openaiApiKey }
+        if let anthropicApiKey = cleaned(settings.anthropicApiKey) { headers["x-openclicky-anthropic-key"] = anthropicApiKey }
+        return headers
+    }
+
+    /// True when this Mac pays its own provider bills: an OpenAI key is set in shell.json.
+    static func usesOwnKeys(_ settings: OpenClickyShellSettings = settings) -> Bool {
+        cleaned(settings.openaiApiKey) != nil
+    }
+    static var usesOwnKeys: Bool { usesOwnKeys(settings) }
+
+    /// Adds the bearer token every backend request needs, plus the user's own provider keys if any.
     static func authorize(_ request: inout URLRequest) {
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        for (headerName, headerValue) in providerKeyHeaders() {
+            request.setValue(headerValue, forHTTPHeaderField: headerName)
+        }
     }
 
-    /// Environment for the `openclicky` CLI subprocess. Provider keys are stripped on purpose.
-    static var cliProcessEnvironment: [String: String] {
+    /// Environment for the `openclicky` CLI subprocess. Provider keys are stripped on purpose; the
+    /// user's own keys travel under OpenClicky names so the CLI forwards them as headers.
+    static var cliProcessEnvironment: [String: String] { cliProcessEnvironment(from: settings) }
+
+    static func cliProcessEnvironment(from settings: OpenClickyShellSettings) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
-        environment["BACKEND_URL"] = backendBaseURL
-        if let token { environment["OPENCLICKY_TOKEN"] = token }
-        if let model = agentModelOverride { environment["OPENCLICKY_MODEL"] = model }
-        environment["OPENCLICKY_WORKSPACE"] = workspacePath
+        var backendUrl = settings.backendUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        while backendUrl.hasSuffix("/") { backendUrl.removeLast() }
+        environment["BACKEND_URL"] = backendUrl.isEmpty ? "http://localhost:8787" : backendUrl
+        if let token = cleaned(settings.token) { environment["OPENCLICKY_TOKEN"] = token }
+        if let model = cleaned(settings.model) { environment["OPENCLICKY_MODEL"] = model }
+        environment["OPENCLICKY_WORKSPACE"] = NSString(string: settings.workspace).expandingTildeInPath
         if let composioMcpUrl = settings.composioMcpUrl, !composioMcpUrl.isEmpty { environment["COMPOSIO_MCP_URL"] = composioMcpUrl }
         if let composioApiKey = settings.composioApiKey, !composioApiKey.isEmpty { environment["COMPOSIO_API_KEY"] = composioApiKey }
         if let cuaDriverBin = settings.cuaDriverBin, !cuaDriverBin.isEmpty { environment["CUA_DRIVER_BIN"] = cuaDriverBin }
+        if let openaiApiKey = cleaned(settings.openaiApiKey) { environment["OPENCLICKY_OPENAI_KEY"] = openaiApiKey }
+        if let anthropicApiKey = cleaned(settings.anthropicApiKey) { environment["OPENCLICKY_ANTHROPIC_KEY"] = anthropicApiKey }
         environment.removeValue(forKey: "OPENAI_API_KEY")
         environment.removeValue(forKey: "ANTHROPIC_API_KEY")
         // GUI apps get a minimal PATH; add the usual CLI locations so `openclicky`, `codex`, `node`, `ffmpeg` resolve.

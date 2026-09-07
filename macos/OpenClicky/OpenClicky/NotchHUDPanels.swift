@@ -534,6 +534,13 @@ struct NotchSettingsView: View {
                         OpenClickyConfiguration.revealSettingsFile()
                     }
                 }
+                section("ACCOUNT") {
+                    // Bring your own key, or the plan and credits (BillingStatus.swift).
+                    NotchAccountSection(
+                        row: { settingRow(systemImage: $0, title: $1, value: $2) },
+                        action: { actionRow(systemImage: $0, title: $1, detail: $2, action: $3) }
+                    )
+                }
                 section("AGENT") {
                     toggleRow(systemImage: "gearshape.2", title: "Agent mode", detail: "Work requests go to a Codex thread", isOn: Binding(
                         get: { companionManager.isAgentModeEnabled },
