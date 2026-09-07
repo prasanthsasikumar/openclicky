@@ -147,10 +147,39 @@ curl localhost:8787/health        # → {"ok":true}
 | `POST /agent/transcribe` | token | `{ audio: <base64>, mime?, language? }` → `{ text }` via `OPENAI_TRANSCRIBE_MODEL` |
 | `GET /skills/library` | token | the bundled skill manifest (id, name, description, kind, files; app skills carry `apps`/`sites`) |
 | `POST /skills/create` | token | `{ request, capabilities? }` → `{ id, name, description, markdown }`: the model drafts one SKILL.md (`SKILL_CREATE_MODEL`, else `OPENAI_MODEL`) |
+| `GET /billing/me` | token | `{ byok, plan, status, used, limit, periodEnd }` — what the app's Settings → Account shows |
+| `POST /billing/checkout` | token | `{ plan }` → `{ url }`: a Stripe Checkout page for that plan |
+| `POST /billing/portal` | token | `{ url }`: Stripe's customer portal (invoices, upgrade, cancel) |
+| `POST /billing/webhook` | Stripe signature | subscription lifecycle → `oc_subscriptions` |
 
 "token" = a Supabase JWT or an exchanged session token. Every request is logged as one JSON line
 (method, path, status, ms, user id — never bodies or tokens). Deploy: `cd backend && npx wrangler deploy`,
 then `wrangler secret put` each secret.
+
+### Paying for model calls: your own keys, or a plan
+
+Every model call goes through the backend, and there are two ways to pay for it:
+
+- **Bring your own key.** Put `"openaiApiKey": "sk-…"` (and optionally `"anthropicApiKey"` for the
+  Claude lanes) in `~/.openclicky/shell.json`, or set `OPENCLICKY_OPENAI_KEY` / `OPENCLICKY_ANTHROPIC_KEY`
+  for the CLI. Requests then carry `x-openclicky-openai-key` / `x-openclicky-anthropic-key`; the backend
+  runs them on those keys against OpenAI / Anthropic directly (no OpenRouter aliasing), never stores
+  them, and meters nothing. Codex forwards them too (`env_http_headers` in `config/codex-config.toml`).
+  Without an Anthropic key the Claude lanes answer `402 byok_missing_anthropic_key` (the CLI gate falls
+  back to its heuristic; the app's teacher lane only matters with Realtime off).
+- **A plan on OpenClicky's keys.** Signed-in users with no key get a monthly credit allowance:
+  `free` 200, `starter` 3000, `pro` 12000 (rows in `oc_plans`). Costs: 1 credit per 1k input tokens +
+  4 per 1k output tokens (parsed from the upstream reply), 30 per Realtime session mint, 1 per started
+  15 s of transcription, 1 per 500 characters of speech, 2 per skill draft. Out of credits →
+  `402 credits_exhausted`; a lapsed paid plan → `402 subscription_inactive`. Stripe Checkout sells the
+  plans (`oc_plans.stripe_price_id`), the webhook keeps `oc_subscriptions` current.
+
+Backend env for this: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (the billing store; without them nothing
+is metered, which is what a self-hosted backend wants), `FREE_MONTHLY_CREDITS`, `STRIPE_SECRET_KEY`,
+`STRIPE_WEBHOOK_SECRET`, `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `STRIPE_PORTAL_RETURN_URL`, and for
+tests `BYOK_OPENAI_BASE_URL` / `BYOK_ANTHROPIC_BASE_URL` / `BYOK_ANTHROPIC_MODEL`. Load the tables once
+with `backend/supabase/schema.sql` (see the shared Supabase runbook), then set the Stripe price ids on
+the `starter` and `pro` rows.
 
 ## Run the agent
 
