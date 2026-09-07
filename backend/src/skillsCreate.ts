@@ -1,6 +1,8 @@
 import type { Context } from "hono";
 import { getEnv } from "./env.js";
 import { mapModelName } from "./proxy.js";
+import { resolveProviderKeys } from "./keys.js";
+import { chargeCredits, CREDIT_COSTS, type BillingStore } from "./billing.js";
 import { parseSkillMarkdown, slugify } from "./skillMarkdown.js";
 import { SKILLS_MANIFEST } from "./skillsManifest.js";
 
@@ -24,8 +26,9 @@ const MAX_REQUEST_CHARS = 2000;
 const MAX_CAPABILITIES = 20;
 const MAX_CAPABILITY_CHARS = 64;
 
-export async function createSkill(c: Context): Promise<Response> {
+export async function createSkill(c: Context, store?: BillingStore): Promise<Response> {
   const env = getEnv(c);
+  const keys = resolveProviderKeys(c.req.raw.headers, env);
   const body = (await c.req.json().catch(() => ({}))) as { request?: unknown; capabilities?: unknown };
   if (typeof body.request !== "string" || !body.request.trim()) return c.json({ error: "request (string) is required" }, 400);
   if (body.request.length > MAX_REQUEST_CHARS) return c.json({ error: `request is longer than ${MAX_REQUEST_CHARS} characters` }, 400);
@@ -37,17 +40,16 @@ export async function createSkill(c: Context): Promise<Response> {
     if (!ok) return c.json({ error: `capabilities must be at most ${MAX_CAPABILITIES} strings of ${MAX_CAPABILITY_CHARS} characters` }, 400);
   }
   const model = env.SKILL_CREATE_MODEL || env.OPENAI_MODEL;
-  if (!env.OPENAI_API_KEY || !model) {
+  if (!keys.openaiKey || !model) {
     return c.json({ error: "skill creation needs OPENAI_API_KEY and OPENAI_MODEL (or SKILL_CREATE_MODEL) on the backend" }, 503);
   }
   const caps = Array.isArray(body.capabilities) ? body.capabilities.filter((x): x is string => typeof x === "string") : [];
   const capList = [...SKILLS_MANIFEST.filter((s) => s.kind !== "app").map((s) => s.id), ...caps].join(", ") || "none";
-  const base = (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
-  const upstream = await fetch(base + "/chat/completions", {
+  const upstream = await fetch(keys.openaiBase + "/chat/completions", {
     method: "POST",
-    headers: { authorization: `Bearer ${env.OPENAI_API_KEY}`, "content-type": "application/json" },
+    headers: { authorization: `Bearer ${keys.openaiKey}`, "content-type": "application/json" },
     body: JSON.stringify({
-      model: mapModelName(model, env.MODEL_ALIASES, env.OPENAI_MODEL_PREFIX),
+      model: keys.mapModels ? mapModelName(model, env.MODEL_ALIASES, env.OPENAI_MODEL_PREFIX) : model,
       stream: false,
       messages: [
         { role: "system", content: SYSTEM.replace("{{CAPS}}", capList) },
@@ -56,6 +58,7 @@ export async function createSkill(c: Context): Promise<Response> {
     }),
   });
   if (!upstream.ok) return c.json({ error: `upstream ${upstream.status}` }, 502);
+  chargeCredits(c, store, { route: "/skills/create", model, input_tokens: 0, output_tokens: 0, audio_seconds: 0, characters: 0, credits: CREDIT_COSTS.skillCreate });
   const j = (await upstream.json().catch(() => ({}))) as { choices?: { message?: { content?: string } }[] };
   const raw = (j.choices?.[0]?.message?.content ?? "").trim();
   const markdown = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```\s*$/, "").trim() + "\n";

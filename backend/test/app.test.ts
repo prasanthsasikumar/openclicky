@@ -4,6 +4,7 @@ import { SignJWT } from "jose";
 import { createApp } from "../src/app.js";
 import type { Env } from "../src/env.js";
 import { parseSkillMarkdown } from "../src/skillMarkdown.js";
+import { MemoryBillingStore } from "../src/billing.js";
 
 type Seen = { url: string; auth?: string; apiKey?: string; contentType?: string; raw: string; body: Record<string, unknown> };
 const MOCK_SKILL = "```markdown\n---\nname: Reply In My Voice\ndescription: Draft email replies in the user's own voice.\nsurfaces: [talk, agent]\n---\n# Reply In My Voice\n\n## Use When\nThe user asks for a reply.\n```";
@@ -317,5 +318,127 @@ describe("app", () => {
     expect(r.status).toBe(502);
     const a = await call("/v1/messages", json({}, await jwt()), { ANTHROPIC_API_KEY: undefined });
     expect(a.status).toBe(502);
+  });
+
+  const byokHeaders = (token: string, extra: Record<string, string> = {}) => ({
+    authorization: `Bearer ${token}`,
+    "content-type": "application/json",
+    "x-openclicky-openai-key": "sk-user",
+    ...extra,
+  });
+
+  it("BYOK: a request with its own OpenAI key is sent with that key to the BYOK base", async () => {
+    const token = await jwt();
+    const r = await app.request(
+      "/v1/chat/completions",
+      { method: "POST", headers: byokHeaders(token), body: JSON.stringify({ model: "default", messages: [], stream: true }) },
+      { ...env, OPENAI_BASE_URL: upstreamUrl + "/wrong", BYOK_OPENAI_BASE_URL: upstreamUrl + "/v1" },
+    );
+    expect(r.status).toBe(200);
+    await r.text();
+    const last = seen.at(-1)!;
+    expect(last.url).toBe("/v1/chat/completions");
+    expect(last.auth).toBe("Bearer sk-user");
+    // "default" resolves to the backend default model, but OpenRouter aliases/prefixes are not applied.
+    expect(last.body.model).toBe("gpt-test");
+  });
+
+  it("BYOK: the Realtime client secret is minted with the user's key", async () => {
+    const token = await jwt();
+    const r = await app.request("/agent/realtime/session", { method: "POST", headers: byokHeaders(token), body: "{}" }, { ...env, BYOK_OPENAI_BASE_URL: upstreamUrl + "/v1" });
+    expect(r.status).toBe(200);
+    expect(seen.at(-1)!.auth).toBe("Bearer sk-user");
+  });
+
+  it("BYOK: Anthropic lanes need the user's Anthropic key", async () => {
+    const token = await jwt();
+    const missing = await call("/v1/messages", { method: "POST", headers: byokHeaders(token), body: JSON.stringify({ model: "default", messages: [] }) });
+    expect(missing.status).toBe(402);
+    expect(await missing.json()).toEqual({ error: "byok_missing_anthropic_key" });
+
+    const withKey = await app.request(
+      "/chat",
+      { method: "POST", headers: byokHeaders(token, { "x-openclicky-anthropic-key": "ak-user" }), body: JSON.stringify({ model: "default", messages: [] }) },
+      { ...env, BYOK_ANTHROPIC_BASE_URL: upstreamUrl },
+    );
+    expect(withKey.status).toBe(200);
+    await withKey.text();
+    const last = seen.at(-1)!;
+    expect(last.apiKey).toBe("ak-user");
+    expect(last.body.model).toBe("claude-haiku-4-5-20251001");
+  });
+
+  describe("billing", () => {
+    const settle = () => new Promise((res) => setTimeout(res, 20));
+
+    it("meters a Codex turn and reports it on /billing/me", async () => {
+      const store = new MemoryBillingStore();
+      const billed = createApp({ log: null, billingStore: store });
+      const token = await jwt();
+      const r = await billed.request("/v1/responses", json({ model: "default", input: "hi", stream: true }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      expect(r.status).toBe(200);
+      await r.text();
+      await settle();
+      expect(store.events).toHaveLength(1);
+      // The fake upstream reports no usage → the flat fallback.
+      expect(store.events[0]).toMatchObject({ user_id: "user-1", route: "/v1/responses", credits: 2 });
+
+      const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, env);
+      expect(me.status).toBe(200);
+      expect(await me.json()).toMatchObject({ byok: false, plan: "free", used: 2, limit: 200 });
+    });
+
+    it("charges a Realtime session mint a flat rate and transcription by audio length", async () => {
+      const store = new MemoryBillingStore();
+      const billed = createApp({ log: null, billingStore: store });
+      const token = await jwt();
+      await billed.request("/agent/realtime/session", json({}, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      const wav = Buffer.alloc(44 + 16000 * 2 * 20).toString("base64"); // 20 s of 16 kHz mono PCM16
+      await billed.request("/agent/transcribe", json({ audio: wav, mime: "audio/wav" }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      await settle();
+      expect(store.events.map((e) => [e.route, e.credits])).toEqual([
+        ["/agent/realtime/session", 30],
+        ["/agent/transcribe", 2],
+      ]);
+      expect(store.events[1].audio_seconds).toBeCloseTo(20, 0);
+    });
+
+    it("blocks a metered user at 402 but lets a BYOK request through", async () => {
+      const store = new MemoryBillingStore();
+      store.events.push({ user_id: "user-1", route: "x", input_tokens: 0, output_tokens: 0, audio_seconds: 0, characters: 0, credits: 200 });
+      const billed = createApp({ log: null, billingStore: store });
+      const token = await jwt();
+      const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      expect(blocked.status).toBe(402);
+      const byok = await billed.request(
+        "/v1/chat/completions",
+        { method: "POST", headers: byokHeaders(token), body: JSON.stringify({ model: "default", messages: [] }) },
+        { ...env, BYOK_OPENAI_BASE_URL: upstreamUrl + "/v1" },
+      );
+      expect(byok.status).toBe(200);
+      await byok.text();
+      expect(store.events).toHaveLength(1);
+    });
+
+    it("/billing/me reports byok for a request with its own key", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore() });
+      const me = await billed.request("/billing/me", { headers: byokHeaders(await jwt()) }, env);
+      expect(await me.json()).toMatchObject({ byok: true, plan: "byok" });
+    });
+
+    it("streamed chat completions ask the upstream to include usage for metered users only", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore() });
+      const token = await jwt();
+      const metered = await billed.request("/v1/chat/completions", json({ model: "default", messages: [], stream: true }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      await metered.text();
+      expect(seen.at(-1)!.body.stream_options).toEqual({ include_usage: true });
+      const byok = await billed.request(
+        "/v1/chat/completions",
+        { method: "POST", headers: byokHeaders(token), body: JSON.stringify({ model: "default", messages: [], stream: true }) },
+        { ...env, BYOK_OPENAI_BASE_URL: upstreamUrl + "/v1" },
+      );
+      await byok.text();
+      expect(seen.at(-1)!.body.stream_options).toBeUndefined();
+    });
   });
 });
