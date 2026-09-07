@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { AgentConfig } from "./config.js";
+import { backendHeaders } from "./backendHeaders.js";
 
 export interface AskOptions {
   imagePath?: string;
@@ -72,7 +73,7 @@ export async function ask(cfg: AgentConfig, question: string, opts: AskOptions =
 
   const res = await f(`${cfg.backendUrl}/v1/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", accept: "text/event-stream", authorization: `Bearer ${cfg.token}` },
+    headers: backendHeaders(cfg, { "content-type": "application/json", accept: "text/event-stream" }),
     body: JSON.stringify({
       model: "default",
       stream: true,

@@ -1,4 +1,5 @@
 import type { AgentConfig } from "./config.js";
+import { backendHeaders } from "./backendHeaders.js";
 
 /**
  * The cheap "gate" in front of every launch (HeyClicky's Haiku launch-label gate): decide whether a
@@ -43,7 +44,7 @@ export async function gate(cfg: AgentConfig, text: string, opts: { fetchImpl?: t
   try {
     const res = await f(`${cfg.backendUrl}/v1/messages`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${cfg.token}` },
+      headers: backendHeaders(cfg, { "content-type": "application/json" }),
       body: JSON.stringify({
         model: "default",
         max_tokens: 80,

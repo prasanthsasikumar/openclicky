@@ -29,6 +29,10 @@ export interface AgentConfig {
   ffmpegBin: string;
   /** The user's skill library root (library/, active/, activations.json). Shared with the macOS app. */
   userSkillsDir: string;
+  /** The user's own OpenAI key (bring your own key): sent to the backend per request, never stored there. */
+  openaiApiKey?: string;
+  /** Optional Anthropic key for the Claude lanes when bringing your own keys. */
+  anthropicApiKey?: string;
 }
 
 /** Repo root: agent/src/config.ts or agent/dist/config.js → ../../ */
@@ -55,5 +59,7 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     cuaDriverBin: flags.cuaDriverBin ?? env.CUA_DRIVER_BIN ?? undefined,
     ffmpegBin: flags.ffmpegBin ?? env.OPENCLICKY_FFMPEG_BIN ?? "ffmpeg",
     userSkillsDir: path.resolve(flags.userSkillsDir ?? env.OPENCLICKY_USER_SKILLS_DIR ?? path.join(home, ".openclicky", "skills")),
+    openaiApiKey: flags.openaiApiKey ?? env.OPENCLICKY_OPENAI_KEY ?? undefined,
+    anthropicApiKey: flags.anthropicApiKey ?? env.OPENCLICKY_ANTHROPIC_KEY ?? undefined,
   };
 }

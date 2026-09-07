@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { AgentConfig } from "./config.js";
+import { backendHeaders } from "./backendHeaders.js";
 
 export interface RecordOptions {
   seconds: number;
@@ -46,7 +47,7 @@ export async function transcribe(cfg: AgentConfig, filePath: string, opts: { lan
   const f = opts.fetchImpl ?? fetch;
   const res = await f(`${cfg.backendUrl}/agent/transcribe`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${cfg.token}` },
+    headers: backendHeaders(cfg, { "content-type": "application/json" }),
     body: JSON.stringify({
       audio: fs.readFileSync(filePath).toString("base64"),
       mime: MIME[path.extname(filePath).toLowerCase()] ?? "audio/wav",

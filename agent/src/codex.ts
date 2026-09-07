@@ -91,6 +91,9 @@ export class CodexAgent {
       ...process.env,
       CODEX_HOME: this.cfg.codexHome,
       OPENCLICKY_SESSION_TOKEN: this.cfg.token ?? "",
+      // Bring your own key: the Codex config forwards these as headers (env_http_headers); unset = not sent.
+      ...(this.cfg.openaiApiKey ? { OPENCLICKY_OPENAI_KEY: this.cfg.openaiApiKey } : {}),
+      ...(this.cfg.anthropicApiKey ? { OPENCLICKY_ANTHROPIC_KEY: this.cfg.anthropicApiKey } : {}),
     };
     // Keys stay server-side: the agent engine must never see provider keys, even if the shell has them.
     delete env.OPENAI_API_KEY;

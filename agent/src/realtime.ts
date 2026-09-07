@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { AgentConfig } from "./config.js";
+import { backendHeaders } from "./backendHeaders.js";
 
 /**
  * The always-on / push-to-talk voice loop (HeyClicky's RealtimeVoiceClient):
@@ -106,7 +107,7 @@ export class RealtimeSession {
     const f = this.opts.fetchImpl ?? fetch;
     const res = await f(`${cfg.backendUrl}/agent/realtime/session`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${cfg.token}` },
+      headers: backendHeaders(cfg, { "content-type": "application/json" }),
       body: JSON.stringify({ voice: this.opts.voice, instructions: this.opts.instructions ?? TALK_INSTRUCTIONS }),
     });
     if (!res.ok) throw new Error(`backend ${res.status}: ${(await res.text()).slice(0, 300)}`);

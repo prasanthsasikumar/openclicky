@@ -3,6 +3,7 @@ import { Command } from "commander";
 import path from "node:path";
 import readline from "node:readline";
 import { resolveConfig, type AgentConfig } from "./config.js";
+import { backendHeaders } from "./backendHeaders.js";
 import { CodexAgent, type ApprovalRequest, type ApprovalDecision, type RunResult } from "./codex.js";
 import { ensureCodexHome } from "./codexHome.js";
 import { ask } from "./ask.js";
@@ -473,7 +474,7 @@ skills
     try {
       const r = await fetch(`${cfg.backendUrl}/skills/create`, {
         method: "POST",
-        headers: { authorization: `Bearer ${cfg.token}`, "content-type": "application/json" },
+        headers: backendHeaders(cfg, { "content-type": "application/json" }),
         body: JSON.stringify({ request, capabilities: opts.capability ?? [] }),
       });
       if (!r.ok) fail(`skill creation failed (${r.status}): ${(await r.text()).slice(0, 300)}`);

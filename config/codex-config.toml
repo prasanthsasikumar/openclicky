@@ -25,6 +25,10 @@ base_url = "{{BACKEND_URL}}/v1"
 # Codex 0.152.x rejects `wire_api = "chat"`, so the backend proxies the Responses API (/v1/responses).
 wire_api = "responses"
 env_key = "OPENCLICKY_SESSION_TOKEN"
+# Bring your own key: when the user set OPENCLICKY_OPENAI_KEY / OPENCLICKY_ANTHROPIC_KEY, Codex sends them
+# to the backend as headers and the backend runs the request on them instead of its own keys (unset
+# variables send nothing).
+env_http_headers = { "x-openclicky-openai-key" = "OPENCLICKY_OPENAI_KEY", "x-openclicky-anthropic-key" = "OPENCLICKY_ANTHROPIC_KEY" }
 requires_openai_auth = false
 supports_websockets = false
 
