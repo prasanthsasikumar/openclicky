@@ -1,7 +1,36 @@
 # OpenClicky
 
-Open-source macOS AI voice assistant, modeled on HeyClicky. Current state: a **headless agent core
-plus a first native shell scaffold**. What works today:
+**An open-source voice companion for your Mac.** It lives in the notch, sees what is on your screen,
+answers out loud, flies a little cursor to the thing you asked about, types what you dictate, and hands
+real work to a Codex agent. MIT licensed. Bring your own OpenAI key, or self-host the whole thing.
+
+<!-- demo: docs/media/demo.gif (record with the storyboard in docs/launch/2026-09-09-launch.md) -->
+
+[**Download OpenClicky for macOS**](https://github.com/prasanthsasikumar/openclicky/releases/latest)
+(Apple Silicon, macOS 14.2+, notarized) · [How it works](#architecture) · [Contributing](CONTRIBUTING.md)
+
+### Try it in three steps
+
+1. Open the dmg, drag OpenClicky to Applications, launch it, and grant Accessibility, Screen Recording,
+   and Microphone when asked (it needs all three to see, point, and listen).
+2. Hover the notch → Settings → Account → "Use my own API key": add your OpenAI key as `openaiApiKey`
+   in the `shell.json` that opens. Your key travels with each request and is never stored anywhere.
+   (Hosted accounts without a key are invite-only for now.)
+3. Hold **⌃ control + ⌥ option** and ask about anything on screen. Tap **⌃ twice** to type instead,
+   hold **fn + ⌃** to dictate into any app, tap **fn + ⌃ twice** for hands-free.
+
+The "do work" lane (files, commands, apps) additionally needs the `openclicky` CLI and
+[Codex](https://github.com/openai/codex) on your Mac: see [Run the agent](#run-the-agent). Without
+them, talking, pointing, and dictation all work.
+
+The Mac app is derived from Farza's MIT-licensed [Clicky](https://github.com/farzaa/clicky); HeyClicky
+is a separate product and this project is not affiliated with it.
+
+---
+
+## What is inside
+
+Modeled on the HeyClicky idea, built as a **headless agent core plus a native shell**. What works today:
 
 - `agent/` — a TypeScript CLI that drives **OpenAI Codex CLI** over JSON-RPC stdio (the "do work"
   lane), a lightweight **ask** lane, a cheap **gate** that routes between them, screenshots, a
