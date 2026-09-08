@@ -103,9 +103,9 @@ if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then
     "$SPARKLE/Versions/B/Autoupdate" \
     "$SPARKLE/Versions/B/Updater.app" \
     "$SPARKLE"; do
-    [[ -e "$nested" ]] && codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$nested"
+    [[ -e "$nested" ]] && sign_with_timestamp --sign "$SIGN_IDENTITY" "$nested"
   done
-  codesign --force --options runtime --timestamp --entitlements "$APP_DIR/OpenClicky/OpenClicky.entitlements" --sign "$SIGN_IDENTITY" "$APP_PATH"
+  sign_with_timestamp --entitlements "$APP_DIR/OpenClicky/OpenClicky.entitlements" --sign "$SIGN_IDENTITY" "$APP_PATH"
 fi
 
 echo "▸ verifying signature"
