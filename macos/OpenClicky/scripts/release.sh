@@ -5,6 +5,7 @@
 #   scripts/release.sh                 # build + sign + install to /Applications (no GitHub release)
 #   scripts/release.sh --publish       # ...and tag + create a GitHub release with the zip and dmg
 #   scripts/release.sh --version 0.3.0 # override the version (default: VERSION file)
+#   scripts/release.sh --dev           # Apple Development signing, no notarization (ignores release.env)
 #
 # Signing (in priority order):
 #   OPENCLICKY_SIGN_IDENTITY  e.g. "Developer ID Application: Your Org (TEAMID)" — distribution builds
@@ -16,6 +17,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Signing identity + notarization profile for distribution builds live in scripts/release.env
+# (git-ignored; see release.env.example). `--dev` ignores it: Apple Development signing, no
+# notarization, for a quick local install.
+if [[ -f "$SCRIPT_DIR/release.env" && " $* " != *" --dev "* ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/release.env"
+  set +a
+fi
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$APP_DIR/../.." && pwd)"
 SCHEME="OpenClicky"
@@ -36,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     --publish) PUBLISH=1 ;;
     --version) VERSION="$2"; shift ;;
     --no-install) INSTALL_DIR="" ;;
+    --dev) SIGN_IDENTITY="Apple Development"; NOTARY_PROFILE="" ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift

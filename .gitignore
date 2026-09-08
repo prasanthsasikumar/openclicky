@@ -14,3 +14,6 @@ macos/OpenClicky/build/
 
 # superpowers scratch (SDD ledgers, briefs)
 .superpowers/
+
+# Signing/notarization settings for the release script (see macos/OpenClicky/scripts/release.env.example)
+macos/OpenClicky/scripts/release.env
