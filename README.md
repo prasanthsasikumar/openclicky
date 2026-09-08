@@ -156,9 +156,12 @@ curl localhost:8787/health        # → {"ok":true}
 (method, path, status, ms, user id — never bodies or tokens). Deploy: `cd backend && npx wrangler deploy`,
 then `wrangler secret put` each secret.
 
-### Paying for model calls: your own keys, or a plan
+### Paying for model calls: your own keys, or an invite
 
-Every model call goes through the backend, and there are two ways to pay for it:
+Every model call goes through the backend, and there are two ways to pay for it. The hosted backend
+(`https://api.openclicky.flowsxr.com`, the app's default) is invite-only: its `FREE_MONTHLY_CREDITS=0`,
+so a signed-in user without an allowance gets `402 credits_exhausted`, while bring-your-own-key works
+for anyone.
 
 - **Bring your own key.** Put `"openaiApiKey": "sk-…"` (and optionally `"anthropicApiKey"` for the
   Claude lanes) in `~/.openclicky/shell.json`, or set `OPENCLICKY_OPENAI_KEY` / `OPENCLICKY_ANTHROPIC_KEY`
@@ -167,19 +170,38 @@ Every model call goes through the backend, and there are two ways to pay for it:
   them, and meters nothing. Codex forwards them too (`env_http_headers` in `config/codex-config.toml`).
   Without an Anthropic key the Claude lanes answer `402 byok_missing_anthropic_key` (the CLI gate falls
   back to its heuristic; the app's teacher lane only matters with Realtime off).
-- **A plan on OpenClicky's keys.** Signed-in users with no key get a monthly credit allowance:
-  `free` 200, `starter` 3000, `pro` 12000 (rows in `oc_plans`). Costs: 1 credit per 1k input tokens +
-  4 per 1k output tokens (parsed from the upstream reply), 30 per Realtime session mint, 1 per started
-  15 s of transcription, 1 per 500 characters of speech, 2 per skill draft. Out of credits →
-  `402 credits_exhausted`; a lapsed paid plan → `402 subscription_inactive`. Stripe Checkout sells the
-  plans (`oc_plans.stripe_price_id`), the webhook keeps `oc_subscriptions` current.
+- **An invite on OpenClicky's keys.** Accounts are Supabase Auth users with a monthly credit allowance
+  (`oc_subscriptions.monthly_credits_override`, plan `invite`, resets on calendar months). Create and
+  manage them with the admin script, which talks to Supabase directly with the service key:
+
+  ```bash
+  npm run admin -w backend -- invite someone@example.com --credits 1000   # creates the user, prints the password once
+  npm run admin -w backend -- limit someone@example.com --credits 3000
+  npm run admin -w backend -- usage                                       # credits per user this month
+  npm run admin -w backend -- revoke|restore|remove someone@example.com
+  npm run admin -w backend -- list
+  ```
+
+  The invitee installs the app, opens Settings → Account and signs in; the app keeps the session fresh.
+  Costs: 1 credit per 1k input tokens + 4 per 1k output tokens (parsed from the upstream reply), 30 per
+  Realtime session mint, 1 per started 15 s of transcription, 1 per 500 characters of speech, 2 per skill
+  draft. Out of credits → `402 credits_exhausted`; a revoked account → `402 subscription_inactive`.
+  (Stripe Checkout / portal / webhook routes exist in `backend/src/stripe.ts` for a paid plan later; with
+  no `STRIPE_*` env they answer 503 and nothing in the app points at them.)
 
 Backend env for this: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (the billing store; without them nothing
-is metered, which is what a self-hosted backend wants), `FREE_MONTHLY_CREDITS`, `STRIPE_SECRET_KEY`,
-`STRIPE_WEBHOOK_SECRET`, `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `STRIPE_PORTAL_RETURN_URL`, and for
-tests `BYOK_OPENAI_BASE_URL` / `BYOK_ANTHROPIC_BASE_URL` / `BYOK_ANTHROPIC_MODEL`. Load the tables once
-with `backend/supabase/schema.sql` (see the shared Supabase runbook), then set the Stripe price ids on
-the `starter` and `pro` rows.
+is metered, which is what a self-hosted backend wants), `SUPABASE_PUBLISHABLE_KEY` (published by
+`GET /auth/config` so clients can sign in), `FREE_MONTHLY_CREDITS` (0 = invite-only), and for tests
+`BYOK_OPENAI_BASE_URL` / `BYOK_ANTHROPIC_BASE_URL` / `BYOK_ANTHROPIC_MODEL`. Load the tables once with
+`backend/supabase/schema.sql` (see the shared Supabase runbook).
+
+### Hosting the backend
+
+`npm run deploy:backend` rsyncs the repo to the VPS, builds `backend/Dockerfile` there, starts the
+container from `backend/deploy/docker-compose.yml` (bound to 127.0.0.1:8787, 256 MB cap) and adds the
+Caddy site block for `api.openclicky.flowsxr.com` once. `--env` also uploads `backend/.dev.vars` as
+`/opt/openclicky/backend.env` (append `FREE_MONTHLY_CREDITS=0` there for invite-only). DNS: an A record
+for the hostname pointing at the server.
 
 ## Run the agent
 
