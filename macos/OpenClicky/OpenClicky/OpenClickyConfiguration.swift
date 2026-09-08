@@ -14,7 +14,9 @@ import Foundation
 struct OpenClickyShellSettings: Codable {
     /// Command used to run the CLI, e.g. ["openclicky"] or ["node", "/path/to/openclicky/agent/dist/cli.js"].
     var cliCommand: [String] = ["openclicky"]
-    var backendUrl: String = "http://localhost:8787"
+    /// The hosted backend by default (invite accounts and bring-your-own-key both go there); a
+    /// self-hosted backend is one line in shell.json (`http://localhost:8787`).
+    var backendUrl: String = OpenClickyConfiguration.hostedBackendURL
     var token: String = ""
     /// Working directory for agent runs (created on demand).
     var workspace: String = NSString(string: "~/OpenClicky").expandingTildeInPath
@@ -46,6 +48,8 @@ struct OpenClickyShellSettings: Codable {
 }
 
 enum OpenClickyConfiguration {
+    /// Where the app talks to unless shell.json says otherwise.
+    static let hostedBackendURL = "https://api.openclicky.flowsxr.com"
     static let settingsFileURL = URL(fileURLWithPath: NSString(string: "~/.openclicky/shell.json").expandingTildeInPath)
 
     private(set) static var settings: OpenClickyShellSettings = load()
@@ -107,7 +111,7 @@ enum OpenClickyConfiguration {
     static var backendBaseURL: String {
         var url = settings.backendUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         while url.hasSuffix("/") { url.removeLast() }
-        return url.isEmpty ? "http://localhost:8787" : url
+        return url.isEmpty ? hostedBackendURL : url
     }
 
     static var backendHostDescription: String {
@@ -191,7 +195,7 @@ enum OpenClickyConfiguration {
         var environment = ProcessInfo.processInfo.environment
         var backendUrl = settings.backendUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         while backendUrl.hasSuffix("/") { backendUrl.removeLast() }
-        environment["BACKEND_URL"] = backendUrl.isEmpty ? "http://localhost:8787" : backendUrl
+        environment["BACKEND_URL"] = backendUrl.isEmpty ? hostedBackendURL : backendUrl
         if let token = cleaned(settings.token) { environment["OPENCLICKY_TOKEN"] = token }
         if let model = cleaned(settings.model) { environment["OPENCLICKY_MODEL"] = model }
         environment["OPENCLICKY_WORKSPACE"] = NSString(string: settings.workspace).expandingTildeInPath

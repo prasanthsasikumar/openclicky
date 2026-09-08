@@ -6,7 +6,7 @@ import { resolveConfig, repoRoot } from "../src/config.js";
 describe("resolveConfig", () => {
   it("applies defaults", () => {
     const c = resolveConfig({}, { HOME: "/home/u" } as NodeJS.ProcessEnv);
-    expect(c.backendUrl).toBe("http://localhost:8787");
+    expect(c.backendUrl).toBe("https://api.openclicky.flowsxr.com");
     expect(c.codexHome).toBe("/home/u/.openclicky/codex-home");
     expect(c.codexBin).toBe("codex");
     expect(c.workspace).toBe(process.cwd());
