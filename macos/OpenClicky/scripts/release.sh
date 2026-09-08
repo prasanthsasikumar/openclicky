@@ -55,15 +55,27 @@ BUILD_NUMBER="$(git -C "$REPO_DIR" rev-list --count HEAD)"
 COMMIT="$(git -C "$REPO_DIR" rev-parse --short HEAD)"
 TAG="v$VERSION"
 
-# A secure timestamp is required for notarization but needs Apple's timestamp server; only ask for
-# it on Developer ID builds so a development build never fails on a network hiccup.
+# Notarization needs a secure timestamp on every binary. Apple's timestamp server is flaky enough
+# that asking Xcode to timestamp each of its many signing steps (resource bundles included) fails
+# builds at random, so Xcode signs without one and every piece of code is re-signed below with a
+# timestamp, retrying on a timestamp-server hiccup.
 CODE_SIGN_FLAGS=""
 # Developer ID needs manual signing: Xcode rejects an explicit Developer ID identity under automatic
 # signing ("conflicting provisioning settings"). Development builds stay automatic.
 CODE_SIGN_STYLE="Automatic"
 # Xcode injects com.apple.security.get-task-allow (debugging) into non-archive builds; notarization rejects it.
 INJECT_BASE_ENTITLEMENTS="YES"
-if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then CODE_SIGN_FLAGS="--timestamp"; CODE_SIGN_STYLE="Manual"; INJECT_BASE_ENTITLEMENTS="NO"; fi
+if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then CODE_SIGN_STYLE="Manual"; INJECT_BASE_ENTITLEMENTS="NO"; fi
+
+sign_with_timestamp() {
+  local attempt
+  for attempt in 1 2 3 4; do
+    if codesign --force --options runtime --timestamp "$@"; then return 0; fi
+    echo "  codesign (timestamp) failed, attempt $attempt; retrying in 5 s" >&2
+    sleep 5
+  done
+  return 1
+}
 echo "▸ OpenClicky $VERSION (build $BUILD_NUMBER, $COMMIT) — signing as '$SIGN_IDENTITY' team $TEAM_ID"
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"
