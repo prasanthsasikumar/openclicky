@@ -468,6 +468,9 @@ final class NotchHUDManager {
     func show(companionManager: CompanionManager) {
         self.companionManager = companionManager
         isShown = true
+        // The HUD is the app's home and is shown exactly once at launch: a good moment to start
+        // keeping a signed-in session fresh (refresh before the access token expires).
+        OpenClickyAuthSession.shared.start()
         if screenChangeObserver == nil {
             observeScreenChanges()
             observeBusyState(of: companionManager)
@@ -904,13 +907,14 @@ struct NotchComposerView: View {
 struct NotchComposerTextField: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
+    var isSecure: Bool = false
     let onSubmit: () -> Void
     let onEscape: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSTextField {
-        let textField = NSTextField()
+        let textField: NSTextField = isSecure ? NSSecureTextField() : NSTextField()
         textField.isBordered = false
         textField.isBezeled = false
         textField.drawsBackground = false

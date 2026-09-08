@@ -38,6 +38,11 @@ struct OpenClickyShellSettings: Codable {
     /// keys under your plan.
     var openaiApiKey: String? = nil
     var anthropicApiKey: String? = nil
+    /// Written by sign-in (OpenClickyAuthSession): the refresh token that keeps `token` fresh, when it
+    /// expires (unix seconds), and whose account it is. Absent when the token was pasted by hand.
+    var refreshToken: String? = nil
+    var tokenExpiresAt: Double? = nil
+    var accountEmail: String? = nil
 }
 
 enum OpenClickyConfiguration {
@@ -79,6 +84,21 @@ enum OpenClickyConfiguration {
     static func revealSettingsFile() {
         ensureSettingsFileExists()
         NSWorkspace.shared.open(settingsFileURL)
+    }
+
+    /// Changes shell.json in place (sign-in writes the session here) and reloads the settings.
+    static func update(_ change: (inout OpenClickyShellSettings) -> Void) {
+        var changedSettings = load()
+        change(&changedSettings)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            try FileManager.default.createDirectory(at: settingsFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try encoder.encode(changedSettings).write(to: settingsFileURL, options: .atomic)
+        } catch {
+            print("⚠️ Could not write \(settingsFileURL.path): \(error.localizedDescription)")
+        }
+        reload()
     }
 
     // MARK: - Derived values
