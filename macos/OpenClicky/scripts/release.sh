@@ -58,7 +58,10 @@ TAG="v$VERSION"
 # A secure timestamp is required for notarization but needs Apple's timestamp server; only ask for
 # it on Developer ID builds so a development build never fails on a network hiccup.
 CODE_SIGN_FLAGS=""
-if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then CODE_SIGN_FLAGS="--timestamp"; fi
+# Developer ID needs manual signing: Xcode rejects an explicit Developer ID identity under automatic
+# signing ("conflicting provisioning settings"). Development builds stay automatic.
+CODE_SIGN_STYLE="Automatic"
+if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then CODE_SIGN_FLAGS="--timestamp"; CODE_SIGN_STYLE="Manual"; fi
 echo "▸ OpenClicky $VERSION (build $BUILD_NUMBER, $COMMIT) — signing as '$SIGN_IDENTITY' team $TEAM_ID"
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"
@@ -75,8 +78,9 @@ xcodebuild \
   MARKETING_VERSION="$VERSION" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
-  CODE_SIGN_STYLE=Automatic \
+  CODE_SIGN_STYLE="$CODE_SIGN_STYLE" \
   CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
+  PROVISIONING_PROFILE_SPECIFIER="" \
   ENABLE_HARDENED_RUNTIME=YES \
   OTHER_CODE_SIGN_FLAGS="$CODE_SIGN_FLAGS" \
   -quiet
