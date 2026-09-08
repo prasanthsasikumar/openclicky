@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build -w backend
+      - run: npm run build -w agent
+
+  macos-app:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the app and run its unit tests (unsigned)
+        working-directory: macos/OpenClicky
+        run: |
+          xcodebuild -project OpenClicky.xcodeproj -scheme OpenClicky -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData build-for-testing CODE_SIGNING_ALLOWED=NO | tail -5
+          xcodebuild -project OpenClicky.xcodeproj -scheme OpenClicky -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData test-without-building -only-testing:OpenClickyTests CODE_SIGNING_ALLOWED=NO | tail -20

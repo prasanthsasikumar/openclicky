@@ -446,3 +446,10 @@ with real keys, drop `--model gpt-5.2` (only the fake needs a classic-tools mode
 the verbatim model instructions, the original Codex config, the bundled skills, and license notes.
 Hermes skills are MIT (Nous Research); the `powerpoint` skill is proprietary and is not copied;
 cua-driver is third-party — check its license before bundling.
+
+## License and contributing
+
+MIT, see `LICENSE` (the Mac app is derived from Farza's MIT-licensed Clicky; HeyClicky is a separate
+product). Everything here runs on your own machine with your own keys; the hosted backend is only a
+convenience for invited users. `CONTRIBUTING.md` has the setup, the test commands, and where help is
+welcome. Pull requests run the TypeScript and Swift test suites in CI.
