@@ -140,7 +140,7 @@ if [[ $PUBLISH -eq 1 ]]; then
       echo "Signed with Developer ID${NOTARY_PROFILE:+ and notarized}."
     fi
     echo
-    echo "Requires macOS 14.2+, the OpenClicky backend, and \`~/.openclicky/shell.json\` (see README)."
+    echo "Requires macOS 14.2+ (Apple Silicon). Sign in with your invite under Settings → Account, or add your own OpenAI key (\`openaiApiKey\`) to \`~/.openclicky/shell.json\`. The agent lane needs the \`openclicky\` CLI and Codex installed (see README)."
   } > "$NOTES_FILE"
   if gh release view "$TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
     gh release upload "$TAG" "$ZIP_PATH" "$DMG_PATH" --repo "$GITHUB_REPO" --clobber
