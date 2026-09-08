@@ -61,7 +61,9 @@ CODE_SIGN_FLAGS=""
 # Developer ID needs manual signing: Xcode rejects an explicit Developer ID identity under automatic
 # signing ("conflicting provisioning settings"). Development builds stay automatic.
 CODE_SIGN_STYLE="Automatic"
-if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then CODE_SIGN_FLAGS="--timestamp"; CODE_SIGN_STYLE="Manual"; fi
+# Xcode injects com.apple.security.get-task-allow (debugging) into non-archive builds; notarization rejects it.
+INJECT_BASE_ENTITLEMENTS="YES"
+if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then CODE_SIGN_FLAGS="--timestamp"; CODE_SIGN_STYLE="Manual"; INJECT_BASE_ENTITLEMENTS="NO"; fi
 echo "▸ OpenClicky $VERSION (build $BUILD_NUMBER, $COMMIT) — signing as '$SIGN_IDENTITY' team $TEAM_ID"
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"
@@ -83,9 +85,28 @@ xcodebuild \
   PROVISIONING_PROFILE_SPECIFIER="" \
   ENABLE_HARDENED_RUNTIME=YES \
   OTHER_CODE_SIGN_FLAGS="$CODE_SIGN_FLAGS" \
+  CODE_SIGN_INJECT_BASE_ENTITLEMENTS="$INJECT_BASE_ENTITLEMENTS" \
   -quiet
 APP_PATH="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
 [[ -d "$APP_PATH" ]] || { echo "build product missing: $APP_PATH" >&2; exit 1; }
+
+# Notarization checks every nested binary. Xcode leaves Sparkle's helpers (Updater.app, Autoupdate,
+# the XPC services) with Sparkle's own signature, which Apple rejects as "not signed with a valid
+# Developer ID certificate", so they are re-signed inside-out with our identity, then the framework,
+# then the app itself (re-signing nested code invalidates the outer signature).
+if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then
+  echo "▸ re-signing nested components with the Developer ID identity"
+  SPARKLE="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+  for nested in \
+    "$SPARKLE/Versions/B/XPCServices/Installer.xpc" \
+    "$SPARKLE/Versions/B/XPCServices/Downloader.xpc" \
+    "$SPARKLE/Versions/B/Autoupdate" \
+    "$SPARKLE/Versions/B/Updater.app" \
+    "$SPARKLE"; do
+    [[ -e "$nested" ]] && codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$nested"
+  done
+  codesign --force --options runtime --timestamp --entitlements "$APP_DIR/OpenClicky/OpenClicky.entitlements" --sign "$SIGN_IDENTITY" "$APP_PATH"
+fi
 
 echo "▸ verifying signature"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
