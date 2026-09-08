@@ -35,7 +35,10 @@ export async function verifySupabaseJwt(token: string, env: Env): Promise<Princi
   const header = safeHeader(token);
   if (header.typ === SESSION_TYP) throw new AuthError("session token is not a Supabase JWT");
   try {
-    if (env.SUPABASE_JWT_SECRET) {
+    // The token's algorithm picks the path: HS256 tokens (legacy secret, dev-minted JWTs) verify
+    // with the shared secret; anything else (self-hosted Supabase signing with an asymmetric key,
+    // e.g. ES256) verifies against the project's JWKS. Both may be configured at once.
+    if (env.SUPABASE_JWT_SECRET && (header.alg === "HS256" || !env.SUPABASE_URL)) {
       const { payload } = await jwtVerify(token, enc(env.SUPABASE_JWT_SECRET), { algorithms: ["HS256"] });
       return { sub: String(payload.sub), email: payload.email as string | undefined, via: "supabase" };
     }

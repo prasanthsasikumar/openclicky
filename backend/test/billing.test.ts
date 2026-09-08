@@ -89,6 +89,24 @@ describe("requireCredits + meterResponse", () => {
     expect(await r.json()).toMatchObject({ error: "credits_exhausted", used: 200, limit: 200, plan: FREE_PLAN_ID });
   });
 
+  it("an invitee's own allowance replaces the plan's credits", async () => {
+    const store = new MemoryBillingStore();
+    store.subs.set("user-1", {
+      user_id: "user-1",
+      plan_id: "invite",
+      status: "active",
+      current_period_start: "2026-09-01T00:00:00Z",
+      current_period_end: "2026-10-01T00:00:00Z",
+      stripe_customer_id: null,
+      stripe_subscription_id: null,
+      monthly_credits_override: 5,
+    });
+    store.events.push({ user_id: "user-1", route: "/v1/chat", input_tokens: 0, output_tokens: 0, audio_seconds: 0, characters: 0, credits: 5 });
+    const r = await appWith(store).request("/v1/chat", { method: "POST" });
+    expect(r.status).toBe(402);
+    expect(await r.json()).toMatchObject({ error: "credits_exhausted", plan: "invite", used: 5, limit: 5 });
+  });
+
   it("refuses with 402 when a paid subscription is not active", async () => {
     const store = new MemoryBillingStore();
     store.subs.set("user-1", {

@@ -47,6 +47,8 @@ export type Env = {
   ASSEMBLYAI_API_KEY?: string;
   ASSEMBLYAI_BASE_URL?: string;
   SUPABASE_URL?: string;
+  /** Client-side Supabase key (safe to publish): handed to the app by GET /auth/config so it can sign in. */
+  SUPABASE_PUBLISHABLE_KEY?: string;
   SUPABASE_JWT_SECRET?: string;
   SESSION_TOKEN_SECRET?: string;
   SESSION_TOKEN_TTL_SECONDS?: string;

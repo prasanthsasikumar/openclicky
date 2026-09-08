@@ -47,6 +47,14 @@ export function createApp(options: AppOptions = {}) {
 
   app.get("/health", (c) => c.json({ ok: true }));
 
+  // What a client needs to sign in with email + password (Supabase Auth): public by design, so an
+  // installed app only has to know the backend URL. 404 when the backend has no Supabase configured.
+  app.get("/auth/config", (c) => {
+    const env = getEnv(c);
+    if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) return c.json({ error: "sign-in is not configured on this backend" }, 404);
+    return c.json({ supabaseUrl: env.SUPABASE_URL.replace(/\/+$/, ""), publishableKey: env.SUPABASE_PUBLISHABLE_KEY });
+  });
+
   // Exchange a Supabase JWT for a short-lived session token. Only Supabase JWTs are accepted here;
   // an already-exchanged session token cannot be re-exchanged.
   app.post("/agent/session-token", async (c) => {

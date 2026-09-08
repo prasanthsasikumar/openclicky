@@ -14,7 +14,8 @@
     "start": "node dist/node.js",
     "pretest": "npm run manifest",
     "test": "vitest run",
-    "mint-jwt": "node scripts/mint-dev-jwt.mjs"
+    "mint-jwt": "node scripts/mint-dev-jwt.mjs",
+    "admin": "node scripts/admin.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",

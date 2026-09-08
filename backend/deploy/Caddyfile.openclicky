@@ -1,0 +1,11 @@
+# OpenClicky backend at api.openclicky.flowsxr.com -> container on 127.0.0.1:8787
+# Appended to /etc/caddy/Caddyfile by scripts/deploy-backend.sh (once). SSE must stream: no buffering.
+api.openclicky.flowsxr.com {
+    encode gzip
+    reverse_proxy 127.0.0.1:8787 {
+        flush_interval -1
+        transport http {
+            read_timeout 10m
+        }
+    }
+}

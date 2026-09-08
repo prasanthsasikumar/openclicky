@@ -93,6 +93,14 @@ describe("app", () => {
     expect(await r.json()).toEqual({ ok: true });
   });
 
+  it("GET /auth/config publishes the Supabase sign-in details, or 404 without them", async () => {
+    const off = await call("/auth/config");
+    expect(off.status).toBe(404);
+    const on = await call("/auth/config", {}, { SUPABASE_URL: "https://db.example.com/", SUPABASE_PUBLISHABLE_KEY: "sb_publishable_x" });
+    expect(on.status).toBe(200);
+    expect(await on.json()).toEqual({ supabaseUrl: "https://db.example.com", publishableKey: "sb_publishable_x" });
+  });
+
   it("401 without auth on /v1/* and /agent/*", async () => {
     expect((await call("/v1/chat/completions", { method: "POST", body: "{}" })).status).toBe(401);
     expect((await call("/v1/responses", { method: "POST", body: "{}" })).status).toBe(401);
@@ -418,6 +426,16 @@ describe("app", () => {
       expect(byok.status).toBe(200);
       await byok.text();
       expect(store.events).toHaveLength(1);
+    });
+
+    it("FREE_MONTHLY_CREDITS=0 makes the backend invite-only for users on OpenClicky's keys", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore() });
+      const token = await jwt();
+      const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1", FREE_MONTHLY_CREDITS: "0" });
+      expect(blocked.status).toBe(402);
+      expect(await blocked.json()).toMatchObject({ error: "credits_exhausted", plan: "free", limit: 0 });
+      const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, { ...env, FREE_MONTHLY_CREDITS: "0" });
+      expect(await me.json()).toMatchObject({ plan: "free", limit: 0 });
     });
 
     it("/billing/me reports byok for a request with its own key", async () => {

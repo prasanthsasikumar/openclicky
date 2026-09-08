@@ -497,11 +497,18 @@ program
   .option("--backend-url <url>", "env BACKEND_URL")
   .option("--jwt-only", "print the Supabase JWT instead of exchanging it")
   .action(async (opts) => {
-    const supabaseUrl = (opts.supabaseUrl ?? process.env.SUPABASE_URL ?? "").replace(/\/+$/, "");
-    const anonKey = opts.anonKey ?? process.env.SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !anonKey) fail("SUPABASE_URL and SUPABASE_ANON_KEY are required (flags or env)");
     const cfg = resolveConfig({ backendUrl: opts.backendUrl });
+    let supabaseUrl = (opts.supabaseUrl ?? process.env.SUPABASE_URL ?? "").replace(/\/+$/, "");
+    let anonKey = opts.anonKey ?? process.env.SUPABASE_ANON_KEY;
     try {
+      if (!supabaseUrl || !anonKey) {
+        // The backend publishes its sign-in details, so only the backend URL is needed.
+        const configRes = await fetch(`${cfg.backendUrl}/auth/config`);
+        if (!configRes.ok) fail(`SUPABASE_URL and SUPABASE_ANON_KEY are required (flags or env), and ${cfg.backendUrl}/auth/config is not available (${configRes.status})`);
+        const authConfig = (await configRes.json()) as { supabaseUrl: string; publishableKey: string };
+        supabaseUrl = supabaseUrl || authConfig.supabaseUrl;
+        anonKey = anonKey || authConfig.publishableKey;
+      }
       const signIn = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
         method: "POST",
         headers: { "content-type": "application/json", apikey: anonKey },

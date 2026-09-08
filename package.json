@@ -15,7 +15,8 @@
     "release:mac": "bash macos/OpenClicky/scripts/release.sh",
     "release:mac:publish": "bash macos/OpenClicky/scripts/release.sh --publish",
     "clean:mac-builds": "bash macos/OpenClicky/scripts/clean-stray-builds.sh",
-    "upstream:check": "node scripts/upstream-watch.mjs --write"
+    "upstream:check": "node scripts/upstream-watch.mjs --write",
+    "deploy:backend": "bash scripts/deploy-backend.sh"
   },
   "engines": {
     "node": ">=22"

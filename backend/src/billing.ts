@@ -1,5 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 import type { Principal } from "./auth.js";
+import { getEnv } from "./env.js";
 import { OPENAI_KEY_HEADER } from "./keys.js";
 import type { SupabaseRest } from "./db.js";
 
@@ -25,6 +26,8 @@ export interface Subscription {
   current_period_end: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  /** Invite-only accounts: a per-user allowance that replaces the plan's monthly credits. */
+  monthly_credits_override?: number | null;
 }
 export interface UsageEvent {
   user_id: string;
@@ -61,6 +64,7 @@ export const creditsForCharacters = (chars: number) => Math.max(1, Math.ceil(cha
 export class MemoryBillingStore implements BillingStore {
   plans: Plan[] = [
     { id: "free", name: "Free", monthly_credits: DEFAULT_FREE_MONTHLY_CREDITS, stripe_price_id: null },
+    { id: "invite", name: "Invite", monthly_credits: 1000, stripe_price_id: null },
     { id: "starter", name: "Starter", monthly_credits: 3000, stripe_price_id: "price_starter" },
     { id: "pro", name: "Pro", monthly_credits: 12000, stripe_price_id: "price_pro" },
   ];
@@ -151,12 +155,22 @@ export function requireCredits(store: BillingStore | undefined): MiddlewareHandl
     const reportOnly = c.req.path === "/billing/me";
     const sub = await store.subscription(userId);
     const planId = sub?.plan_id ?? FREE_PLAN_ID;
-    const plan = (await store.plan(planId)) ?? { id: FREE_PLAN_ID, name: "Free", monthly_credits: DEFAULT_FREE_MONTHLY_CREDITS, stripe_price_id: null };
+    // FREE_MONTHLY_CREDITS=0 makes a backend invite-only: signed-in users without an allowance get nothing.
+    const freeCredits = Number(getEnv(c).FREE_MONTHLY_CREDITS ?? DEFAULT_FREE_MONTHLY_CREDITS);
+    const storedPlan = await store.plan(planId);
+    const basePlan: Plan =
+      planId === FREE_PLAN_ID
+        ? { id: FREE_PLAN_ID, name: "Free", monthly_credits: Number.isFinite(freeCredits) ? freeCredits : DEFAULT_FREE_MONTHLY_CREDITS, stripe_price_id: null }
+        : (storedPlan ?? { id: planId, name: planId, monthly_credits: 0, stripe_price_id: null });
+    // An invitee's row carries its own allowance; the plan row is just the label.
+    const plan: Plan = sub?.monthly_credits_override != null ? { ...basePlan, monthly_credits: sub.monthly_credits_override } : basePlan;
     const status = sub?.status ?? "free";
     if (sub && plan.id !== FREE_PLAN_ID && !ACTIVE_STATUSES.has(status) && !reportOnly) {
       return c.json({ error: "subscription_inactive", plan: plan.id, status }, 402);
     }
-    const period = sub && ACTIVE_STATUSES.has(status) ? { start: sub.current_period_start, end: sub.current_period_end } : calendarPeriod();
+    // Stripe-managed subscriptions follow Stripe's billing period; invites and the free tier reset on calendar months.
+    const isStripeManaged = Boolean(sub?.stripe_subscription_id);
+    const period = sub && isStripeManaged && ACTIVE_STATUSES.has(status) ? { start: sub.current_period_start, end: sub.current_period_end } : calendarPeriod();
     const used = await store.creditsUsedSince(userId, period.start);
     if (used >= plan.monthly_credits && !reportOnly) {
       return c.json({ error: "credits_exhausted", plan: plan.id, used, limit: plan.monthly_credits, resets_at: period.end }, 402);

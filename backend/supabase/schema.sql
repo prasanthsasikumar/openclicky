@@ -42,3 +42,9 @@ insert into public.oc_plans (id, name, monthly_credits, stripe_price_id) values
   ('starter', 'Starter', 3000, null),
   ('pro', 'Pro', 12000, null)
 on conflict (id) do nothing;
+
+-- Invite-only accounts (2026-09-08): a per-user allowance that overrides the plan's monthly credits.
+alter table public.oc_subscriptions add column if not exists monthly_credits_override integer;
+-- Invitees get this plan with an override; it has no Stripe price.
+insert into public.oc_plans (id, name, monthly_credits, stripe_price_id) values ('invite', 'Invite', 1000, null)
+on conflict (id) do nothing;

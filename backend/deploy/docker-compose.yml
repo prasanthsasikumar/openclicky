@@ -1,0 +1,14 @@
+# Runs on the VPS in /opt/openclicky (see scripts/deploy-backend.sh). Binds to localhost only;
+# Caddy terminates TLS for api.openclicky.flowsxr.com and proxies to 127.0.0.1:8787.
+services:
+  backend:
+    image: openclicky-backend:latest
+    container_name: openclicky-backend
+    restart: unless-stopped
+    env_file: /opt/openclicky/backend.env
+    ports:
+      - "127.0.0.1:8787:8787"
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
