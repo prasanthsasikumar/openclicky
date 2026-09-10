@@ -160,7 +160,7 @@ IMPORTANT: Follow these naming rules strictly. Clarity is the top priority.
 - Do not add docstrings, comments, or type annotations to code you did not change
 - Do not try to fix the known non-blocking warnings (Swift 6 concurrency, deprecated onChange)
 - The project, targets, and scheme are named OpenClicky (renamed from upstream's "leanring-buddy")
-- Do not run `xcodebuild` from the terminal — it invalidates TCC permissions
+- Running `xcodebuild` from the terminal is fine now that Debug builds carry their own bundle id (see Build & Run); before that separation it cost the installed app its TCC permissions
 
 ## Git Workflow
 
