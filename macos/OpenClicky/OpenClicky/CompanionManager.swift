@@ -220,6 +220,10 @@ final class CompanionManager: ObservableObject {
                 return "The agent could not run: \(error.localizedDescription)"
             }
         }
+        realtimeVoiceClient.onMacAction = { [weak self] action in
+            guard let self else { return .failed("OpenClicky is not available") }
+            return await self.macActionRunner.perform(action)
+        }
         realtimeLevelCancellable = realtimeVoiceClient.$inputLevel.sink { [weak self] level in
             guard let self, self.usesRealtimeVoice, self.voiceState == .listening else { return }
             self.currentAudioPowerLevel = level
@@ -250,6 +254,10 @@ final class CompanionManager: ObservableObject {
 
     /// The notch HUD: a lip under the notch that opens on hover / while busy.
     let notchHUDManager = NotchHUDManager()
+    /// Performs the fast local actions the Realtime session asks for (see MacActions.swift).
+    private let macActionRunner = MacActionRunner.live(
+        workspaceDirectory: URL(fileURLWithPath: OpenClickyConfiguration.workspacePath)
+    )
     /// The permission cards the island shows one at a time until all four are granted.
     let permissionPromptController = PermissionPromptController()
     /// The "drag me into the Accessibility list" panel the accessibility card opens.

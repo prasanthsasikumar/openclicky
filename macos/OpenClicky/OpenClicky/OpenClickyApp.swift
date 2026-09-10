@@ -81,6 +81,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 client.onEvent = { print("smoke: ▸ \($0)") }
                 client.onTranscript = { role, text in print("smoke: \(role == .user ? "you" : "openclicky"): \(text)") }
                 client.onAgentTask = { task in "smoke agent would run: \(task)" }
+                client.onMacAction = { action in .failed("smoke run does not perform \(action)") }
                 client.screenContextProvider = { await CompanionScreenCaptureUtility.captureCursorScreenContext() }
                 client.onPointAt = { screenshotPoint, label, capture in
                     // No overlay in the smoke harness: print what the buddy would fly to.
@@ -144,6 +145,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 client.onEvent = { print("smoke: ▸ \($0)") }
                 client.onTranscript = { role, text in print("smoke: \(role == .user ? "you" : "openclicky"): \(text)") }
                 client.onAgentTask = { task in "smoke agent would run: \(task)" }
+                client.onMacAction = { action in .failed("smoke run does not perform \(action)") }
                 do {
                     try await withThrowingTaskGroup(of: Void.self) { group in
                         group.addTask { try await client.connectIfNeeded(mode: .alwaysOn) }

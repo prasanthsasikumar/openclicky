@@ -262,3 +262,27 @@ struct MacActionParsingTests {
         #expect(MacAction.parse(toolName: "point_at", arguments: [:]) == .notAFastAction)
     }
 }
+
+struct FastActionToolDefinitionTests {
+
+    @Test func everyFastActionIsOfferedToTheModel() {
+        let names = RealtimeVoiceClient.fastActionToolDefinitions().compactMap { $0["name"] as? String }
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control"])
+    }
+
+    @Test func createFolderDeclaresTheClosedLocationSet() throws {
+        let definition = try #require(RealtimeVoiceClient.fastActionToolDefinitions().first { $0["name"] as? String == "create_folder" })
+        let parameters = try #require(definition["parameters"] as? [String: Any])
+        let properties = try #require(parameters["properties"] as? [String: Any])
+        let location = try #require(properties["location"] as? [String: Any])
+        #expect(location["enum"] as? [String] == ["desktop", "downloads", "documents", "workspace", "home"])
+        // Only the name is required; an unspecified location means the workspace.
+        #expect(parameters["required"] as? [String] == ["name"])
+    }
+
+    @Test func theInstructionsPointSimpleActionsAtTheFastToolsAndRealWorkAtTheAgent() {
+        let instructions = RealtimeVoiceClient.defaultInstructions
+        #expect(instructions.contains("open_app"))
+        #expect(instructions.contains("send_to_agent"))
+    }
+}

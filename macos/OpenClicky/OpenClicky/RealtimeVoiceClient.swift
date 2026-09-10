@@ -77,6 +77,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// True while microphone audio is being streamed to the server.
     @Published private(set) var isCapturing = false
     var onAgentTask: ((String) async -> String)?
+    /// Performs a fast local action (open an app, make a folder…) and returns the sentence to say.
+    /// Main-actor isolated: `MacActionRunner` touches AppKit.
+    var onMacAction: (@MainActor (MacAction) async -> MacActionOutcome)?
     /// Builds the session instructions for the next turn: the base prompt plus the skills that
     /// apply right now (the app in front, the user's activated skills). Read at connect and before
     /// every turn; only a change is sent to the server as `session.update`.
@@ -134,11 +137,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     Answer quick questions yourself. When the user asks how to do something, where something is, or what to \
     click, point at it with the point_at tool while you explain — one call per step, in order, with the element's \
     exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking \
-    at. For anything that requires doing \
-    work on the computer — creating or editing files or code, running commands, using apps or integrations, research, \
-    multi-step tasks — first say one short sentence acknowledging it, then call the send_to_agent tool with a clear, \
-    self-contained task, and afterwards tell the user in one sentence what happened. Never pretend work was done without \
-    the tool. Do not read file paths aloud character by character.
+    at. \
+    Do simple local things yourself with the fast tools — open_app, open_url, create_folder, \
+    reveal_in_finder, set_volume, media_control — and then say the one sentence they give back. \
+    For anything bigger — editing files or code, running commands, using integrations, research, \
+    multi-step tasks — first say one short sentence acknowledging it, then call the send_to_agent \
+    tool with a clear, self-contained task, and afterwards tell the user in one sentence what happened. \
+    Never pretend work was done without the tool. Do not read file paths aloud character by character.
     """
 
     init(voice: String? = nil, instructions: String = RealtimeVoiceClient.defaultInstructions) {
@@ -236,6 +241,70 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         receiveLoop(task)
     }
 
+    /// The local actions OpenClicky performs itself. Typed arguments only: `location` is a closed
+    /// set and there is no path or command anywhere in the schema, so a mishearing cannot widen
+    /// what the fast lane is able to do. See MacActions.swift.
+    nonisolated static func fastActionToolDefinitions() -> [[String: Any]] {
+        let locations = MacActionLocation.allCases.map(\.rawValue)
+        let locationProperty: [String: Any] = [
+            "type": "string",
+            "enum": locations,
+            "description": "Which folder. Leave it out for OpenClicky's own workspace folder.",
+        ]
+        return [
+            [
+                "type": "function",
+                "name": "open_app",
+                "description": "Open or switch to a Mac app by its name, e.g. 'Spotify'. Use this instead of the agent for simply opening an app.",
+                "parameters": ["type": "object", "properties": ["name": ["type": "string", "description": "The app's name as the user said it."]], "required": ["name"]],
+            ],
+            [
+                "type": "function",
+                "name": "open_url",
+                "description": "Open a web page in the user's browser. http and https only.",
+                "parameters": ["type": "object", "properties": ["url": ["type": "string", "description": "The full https URL."]], "required": ["url"]],
+            ],
+            [
+                "type": "function",
+                "name": "create_folder",
+                "description": "Make a new folder. Use this instead of the agent for a single folder.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "name": ["type": "string", "description": "The folder's name, without any slashes."],
+                        "location": locationProperty,
+                    ],
+                    "required": ["name"],
+                ],
+            ],
+            [
+                "type": "function",
+                "name": "reveal_in_finder",
+                "description": "Show an existing file or folder in Finder.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "name": ["type": "string", "description": "The file or folder's name."],
+                        "location": locationProperty,
+                    ],
+                    "required": ["name"],
+                ],
+            ],
+            [
+                "type": "function",
+                "name": "set_volume",
+                "description": "Set the Mac's output volume.",
+                "parameters": ["type": "object", "properties": ["level": ["type": "integer", "description": "0 to 100."]], "required": ["level"]],
+            ],
+            [
+                "type": "function",
+                "name": "media_control",
+                "description": "Play, pause, or skip whatever is playing.",
+                "parameters": ["type": "object", "properties": ["action": ["type": "string", "enum": ["playpause", "next", "previous"]]], "required": ["action"]],
+            ],
+        ]
+    }
+
     private func sessionUpdate(mode: TurnMode, instructions text: String) -> [String: Any] {
         var input: [String: Any] = [
             "format": ["type": "audio/pcm", "rate": Int(Self.sampleRate)],
@@ -277,7 +346,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             "session": [
                 "type": "realtime",
                 "instructions": text,
-                "tools": [tool, pointTool],
+                "tools": [tool, pointTool] + Self.fastActionToolDefinitions(),
                 "tool_choice": "auto",
                 "audio": ["input": input, "output": output],
             ],
@@ -642,6 +711,22 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
            let parsed = try? JSONSerialization.jsonObject(with: Data(argumentsText.utf8)) as? [String: Any] {
             arguments = parsed
         }
+        switch MacAction.parse(toolName: name, arguments: arguments) {
+        case .action(let action):
+            let startedAt = Date()
+            let outcome = await onMacAction?(action) ?? .failed("OpenClicky is not available")
+            log("mac action: \(name) \(outcome.spokenSentence) in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
+            try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": outcome.spokenSentence]])
+            requestContinuation(after: event)
+            return
+        case .badArguments(let outcome):
+            log("mac action: \(name) rejected — \(outcome.spokenSentence)")
+            try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": outcome.spokenSentence]])
+            requestContinuation(after: event)
+            return
+        case .notAFastAction:
+            break
+        }
         var output = "unknown tool \(name)"
         switch name {
         case "send_to_agent":
@@ -737,6 +822,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         }
         // The output goes out immediately; the follow-up response is requested once, on response.done.
         try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(output.prefix(4000))]])
+        requestContinuation(after: event)
+    }
+
+    /// Ask the model to continue after a tool output. Extracted so the fast-action path and the
+    /// existing tools share exactly one implementation of the barge-in and ordering rules.
+    private func requestContinuation(after event: [String: Any]) {
         let responseId = event["response_id"] as? String
         if let responseId, cancelledResponseIds.contains(responseId) {
             // A late call from a response we cancelled (barge-in): the output is in the conversation
