@@ -80,3 +80,103 @@ struct MacActionsTests {
         #expect(MacActionLocation.home.spokenName == "your home folder")
     }
 }
+
+@MainActor
+struct MacActionRunnerTests {
+
+    /// A runner pointed at a temporary directory, with the AppKit calls replaced by recorders.
+    private final class Recorder {
+        var launchedApplications: [URL] = []
+        var openedURLs: [URL] = []
+        var volumeLevels: [Int] = []
+        var mediaKeys: [String] = []
+        var installedApplications: [String: URL] = ["spotify": URL(fileURLWithPath: "/Applications/Spotify.app")]
+    }
+
+    private func makeRunner(root: URL, recorder: Recorder) -> MacActionRunner {
+        MacActionRunner(
+            homeDirectory: root,
+            workspaceDirectory: root.appendingPathComponent("OpenClicky"),
+            findApplication: { name in recorder.installedApplications[name.lowercased()] },
+            launchApplication: { url in recorder.launchedApplications.append(url) },
+            openURL: { url in recorder.openedURLs.append(url) },
+            setVolume: { level in recorder.volumeLevels.append(level) },
+            sendMediaKey: { action in recorder.mediaKeys.append(action) }
+        )
+    }
+
+    private func makeTemporaryRoot() throws -> URL {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mac-actions-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Desktop"), withIntermediateDirectories: true)
+        return root
+    }
+
+    @Test func openingAnInstalledAppLaunchesItAndSaysSo() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        let outcome = await runner.perform(.openApp(name: "Spotify"))
+        #expect(outcome == .openedApp("Spotify"))
+        #expect(recorder.launchedApplications == [URL(fileURLWithPath: "/Applications/Spotify.app")])
+    }
+
+    @Test func anAppThatIsNotInstalledIsReportedNotGuessedAt() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        let outcome = await runner.perform(.openApp(name: "Ableton"))
+        #expect(outcome == .appNotFound("Ableton"))
+        #expect(recorder.launchedApplications.isEmpty)
+    }
+
+    @Test func creatingAFolderWritesItAndTheSecondAttemptSaysItIsAlreadyThere() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runner = makeRunner(root: root, recorder: Recorder())
+
+        let first = await runner.perform(.createFolder(name: "Test", location: .desktop))
+        #expect(first == .createdFolder(name: "Test", location: .desktop))
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("Desktop/Test").path))
+
+        let second = await runner.perform(.createFolder(name: "Test", location: .desktop))
+        #expect(second == .folderAlreadyExists(name: "Test", location: .desktop))
+    }
+
+    @Test func anUnsafeFolderNameIsRefusedBeforeAnythingIsWritten() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runner = makeRunner(root: root, recorder: Recorder())
+
+        #expect(await runner.perform(.createFolder(name: "../escape", location: .desktop)) == .invalidName)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("escape").path))
+    }
+
+    @Test func revealingSomethingThatIsNotThereSaysSo() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runner = makeRunner(root: root, recorder: Recorder())
+
+        #expect(await runner.perform(.revealInFinder(name: "Missing", location: .desktop)) == .nothingToReveal(name: "Missing", location: .desktop))
+    }
+
+    @Test func onlyWebURLsAreOpenedAndVolumeIsClamped() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        #expect(await runner.perform(.openURL(raw: "file:///etc/passwd")) == .invalidURL)
+        #expect(recorder.openedURLs.isEmpty)
+
+        #expect(await runner.perform(.openURL(raw: "https://example.com")) == .openedURL("https://example.com"))
+        #expect(recorder.openedURLs.map(\.absoluteString) == ["https://example.com"])
+
+        #expect(await runner.perform(.setVolume(level: 400)) == .volumeSet(100))
+        #expect(await runner.perform(.setVolume(level: -5)) == .volumeSet(0))
+        #expect(recorder.volumeLevels == [100, 0])
+    }
+}

@@ -16,6 +16,7 @@
 //
 
 import Foundation
+import AppKit
 
 /// The folders the fast lane will touch. A closed set, so no spoken phrase can widen it.
 enum MacActionLocation: String, CaseIterable {
@@ -128,5 +129,170 @@ enum MacActionValidation {
         guard scheme == "http" || scheme == "https" else { return nil }
         guard url.host?.isEmpty == false else { return nil }
         return url
+    }
+}
+
+/// One action the Realtime model asked for, already parsed and typed.
+enum MacAction: Equatable {
+    case openApp(name: String)
+    case openURL(raw: String)
+    case createFolder(name: String, location: MacActionLocation)
+    case revealInFinder(name: String, location: MacActionLocation)
+    case setVolume(level: Int)
+    case mediaControl(action: String)
+}
+
+/// Performs the fast-lane actions. The AppKit calls are injected so the whole runner can be tested
+/// against a temporary directory without launching apps or moving the user's volume.
+@MainActor
+final class MacActionRunner {
+
+    private let homeDirectory: URL
+    private let workspaceDirectory: URL
+    private let findApplication: (String) -> URL?
+    private let launchApplication: (URL) -> Void
+    private let openURL: (URL) -> Void
+    private let setVolume: (Int) -> Void
+    private let sendMediaKey: (String) -> Void
+
+    init(
+        homeDirectory: URL,
+        workspaceDirectory: URL,
+        findApplication: @escaping (String) -> URL?,
+        launchApplication: @escaping (URL) -> Void,
+        openURL: @escaping (URL) -> Void,
+        setVolume: @escaping (Int) -> Void,
+        sendMediaKey: @escaping (String) -> Void
+    ) {
+        self.homeDirectory = homeDirectory
+        self.workspaceDirectory = workspaceDirectory
+        self.findApplication = findApplication
+        self.launchApplication = launchApplication
+        self.openURL = openURL
+        self.setVolume = setVolume
+        self.sendMediaKey = sendMediaKey
+    }
+
+    func perform(_ action: MacAction) async -> MacActionOutcome {
+        switch action {
+        case .openApp(let name):
+            guard let applicationURL = findApplication(name) else { return .appNotFound(name) }
+            launchApplication(applicationURL)
+            return .openedApp(name)
+
+        case .openURL(let raw):
+            guard let url = MacActionValidation.webURL(raw) else { return .invalidURL }
+            openURL(url)
+            return .openedURL(url.absoluteString)
+
+        case .createFolder(let rawName, let location):
+            guard let name = MacActionValidation.folderName(rawName) else { return .invalidName }
+            let directory = location.directoryURL(homeDirectory: homeDirectory, workspaceDirectory: workspaceDirectory)
+            let target = directory.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: target.path) {
+                return .folderAlreadyExists(name: name, location: location)
+            }
+            do {
+                try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+                return .createdFolder(name: name, location: location)
+            } catch let error as NSError {
+                // macOS answers a TCC-protected folder with EPERM until the user approves the prompt
+                // it has just shown them.
+                if error.domain == NSCocoaErrorDomain && error.code == NSFileWriteNoPermissionError {
+                    return .permissionDenied(location)
+                }
+                return .failed(error.localizedDescription)
+            }
+
+        case .revealInFinder(let rawName, let location):
+            guard let name = MacActionValidation.folderName(rawName) else { return .invalidName }
+            let directory = location.directoryURL(homeDirectory: homeDirectory, workspaceDirectory: workspaceDirectory)
+            let target = directory.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: target.path) else {
+                return .nothingToReveal(name: name, location: location)
+            }
+            NSWorkspace.shared.activateFileViewerSelecting([target])
+            return .revealed(name: name, location: location)
+
+        case .setVolume(let requestedLevel):
+            let level = min(100, max(0, requestedLevel))
+            setVolume(level)
+            return .volumeSet(level)
+
+        case .mediaControl(let mediaAction):
+            guard ["playpause", "next", "previous"].contains(mediaAction) else {
+                return .failed("I don't know how to \(mediaAction)")
+            }
+            sendMediaKey(mediaAction)
+            return .mediaControlled(mediaAction)
+        }
+    }
+
+    /// The runner the app uses: real LaunchServices, real Finder, real volume.
+    static func live(workspaceDirectory: URL) -> MacActionRunner {
+        MacActionRunner(
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+            workspaceDirectory: workspaceDirectory,
+            findApplication: { name in
+                // A bundle identifier if the model said one ("com.spotify.client"), otherwise the
+                // display name the user actually spoke.
+                NSWorkspace.shared.urlForApplication(withBundleIdentifier: name) ?? Self.applicationURL(named: name)
+            },
+            launchApplication: { applicationURL in
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = true
+                NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration, completionHandler: nil)
+            },
+            openURL: { url in NSWorkspace.shared.open(url) },
+            setVolume: { level in
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                process.arguments = ["-e", "set volume output volume \(level)"]
+                try? process.run()
+            },
+            sendMediaKey: { action in Self.postMediaKey(action) }
+        )
+    }
+
+    /// Looks for `<name>.app` in the standard application folders. LaunchServices has no display-name
+    /// lookup that does not also need a bundle identifier, and asking Spotlight would be slower than
+    /// the action itself.
+    private static func applicationURL(named name: String) -> URL? {
+        let searchDirectories = [
+            URL(fileURLWithPath: "/Applications"),
+            URL(fileURLWithPath: "/System/Applications"),
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications"),
+        ]
+        let wanted = name.lowercased().hasSuffix(".app") ? name.lowercased() : "\(name.lowercased()).app"
+        for directory in searchDirectories {
+            let candidate = directory.appendingPathComponent(wanted)
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            // Fall back to a case-insensitive scan of that one folder: "vs code" never matches, but
+            // "spotify" finding "Spotify.app" must not depend on the user's capitalisation.
+            if let entries = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
+               let match = entries.first(where: { $0.lowercased() == wanted }) {
+                return directory.appendingPathComponent(match)
+            }
+        }
+        return nil
+    }
+
+    /// The media keys are NX system-defined events, not ordinary key codes.
+    private static func postMediaKey(_ action: String) {
+        let keyCode: Int32
+        switch action {
+        case "next": keyCode = 17        // NX_KEYTYPE_FAST
+        case "previous": keyCode = 18    // NX_KEYTYPE_REWIND
+        default: keyCode = 16            // NX_KEYTYPE_PLAY
+        }
+        for isKeyDown in [true, false] {
+            let flags = NSEvent.ModifierFlags(rawValue: isKeyDown ? 0xA00 : 0xB00)
+            let data1 = Int((keyCode << 16) | ((isKeyDown ? 0xA : 0xB) << 8))
+            guard let event = NSEvent.otherEvent(
+                with: .systemDefined, location: .zero, modifierFlags: flags, timestamp: 0,
+                windowNumber: 0, context: nil, subtype: 8, data1: data1, data2: -1
+            ) else { continue }
+            event.cgEvent?.post(tap: .cghidEventTap)
+        }
     }
 }
