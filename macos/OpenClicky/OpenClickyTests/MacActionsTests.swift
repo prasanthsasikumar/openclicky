@@ -285,4 +285,52 @@ struct FastActionToolDefinitionTests {
         #expect(instructions.contains("open_app"))
         #expect(instructions.contains("send_to_agent"))
     }
+
+    /// Nothing else keeps the schema's argument keys and `MacAction.parse`'s argument keys in
+    /// agreement: a divergence there does not fail loudly, it just makes `parse` take its
+    /// "argument absent" branch and hand the runner an empty name or URL. This walks every
+    /// definition's own `properties` keys (never a hand-written list, so a future edit to a
+    /// definition is caught here rather than needing a matching edit here), builds arguments from
+    /// them, and asserts `parse` turns those exact values into the matching typed action.
+    @Test func everyDeclaredArgumentKeyParsesIntoTheMatchingAction() throws {
+        for definition in RealtimeVoiceClient.fastActionToolDefinitions() {
+            let toolName = try #require(definition["name"] as? String)
+            let parameters = try #require(definition["parameters"] as? [String: Any])
+            let properties = try #require(parameters["properties"] as? [String: Any])
+
+            var arguments: [String: Any] = [:]
+            for (key, rawPropertySchema) in properties {
+                let propertySchema = try #require(rawPropertySchema as? [String: Any])
+                if let enumValues = propertySchema["enum"] as? [String] {
+                    arguments[key] = try #require(enumValues.first)
+                } else if propertySchema["type"] as? String == "integer" {
+                    arguments[key] = 55
+                } else {
+                    arguments[key] = "Test Value"
+                }
+            }
+
+            guard case .action(let action) = MacAction.parse(toolName: toolName, arguments: arguments) else {
+                Issue.record("\(toolName) did not parse its own schema's argument keys into an action")
+                continue
+            }
+
+            switch action {
+            case .openApp(let name):
+                #expect(name == arguments["name"] as? String)
+            case .openURL(let raw):
+                #expect(raw == arguments["url"] as? String)
+            case .createFolder(let name, let location):
+                #expect(name == arguments["name"] as? String)
+                #expect(location.rawValue == arguments["location"] as? String)
+            case .revealInFinder(let name, let location):
+                #expect(name == arguments["name"] as? String)
+                #expect(location.rawValue == arguments["location"] as? String)
+            case .setVolume(let level):
+                #expect(level == arguments["level"] as? Int)
+            case .mediaControl(let action):
+                #expect(action == arguments["action"] as? String)
+            }
+        }
+    }
 }
