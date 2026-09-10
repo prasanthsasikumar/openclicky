@@ -101,9 +101,20 @@ open OpenClicky.xcodeproj
 
 # Known non-blocking warnings: Swift 6 concurrency warnings,
 # deprecated onChange warning in OverlayWindow.swift. Do NOT attempt to fix these.
+
+scripts/release.sh --no-notarize   # fast local install over /Applications, Developer ID signing kept
+scripts/release.sh                 # the same, notarized (needed only for other Macs)
 ```
 
-**Do NOT run `xcodebuild` from the terminal** — it invalidates TCC (Transparency, Consent, and Control) permissions and the app will need to re-request screen recording, accessibility, etc.
+**Debug builds carry their own bundle id** (`org.openclicky.app.debug`, shown as "OpenClicky Debug"),
+so they get their own TCC rows and can run beside the installed app without either invalidating the
+other's Accessibility / Screen Recording grants. That separation is what makes `xcodebuild` safe here:
+a Debug build no longer costs the installed app its permissions, and `clean-stray-builds.sh` leaves
+Debug bundles alone for the same reason. Two rules still hold: **one bundle id must only ever be
+signed by one identity** (mixing Apple Development and Developer ID under the same id is what makes
+System Settings show the app switched on while macOS keeps refusing it — the accessibility card's
+"Already switched on? Reset it and try again" is the way out), and a Debug build gets its own
+UserDefaults domain, so its onboarding state and toggles are separate from the installed app's.
 
 ## OpenClicky backend
 

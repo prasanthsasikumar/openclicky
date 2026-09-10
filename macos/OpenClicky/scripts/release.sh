@@ -6,6 +6,8 @@
 #   scripts/release.sh --publish       # ...and tag + create a GitHub release with the zip and dmg
 #   scripts/release.sh --version 0.3.0 # override the version (default: VERSION file)
 #   scripts/release.sh --dev           # Apple Development signing, no notarization (ignores release.env)
+#   scripts/release.sh --no-notarize   # Developer ID signing, no notarization — a fast local install
+#                                      # that keeps the installed app's signature (and its TCC grants)
 #
 # Signing (in priority order):
 #   OPENCLICKY_SIGN_IDENTITY  e.g. "Developer ID Application: Your Org (TEAMID)" — distribution builds
@@ -47,6 +49,10 @@ while [[ $# -gt 0 ]]; do
     --version) VERSION="$2"; shift ;;
     --no-install) INSTALL_DIR="" ;;
     --dev) SIGN_IDENTITY="Apple Development"; NOTARY_PROFILE="" ;;
+    # Notarization only matters for other Macs (Gatekeeper). Skipping it keeps the Developer ID
+    # signature, so the installed app's Accessibility/Screen Recording grants stay valid — the whole
+    # reason to prefer this over --dev when reinstalling over an existing copy.
+    --no-notarize) NOTARY_PROFILE="" ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
