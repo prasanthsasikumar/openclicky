@@ -732,7 +732,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case "send_to_agent":
             let task = arguments["task"] as? String ?? ""
             log("agent task: \(task)")
+            let startedAt = Date()
             output = await onAgentTask?(task) ?? "The agent lane is not available in this session."
+            log("agent task finished in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
         case "point_at":
             // Coordinates come as integers (or occasionally as numeric strings); label is free text.
             let number = { (value: Any?) -> Double? in
