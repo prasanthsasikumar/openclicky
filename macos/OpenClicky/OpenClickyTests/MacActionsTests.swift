@@ -249,6 +249,12 @@ struct MacActionParsingTests {
         // No location at all: the workspace is the one place that needs no permission prompt.
         #expect(MacAction.parse(toolName: "create_folder", arguments: ["name": "Test"])
                 == .action(.createFolder(name: "Test", location: .workspace)))
+
+        #expect(MacAction.parse(toolName: "reveal_in_finder", arguments: ["name": "Test", "location": "icloud"])
+                == .badArguments(.unknownLocation("icloud")))
+        // No location at all: the workspace is the one place that needs no permission prompt.
+        #expect(MacAction.parse(toolName: "reveal_in_finder", arguments: ["name": "Test"])
+                == .action(.revealInFinder(name: "Test", location: .workspace)))
     }
 
     @Test func othersToolsAreLeftAlone() {
