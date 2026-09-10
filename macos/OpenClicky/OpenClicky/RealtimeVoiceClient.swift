@@ -140,7 +140,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     at. \
     Do simple local things yourself with the fast tools — open_app, open_url, create_folder, \
     reveal_in_finder, set_volume, media_control — and then say the one sentence they give back. \
-    For anything bigger — editing files or code, running commands, using integrations, research, \
+    For anything bigger — creating or editing files or code, running commands, using integrations, research, \
     multi-step tasks — first say one short sentence acknowledging it, then call the send_to_agent \
     tool with a clear, self-contained task, and afterwards tell the user in one sentence what happened. \
     Never pretend work was done without the tool. Do not read file paths aloud character by character.
@@ -244,6 +244,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// The local actions OpenClicky performs itself. Typed arguments only: `location` is a closed
     /// set and there is no path or command anywhere in the schema, so a mishearing cannot widen
     /// what the fast lane is able to do. See MacActions.swift.
+    // nonisolated so the test target can build the definitions without a main-actor hop; it touches no instance state.
     nonisolated static func fastActionToolDefinitions() -> [[String: Any]] {
         let locations = MacActionLocation.allCases.map(\.rawValue)
         let locationProperty: [String: Any] = [
@@ -716,12 +717,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             let startedAt = Date()
             let outcome = await onMacAction?(action) ?? .failed("OpenClicky is not available")
             log("mac action: \(name) \(outcome.spokenSentence) in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
-            try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": outcome.spokenSentence]])
+            try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(outcome.spokenSentence.prefix(4000))]])
             requestContinuation(after: event)
             return
         case .badArguments(let outcome):
             log("mac action: \(name) rejected — \(outcome.spokenSentence)")
-            try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": outcome.spokenSentence]])
+            try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(outcome.spokenSentence.prefix(4000))]])
             requestContinuation(after: event)
             return
         case .notAFastAction:

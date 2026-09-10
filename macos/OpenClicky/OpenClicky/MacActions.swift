@@ -68,6 +68,7 @@ enum MacActionOutcome: Equatable {
     case volumeSet(Int)
     case mediaControlled(String)
     case invalidName
+    case invalidAppName
     case unknownLocation(String)
     case invalidURL
     case permissionDenied(MacActionLocation)
@@ -95,6 +96,8 @@ enum MacActionOutcome: Equatable {
             return "Done."
         case .invalidName:
             return "That name has characters a folder can't have."
+        case .invalidAppName:
+            return "That app name has characters an app name can't have."
         case .unknownLocation(let raw):
             return "I don't know where \(raw) is."
         case .invalidURL:
@@ -112,7 +115,9 @@ enum MacActionValidation {
 
     /// A folder name the model spoke, or nil when it could reach outside the location it was given.
     /// `/` and `:` are the two separators macOS honours; a leading dot would create something the
-    /// user cannot see; 255 bytes is the filesystem's own limit.
+    /// user cannot see; 255 characters is the filesystem's own limit. Also used to validate
+    /// `open_app`'s name, since the same rules keep it from resolving to a path outside the
+    /// application search directories (`../System/Applications/Calculator`, say).
     static func folderName(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 255 else { return nil }
@@ -328,7 +333,8 @@ extension MacAction {
 
         switch toolName {
         case "open_app":
-            return .action(.openApp(name: string("name")))
+            guard let name = MacActionValidation.folderName(string("name")) else { return .badArguments(.invalidAppName) }
+            return .action(.openApp(name: name))
 
         case "open_url":
             return .action(.openURL(raw: string("url")))

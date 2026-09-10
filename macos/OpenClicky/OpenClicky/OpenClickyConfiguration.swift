@@ -129,6 +129,37 @@ enum OpenClickyConfiguration {
     /// True when the user has a token: the backend rejects every model call without one.
     static var isConfigured: Bool { token != nil }
 
+    /// Where cua-driver is, mirroring the CLI's own precedence (`resolveCuaDriverBin` in
+    /// `agent/src/config.ts`) so the app and the CLI agree on whether Computer Use exists. An
+    /// explicit `settings.cuaDriverBin` — or, when that is unset, the `CUA_DRIVER_BIN` environment
+    /// variable — wins outright, including an explicit empty string, which disables it. Only when
+    /// neither is set does auto-discovery look for the well-known install paths. Before this, the
+    /// HUD and the skill-capabilities list asked only "did shell.json spell it out", which said
+    /// Computer Use was off on a Mac where the CLI had already found and attached it.
+    static var resolvedCuaDriverBin: String? {
+        resolvedCuaDriverBin(from: settings, environment: ProcessInfo.processInfo.environment)
+    }
+
+    static func resolvedCuaDriverBin(
+        from settings: OpenClickyShellSettings,
+        environment: [String: String],
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String? {
+        if let configured = settings.cuaDriverBin {
+            let trimmed = configured.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let envValue = environment["CUA_DRIVER_BIN"] {
+            let trimmed = envValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        let candidates = [
+            NSString(string: "~/.local/bin/cua-driver").expandingTildeInPath,
+            "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
+        ]
+        return candidates.first(where: isExecutable)
+    }
+
     static var cliCommand: [String] { settings.cliCommand }
     static var workspacePath: String { NSString(string: settings.workspace).expandingTildeInPath }
     static var agentModelOverride: String? { settings.model.isEmpty ? nil : settings.model }

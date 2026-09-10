@@ -167,7 +167,7 @@ struct NotchHomeView: View {
             HStack(spacing: 8) {
                 HStack(spacing: 6) {
                     integrationIcon(systemImage: "link", tint: Color(hex: "#7C6CFF"), title: "Composio", isOn: OpenClickyConfiguration.settings.composioMcpUrl != nil)
-                    integrationIcon(systemImage: "cursorarrow.rays", tint: Color(hex: "#38BDF8"), title: "Computer Use", isOn: OpenClickyConfiguration.settings.cuaDriverBin != nil)
+                    integrationIcon(systemImage: "cursorarrow.rays", tint: Color(hex: "#38BDF8"), title: "Computer Use", isOn: OpenClickyConfiguration.resolvedCuaDriverBin != nil)
                     Button(action: { OpenClickyConfiguration.revealSettingsFile() }) {
                         Image(systemName: "plus")
                             .font(.system(size: 11, weight: .semibold))

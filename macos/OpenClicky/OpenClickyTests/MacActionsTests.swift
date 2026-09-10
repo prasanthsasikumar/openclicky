@@ -257,6 +257,16 @@ struct MacActionParsingTests {
                 == .action(.revealInFinder(name: "Test", location: .workspace)))
     }
 
+    @Test func openAppRejectsAnAppNameThatEscapesTheApplicationDirectories() {
+        // A traversal name that could resolve outside /Applications, /System/Applications, ~/Applications.
+        #expect(MacAction.parse(toolName: "open_app", arguments: ["name": "../System/Applications/Calculator"])
+                == .badArguments(.invalidAppName))
+        #expect(MacAction.parse(toolName: "open_app", arguments: ["name": "com.spotify.client:evil"])
+                == .badArguments(.invalidAppName))
+        #expect(MacAction.parse(toolName: "open_app", arguments: ["name": ".hidden"])
+                == .badArguments(.invalidAppName))
+    }
+
     @Test func othersToolsAreLeftAlone() {
         #expect(MacAction.parse(toolName: "send_to_agent", arguments: ["task": "x"]) == .notAFastAction)
         #expect(MacAction.parse(toolName: "point_at", arguments: [:]) == .notAFastAction)
