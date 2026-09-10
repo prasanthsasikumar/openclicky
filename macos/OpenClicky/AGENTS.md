@@ -90,6 +90,7 @@ The app never calls external APIs directly. Every request goes to the OpenClicky
 | `PermissionPrompt.swift` | ~320 | HeyClicky's permission cards on the island, one permission at a time in order (Microphone → Accessibility → Screen Recording → Screen Content): progress dashes, headline, one line of copy, one blue button. The button takes the macOS route for that step (`WindowPositionManager`'s system-prompt-then-System-Settings rule; Screen Content is granted by actually capturing, so `CompanionManager` injects that one) and the card moves to its `waiting` stage — which for Accessibility opens the drag helper, and for Screen Recording offers Quit & Reopen. Fed by the same 1.5 s permission poll as the flags, so cards advance on their own; ✕ hides them until relaunch, the gear opens the menu bar panel. The waiting accessibility card also offers "Already switched on? Reset it and try again": `tccutil reset Accessibility <bundle id>` plus a relaunch, the only way out of a TCC row whose recorded signature no longer matches the running build (an update signed differently, or a dev build sharing the bundle id) — the list shows the app switched on while macOS keeps refusing it. Unit-tested. |
 | `AccessibilityDragPanel.swift` | ~189 | The "I'm OpenClicky — drag me into the list above" panel: a floating pop-up-menu-level `NSPanel` whose icon row is a `public.file-url` drag source for the app bundle, for when macOS never adds OpenClicky to the Accessibility list by itself. Follows the System Settings window (found through `CGWindowListCopyWindowInfo`, which gives bounds without Screen Recording permission) on a 1 s timer, and — unlike HeyClicky's — stays up through the drag, closing only when `AXIsProcessTrusted()` flips. |
 | `AppConnectPrompt.swift` | ~360 | "Connect \<app\> to OpenClicky" card: polls the frontmost app/site every 1.5 s off the main thread, opens once per app skill that has an `integration` (Composio toolkit), remembers Yes/No in UserDefaults (`appSkillConnectDecisions`); Yes runs `openclicky integrations status/login` (Codex MCP OAuth into Composio Connect, browser page) then hands the agent a Composio connection task (or shows a "set COMPOSIO_MCP_URL" notice), declined skills are left out of the talk prompts. Example chips come from the skill's "Pointing hints"/"Common tasks". |
+| `MacActions.swift` | ~330 | The fast lane: the local actions OpenClicky performs itself instead of routing them to Codex — `open_app`, `open_url`, `create_folder`, `reveal_in_finder`, `set_volume`, `media_control`, offered to the Realtime session as tools next to `point_at`. Typed arguments only: `location` is a closed enum (desktop/downloads/documents/workspace/home), names are rejected if they could escape it, and only http(s) URLs open — a mishearing can misname a folder but cannot produce a command. Each action returns one sentence, which is what the assistant says. About two seconds against twelve through the agent lane; anything outside the set still goes to `send_to_agent`. Unit-tested. |
 
 ## Build & Run
 
@@ -105,6 +106,10 @@ open OpenClicky.xcodeproj
 scripts/release.sh --no-notarize   # fast local install over /Applications, Developer ID signing kept
 scripts/release.sh                 # the same, notarized (needed only for other Macs)
 ```
+
+`scripts/measure-actions.sh` reports p50/p95 per verb from `~/Library/Logs/OpenClicky/app.log`
+(`mac action:` and `agent task finished in` lines). The fast lane's acceptance number is p95 under
+2 s for `open_app` and `create_folder`.
 
 **Debug builds carry their own bundle id** (`org.openclicky.app.debug`, shown as "OpenClicky Debug"),
 so they get their own TCC rows and can run beside the installed app without either invalidating the
