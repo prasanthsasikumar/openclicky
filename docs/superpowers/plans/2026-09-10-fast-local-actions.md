@@ -1065,10 +1065,16 @@ describe("computer-use driver discovery", () => {
     expect(renderMcpServers({ cuaDriverBin: cfg.cuaDriverBin })).toContain("[mcp_servers.computer-use]");
   });
 
-  it("renders no server when no driver is installed", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-nocua-"));
-    const cfg = resolveConfig({}, { HOME: home } as NodeJS.ProcessEnv);
-    expect(cfg.cuaDriverBin).toBeUndefined();
+  it("prefers the driver in HOME over the app bundle", () => {
+    // Not asserted: that an arbitrary HOME yields undefined. The candidate list ends with
+    // /Applications/CuaDriver.app, which exists on any machine where CuaDriver is installed, so
+    // that assertion would pass or fail depending on whose machine ran it.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cua-home-"));
+    const driver = path.join(home, ".local", "bin", "cua-driver");
+    fs.mkdirSync(path.dirname(driver), { recursive: true });
+    fs.writeFileSync(driver, "#!/bin/sh\n", { mode: 0o755 });
+
+    expect(resolveConfig({}, { HOME: home } as NodeJS.ProcessEnv).cuaDriverBin).toBe(driver);
   });
 
   it("lets an explicit setting win, and an empty string disable it", () => {
@@ -1207,7 +1213,9 @@ LOG="$HOME/Library/Logs/OpenClicky/app.log"
 VERB="${1:-}"
 [[ -f "$LOG" ]] || { echo "no log at $LOG — run the app first"; exit 1; }
 
-grep "mac action:" "$LOG" \
+# Only timed lines are latency samples: a rejected argument ("mac action: create_folder rejected — …")
+# carries no duration and would otherwise be read as a verb named after the timestamp.
+grep -E "mac action: [a-z_]+ .* in [0-9.]+ s" "$LOG" \
   | sed -E 's/.*mac action: ([a-z_]+) .* in ([0-9.]+) s.*/\1 \2/' \
   | { [[ -n "$VERB" ]] && grep "^$VERB " || cat; } \
   | awk '
