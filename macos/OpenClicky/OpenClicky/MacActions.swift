@@ -152,6 +152,7 @@ final class MacActionRunner {
     private let findApplication: (String) -> URL?
     private let launchApplication: (URL) -> Void
     private let openURL: (URL) -> Void
+    private let revealInFinder: (URL) -> Void
     private let setVolume: (Int) -> Void
     private let sendMediaKey: (String) -> Void
 
@@ -161,6 +162,7 @@ final class MacActionRunner {
         findApplication: @escaping (String) -> URL?,
         launchApplication: @escaping (URL) -> Void,
         openURL: @escaping (URL) -> Void,
+        revealInFinder: @escaping (URL) -> Void,
         setVolume: @escaping (Int) -> Void,
         sendMediaKey: @escaping (String) -> Void
     ) {
@@ -169,6 +171,7 @@ final class MacActionRunner {
         self.findApplication = findApplication
         self.launchApplication = launchApplication
         self.openURL = openURL
+        self.revealInFinder = revealInFinder
         self.setVolume = setVolume
         self.sendMediaKey = sendMediaKey
     }
@@ -211,7 +214,7 @@ final class MacActionRunner {
             guard FileManager.default.fileExists(atPath: target.path) else {
                 return .nothingToReveal(name: name, location: location)
             }
-            NSWorkspace.shared.activateFileViewerSelecting([target])
+            revealInFinder(target)
             return .revealed(name: name, location: location)
 
         case .setVolume(let requestedLevel):
@@ -244,6 +247,7 @@ final class MacActionRunner {
                 NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration, completionHandler: nil)
             },
             openURL: { url in NSWorkspace.shared.open(url) },
+            revealInFinder: { url in NSWorkspace.shared.activateFileViewerSelecting([url]) },
             setVolume: { level in
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")

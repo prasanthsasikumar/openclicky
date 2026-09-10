@@ -88,6 +88,7 @@ struct MacActionRunnerTests {
     private final class Recorder {
         var launchedApplications: [URL] = []
         var openedURLs: [URL] = []
+        var revealedURLs: [URL] = []
         var volumeLevels: [Int] = []
         var mediaKeys: [String] = []
         var installedApplications: [String: URL] = ["spotify": URL(fileURLWithPath: "/Applications/Spotify.app")]
@@ -100,6 +101,7 @@ struct MacActionRunnerTests {
             findApplication: { name in recorder.installedApplications[name.lowercased()] },
             launchApplication: { url in recorder.launchedApplications.append(url) },
             openURL: { url in recorder.openedURLs.append(url) },
+            revealInFinder: { url in recorder.revealedURLs.append(url) },
             setVolume: { level in recorder.volumeLevels.append(level) },
             sendMediaKey: { action in recorder.mediaKeys.append(action) }
         )
@@ -178,5 +180,46 @@ struct MacActionRunnerTests {
         #expect(await runner.perform(.setVolume(level: 400)) == .volumeSet(100))
         #expect(await runner.perform(.setVolume(level: -5)) == .volumeSet(0))
         #expect(recorder.volumeLevels == [100, 0])
+    }
+
+    @Test func revealingAnExistingFolderShowsItAndReportsSuccess() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        let desktopPath = root.appendingPathComponent("Desktop")
+        try FileManager.default.createDirectory(at: desktopPath.appendingPathComponent("TestFolder"), withIntermediateDirectories: true)
+
+        let outcome = await runner.perform(.revealInFinder(name: "TestFolder", location: .desktop))
+        #expect(outcome == .revealed(name: "TestFolder", location: .desktop))
+        #expect(recorder.revealedURLs == [desktopPath.appendingPathComponent("TestFolder")])
+    }
+
+    @Test func mediaControlWithAValidActionSendsTheKeyAndReportsSuccess() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        let outcome = await runner.perform(.mediaControl(action: "next"))
+        #expect(outcome == .mediaControlled("next"))
+        #expect(recorder.mediaKeys == ["next"])
+    }
+
+    @Test func mediaControlWithAnInvalidActionDoesNotSendAndReportsFailure() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        let outcome = await runner.perform(.mediaControl(action: "shuffle"))
+        #expect((outcome as? MacActionOutcome) != nil)
+        if case .failed = outcome {
+            #expect(true)
+        } else {
+            #expect(false, "Expected .failed outcome")
+        }
+        #expect(recorder.mediaKeys.isEmpty)
     }
 }
