@@ -117,8 +117,13 @@ final class CompanionManager: ObservableObject {
         ? true
         : UserDefaults.standard.bool(forKey: "isOpenClickyRealtimeVoiceEnabled")
 
-    /// Always-on listening (server VAD, barge-in) instead of push-to-talk.
-    @Published var isAlwaysListening: Bool = UserDefaults.standard.bool(forKey: "isOpenClickyAlwaysListening")
+    /// Always-on listening (server VAD, barge-in) instead of push-to-talk. Session-only: a launch
+    /// always starts in push-to-talk, so a forgotten hands-free toggle never greets the user out
+    /// of nowhere the next day. (The old persisted key is cleared so nothing reads it again.)
+    @Published var isAlwaysListening: Bool = {
+        UserDefaults.standard.removeObject(forKey: "isOpenClickyAlwaysListening")
+        return false
+    }()
 
     /// The menu bar icon is off by default: the notch HUD is the app's home. The onboarding /
     /// permissions panel still opens on its own when something needs attention.
@@ -146,7 +151,6 @@ final class CompanionManager: ObservableObject {
 
     func setAlwaysListening(_ enabled: Bool) {
         isAlwaysListening = enabled
-        UserDefaults.standard.set(enabled, forKey: "isOpenClickyAlwaysListening")
         warmUpRealtimeVoice()
     }
 
@@ -931,6 +935,7 @@ final class CompanionManager: ObservableObject {
             streamCursorCaption(feedback, holdSeconds: 6)
         }
         print("👂 Hands-free \(isAlwaysListening ? "on" : "off")")
+        AppLog.append("hands-free \(isAlwaysListening ? "on" : "off")")
     }
 
     /// fn + control held: record through the classic dictation pipeline (upload transcription),
