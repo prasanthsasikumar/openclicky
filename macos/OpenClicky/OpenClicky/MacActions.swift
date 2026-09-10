@@ -300,3 +300,60 @@ final class MacActionRunner {
         }
     }
 }
+
+/// What the tool call turned out to be.
+enum MacActionParseResult: Equatable {
+    case action(MacAction)
+    /// Not one of the fast-lane tools: the caller's existing handling applies.
+    case notAFastAction
+    /// A fast-lane tool with arguments that cannot be acted on; the outcome carries what to say.
+    case badArguments(MacActionOutcome)
+}
+
+extension MacAction {
+
+    /// Turns the Realtime tool call into a typed action. The model controls these values: nothing
+    /// here trusts them beyond the enum and the validation in `MacActionValidation`.
+    static func parse(toolName: String, arguments: [String: Any]) -> MacActionParseResult {
+        let string = { (key: String) -> String in
+            (arguments[key] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // Locations are optional: the workspace is the only one that never triggers a macOS
+        // permission prompt, so an unspecified location goes there rather than to the Desktop.
+        let location = { () -> MacActionLocation? in
+            let raw = string("location")
+            if raw.isEmpty { return .workspace }
+            return MacActionLocation.named(raw)
+        }
+
+        switch toolName {
+        case "open_app":
+            return .action(.openApp(name: string("name")))
+
+        case "open_url":
+            return .action(.openURL(raw: string("url")))
+
+        case "create_folder":
+            guard let location = location() else { return .badArguments(.unknownLocation(string("location"))) }
+            return .action(.createFolder(name: string("name"), location: location))
+
+        case "reveal_in_finder":
+            guard let location = location() else { return .badArguments(.unknownLocation(string("location"))) }
+            return .action(.revealInFinder(name: string("name"), location: location))
+
+        case "set_volume":
+            let raw = arguments["level"]
+            if let number = raw as? NSNumber { return .action(.setVolume(level: number.intValue)) }
+            if let text = raw as? String, let number = Int(text.trimmingCharacters(in: .whitespaces)) {
+                return .action(.setVolume(level: number))
+            }
+            return .badArguments(.failed("I need a volume between 0 and 100"))
+
+        case "media_control":
+            return .action(.mediaControl(action: string("action").lowercased()))
+
+        default:
+            return .notAFastAction
+        }
+    }
+}

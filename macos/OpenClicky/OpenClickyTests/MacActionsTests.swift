@@ -223,3 +223,36 @@ struct MacActionRunnerTests {
         #expect(recorder.mediaKeys.isEmpty)
     }
 }
+
+struct MacActionParsingTests {
+
+    @Test func parsesEachToolIntoItsAction() {
+        #expect(MacAction.parse(toolName: "open_app", arguments: ["name": "Spotify"]) == .action(.openApp(name: "Spotify")))
+        #expect(MacAction.parse(toolName: "open_url", arguments: ["url": "https://example.com"]) == .action(.openURL(raw: "https://example.com")))
+        #expect(MacAction.parse(toolName: "create_folder", arguments: ["name": "Test", "location": "desktop"])
+                == .action(.createFolder(name: "Test", location: .desktop)))
+        #expect(MacAction.parse(toolName: "reveal_in_finder", arguments: ["name": "Test", "location": "downloads"])
+                == .action(.revealInFinder(name: "Test", location: .downloads)))
+        #expect(MacAction.parse(toolName: "media_control", arguments: ["action": "next"]) == .action(.mediaControl(action: "next")))
+    }
+
+    @Test func acceptsTheNumberOrTheNumericStringTheModelSends() {
+        // The Realtime model sends integers, but occasionally quotes them.
+        #expect(MacAction.parse(toolName: "set_volume", arguments: ["level": 40]) == .action(.setVolume(level: 40)))
+        #expect(MacAction.parse(toolName: "set_volume", arguments: ["level": "40"]) == .action(.setVolume(level: 40)))
+        #expect(MacAction.parse(toolName: "set_volume", arguments: ["level": "loud"]) == .badArguments(.failed("I need a volume between 0 and 100")))
+    }
+
+    @Test func aMissingOrUnknownLocationIsAnAnswerNotAGuess() {
+        #expect(MacAction.parse(toolName: "create_folder", arguments: ["name": "Test", "location": "icloud"])
+                == .badArguments(.unknownLocation("icloud")))
+        // No location at all: the workspace is the one place that needs no permission prompt.
+        #expect(MacAction.parse(toolName: "create_folder", arguments: ["name": "Test"])
+                == .action(.createFolder(name: "Test", location: .workspace)))
+    }
+
+    @Test func othersToolsAreLeftAlone() {
+        #expect(MacAction.parse(toolName: "send_to_agent", arguments: ["task": "x"]) == .notAFastAction)
+        #expect(MacAction.parse(toolName: "point_at", arguments: [:]) == .notAFastAction)
+    }
+}
