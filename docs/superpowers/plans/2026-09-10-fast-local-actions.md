@@ -611,6 +611,13 @@ git commit -m "feat(mac): run the fast local actions natively"
 
 ---
 
+> **Amended during execution (Task 2 review, 2026-09-10):** the code block above reached
+> `NSWorkspace.shared.activateFileViewerSelecting` directly from the `.revealInFinder` case, outside
+> the injected seam every other AppKit call uses, which left that action's success path untestable;
+> and the test block omitted `mediaControl` entirely. As shipped, `MacActionRunner` takes a sixth
+> injected closure, `revealInFinder: (URL) -> Void`, and the suite covers the reveal success path
+> plus both `mediaControl` branches. `MacActionRunner.live(workspaceDirectory:)` is unchanged.
+
 ### Task 3: Parse the model's tool call into a MacAction
 
 Keeping parsing separate from the socket is what makes it testable — `handleToolCall` itself can never be unit-tested, because it needs a live Realtime connection.
