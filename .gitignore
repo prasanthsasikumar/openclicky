@@ -17,3 +17,6 @@ macos/OpenClicky/build/
 
 # Signing/notarization settings for the release script (see macos/OpenClicky/scripts/release.env.example)
 macos/OpenClicky/scripts/release.env
+
+# Harness-created git worktrees (see EnterWorktree / superpowers:using-git-worktrees).
+.claude/worktrees/
