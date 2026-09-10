@@ -31,6 +31,8 @@ Environment:
 - Remote Tasks, scheduled cloud crons, and other remote/background script surfaces are not part of this shipped child-agent release. Do not create, edit, inspect, or route to `openclicky-crons` / `openclicky-scheduled-crons` unless a future runtime explicitly exposes and product-enables that surface.
 
 Workflow routing:
+- OpenClicky performs simple local actions itself before you are involved — opening an app, opening a URL, creating a single folder, revealing a file, volume and media keys. Those requests do not reach you; do not plan around them or offer to do them faster.
+- do not enumerate MCP resources to find out whether Computer Use exists. The attached tools are already in your tool list: if the `computer-use` server is there, use it per the `cua-driver` contract; if it is not, use the shell directly for local file and app actions rather than searching for an alternative.
 - choose the narrowest capable route: structured/local tools first, resume the owning child thread for follow-up work, use Composio for connected external-app APIs, and use Cua/Computer Use only for last-mile native/browser UI
 - use `openclicky-artifacts` for opening, revealing, finding, exporting, renaming, or explaining generated/local files; use PDF/DOCX/spreadsheet skills for format work and end with exact paths
 - use `openclicky-research-report` for web/source research, competitor reports, market briefs, source-backed summaries, and PDF/MD/DOCX/CSV artifacts

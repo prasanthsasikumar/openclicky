@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,6 +56,28 @@ function parseWritableRoots(value: string | undefined, home: string): string[] {
     .map((entry) => path.resolve(entry.startsWith("~") ? path.join(home, entry.slice(1)) : entry));
 }
 
+/**
+ * Where cua-driver is, so the `computer-use` MCP server is actually rendered. Without this the
+ * agent's instructions advertise Computer Use while no such server is attached, and the model
+ * spends turns enumerating MCP resources looking for it before falling back to the shell.
+ * An explicit CUA_DRIVER_BIN wins; an explicit empty string disables it.
+ */
+function resolveCuaDriverBin(configured: string | undefined, home: string): string | undefined {
+  if (configured !== undefined) return configured === "" ? undefined : configured;
+  const candidates = [
+    path.join(home, ".local", "bin", "cua-driver"),
+    "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
+  ];
+  return candidates.find((candidate) => {
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** Flags win over env, env over defaults. */
 export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.ProcessEnv = process.env): AgentConfig {
   const home = env.HOME ?? os.homedir();
@@ -75,7 +98,7 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     verbose: flags.verbose ?? env.OPENCLICKY_VERBOSE === "1",
     composioMcpUrl: flags.composioMcpUrl ?? env.COMPOSIO_MCP_URL ?? undefined,
     composioApiKey: flags.composioApiKey ?? env.COMPOSIO_API_KEY ?? undefined,
-    cuaDriverBin: flags.cuaDriverBin ?? env.CUA_DRIVER_BIN ?? undefined,
+    cuaDriverBin: flags.cuaDriverBin ?? resolveCuaDriverBin(env.CUA_DRIVER_BIN, home),
     ffmpegBin: flags.ffmpegBin ?? env.OPENCLICKY_FFMPEG_BIN ?? "ffmpeg",
     userSkillsDir: path.resolve(flags.userSkillsDir ?? env.OPENCLICKY_USER_SKILLS_DIR ?? path.join(home, ".openclicky", "skills")),
     openaiApiKey: flags.openaiApiKey ?? env.OPENCLICKY_OPENAI_KEY ?? undefined,

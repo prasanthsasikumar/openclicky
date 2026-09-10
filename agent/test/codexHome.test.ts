@@ -125,3 +125,38 @@ describe("ensureCodexHome", () => {
     expect(warnings.join("")).toMatch(/warning: user skills not synced/);
   });
 });
+
+describe("computer-use driver discovery", () => {
+  it("defaults to the installed cua-driver so the config renders the MCP server", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cua-"));
+    const driver = path.join(home, ".local", "bin", "cua-driver");
+    fs.mkdirSync(path.dirname(driver), { recursive: true });
+    fs.writeFileSync(driver, "#!/bin/sh\n", { mode: 0o755 });
+
+    const cfg = resolveConfig({}, { HOME: home } as NodeJS.ProcessEnv);
+    expect(cfg.cuaDriverBin).toBe(driver);
+    expect(renderMcpServers({ cuaDriverBin: cfg.cuaDriverBin })).toContain("[mcp_servers.computer-use]");
+  });
+
+  it("prefers the driver in HOME over the app bundle", () => {
+    // Not asserted: that an arbitrary HOME yields undefined. The candidate list ends with
+    // /Applications/CuaDriver.app, which exists on any machine where CuaDriver is installed, so
+    // that assertion would pass or fail depending on whose machine ran it.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cua-home-"));
+    const driver = path.join(home, ".local", "bin", "cua-driver");
+    fs.mkdirSync(path.dirname(driver), { recursive: true });
+    fs.writeFileSync(driver, "#!/bin/sh\n", { mode: 0o755 });
+
+    expect(resolveConfig({}, { HOME: home } as NodeJS.ProcessEnv).cuaDriverBin).toBe(driver);
+  });
+
+  it("lets an explicit setting win, and an empty string disable it", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cua2-"));
+    const driver = path.join(home, ".local", "bin", "cua-driver");
+    fs.mkdirSync(path.dirname(driver), { recursive: true });
+    fs.writeFileSync(driver, "#!/bin/sh\n", { mode: 0o755 });
+
+    expect(resolveConfig({}, { HOME: home, CUA_DRIVER_BIN: "/opt/other" } as NodeJS.ProcessEnv).cuaDriverBin).toBe("/opt/other");
+    expect(resolveConfig({}, { HOME: home, CUA_DRIVER_BIN: "" } as NodeJS.ProcessEnv).cuaDriverBin).toBeUndefined();
+  });
+});
