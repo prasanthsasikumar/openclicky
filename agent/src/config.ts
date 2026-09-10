@@ -13,6 +13,9 @@ export interface AgentConfig {
   codexBin: string;
   /** Directory the agent works in. */
   workspace: string;
+  /** Directories outside the workspace that Codex's workspace-write sandbox may write to.
+   *  Empty means the workspace only (Codex's own default). */
+  writableRoots: string[];
   /** Optional model override for Codex runs. */
   model?: string;
   /** Repo root (contains skills/ and config/). */
@@ -42,6 +45,16 @@ export function repoRoot(): string {
 
 const stripSlash = (u: string) => u.replace(/\/+$/, "");
 
+/** `~/Desktop, /Volumes/Work` → absolute paths. Undefined means the default (the home folder). */
+function parseWritableRoots(value: string | undefined, home: string): string[] {
+  if (value === undefined) return [home];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => path.resolve(entry.startsWith("~") ? path.join(home, entry.slice(1)) : entry));
+}
+
 /** Flags win over env, env over defaults. */
 export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.ProcessEnv = process.env): AgentConfig {
   const home = env.HOME ?? os.homedir();
@@ -51,6 +64,12 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     codexHome: flags.codexHome ?? env.OPENCLICKY_CODEX_HOME ?? path.join(home, ".openclicky", "codex-home"),
     codexBin: flags.codexBin ?? env.OPENCLICKY_CODEX_BIN ?? "codex",
     workspace: path.resolve(flags.workspace ?? env.OPENCLICKY_WORKSPACE ?? process.cwd()),
+    // The whole home folder by default: an assistant asked to "make a folder on the Desktop" or
+    // "save this to Downloads" has to be able to write there, and a workspace-only sandbox refuses
+    // silently (it cannot ask to escalate — the headless runs use approvalPolicy "never").
+    // `OPENCLICKY_WRITABLE_ROOTS` (comma-separated, `~` allowed) narrows or widens it; empty means
+    // the workspace only.
+    writableRoots: flags.writableRoots ?? parseWritableRoots(env.OPENCLICKY_WRITABLE_ROOTS, home),
     model: flags.model ?? env.OPENCLICKY_MODEL ?? undefined,
     root: flags.root ?? repoRoot(),
     verbose: flags.verbose ?? env.OPENCLICKY_VERBOSE === "1",

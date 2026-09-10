@@ -54,3 +54,8 @@ enabled = true
 
 [projects."{{WORKSPACE}}"]
 trust_level = "trusted"
+
+# Where the workspace-write sandbox may write outside the workspace (agent/src/config.ts,
+# OPENCLICKY_WRITABLE_ROOTS / `writableRoots` in shell.json). Without it Codex can only write inside
+# the thread's cwd, so "make a folder on my Desktop" is refused with no way to ask permission.
+{{SANDBOX_WRITABLE_ROOTS}}

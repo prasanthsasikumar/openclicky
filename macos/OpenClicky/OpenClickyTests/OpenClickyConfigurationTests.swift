@@ -31,4 +31,14 @@ struct OpenClickyConfigurationTests {
         #expect(environment["OPENAI_API_KEY"] == nil)
         #expect(environment["OPENCLICKY_ANTHROPIC_KEY"] == nil)
     }
+
+    @Test func writableRootsReachTheCLIOnlyWhenTheUserSetsThem() {
+        // Unset, the agent applies its own default (the home folder); a list here overrides it.
+        #expect(OpenClickyConfiguration.cliProcessEnvironment(from: OpenClickyShellSettings())["OPENCLICKY_WRITABLE_ROOTS"] == nil)
+
+        var settings = OpenClickyShellSettings()
+        settings.writableRoots = ["~/Desktop", "/Volumes/Work"]
+        let environment = OpenClickyConfiguration.cliProcessEnvironment(from: settings)
+        #expect(environment["OPENCLICKY_WRITABLE_ROOTS"] == "~/Desktop,/Volumes/Work")
+    }
 }

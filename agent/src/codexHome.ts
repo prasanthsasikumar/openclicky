@@ -13,6 +13,8 @@ export interface RenderVars {
   cuaDriverBin?: string;
   /** Directory of symlinks to the user's activated skills (see skillsLibrary.ts). */
   userSkillsActive: string;
+  /** Directories outside the workspace Codex's sandbox may write to; empty renders no section. */
+  writableRoots?: string[];
 }
 
 const tomlString = (s: string) => JSON.stringify(s);
@@ -55,6 +57,17 @@ export function renderMcpServers(v: Pick<RenderVars, "composioMcpUrl" | "composi
   return blocks.join("\n\n");
 }
 
+/**
+ * TOML for the writable roots. Codex's `workspace-write` sandbox allows writes inside the thread's
+ * cwd and nothing else, so a request like "make a folder on my Desktop" is refused — and with
+ * `approvalPolicy: "never"` (the headless default) Codex cannot even ask to escalate; it just says
+ * it can't. These roots are what makes the rest of the disk writable.
+ */
+export function renderSandboxWritableRoots(roots: string[] | undefined): string {
+  if (!roots || roots.length === 0) return "";
+  return ["[sandbox_workspace_write]", `writable_roots = [${roots.map(tomlString).join(", ")}]`].join("\n");
+}
+
 /** Fill the placeholders in config/codex-config.toml. */
 export function renderCodexConfig(template: string, v: RenderVars): string {
   const modelLine = v.model ? `model = ${tomlString(v.model)}` : "";
@@ -64,7 +77,8 @@ export function renderCodexConfig(template: string, v: RenderVars): string {
     .replaceAll("{{BACKEND_URL}}", v.backendUrl.replace(/\/+$/, ""))
     .replaceAll("{{WORKSPACE}}", v.workspace)
     .replaceAll("{{USER_SKILLS_ACTIVE}}", v.userSkillsActive)
-    .replaceAll("{{MCP_SERVERS}}", renderMcpServers(v));
+    .replaceAll("{{MCP_SERVERS}}", renderMcpServers(v))
+    .replaceAll("{{SANDBOX_WRITABLE_ROOTS}}", renderSandboxWritableRoots(v.writableRoots));
 }
 
 /**
@@ -94,6 +108,7 @@ export function ensureCodexHome(cfg: AgentConfig): { configPath: string } {
       composioApiKey: cfg.composioApiKey,
       cuaDriverBin: cfg.cuaDriverBin,
       userSkillsActive: activeDir(cfg.userSkillsDir),
+      writableRoots: cfg.writableRoots,
     }),
   );
   return { configPath };

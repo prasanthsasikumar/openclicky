@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { renderCodexConfig, renderMcpServers, ensureCodexHome } from "../src/codexHome.js";
+import { renderCodexConfig, renderMcpServers, renderSandboxWritableRoots, ensureCodexHome } from "../src/codexHome.js";
 import { resolveConfig } from "../src/config.js";
 
 const tpl = `{{MODEL_LINE}}\nbase_url = "{{BACKEND_URL}}/v1"\npath = "{{OPENCLICKY_ROOT}}/skills"\n[projects."{{WORKSPACE}}"]\n`;
@@ -38,6 +38,44 @@ describe("renderMcpServers", () => {
     const out = renderMcpServers({ composioMcpUrl: "https://connect.composio.dev/mcp", composioApiKey: "ck_test" });
     expect(out).toContain('[mcp_servers.composio]\nurl = "https://connect.composio.dev/mcp"\nhttp_headers = { "x-consumer-api-key" = "ck_test" }\nrequired = true');
     expect(out).not.toContain("bearer_token_env_var");
+  });
+});
+
+describe("renderSandboxWritableRoots", () => {
+  it("renders nothing when no extra roots are configured", () => {
+    // Codex's workspace-write sandbox then allows writes in the thread's cwd only, as before.
+    expect(renderSandboxWritableRoots([])).toBe("");
+    expect(renderSandboxWritableRoots(undefined)).toBe("");
+  });
+  it("renders the roots Codex may write to outside the workspace", () => {
+    const out = renderSandboxWritableRoots(["/Users/x", "/Volumes/Work"]);
+    expect(out).toContain("[sandbox_workspace_write]");
+    expect(out).toContain('writable_roots = ["/Users/x", "/Volumes/Work"]');
+  });
+  it("is filled into the template through its own placeholder", () => {
+    const out = renderCodexConfig("a\n{{SANDBOX_WRITABLE_ROOTS}}\nb", {
+      root: "/r", backendUrl: "x", workspace: "/w", userSkillsActive: "/u/active", writableRoots: ["/Users/x"],
+    });
+    expect(out).toContain('writable_roots = ["/Users/x"]');
+    expect(out).not.toContain("{{");
+  });
+});
+
+describe("writable roots configuration", () => {
+  it("defaults to the whole home folder", () => {
+    const cfg = resolveConfig({}, { HOME: "/Users/x" } as NodeJS.ProcessEnv);
+    expect(cfg.writableRoots).toEqual(["/Users/x"]);
+  });
+  it("takes a comma-separated override and expands ~", () => {
+    const cfg = resolveConfig({}, {
+      HOME: "/Users/x",
+      OPENCLICKY_WRITABLE_ROOTS: "~/Desktop, /Volumes/Work ,",
+    } as NodeJS.ProcessEnv);
+    expect(cfg.writableRoots).toEqual(["/Users/x/Desktop", "/Volumes/Work"]);
+  });
+  it("takes an empty override to mean workspace-only", () => {
+    const cfg = resolveConfig({}, { HOME: "/Users/x", OPENCLICKY_WRITABLE_ROOTS: "" } as NodeJS.ProcessEnv);
+    expect(cfg.writableRoots).toEqual([]);
   });
 });
 
