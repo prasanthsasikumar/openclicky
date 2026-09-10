@@ -63,6 +63,9 @@ enum NotchHUDExpansion: Equatable {
     case collapsed
     case compact
     case connect
+    /// A permission card ("I need accessibility permissions." → Grant): one per missing
+    /// permission, and nothing else opens on the island until they are all granted.
+    case permission
     /// The text composer (control tapped twice): a one-line field to type a request.
     case composer
     case full
@@ -88,6 +91,9 @@ final class NotchHUDModel: ObservableObject {
     var compactContentHeight: CGFloat { isShowingCaption ? 70 : 54 }
     let connectWidth: CGFloat = 606
     let connectTotalHeight: CGFloat = 115
+    /// The permission card, sized from HeyClicky's (both include the menu-bar band).
+    let permissionWidth: CGFloat = 424
+    let permissionTotalHeight: CGFloat = 168
     let composerWidth: CGFloat = 460
     let composerContentHeight: CGFloat = 52
     let fullWidth: CGFloat = 512
@@ -101,6 +107,9 @@ final class NotchHUDModel: ObservableObject {
 
     /// The "Connect <app> to OpenClicky" card to show, if any; set by `AppConnectPromptController`.
     @Published var connectPrompt: AppConnectPrompt?
+
+    /// The permission card to show, if any; set by `PermissionPromptController`.
+    @Published var permissionPrompt: PermissionPrompt?
 
     /// Text typed out in the compact strip (the Home tab's (i) while the buddy is docked); nil = none.
     @Published private(set) var captionText: String?
@@ -126,6 +135,11 @@ final class NotchHUDModel: ObservableObject {
     }
     var compactHeight: CGFloat { geometry.notchHeight + compactContentHeight }
     var connectHeight: CGFloat { max(connectTotalHeight, geometry.notchHeight + 78) }
+    var permissionHeight: CGFloat {
+        // The stale-row escape hatch adds a line under the button.
+        let contentHeight: CGFloat = permissionPrompt?.offersAccessibilityTrustReset == true ? 152 : 132
+        return max(permissionTotalHeight, geometry.notchHeight + contentHeight)
+    }
     var composerHeight: CGFloat { geometry.notchHeight + composerContentHeight }
     var fullHeight: CGFloat {
         switch activeTab {
@@ -140,6 +154,7 @@ final class NotchHUDModel: ObservableObject {
         case .collapsed: return geometry.notchWidth
         case .compact: return compactWidth
         case .connect: return connectWidth
+        case .permission: return permissionWidth
         case .composer: return composerWidth
         case .full: return fullWidth
         }
@@ -150,6 +165,7 @@ final class NotchHUDModel: ObservableObject {
         case .collapsed: return collapsedHeight
         case .compact: return compactHeight
         case .connect: return connectHeight
+        case .permission: return permissionHeight
         case .composer: return composerHeight
         case .full: return fullHeight
         }
@@ -234,8 +250,17 @@ final class NotchHUDModel: ObservableObject {
         reconcile(immediately: prompt != nil)
     }
 
+    /// Shows (or clears) the permission card. Nothing the app can do works without these, so the
+    /// card outranks every other island state until the last permission lands.
+    func setPermissionPrompt(_ prompt: PermissionPrompt?) {
+        guard permissionPrompt != prompt else { return }
+        permissionPrompt = prompt
+        reconcile(immediately: true)
+    }
+
     /// The state the island should be in once every hover grace period has run out.
     private var restingExpansion: NotchHUDExpansion {
+        if permissionPrompt != nil { return .permission }
         if connectPrompt != nil { return .connect }
         if isBusy || captionText != nil { return .compact }
         return .collapsed
@@ -247,6 +272,9 @@ final class NotchHUDModel: ObservableObject {
         if isComposerOpen {
             // The composer has the keyboard: nothing swaps it out until it is closed.
             target = .composer
+        } else if permissionPrompt != nil {
+            // Without permissions there is nothing else worth opening the island for.
+            target = .permission
         } else if isPinnedOpen {
             target = .full
         } else if connectPrompt != nil {
@@ -258,7 +286,7 @@ final class NotchHUDModel: ObservableObject {
         } else {
             target = restingExpansion
         }
-        if target == .full || target == .connect || target == .composer || immediately {
+        if target == .full || target == .connect || target == .permission || target == .composer || immediately {
             setExpansion(target)
             return
         }
@@ -496,6 +524,13 @@ final class NotchHUDManager {
     }
     private var connectPrompt: AppConnectPrompt?
 
+    /// Shows the permission card on every screen's island (nil hides it).
+    func setPermissionPrompt(_ prompt: PermissionPrompt?) {
+        permissionPrompt = prompt
+        instances.forEach { $0.model.setPermissionPrompt(prompt) }
+    }
+    private var permissionPrompt: PermissionPrompt?
+
     /// Creates a HUD for every attached screen and drops the ones whose screen went away.
     private func syncInstancesWithScreens() {
         guard let companionManager else { return }
@@ -518,6 +553,7 @@ final class NotchHUDManager {
             model.setBusy(isBusy)
             model.setCursorDocked(companionManager.isCursorDocked)
             model.setConnectPrompt(connectPrompt)
+            model.setPermissionPrompt(permissionPrompt)
             let hudWindow = NotchHUDWindow()
             // The window frame must stay authoritative. An NSHostingView used directly as the
             // content view re-fits the window to SwiftUI's fitting size (the hidden full panel),
@@ -676,7 +712,7 @@ struct NotchHUDView: View {
                 NotchIslandShape(bottomCornerRadius: bottomCornerRadius, topCornerFlare: topCornerFlare)
                     .fill(Color.black)
                     .frame(width: model.width + topCornerFlare * 2, height: expansion == .collapsed ? notchHeight : model.height)
-                    .onTapGesture { if expansion != .connect && expansion != .composer { model.togglePinned() } }
+                    .onTapGesture { if expansion != .connect && expansion != .permission && expansion != .composer { model.togglePinned() } }
             }
 
             // Only the active layer lives in the hierarchy: hidden layers with fixed frames would
@@ -738,6 +774,16 @@ struct NotchHUDView: View {
                         topInset: model.geometry.hasHardwareNotch ? notchHeight : 8
                     )
                         .frame(width: model.connectWidth, height: model.connectHeight)
+                        .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                }
+            case .permission:
+                if let permissionPrompt = model.permissionPrompt {
+                    PermissionPromptView(
+                        prompt: permissionPrompt,
+                        controller: companionManager.permissionPromptController,
+                        topInset: model.geometry.hasHardwareNotch ? notchHeight : 8
+                    )
+                        .frame(width: model.permissionWidth, height: model.permissionHeight)
                         .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
                 }
             case .full:

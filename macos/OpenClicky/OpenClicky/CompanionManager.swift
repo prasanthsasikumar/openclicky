@@ -125,8 +125,8 @@ final class CompanionManager: ObservableObject {
         return false
     }()
 
-    /// The menu bar icon is off by default: the notch HUD is the app's home. The onboarding /
-    /// permissions panel still opens on its own when something needs attention.
+    /// The menu bar icon is off by default: the notch HUD is the app's home. The onboarding panel
+    /// still opens on its own for a first run; permissions are asked for on the island.
     @Published var isMenuBarIconVisible: Bool = UserDefaults.standard.bool(forKey: "isOpenClickyMenuBarIconVisible")
 
     func setMenuBarIconVisible(_ visible: Bool) {
@@ -250,6 +250,10 @@ final class CompanionManager: ObservableObject {
 
     /// The notch HUD: a lip under the notch that opens on hover / while busy.
     let notchHUDManager = NotchHUDManager()
+    /// The permission cards the island shows one at a time until all four are granted.
+    let permissionPromptController = PermissionPromptController()
+    /// The "drag me into the Accessibility list" panel the accessibility card opens.
+    private let accessibilityDragPanelController = AccessibilityDragPanelController()
 
     /// Opens the "Connect <app> to OpenClicky" card in the HUD when a supported app or site comes to the front.
     let appConnectPromptController = AppConnectPromptController()
@@ -517,6 +521,16 @@ final class CompanionManager: ObservableObject {
         hasAccessibilityPermission && hasScreenRecordingPermission && hasMicrophonePermission && hasScreenContentPermission
     }
 
+    /// The four flags as the permission cards see them.
+    var permissionStatus: PermissionStatus {
+        PermissionStatus(
+            microphone: hasMicrophonePermission,
+            accessibility: hasAccessibilityPermission,
+            screenRecording: hasScreenRecordingPermission,
+            screenContent: hasScreenContentPermission
+        )
+    }
+
     /// Whether the blue cursor overlay is currently visible on screen.
     /// Used by the panel to show accurate status text ("Active" vs "Ready").
     @Published private(set) var isOverlayVisible: Bool = false
@@ -588,7 +602,7 @@ final class CompanionManager: ObservableObject {
         // If the user already completed onboarding AND all permissions are
         // still granted, show the cursor overlay immediately. If permissions
         // were revoked (e.g. signing change), don't show the cursor — the
-        // panel will show the permissions UI instead.
+        // island's permission cards ask for them back first.
         if hasCompletedOnboarding && allPermissionsGranted && isClickyCursorEnabled {
             if UserDefaults.standard.bool(forKey: "isOpenClickyCursorDocked") {
                 // Restore the docked state without an animation: the buddy is simply home.
@@ -602,6 +616,7 @@ final class CompanionManager: ObservableObject {
 
         // OpenClicky: the notch HUD is always available; it needs no permissions.
         notchHUDManager.show(companionManager: self)
+        startPermissionPrompts()
         appConnectPromptController.start(
             skillLibraryStore: skillLibraryStore,
             notchHUDManager: notchHUDManager,
@@ -653,6 +668,7 @@ final class CompanionManager: ObservableObject {
     }
 
     func stop() {
+        permissionPromptController.stop()
         appConnectPromptController.stop()
         notchHUDManager.hide()
         realtimeVoiceClient.disconnect(reason: nil)
@@ -718,6 +734,24 @@ final class CompanionManager: ObservableObject {
         if !previouslyHadAll && allPermissionsGranted {
             ClickyAnalytics.trackAllPermissionsGranted()
         }
+
+        permissionPromptController.update(with: permissionStatus)
+    }
+
+    /// Wires the permission cards to the island: the drag helper they open, and the one request
+    /// macOS has no call for (Screen Content is granted by actually capturing something).
+    private func startPermissionPrompts() {
+        permissionPromptController.dragHelper = accessibilityDragPanelController
+        permissionPromptController.performRequest = { [weak self] step in
+            guard let self else { return }
+            if step == .screenContent {
+                self.requestScreenContentPermission()
+            } else {
+                PermissionPromptController.requestFromSystem(step)
+            }
+        }
+        permissionPromptController.start(notchHUDManager: notchHUDManager)
+        permissionPromptController.update(with: permissionStatus)
     }
 
     /// Triggers the macOS screen content picker by performing a dummy

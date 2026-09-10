@@ -66,13 +66,6 @@ class WindowPositionManager {
         NSWorkspace.shared.open(url)
     }
 
-    /// Reveals the running app bundle in Finder so the user can drag it into
-    /// the Accessibility list if it doesn't appear automatically.
-    static func revealAppInFinder() {
-        guard let appURL = Bundle.main.bundleURL as URL? else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([appURL])
-    }
-
     // MARK: - Screen Recording Permission
 
     /// Returns true if Screen Recording permission is granted.
@@ -127,6 +120,28 @@ class WindowPositionManager {
         }
 
         return presentationDestination
+    }
+
+    /// Quits and relaunches the app. Screen Recording only takes effect on a fresh launch, so the
+    /// permission card offers this once the user has switched OpenClicky on in System Settings.
+    /// The new instance starts before this one goes away; macOS would otherwise refuse to launch a
+    /// second copy of an app that is still quitting. The executable is run directly rather than
+    /// through `open`, which asks LaunchServices for *an* app with this bundle id and can bring up
+    /// a different copy (during development, the installed one instead of the build being tested).
+    static func relaunchApp() {
+        guard let executableURL = Bundle.main.executableURL else { return }
+        let relaunchProcess = Process()
+        relaunchProcess.executableURL = executableURL
+        do {
+            try relaunchProcess.run()
+        } catch {
+            print("⚠️ Relaunch failed: \(error)")
+            return
+        }
+        // Give the new instance a moment to come up before this one terminates.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            NSApp.terminate(nil)
+        }
     }
 
     /// Opens System Settings to the Screen Recording pane.

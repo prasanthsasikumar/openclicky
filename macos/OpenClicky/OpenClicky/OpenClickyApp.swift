@@ -179,9 +179,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
-        // Auto-open the panel if the user still needs to do something:
-        // either they haven't onboarded yet, or permissions were revoked.
-        if !companionManager.hasCompletedOnboarding || !companionManager.allPermissionsGranted {
+        // Auto-open the panel only for a first run (the intro copy and the Start button).
+        // Missing permissions are asked for by the island's permission cards instead.
+        if !companionManager.hasCompletedOnboarding {
             menuBarPanelManager?.showPanelOnLaunch()
         }
         // OpenClicky: launching at login is opt-in (`registerAsLoginItem` in ~/.openclicky/shell.json).

@@ -17,6 +17,8 @@ import SwiftUI
 
 extension Notification.Name {
     static let clickyDismissPanel = Notification.Name("clickyDismissPanel")
+    /// The gear on a permission card: open the menu bar panel (settings, Quit).
+    static let clickyShowPanel = Notification.Name("clickyShowPanel")
 }
 
 /// Custom NSPanel subclass that can become the key window even with
@@ -31,6 +33,7 @@ final class MenuBarPanelManager: NSObject {
     private var panel: NSPanel?
     private var clickOutsideMonitor: Any?
     private var dismissPanelObserver: NSObjectProtocol?
+    private var showPanelObserver: NSObjectProtocol?
     private var iconVisibilityCancellable: AnyCancellable?
 
     private let companionManager: CompanionManager
@@ -55,6 +58,14 @@ final class MenuBarPanelManager: NSObject {
         ) { [weak self] _ in
             self?.hidePanel()
         }
+
+        showPanelObserver = NotificationCenter.default.addObserver(
+            forName: .clickyShowPanel,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showPanel()
+        }
     }
 
     deinit {
@@ -62,6 +73,9 @@ final class MenuBarPanelManager: NSObject {
             NSEvent.removeMonitor(monitor)
         }
         if let observer = dismissPanelObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = showPanelObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -121,8 +135,8 @@ final class MenuBarPanelManager: NSObject {
         return image
     }
 
-    /// Opens the panel automatically on app launch so the user sees
-    /// permissions and the start button right away.
+    /// Opens the panel automatically on a first launch so the user sees the intro and the
+    /// Start button right away.
     func showPanelOnLaunch() {
         // Small delay so the status item has time to appear in the menu bar
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -238,17 +252,10 @@ final class MenuBarPanelManager: NSObject {
                 return
             }
 
-            // Delay dismissal slightly to avoid closing the panel when
-            // a system permission dialog appears (e.g. microphone access).
+            // Delay dismissal slightly so the panel doesn't vanish the instant a system
+            // dialog opened from inside it takes focus.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 guard panel.isVisible else { return }
-
-                // If permissions aren't all granted yet, a system dialog
-                // may have focus — don't dismiss during onboarding.
-                if !self.companionManager.allPermissionsGranted && !NSApp.isActive {
-                    return
-                }
-
                 self.hidePanel()
             }
         }
