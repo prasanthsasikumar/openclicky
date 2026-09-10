@@ -120,6 +120,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                         waited += 0.25
                     }
                     print("smoke: \(await client.debugSummary())")
+                    // A `point_at` that fell back to Claude is still resolving when the reply ends.
+                    await client.awaitPendingPointing()
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                     print("smoke: after idle → \(await client.debugSummary())")
                     client.disconnect(reason: finished ? "smoke done" : "smoke timed out waiting for the reply")

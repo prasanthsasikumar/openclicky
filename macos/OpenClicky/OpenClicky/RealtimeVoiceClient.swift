@@ -61,6 +61,19 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     var onPointAt: ((CGPoint, String, CompanionScreenCapture) -> Void)?
     /// The capture behind the most recently attached screen context; `point_at` maps onto it.
     private(set) var lastScreenCapture: CompanionScreenCapture?
+    /// OCR of `lastScreenCapture`, started as soon as the screen is attached so it is ready
+    /// (~400 ms) by the time the model's first `point_at` arrives; `point_at` snaps to it.
+    private var lastScreenText: Task<[ScreenTextLine], Never>?
+    /// `point_at` calls resolve one after another (OCR snap is instant; the Claude fallback for
+    /// icons takes 2–4 s) so a multi-step walkthrough flies in the order the model gave.
+    private var pointingChain: Task<Void, Never>?
+    /// The last thing the user said, given to Claude when it has to locate an icon.
+    private var lastUserTranscript: String?
+
+    /// Waits for every queued `point_at` to resolve and fly (the smoke harness exits after this).
+    func awaitPendingPointing() async {
+        await pointingChain?.value
+    }
     /// True while microphone audio is being streamed to the server.
     @Published private(set) var isCapturing = false
     var onAgentTask: ((String) async -> String)?
@@ -119,8 +132,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     (with the pointer position noted): "this", "here", "that" refer to what is on screen, usually near the pointer. Look \
     at the screenshot and answer about it directly; never say you cannot see the screen and never mention a camera. \
     Answer quick questions yourself. When the user asks how to do something, where something is, or what to \
-    click, point at it with the point_at tool while you explain — one call per step, in order, and keep \
-    speaking between calls. Do not point for general questions or things they are obviously already looking \
+    click, point at it with the point_at tool while you explain — one call per step, in order, with the element's \
+    exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking \
     at. For anything that requires doing \
     work on the computer — creating or editing files or code, running commands, using apps or integrations, research, \
     multi-step tasks — first say one short sentence acknowledging it, then call the send_to_agent tool with a clear, \
@@ -181,6 +194,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         activeResponseId = nil
         cancelledResponseIds.removeAll()
         lastScreenCapture = nil
+        lastScreenText?.cancel()
+        lastScreenText = nil
+        pointingChain?.cancel()
+        pointingChain = nil
+        lastUserTranscript = nil
         sentInstructions = ""
         if let reason { log(reason) }
     }
@@ -242,15 +260,16 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         let pointTool: [String: Any] = [
             "type": "function",
             "name": "point_at",
-            "description": "Fly the on-screen cursor buddy to a UI element in the attached screenshot and show a short label. Use it while you explain: one call per step, in order, as you say each step. Coordinates are pixels in the screenshot, origin top-left.",
+            "description": "Fly the on-screen cursor buddy to a UI element in the attached screenshot and show a short label. Use it while you explain: one call per step, in order, as you say each step. Coordinates are pixels in the screenshot, origin top-left; the buddy snaps to the element's visible text near them, so always pass that text when the element has any.",
             "parameters": [
                 "type": "object",
                 "properties": [
                     "x": ["type": "integer", "description": "Horizontal pixel in the screenshot, from the left edge."],
                     "y": ["type": "integer", "description": "Vertical pixel in the screenshot, from the top edge."],
                     "label": ["type": "string", "description": "1-3 words naming the element, e.g. 'export button'"],
+                    "text": ["type": "string", "description": "The text written on the element itself (button caption, menu item, link, tab title), copied exactly as it appears on screen. Empty string for icon-only elements."],
                 ],
-                "required": ["x", "y", "label"],
+                "required": ["x", "y", "label", "text"],
             ],
         ]
         return [
@@ -416,6 +435,14 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         ]
         try? send(["type": "conversation.item.create", "item": item])
         lastScreenCapture = context.capture
+        lastScreenText?.cancel()
+        let jpeg = context.jpeg
+        lastScreenText = Task { [weak self] in
+            let started = Date()
+            let lines = (try? await ScreenTextRecognizer.recognize(jpeg: jpeg)) ?? []
+            if !Task.isCancelled { self?.log("screen text: \(lines.count) lines in \(Int(Date().timeIntervalSince(started) * 1000)) ms") }
+            return lines
+        }
         log("screen attached (\(context.jpeg.count / 1024) KB, \(Int(Date().timeIntervalSince(started) * 1000)) ms)")
     }
 
@@ -551,7 +578,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case "conversation.item.input_audio_transcription.completed":
             if let transcript = event["transcript"] as? String {
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { onTranscript?(.user, trimmed) }
+                if !trimmed.isEmpty {
+                    lastUserTranscript = trimmed
+                    onTranscript?(.user, trimmed)
+                }
             }
         case "input_audio_buffer.committed":
             log(type)
@@ -630,10 +660,70 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             // The model controls these numbers: reject non-finite values before any Int conversion.
             if let x = number(arguments["x"]), let y = number(arguments["y"]), x.isFinite, y.isFinite {
                 if let capture = lastScreenCapture {
-                    let location = CompanionManager.screenLocation(forScreenshotPoint: CGPoint(x: x, y: y), in: capture)
-                    let formatted = { (value: CGFloat) in String(format: "%.0f", value) }
-                    log("point_at (\(formatted(x)), \(formatted(y))) \"\(label)\" → screen (\(formatted(location.x)), \(formatted(location.y)))\(onPointAt == nil ? " (no handler)" : "")")
-                    onPointAt?(CGPoint(x: x, y: y), label, capture)
+                    // The model's guess is coarse (30–100 px off for captions, hundreds for icons).
+                    // Snap it to the element's visible text (OCR of the screenshot it saw) when it named
+                    // any; otherwise ask Claude to locate the element on the same screenshot (2–4 s).
+                    // Resolution runs off the receive loop, one call after another, so audio keeps
+                    // flowing and a walkthrough's steps fly in order.
+                    let guess = CGPoint(x: x, y: y)
+                    let elementText = (arguments["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let previousPointing = pointingChain
+                    let screenText = lastScreenText
+                    let userRequest = lastUserTranscript
+                    pointingChain = Task { [weak self] in
+                        await previousPointing?.value
+                        guard !Task.isCancelled, let self else { return }
+                        let formatted = { (value: CGFloat) in String(format: "%.0f", value) }
+                        var point = guess
+                        var resolution = "using the guess"
+                        var resolved = false
+                        // A browser tab is a favicon plus a truncated title, which no screenshot model
+                        // reads reliably; the browser's own tab list and Accessibility frames do.
+                        if let tab = BrowserTabLocator.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
+                            point = tab.point
+                            resolved = true
+                            resolution = "browser tab \"\(tab.tab.title.prefix(40))\" (\(formatted(point.x)), \(formatted(point.y)))"
+                        }
+                        let radius = CGFloat(capture.screenshotWidthInPixels) * 0.3
+                        // Repeated captions ("Edit" on every row) are the case snapping gets wrong:
+                        // two candidates closer together than the model's own 30–100 px error cannot
+                        // be told apart by distance, so a locator that only knows pixels reports
+                        // nothing rather than guessing between them.
+                        let ambiguityMargin = CGFloat(capture.screenshotWidthInPixels) * 0.1
+                        if !resolved, !elementText.isEmpty, let lines = await screenText?.value, !lines.isEmpty {
+                            if let match = ScreenTextLocator.locate(elementText, near: guess, in: lines, maxDistance: radius, ambiguityMargin: ambiguityMargin) {
+                                point = match.center
+                                resolved = true
+                                resolution = "snapped to \"\(match.text)\" (\(formatted(point.x)), \(formatted(point.y)), \(formatted(match.distance)) px away)"
+                            }
+                        }
+                        // Accessibility knows what the pixels cannot: the control's role, and the
+                        // title of the row it sits in. That is what separates repeated captions, and
+                        // it costs nothing, so it runs before paying for a Claude round trip.
+                        if !resolved,
+                           let element = AccessibleElementLocator.locate(
+                               label: label, text: elementText, userRequest: userRequest, near: guess,
+                               in: capture, maxDistance: radius, ambiguityMargin: ambiguityMargin
+                           ) {
+                            point = element.center
+                            resolved = true
+                            let container = element.containerTitles.first.map { " in \"\($0.prefix(30))\"" } ?? ""
+                            resolution = "accessibility \"\(element.title.prefix(40))\"\(container) (\(formatted(point.x)), \(formatted(point.y)))"
+                        }
+                        if !resolved {
+                            let started = Date()
+                            if let located = await ScreenElementGrounder.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
+                                point = located
+                                resolution = "located by Claude (\(formatted(point.x)), \(formatted(point.y))) in \(Int(Date().timeIntervalSince(started) * 1000)) ms"
+                            } else {
+                                resolution = "Claude could not locate it; using the guess"
+                            }
+                        }
+                        guard !Task.isCancelled else { return }
+                        let location = CompanionManager.screenLocation(forScreenshotPoint: point, in: capture)
+                        self.log("point_at (\(formatted(guess.x)), \(formatted(guess.y))) \"\(label)\" \(resolution) → screen (\(formatted(location.x)), \(formatted(location.y)))\(self.onPointAt == nil ? " (no handler)" : "")")
+                        self.onPointAt?(point, label, capture)
+                    }
                     output = "pointing at \(label)"
                 } else {
                     log("point_at ignored: no screenshot attached to this turn")
@@ -687,6 +777,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private func log(_ line: String) {
         onEvent?(line)
         print("🎙️ Realtime: \(line)")
+        AppLog.append("realtime: \(line)")
     }
 }
 
