@@ -240,29 +240,56 @@ export function meterResponse(
   if (!store || !billing || billing.byok || !upstream.ok || !upstream.body) {
     return new Response(upstream.body, { status: upstream.status, headers });
   }
+  // Usage sits at the END of the stream, so a bounded *trailing* window is kept — an earlier
+  // version kept the first 512 kB, which meant any reply longer than that lost its usage block and
+  // was billed the flat fallback instead of what it actually cost.
+  const USAGE_WINDOW_BYTES = 512_000;
   let collected = "";
+  let charged = false;
   const decoder = new TextDecoder();
-  const tap = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      // Usage sits at the end of the stream; keep a bounded copy so a huge reply cannot pin memory.
-      if (collected.length < 512_000) collected += decoder.decode(chunk, { stream: true });
-      controller.enqueue(chunk);
+  const meter = () => {
+    // A cancelled stream still consumed tokens upstream: charge once, whichever way the stream ends.
+    if (charged) return;
+    charged = true;
+    const usage = parseUsage(collected);
+    const credits = usage ? creditsForTokens(usage.inputTokens, usage.outputTokens) : fallback();
+    chargeCredits(c, store, {
+      route,
+      model,
+      input_tokens: usage?.inputTokens ?? 0,
+      output_tokens: usage?.outputTokens ?? 0,
+      audio_seconds: 0,
+      characters: 0,
+      credits,
+    });
+  };
+  // Read through a ReadableStream rather than a TransformStream: its `cancel` hook is the one the
+  // runtime calls when the client goes away (closed the connection, pressed stop), and that path
+  // has to charge too — the tokens were spent upstream whether or not anyone read the answer.
+  const reader = upstream.body.getReader();
+  const metered = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          meter();
+          controller.close();
+          return;
+        }
+        collected += decoder.decode(value, { stream: true });
+        if (collected.length > USAGE_WINDOW_BYTES) collected = collected.slice(-USAGE_WINDOW_BYTES);
+        controller.enqueue(value);
+      } catch (e) {
+        meter();
+        controller.error(e);
+      }
     },
-    flush() {
-      const usage = parseUsage(collected);
-      const credits = usage ? creditsForTokens(usage.inputTokens, usage.outputTokens) : fallback();
-      chargeCredits(c, store, {
-        route,
-        model,
-        input_tokens: usage?.inputTokens ?? 0,
-        output_tokens: usage?.outputTokens ?? 0,
-        audio_seconds: 0,
-        characters: 0,
-        credits,
-      });
+    cancel(reason) {
+      meter();
+      return reader.cancel(reason);
     },
   });
-  return new Response(upstream.body.pipeThrough(tap), { status: upstream.status, headers });
+  return new Response(metered, { status: upstream.status, headers });
 }
 
 /** What the app shows in Settings. */

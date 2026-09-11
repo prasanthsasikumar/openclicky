@@ -20,6 +20,7 @@ const key = (s: string) => new TextEncoder().encode(s);
 async function supabaseJwt(over: Record<string, unknown> = {}, secret = env.SUPABASE_JWT_SECRET!) {
   return new SignJWT({ role: "authenticated", email: "dev@example.com", ...over })
     .setProtectedHeader({ alg: "HS256" })
+    .setAudience("authenticated")
     .setSubject("user-123")
     .setIssuedAt()
     .setExpirationTime("10m")
@@ -27,6 +28,41 @@ async function supabaseJwt(over: Record<string, unknown> = {}, secret = env.SUPA
 }
 
 describe("verifySupabaseJwt", () => {
+  /** The keys Supabase signs with the same secret but which are not a user: both are handed out
+   *  publicly or to servers, and neither carries a subject. */
+  async function keyWithoutASubject(claims: Record<string, unknown>) {
+    return new SignJWT(claims)
+      .setProtectedHeader({ alg: "HS256" })
+      .setAudience("authenticated")
+      .setIssuedAt()
+      .setExpirationTime("10m")
+      .sign(key(env.SUPABASE_JWT_SECRET!));
+  }
+
+  it("rejects the project's anon key, which ships in every client", async () => {
+    // It verifies against the same secret and has no `sub`; before this check every holder of the
+    // public anon key authenticated as one shared user literally named "undefined".
+    const anon = await keyWithoutASubject({ role: "anon" });
+    await expect(verifySupabaseJwt(anon, env)).rejects.toBeInstanceOf(AuthError);
+  });
+  it("rejects the service_role key", async () => {
+    const serviceRole = await keyWithoutASubject({ role: "service_role" });
+    await expect(verifySupabaseJwt(serviceRole, env)).rejects.toBeInstanceOf(AuthError);
+  });
+  it("rejects a token whose role is not authenticated even when it has a subject", async () => {
+    await expect(verifySupabaseJwt(await supabaseJwt({ role: "anon" }), env)).rejects.toBeInstanceOf(AuthError);
+  });
+  it("rejects a token minted for another audience", async () => {
+    const otherAudience = await new SignJWT({ role: "authenticated" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setAudience("some-other-service")
+      .setSubject("user-123")
+      .setIssuedAt()
+      .setExpirationTime("10m")
+      .sign(key(env.SUPABASE_JWT_SECRET!));
+    await expect(verifySupabaseJwt(otherAudience, env)).rejects.toBeInstanceOf(AuthError);
+  });
+
   it("accepts a JWT signed with SUPABASE_JWT_SECRET", async () => {
     const p = await verifySupabaseJwt(await supabaseJwt(), env);
     expect(p).toMatchObject({ sub: "user-123", email: "dev@example.com", via: "supabase" });
@@ -37,8 +73,9 @@ describe("verifySupabaseJwt", () => {
     ).rejects.toBeInstanceOf(AuthError);
   });
   it("rejects an expired JWT", async () => {
-    const expired = await new SignJWT({})
+    const expired = await new SignJWT({ role: "authenticated" })
       .setProtectedHeader({ alg: "HS256" })
+      .setAudience("authenticated")
       .setSubject("u")
       .setExpirationTime(Math.floor(Date.now() / 1000) - 120)
       .sign(key(env.SUPABASE_JWT_SECRET!));

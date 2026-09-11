@@ -39,7 +39,23 @@ export function createApp(options: AppOptions = {}) {
     if (!resolvedStore) console.warn("billing: no SUPABASE_SERVICE_KEY; requests are not metered");
     return resolvedStore;
   };
-  const gate: MiddlewareHandler<{ Variables: Variables }> = (c, next) => requireCredits(storeFor(c))(c, next);
+  /**
+   * A backend with no Supabase at all is a deliberate self-hosted setup and runs unmetered. A
+   * backend that names a Supabase project but has no service key is misconfigured, and treating
+   * that as "unmetered" silently gives every request away for free — so metered routes refuse
+   * instead of failing open.
+   */
+  const billingIsMisconfigured = (c: Context): boolean => {
+    const env = getEnv(c);
+    return Boolean(env.SUPABASE_URL) && !env.SUPABASE_SERVICE_KEY;
+  };
+  const gate: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
+    if (billingIsMisconfigured(c)) {
+      console.error("billing: SUPABASE_URL is set but SUPABASE_SERVICE_KEY is missing; refusing metered requests");
+      return c.json({ error: "billing is not configured on this backend" }, 503);
+    }
+    return requireCredits(storeFor(c))(c, next);
+  };
   const withStore = (handler: (c: Context, store: BillingStore) => Promise<Response>) => (c: Context) => {
     const store = storeFor(c);
     return store ? handler(c, store) : c.json({ error: "billing store not configured" }, 503);
@@ -86,6 +102,8 @@ export function createApp(options: AppOptions = {}) {
   app.use("/skills/create", gate);
   app.use("/chat", gate);
   app.use("/tts", gate);
+  // Mints a real AssemblyAI streaming credential on the backend's key: as metered as any model call.
+  app.use("/transcribe-token", gate);
 
   // Native shell (macos/OpenClicky, forked from the original open-source Clicky app) speaks its original Worker contract.
   app.post("/chat", (c) => proxyAnthropic(c, storeFor(c))); // Claude vision + [POINT] pointing, streamed

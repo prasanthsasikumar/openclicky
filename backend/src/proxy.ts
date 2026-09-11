@@ -48,11 +48,36 @@ async function readJson(c: Context): Promise<Record<string, unknown>> {
 
 const HOP_BY_HOP = new Set(["content-length", "connection", "keep-alive", "transfer-encoding", "content-encoding"]);
 
+/**
+ * Upstream headers that describe OUR account, not the caller's request: rate-limit budgets, the
+ * organisation id, and any cookie the provider sets. Forwarding them tells every client how much
+ * quota the backend's shared key has left and which org it belongs to.
+ */
+function isUpstreamAccountHeader(name: string): boolean {
+  const lower = name.toLowerCase();
+  return (
+    lower.startsWith("x-ratelimit-") ||
+    lower.startsWith("anthropic-ratelimit-") ||
+    lower.startsWith("openai-") ||
+    lower === "anthropic-organization-id" ||
+    lower === "set-cookie"
+  );
+}
+
+/**
+ * What a client is told when an upstream call fails. The upstream's own body can name the account,
+ * the organisation, or the key that failed, so it is logged here and summarised there.
+ */
+function upstreamFailure(context: string, status: number, body: string): string {
+  console.error(`${context}: upstream ${status}: ${body.slice(0, 1000)}`);
+  return `${context} failed upstream (${status})`;
+}
+
 /** Stream the upstream body straight back to the client (SSE stays SSE). */
 function passthrough(upstream: Response): Response {
   const headers = new Headers();
   upstream.headers.forEach((v, k) => {
-    if (!HOP_BY_HOP.has(k.toLowerCase())) headers.set(k, v);
+    if (!HOP_BY_HOP.has(k.toLowerCase()) && !isUpstreamAccountHeader(k)) headers.set(k, v);
   });
   return new Response(upstream.body, { status: upstream.status, headers });
 }
@@ -121,6 +146,10 @@ export async function transcribeAudio(c: Context, store?: BillingStore): Promise
   if (!keys.openaiKey) return c.json({ error: "backend missing OPENAI_API_KEY" }, 502);
   const req = await readJson(c);
   if (typeof req.audio !== "string" || !req.audio) return c.json({ error: "body must be JSON with base64 `audio`" }, 400);
+  // atob materialises the whole clip in memory; a 256 MB container needs a ceiling well below its
+  // own. 24 MB of base64 is ~18 MB of audio — far longer than any push-to-talk turn.
+  const MAX_BASE64_AUDIO_CHARACTERS = 24_000_000;
+  if (req.audio.length > MAX_BASE64_AUDIO_CHARACTERS) return c.json({ error: "audio too large" }, 413);
   const mime = typeof req.mime === "string" ? req.mime : "audio/wav";
   const ext = mime.includes("mp3") || mime.includes("mpeg") ? "mp3" : mime.includes("webm") ? "webm" : mime.includes("m4a") || mime.includes("mp4") ? "m4a" : "wav";
   const bytes = Uint8Array.from(atob(req.audio), (ch) => ch.charCodeAt(0));
@@ -136,7 +165,7 @@ export async function transcribeAudio(c: Context, store?: BillingStore): Promise
     headers: { authorization: `Bearer ${keys.openaiKey}` },
     body: form,
   });
-  if (!upstream.ok) return c.json({ error: `transcription upstream ${upstream.status}: ${(await upstream.text()).slice(0, 300)}` }, 502);
+  if (!upstream.ok) return c.json({ error: upstreamFailure("transcription", upstream.status, await upstream.text()) }, 502);
   const json = (await upstream.json()) as { text?: string };
   // WAV from the app is 16 kHz mono PCM16 (32 kB/s); compressed uploads are guessed at 16 kB/s.
   const audioSeconds = mime === "audio/wav" ? Math.max(0, bytes.length - 44) / 32000 : bytes.length / 16000;

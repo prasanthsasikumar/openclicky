@@ -34,6 +34,7 @@ afterAll(() => server.close());
 
 const sign = (key: KeyLike, kid = "sb-key-1") =>
   new SignJWT({ role: "authenticated", email: "jwks@example.com" })
+    .setAudience("authenticated")
     .setProtectedHeader({ alg: "ES256", kid })
     .setSubject("user-jwks")
     .setIssuedAt()

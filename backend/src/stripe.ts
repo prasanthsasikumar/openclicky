@@ -117,7 +117,11 @@ export async function createCheckoutSession(c: Context, store: BillingStore): Pr
     form.set("customer", existing.stripe_customer_id);
   }
   const res = await stripe(env, "POST", "/v1/checkout/sessions", form);
-  if (!res.ok) return c.json({ error: `stripe ${res.status}: ${(await res.text()).slice(0, 300)}` }, 502);
+  if (!res.ok) {
+    // Stripe's error body can name the account and the key; log it, tell the client the status.
+    console.error(`stripe checkout: upstream ${res.status}: ${(await res.text()).slice(0, 1000)}`);
+    return c.json({ error: `stripe checkout failed (${res.status})` }, 502);
+  }
   const { url } = (await res.json()) as { url: string };
   return c.json({ url });
 }

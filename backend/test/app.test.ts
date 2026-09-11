@@ -74,7 +74,8 @@ const app = createApp({ log: (e) => logged.push(e) });
 const call = (path: string, init: RequestInit = {}, over: Partial<Env> = {}) =>
   app.request(path, init, { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1", ANTHROPIC_BASE_URL: upstreamUrl, ...over });
 const jwt = () =>
-  new SignJWT({ email: "dev@example.com" })
+  new SignJWT({ role: "authenticated", email: "dev@example.com" })
+    .setAudience("authenticated")
     .setProtectedHeader({ alg: "HS256" })
     .setSubject("user-1")
     .setIssuedAt()
@@ -84,6 +85,26 @@ const json = (body: unknown, token: string) => ({
   method: "POST",
   headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
   body: JSON.stringify(body),
+});
+
+describe("billing configuration", () => {
+  it("refuses metered routes when a Supabase project is named but has no service key", async () => {
+    // Failing open here silently gave every request away for free for the life of the isolate.
+    const r = await call("/chat", json({ messages: [] }, await jwt()), { SUPABASE_URL: "https://project.supabase.co" });
+    expect(r.status).toBe(503);
+    expect(await r.json()).toMatchObject({ error: "billing is not configured on this backend" });
+  });
+
+  it("runs unmetered when no Supabase is configured at all, which is a deliberate self-host", async () => {
+    const r = await call("/chat", json({ messages: [{ role: "user", content: "hi" }] }, await jwt()));
+    expect(r.status).toBe(200);
+  });
+
+  it("puts /transcribe-token behind the credits gate like every other model route", async () => {
+    // It mints a real AssemblyAI credential on the backend's key, so it costs money like the rest.
+    const r = await call("/transcribe-token", { method: "POST", headers: { authorization: `Bearer ${await jwt()}` } }, { SUPABASE_URL: "https://project.supabase.co" });
+    expect(r.status).toBe(503);
+  });
 });
 
 describe("app", () => {
