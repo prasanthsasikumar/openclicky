@@ -25,6 +25,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build the app and run its unit tests (unsigned)
         working-directory: macos/OpenClicky
+        # Both commands pipe into `tail`, and the default shell (`bash -e`) reports the exit status
+        # of the LAST command in a pipeline — so a failed build showed up as a green check. An
+        # explicit `shell: bash` runs with `-o pipefail`, which fails the step on xcodebuild itself.
+        shell: bash
         run: |
           xcodebuild -project OpenClicky.xcodeproj -scheme OpenClicky -destination 'platform=macOS' \
             -derivedDataPath build/DerivedData build-for-testing CODE_SIGNING_ALLOWED=NO | tail -5
