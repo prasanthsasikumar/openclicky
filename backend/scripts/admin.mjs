@@ -31,6 +31,8 @@ const headers = { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}`, "
 const args = process.argv.slice(2);
 const command = args[0];
 const positional = args.slice(1).filter((a, i, all) => !a.startsWith("--") && !(i > 0 && all[i - 1].startsWith("--")));
+/** A valueless flag such as `--yes`; `opt` expects a value and would miss it. */
+const flag = (name) => args.includes(`--${name}`);
 const opt = (name, def) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] ? args[i + 1] : def;
@@ -107,6 +109,20 @@ async function patchSubscription(userId, fields) {
   if (rows.length === 0) throw new Error("no subscription row for that user (run invite first)");
 }
 
+/** One line from the terminal. Returns "" when stdin is not a TTY, so a piped run never hangs. */
+function promptLine(question) {
+  if (!process.stdin.isTTY) return Promise.resolve("");
+  process.stdout.write(question);
+  return new Promise((resolve) => {
+    process.stdin.setEncoding("utf8");
+    process.stdin.once("data", (d) => {
+      process.stdin.pause();
+      resolve(String(d));
+    });
+    process.stdin.resume();
+  });
+}
+
 const commands = {
   async invite() {
     const email = positional[0];
@@ -153,8 +169,17 @@ const commands = {
 
   async remove() {
     const email = positional[0];
-    if (!email) throw new Error("usage: remove <email>");
+    if (!email) throw new Error("usage: remove <email> (add --yes to skip the confirmation)");
     const user = await requireUser(email);
+    // Deleting an auth user cannot be undone, and the command sits one letter away from `revoke`,
+    // which only suspends. Make the operator type the address back unless they opted out.
+    if (!flag("yes")) {
+      const typed = await promptLine(`permanently delete ${email} and its subscription row? type the email to confirm: `);
+      if (typed.trim() !== email) {
+        console.log("not confirmed; nothing was deleted");
+        return;
+      }
+    }
     const res = await fetch(rest("oc_subscriptions", `user_id=eq.${encodeURIComponent(user.id)}`), { method: "DELETE", headers });
     if (!res.ok) throw new Error(`could not delete the subscription row (${res.status})`);
     await api("DELETE", `${SUPABASE_URL}/auth/v1/admin/users/${user.id}`);
@@ -196,7 +221,7 @@ const commands = {
 };
 
 if (!commands[command]) {
-  console.error("commands: invite, limit, revoke, restore, remove, list, usage");
+  console.error("commands: invite, limit, revoke, restore, remove (destructive), list, usage");
   process.exit(2);
 }
 commands[command]().catch((e) => {
