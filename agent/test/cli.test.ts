@@ -14,9 +14,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.resolve(here, "..", "src", "cli.ts");
 const tsx = path.resolve(here, "..", "..", "node_modules", ".bin", "tsx");
 const hasCodex = spawnSync("codex", ["--version"], { encoding: "utf8" }).status === 0;
+const fakeCodex = path.join(here, "fixtures", "fake-codex.mjs");
 
 let server: http.Server;
 let url: string;
+const signInRequests: Array<{ email: string; password: string }> = [];
 
 function runCli(args: string[], env: Record<string, string> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
@@ -35,6 +37,18 @@ beforeAll(async () => {
     req.on("data", (d) => (b += d));
     req.on("end", () => {
       const body = b ? JSON.parse(b) : {};
+      // Fake Supabase sign-in + session-token exchange for the `token` command's password tests
+      // (agent/src/cli.ts): neither uses the "cli-token" bearer the rest of this server requires.
+      if (req.url?.startsWith("/auth/v1/token")) {
+        signInRequests.push({ email: body.email, password: body.password });
+        res.writeHead(200, { "content-type": "application/json" });
+        return void res.end(JSON.stringify({ access_token: "fake-access-token" }));
+      }
+      if (req.url === "/agent/session-token") {
+        if (req.headers.authorization !== "Bearer fake-access-token") return void res.writeHead(401).end();
+        res.writeHead(200, { "content-type": "application/json" });
+        return void res.end(JSON.stringify({ token: "exchanged-session-token", expiresAt: Math.floor(Date.now() / 1000) + 3600 }));
+      }
       if (req.headers.authorization !== "Bearer cli-token") return void res.writeHead(401, { "content-type": "application/json" }).end('{"error":"bad token"}');
       if (req.url === "/v1/chat/completions") {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -140,4 +154,64 @@ describe("openclicky CLI", () => {
     expect(result).toMatchObject({ type: "result", status: "completed", finalMessage: "agent says hi", artifacts: [] });
     expect(typeof result.threadId).toBe("string");
   }, 60_000);
+
+  it("stops the Codex child instead of orphaning it when a failed run exits the CLI (fake codex)", async () => {
+    // `run`'s fail() call for a non-completed turn happens inside `try { … } finally { await
+    // agent.stop(); }` (cli.ts runAgent). Before the fix, fail() called process.exit() there and
+    // skipped that finally, leaving the Codex child running after the CLI process itself was gone.
+    const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cli-fail-home-"));
+    fs.writeFileSync(path.join(codexHome, "fake-scenario.txt"), "fail-turn");
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cli-fail-ws-"));
+    const r = await runCli(["run", "do something", "--cwd", ws], {
+      OPENCLICKY_CODEX_HOME: codexHome,
+      OPENCLICKY_CODEX_BIN: fakeCodex,
+    });
+    expect(r.code).toBe(1); // exit code unchanged from before this fix
+    expect(r.stderr).toMatch(/error: turn failed: boom/);
+
+    const pid = Number(fs.readFileSync(path.join(codexHome, "fake-codex.pid"), "utf8"));
+    const isAlive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false; // ESRCH: no such process
+      }
+    };
+    // The CLI's own process has already exited (runCli awaited `close`); give a stubborn OS a brief
+    // moment, but the grandchild should already be gone by the time agent.stop()'s own exit-wait
+    // resolved inside the CLI process, well before that process exited.
+    for (let i = 0; i < 20 && isAlive(); i++) await new Promise((r2) => setTimeout(r2, 50));
+    expect(isAlive()).toBe(false);
+  });
+
+  describe("token", () => {
+    // `url` is only assigned inside beforeAll, which runs after this describe body, so build the
+    // args fresh per test rather than capturing `url` (still undefined here) in a shared constant.
+    const tokenArgs = () => ["token", "--email", "a@b.com", "--supabase-url", url, "--anon-key", "anon-key"];
+
+    it("--password works but warns to stderr that it is insecure", async () => {
+      const before = signInRequests.length;
+      const r = await runCli([...tokenArgs(), "--password", "hunter2"]);
+      expect(r.code).toBe(0);
+      expect(r.stdout.trim()).toBe("exchanged-session-token");
+      expect(r.stderr).toMatch(/insecure/);
+      expect(signInRequests.slice(before)).toEqual([{ email: "a@b.com", password: "hunter2" }]);
+    });
+
+    it("prefers OPENCLICKY_PASSWORD over prompting, without the insecurity warning", async () => {
+      const before = signInRequests.length;
+      const r = await runCli(tokenArgs(), { OPENCLICKY_PASSWORD: "from-env" });
+      expect(r.code).toBe(0);
+      expect(r.stdout.trim()).toBe("exchanged-session-token");
+      expect(r.stderr).not.toMatch(/insecure/);
+      expect(signInRequests.slice(before)).toEqual([{ email: "a@b.com", password: "from-env" }]);
+    });
+
+    it("fails clearly instead of hanging when there is no flag, no env var, and no TTY to prompt on", async () => {
+      const r = await runCli(tokenArgs());
+      expect(r.code).toBe(1);
+      expect(r.stderr).toMatch(/password required/);
+    });
+  });
 });

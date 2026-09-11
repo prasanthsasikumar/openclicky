@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import { JsonRpcStdio } from "./jsonrpc.js";
+import { readVersion } from "./version.js";
 import { ensureCodexHome } from "./codexHome.js";
 import { snapshotWorkspace, diffSnapshots, artifactsFromItems } from "./artifacts.js";
 import type { AgentConfig } from "./config.js";
@@ -19,6 +20,60 @@ export interface RunOptions {
   threadId?: string;
   /** Local screenshot/image attached to the turn as `localImage`. */
   imagePath?: string;
+  /** Override the run's timeout (ms) for this call only; see DEFAULT_RUN_TIMEOUT_MS. */
+  timeoutMs?: number;
+}
+
+/**
+ * Wall-clock cap on a single turn/run before CodexAgent.run() rejects instead of hanging forever
+ * (see the timeout note on `run()` below). Ten minutes covers any real agent task; a genuinely
+ * longer one should resume as a new call rather than hold a single run open indefinitely.
+ */
+export const DEFAULT_RUN_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Interactive-shell and runtime variables Codex's own tooling expects to find set, independent of
+ * anything OpenClicky configures. Derived by reading what the app-server actually shells out for:
+ * PATH/SHELL to run commands, HOME/USER for path expansion and ownership checks, TMPDIR for scratch
+ * files, LANG/LC_ALL/TERM for locale-aware and interactive-looking subprocess output.
+ */
+const SHELL_ENV_ALLOWLIST = ["PATH", "HOME", "USER", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM"];
+
+/**
+ * Proxy configuration, upper- and lowercase (different tools read one or the other), so Codex's own
+ * network calls (and any it shells out for) still honor the operator's proxy setup.
+ */
+const PROXY_ENV_ALLOWLIST = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"];
+
+/**
+ * Build the Codex child's environment from an explicit allowlist instead of forwarding the whole
+ * shell environment. `codex app-server` runs an agent that executes arbitrary shell commands on the
+ * user's behalf, so anything left in `process.env` beyond what Codex genuinely needs — AWS keys,
+ * GitHub tokens, whatever else lives in the operator's shell — would otherwise be readable by every
+ * command that agent runs. This carries: the shell/runtime variables above; any `NODE_*` variable
+ * (NODE_OPTIONS, NODE_EXTRA_CA_CERTS, etc. — Node's own tooling, including Codex's, reads these);
+ * proxy configuration; and the OpenClicky variables config.toml actually references — set explicitly
+ * from `cfg` rather than trusted from the shell: `CODEX_HOME`, `OPENCLICKY_SESSION_TOKEN` (env_key
+ * for model_providers.openclicky), `OPENCLICKY_OPENAI_KEY` / `OPENCLICKY_ANTHROPIC_KEY`
+ * (env_http_headers, bring-your-own-key), and `COMPOSIO_API_KEY` (mcp_servers.composio's consumer
+ * key — see codexHome.ts). Provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, …) are never on this
+ * list: Codex must always go through the OpenClicky backend, never see them directly.
+ */
+export function buildChildEnv(cfg: AgentConfig, sourceEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of [...SHELL_ENV_ALLOWLIST, ...PROXY_ENV_ALLOWLIST]) {
+    if (sourceEnv[key] !== undefined) env[key] = sourceEnv[key];
+  }
+  for (const [key, value] of Object.entries(sourceEnv)) {
+    if (key.startsWith("NODE_") && value !== undefined) env[key] = value;
+  }
+  env.CODEX_HOME = cfg.codexHome;
+  env.OPENCLICKY_SESSION_TOKEN = cfg.token ?? "";
+  // Bring your own key: the Codex config forwards these as headers (env_http_headers); unset = not sent.
+  if (cfg.openaiApiKey) env.OPENCLICKY_OPENAI_KEY = cfg.openaiApiKey;
+  if (cfg.anthropicApiKey) env.OPENCLICKY_ANTHROPIC_KEY = cfg.anthropicApiKey;
+  if (cfg.composioApiKey) env.COMPOSIO_API_KEY = cfg.composioApiKey;
+  return env;
 }
 
 export type ApprovalKind = "command" | "fileChange" | "permissions";
@@ -87,17 +142,7 @@ export class CodexAgent {
     const { configPath } = ensureCodexHome(this.cfg);
     this.log(`codex home ${this.cfg.codexHome} (config ${configPath})`);
 
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      CODEX_HOME: this.cfg.codexHome,
-      OPENCLICKY_SESSION_TOKEN: this.cfg.token ?? "",
-      // Bring your own key: the Codex config forwards these as headers (env_http_headers); unset = not sent.
-      ...(this.cfg.openaiApiKey ? { OPENCLICKY_OPENAI_KEY: this.cfg.openaiApiKey } : {}),
-      ...(this.cfg.anthropicApiKey ? { OPENCLICKY_ANTHROPIC_KEY: this.cfg.anthropicApiKey } : {}),
-    };
-    // Keys stay server-side: the agent engine must never see provider keys, even if the shell has them.
-    delete env.OPENAI_API_KEY;
-    delete env.ANTHROPIC_API_KEY;
+    const env = buildChildEnv(this.cfg);
 
     const child = spawn(this.cfg.codexBin, ["app-server", "--stdio"], { env, stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
@@ -117,7 +162,7 @@ export class CodexAgent {
 
     await this.race(
       rpc.request("initialize", {
-        clientInfo: { name: "openclicky", title: "OpenClicky", version: "0.2.0" },
+        clientInfo: { name: "openclicky", title: "OpenClicky", version: readVersion() },
         capabilities: { experimentalApi: true },
       }),
     );
@@ -196,8 +241,9 @@ export class CodexAgent {
     let finalMessage = "";
     let errorMessage: string | undefined;
 
+    let off: () => void = () => {};
     const done = new Promise<any>((resolve) => {
-      const off = rpc.onNotification((method, params) => {
+      off = rpc.onNotification((method, params) => {
         if (params?.threadId && params.threadId !== threadId) return;
         switch (method) {
           case "item/agentMessage/delta":
@@ -215,7 +261,6 @@ export class CodexAgent {
             this.log(`error: ${errorMessage}${params.willRetry ? " (retrying)" : ""}`);
             break;
           case "turn/completed":
-            off();
             resolve(params.turn);
             break;
         }
@@ -223,7 +268,17 @@ export class CodexAgent {
     });
 
     const { turn } = await this.race(rpc.request<any>("turn/start", { threadId, input }));
-    const completed = await this.race(done);
+    let completed: any;
+    try {
+      // Without a timeout, a Codex bug that reports an "error" notification but never follows up
+      // with turn/completed (or any other terminal event) would hang this call forever — there is
+      // nothing else here to reject the promise. The timeout is the backstop for that case; a clean
+      // exit (including the child crashing, handled by `race`) always resolves well before it fires.
+      completed = await this.race(this.withTimeout(done, opts.timeoutMs ?? this.cfg.runTimeoutMs, threadId));
+    } finally {
+      off(); // stop listening whether we resolved, errored, or timed out — a leaked listener would
+      // keep matching threadId on every later run() call's notifications.
+    }
 
     const artifacts = Array.from(new Set([...artifactsFromItems(items), ...diffSnapshots(before, snapshotWorkspace(cwd))])).sort();
     return {
@@ -232,8 +287,32 @@ export class CodexAgent {
       status: completed.status,
       finalMessage,
       artifacts,
-      error: completed.error?.message ?? errorMessage,
+      // A retried "error" notification (willRetry: true) describes a transient hiccup Codex already
+      // recovered from by the time the turn reports success; surfacing it on a completed result would
+      // be a stale, misleading error on an otherwise-fine run. Trust the turn's own status/error first
+      // and only fall back to a stray notification's message when the turn did not finish cleanly.
+      error: completed.error?.message ?? (completed.status === "completed" ? undefined : errorMessage),
     };
+  }
+
+  /** Reject with a clear, named-timeout message if `p` does not settle within `timeoutMs`. */
+  private withTimeout<T>(p: Promise<T>, timeoutMs: number, threadId: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Codex run timed out after ${timeoutMs}ms waiting for the turn to finish (thread ${threadId})`)),
+        timeoutMs,
+      );
+      p.then(
+        (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+      );
+    });
   }
 
   async listThreads(limit = 20): Promise<ThreadSummary[]> {

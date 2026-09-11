@@ -126,6 +126,38 @@ describe("ensureCodexHome", () => {
   });
 });
 
+describe("path escaping", () => {
+  // A `"` breaks out of the template's own quotes and a `\` is a TOML escape introducer; either one
+  // in an interpolated path must not produce broken or attacker-influenced TOML (the injection this
+  // guards against: a workspace/skills path with a `"` splicing arbitrary keys into config.toml).
+  const tricky = '/tmp/oc "quoted" \\ dir';
+
+  it("escapes a root containing a quote and a backslash so the skills path still parses to the same value", () => {
+    const out = renderCodexConfig(tpl, { root: tricky, backendUrl: "http://x", workspace: "/w", userSkillsActive: "/u/active" });
+    const m = out.match(/path = "((?:[^"\\]|\\.)*)"/);
+    expect(m).not.toBeNull();
+    expect(JSON.parse(`"${m![1]}"`)).toBe(`${tricky}/skills`);
+    // No stray unescaped quote broke out of the string onto its own line.
+    expect(out.split("\n").filter((l) => l.startsWith("path = ")).length).toBe(1);
+  });
+
+  it("escapes a workspace containing a quote and a backslash so [projects.\"...\"] still parses to the same value", () => {
+    const out = renderCodexConfig(tpl, { root: "/r", backendUrl: "http://x", workspace: tricky, userSkillsActive: "/u/active" });
+    const m = out.match(/\[projects\."((?:[^"\\]|\\.)*)"\]/);
+    expect(m).not.toBeNull();
+    expect(JSON.parse(`"${m![1]}"`)).toBe(tricky);
+  });
+
+  it("round-trips a tricky workspace path through the real config template", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-home-"));
+    const cfg = resolveConfig({ codexHome: home, backendUrl: "http://127.0.0.1:1", workspace: tricky });
+    const text = fs.readFileSync(ensureCodexHome(cfg).configPath, "utf8");
+    const m = text.match(/\[projects\."((?:[^"\\]|\\.)*)"\]/);
+    expect(m).not.toBeNull();
+    expect(JSON.parse(`"${m![1]}"`)).toBe(tricky);
+  });
+});
+
 describe("computer-use driver discovery", () => {
   it("defaults to the installed cua-driver so the config renders the MCP server", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cua-"));
@@ -158,5 +190,21 @@ describe("computer-use driver discovery", () => {
 
     expect(resolveConfig({}, { HOME: home, CUA_DRIVER_BIN: "/opt/other" } as NodeJS.ProcessEnv).cuaDriverBin).toBe("/opt/other");
     expect(resolveConfig({}, { HOME: home, CUA_DRIVER_BIN: "" } as NodeJS.ProcessEnv).cuaDriverBin).toBeUndefined();
+  });
+});
+
+describe("version", () => {
+  it("reports the version the app ships, not a copy of its own", async () => {
+    // The CLI used to report a hardcoded "0.2.0" that matched neither VERSION, nor either
+    // package.json, nor the released build.
+    const { readVersion, VERSION_FILE } = await import("../src/version.js");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "oc-version-"));
+    fs.mkdirSync(path.dirname(path.join(root, VERSION_FILE)), { recursive: true });
+    fs.writeFileSync(path.join(root, VERSION_FILE), "9.9.9\n");
+    expect(readVersion(root)).toBe("9.9.9");
+  });
+  it("says unknown rather than throwing when the file is not there", async () => {
+    const { readVersion } = await import("../src/version.js");
+    expect(readVersion(fs.mkdtempSync(path.join(os.tmpdir(), "oc-noversion-")))).toBe("unknown");
   });
 });

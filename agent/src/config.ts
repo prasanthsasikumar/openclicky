@@ -37,6 +37,9 @@ export interface AgentConfig {
   openaiApiKey?: string;
   /** Optional Anthropic key for the Claude lanes when bringing your own keys. */
   anthropicApiKey?: string;
+  /** Wall-clock cap (ms) on a single CodexAgent.run() turn before it rejects instead of hanging
+   *  forever on a Codex bug that never emits a terminal event. See codex.ts DEFAULT_RUN_TIMEOUT_MS. */
+  runTimeoutMs: number;
 }
 
 /** Repo root: agent/src/config.ts or agent/dist/config.js → ../../ */
@@ -103,5 +106,15 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     userSkillsDir: path.resolve(flags.userSkillsDir ?? env.OPENCLICKY_USER_SKILLS_DIR ?? path.join(home, ".openclicky", "skills")),
     openaiApiKey: flags.openaiApiKey ?? env.OPENCLICKY_OPENAI_KEY ?? undefined,
     anthropicApiKey: flags.anthropicApiKey ?? env.OPENCLICKY_ANTHROPIC_KEY ?? undefined,
+    // 10 minutes by default (see codex.ts DEFAULT_RUN_TIMEOUT_MS): long enough for any real agent
+    // task, short enough that a Codex bug which never emits a terminal event can't hang forever.
+    runTimeoutMs: flags.runTimeoutMs ?? parsePositiveInt(env.OPENCLICKY_RUN_TIMEOUT_MS) ?? 10 * 60 * 1000,
   };
+}
+
+/** A positive integer from an env var, or undefined if unset/not a positive integer. */
+function parsePositiveInt(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }

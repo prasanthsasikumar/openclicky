@@ -3,8 +3,9 @@ import { Command } from "commander";
 import path from "node:path";
 import readline from "node:readline";
 import { resolveConfig, type AgentConfig } from "./config.js";
+import { readVersion } from "./version.js";
 import { backendHeaders } from "./backendHeaders.js";
-import { CodexAgent, type ApprovalRequest, type ApprovalDecision, type RunResult } from "./codex.js";
+import { CodexAgent, type ApprovalRequest, type ApprovalDecision, type RunResult, buildChildEnv } from "./codex.js";
 import { ensureCodexHome } from "./codexHome.js";
 import { ask } from "./ask.js";
 import { gate, type Lane } from "./gate.js";
@@ -17,7 +18,7 @@ const program = new Command();
 program
   .name("openclicky")
   .description("OpenClicky headless agent: run tasks through Codex via the OpenClicky backend, or ask quick questions.")
-  .version("0.2.0");
+  .version(readVersion());
 
 /**
  * Output modes: human (text on stdout, milestones on stderr), --json (one result object), or
@@ -26,12 +27,37 @@ program
 let eventsMode = false;
 const emit = (obj: Record<string, unknown>) => process.stdout.write(JSON.stringify(obj) + "\n");
 
-const fail = (msg: string): never => {
+/**
+ * Signals "report this and exit 1" without calling `process.exit` — every command wraps a
+ * `CodexAgent` run in a `try { … } finally { await agent.stop(); }`, and `process.exit` inside that
+ * try would skip the finally and leave the Codex child running. Thrown instead, it unwinds through
+ * those finally blocks like any other exception; only the top-level handler at the bottom of this
+ * file (reached after all cleanup has run) turns it into the actual exit.
+ */
+class CliFailure extends Error {}
+
+const reportFailure = (msg: string) => {
   if (eventsMode) emit({ type: "error", message: msg });
   else process.stderr.write(`error: ${msg}\n`);
-  process.exit(1);
+};
+
+const fail = (msg: string): never => {
+  reportFailure(msg);
+  throw new CliFailure(msg);
 };
 const note = (line: string) => (eventsMode ? emit({ type: "event", line }) : process.stderr.write(`▸ ${line}\n`));
+
+/**
+ * Every command's outermost catch used to just call `fail(e.message)`. Now that `fail` throws
+ * rather than exiting, doing that unconditionally would re-report and re-throw an inner `fail()`
+ * call's `CliFailure` a second time (it already printed once, closer to the actual cause) — so a
+ * `CliFailure` passes straight through, and only a genuinely new, not-yet-reported error gets
+ * reported here.
+ */
+const propagate = (e: unknown): never => {
+  if (e instanceof CliFailure) throw e;
+  return fail((e as Error).message);
+};
 
 const withCommonOptions = (cmd: Command) =>
   cmd
@@ -70,6 +96,45 @@ function resolveImage(opts: Record<string, any>): string | undefined {
     return p;
   }
   return opts.image;
+}
+
+/**
+ * Prompt for a password on the terminal without echoing the typed characters back. `readline` has
+ * no built-in "hidden input" mode, so muting its own echo of what it reads — after it has written
+ * the prompt text itself — is the standard workaround for this (the same trick tools like npm's own
+ * prompts use); it still reads and returns every keystroke, it just stops printing them.
+ */
+async function promptPassword(promptText: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    let echo = true;
+    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s) => {
+      if (echo) process.stderr.write(s);
+    };
+    rl.question(promptText, (answer) => {
+      rl.close();
+      process.stderr.write("\n");
+      resolve(answer);
+    });
+    echo = false; // prompt text above is already written; stop echoing from here on
+  });
+}
+
+/**
+ * `--password` puts the password in shell history and in `ps` output for every user on the machine
+ * for as long as the process runs. `OPENCLICKY_PASSWORD` (an env var is still readable by other
+ * processes of the same user, but not by `ps` or a shell's saved history) and an interactive,
+ * echo-off prompt are the safe paths and are preferred in that order; the flag still works — some
+ * non-interactive scripting setups have no other way to supply it — but warns loudly when used.
+ */
+async function resolvePassword(opts: Record<string, any>): Promise<string> {
+  if (opts.password) {
+    process.stderr.write("warning: --password is insecure (visible in shell history and `ps`); prefer OPENCLICKY_PASSWORD or the interactive prompt\n");
+    return opts.password;
+  }
+  if (process.env.OPENCLICKY_PASSWORD) return process.env.OPENCLICKY_PASSWORD;
+  if (process.stdin.isTTY) return promptPassword("password: ");
+  return fail("password required: set OPENCLICKY_PASSWORD, pass --password, or run `token` from an interactive terminal");
 }
 
 /** Interactive approval prompt on the terminal (stderr/stdin), used with --approve. */
@@ -145,7 +210,7 @@ withRunOptions(withCommonOptions(program.command("run").description("full agent 
     try {
       await runAgent(configFrom(opts), parts.join(" "), opts);
     } catch (e) {
-      fail((e as Error).message);
+      propagate(e);
     }
   },
 );
@@ -155,7 +220,7 @@ withCommonOptions(program.command("ask").description("quick answer through the b
     try {
       await runAsk(configFrom(opts), parts.join(" "), opts);
     } catch (e) {
-      fail((e as Error).message);
+      propagate(e);
     }
   },
 );
@@ -194,7 +259,7 @@ withRunOptions(
     if (lane === "ask") await runAsk(cfg, text, opts);
     else await runAgent(cfg, text, opts);
   } catch (e) {
-    fail((e as Error).message);
+    propagate(e);
   }
 });
 
@@ -235,7 +300,7 @@ withRunOptions(
     if (lane === "ask") await runAsk(cfg, text, opts);
     else await runAgent(cfg, text, opts);
   } catch (e) {
-    fail((e as Error).message);
+    propagate(e);
   }
 });
 
@@ -290,7 +355,7 @@ program
       await agent?.stop();
     } catch (e) {
       await agent?.stop();
-      fail((e as Error).message);
+      propagate(e);
     }
   });
 
@@ -319,7 +384,7 @@ threads
       if (!list.length) return void process.stdout.write("no threads yet\n");
       for (const t of list) process.stdout.write(`${t.id}  ${fmtTime(t.updatedAt)}  ${t.status.padEnd(9)}  ${t.cwd}\n    ${t.preview.slice(0, 100)}\n`);
     } catch (e) {
-      fail((e as Error).message);
+      propagate(e);
     }
   });
 
@@ -341,7 +406,7 @@ threads
         for (const a of t.agent) process.stdout.write(`  agent: ${a}\n`);
       }
     } catch (e) {
-      fail((e as Error).message);
+      propagate(e);
     }
   });
 
@@ -355,7 +420,7 @@ threads
       await withThreadAgent(opts, (a) => a.archiveThread(id));
       process.stdout.write(`archived ${id}\n`);
     } catch (e) {
-      fail((e as Error).message);
+      propagate(e);
     }
   });
 
@@ -368,7 +433,9 @@ async function codexMcp(cfg: AgentConfig, args: string[], onLine?: (line: string
   ensureCodexHome(cfg);
   const { spawn } = await import("node:child_process");
   return new Promise((resolve, reject) => {
-    const child = spawn(cfg.codexBin, ["mcp", ...args], { env: { ...process.env, CODEX_HOME: cfg.codexHome }, stdio: ["ignore", "pipe", "pipe"] });
+    // Same allowlist as the app-server child: `codex mcp` talks to third-party MCP servers, so it
+    // has no business inheriting every credential in the user's shell either.
+    const child = spawn(cfg.codexBin, ["mcp", ...args], { env: buildChildEnv(cfg), stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     let pending = "";
     const consume = (chunk: Buffer) => {
@@ -407,7 +474,7 @@ withCommonOptions(integrations.command("status").description("MCP servers and wh
         !status.configured ? "Composio: not configured (set COMPOSIO_MCP_URL)\n" : status.loggedIn ? "Composio: logged in\n" : "Composio: configured, not logged in (run `openclicky integrations login`)\n",
       );
     } catch (e) {
-      fail((e as Error).message);
+      propagate(e);
     }
   },
 );
@@ -434,7 +501,7 @@ withCommonOptions(
     });
     if (code !== 0) fail(output.trim() || `codex mcp login exited ${code}`);
   } catch (e) {
-    fail((e as Error).message);
+    propagate(e);
   }
 });
 
@@ -483,7 +550,7 @@ skills
       note(`saved ${skill.path}/SKILL.md (active)`);
       process.stdout.write(skill.id + "\n");
     } catch (e) {
-      fail((e as Error).message);
+      propagate(e);
     }
   });
 
@@ -491,7 +558,7 @@ program
   .command("token")
   .description("sign in to Supabase with email/password and exchange the JWT for an OpenClicky session token")
   .requiredOption("--email <email>")
-  .requiredOption("--password <password>")
+  .option("--password <password>", "insecure: visible in shell history and `ps`; prefer env OPENCLICKY_PASSWORD or the interactive prompt")
   .option("--supabase-url <url>", "env SUPABASE_URL")
   .option("--anon-key <key>", "env SUPABASE_ANON_KEY")
   .option("--backend-url <url>", "env BACKEND_URL")
@@ -501,6 +568,7 @@ program
     let supabaseUrl = (opts.supabaseUrl ?? process.env.SUPABASE_URL ?? "").replace(/\/+$/, "");
     let anonKey = opts.anonKey ?? process.env.SUPABASE_ANON_KEY;
     try {
+      const password = await resolvePassword(opts);
       if (!supabaseUrl || !anonKey) {
         // The backend publishes its sign-in details, so only the backend URL is needed.
         const configRes = await fetch(`${cfg.backendUrl}/auth/config`);
@@ -512,7 +580,7 @@ program
       const signIn = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
         method: "POST",
         headers: { "content-type": "application/json", apikey: anonKey },
-        body: JSON.stringify({ email: opts.email, password: opts.password }),
+        body: JSON.stringify({ email: opts.email, password }),
       });
       if (!signIn.ok) fail(`supabase sign-in failed (${signIn.status}): ${(await signIn.text()).slice(0, 300)}`);
       const { access_token } = (await signIn.json()) as { access_token: string };
@@ -523,8 +591,13 @@ program
       process.stderr.write(`session token expires at ${new Date(expiresAt * 1000).toISOString()}\n`);
       process.stdout.write(token + "\n");
     } catch (e) {
-      fail((e as Error).message);
+      propagate(e);
     }
   });
 
-program.parseAsync(process.argv).catch((e) => fail((e as Error).message));
+// The only place that actually exits: reached only after every action's own try/finally (which
+// stops any Codex child it started) has already run its course while the rejection unwound here.
+program.parseAsync(process.argv).catch((e) => {
+  if (!(e instanceof CliFailure)) reportFailure((e as Error).message);
+  process.exit(1);
+});

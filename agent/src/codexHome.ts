@@ -19,6 +19,17 @@ export interface RenderVars {
 
 const tomlString = (s: string) => JSON.stringify(s);
 
+/**
+ * Escaped contents of a TOML basic string, without the surrounding quotes. The template embeds
+ * {{OPENCLICKY_ROOT}}, {{WORKSPACE}} and {{USER_SKILLS_ACTIVE}} inside its own literal quotes
+ * (sometimes alongside more literal text, e.g. a root path followed by "/skills"), so substituting
+ * `tomlString(v)` there would double-quote the value. TOML basic strings share JSON's escaping for
+ * backslash, quote, and control characters, so stripping JSON.stringify's own quotes gives exactly
+ * the escaped text the template's existing quotes need — turning an attacker- or user-influenced
+ * path containing a `"` or `\` into safely-escaped text instead of broken or injected TOML.
+ */
+const tomlStringInner = (s: string) => tomlString(s).slice(1, -1);
+
 /** TOML for the optional MCP servers (mirrors reference/codex-config.toml, keys stay server-side). */
 export function renderMcpServers(v: Pick<RenderVars, "composioMcpUrl" | "composioApiKey" | "cuaDriverBin">): string {
   const blocks: string[] = [];
@@ -73,10 +84,10 @@ export function renderCodexConfig(template: string, v: RenderVars): string {
   const modelLine = v.model ? `model = ${tomlString(v.model)}` : "";
   return template
     .replaceAll("{{MODEL_LINE}}", modelLine)
-    .replaceAll("{{OPENCLICKY_ROOT}}", v.root)
+    .replaceAll("{{OPENCLICKY_ROOT}}", tomlStringInner(v.root))
     .replaceAll("{{BACKEND_URL}}", v.backendUrl.replace(/\/+$/, ""))
-    .replaceAll("{{WORKSPACE}}", v.workspace)
-    .replaceAll("{{USER_SKILLS_ACTIVE}}", v.userSkillsActive)
+    .replaceAll("{{WORKSPACE}}", tomlStringInner(v.workspace))
+    .replaceAll("{{USER_SKILLS_ACTIVE}}", tomlStringInner(v.userSkillsActive))
     .replaceAll("{{MCP_SERVERS}}", renderMcpServers(v))
     .replaceAll("{{SANDBOX_WRITABLE_ROOTS}}", renderSandboxWritableRoots(v.writableRoots));
 }

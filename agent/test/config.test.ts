@@ -29,4 +29,20 @@ describe("resolveConfig", () => {
     expect(fs.existsSync(path.join(root, "skills", "ModelInstructions.md"))).toBe(true);
     expect(fs.existsSync(path.join(root, "config", "codex-config.toml"))).toBe(true);
   });
+
+  describe("runTimeoutMs", () => {
+    it("defaults to 10 minutes", () => {
+      expect(resolveConfig({}, { HOME: "/home/u" } as NodeJS.ProcessEnv).runTimeoutMs).toBe(10 * 60 * 1000);
+    });
+    it("takes an override from the env", () => {
+      expect(resolveConfig({}, { HOME: "/home/u", OPENCLICKY_RUN_TIMEOUT_MS: "5000" } as NodeJS.ProcessEnv).runTimeoutMs).toBe(5000);
+    });
+    it("ignores a non-positive env value and falls back to the default", () => {
+      expect(resolveConfig({}, { HOME: "/home/u", OPENCLICKY_RUN_TIMEOUT_MS: "not-a-number" } as NodeJS.ProcessEnv).runTimeoutMs).toBe(10 * 60 * 1000);
+      expect(resolveConfig({}, { HOME: "/home/u", OPENCLICKY_RUN_TIMEOUT_MS: "0" } as NodeJS.ProcessEnv).runTimeoutMs).toBe(10 * 60 * 1000);
+    });
+    it("lets a flag win over the env", () => {
+      expect(resolveConfig({ runTimeoutMs: 42 }, { HOME: "/home/u", OPENCLICKY_RUN_TIMEOUT_MS: "5000" } as NodeJS.ProcessEnv).runTimeoutMs).toBe(42);
+    });
+  });
 });
