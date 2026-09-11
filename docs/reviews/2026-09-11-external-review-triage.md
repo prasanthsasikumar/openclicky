@@ -5,7 +5,7 @@ deliberately left, and what needs a decision that is not mine to make. Anything 
 **needs your call** is blocked on you, not on effort.
 
 Baseline when the review arrived: backend 61 tests, agent 73, both `tsc --noEmit` clean over `src`.
-After this pass: backend 70, agent 78+, and `tsc` covers `test` too.
+After this pass: backend 70, agent 93, macOS 130 (from 120), and `tsc` covers `test` too.
 
 ## Fixed
 
@@ -21,11 +21,11 @@ After this pass: backend 70, agent 78+, and `tsc` covers `test` too.
 | Raw upstream error bodies and rate-limit headers echoed to clients | `554ec79` | Logged server-side instead; `openai-*`, `x-ratelimit-*`, `set-cookie` stripped. |
 | CI reported success on a failed Swift build | `ac1d8b6` | `shell: bash` for pipefail. Every prior green macos-app run proved only that `tail` worked. |
 | Test files never type-checked | `108c01e` | Immediately found a test importing `KeyLike`, which jose no longer exports. |
-| CLI reported a version matching nothing | `108c01e` + agent commit | Reads `macos/OpenClicky/VERSION`. |
+| CLI reported a version matching nothing | `698dba1` | Reads `macos/OpenClicky/VERSION`. |
 | `admin remove` deleted an account with no confirmation | `70a0085` | Types the email back; `--yes` for scripts. |
 | Runtime image shipped dev dependencies; no HEALTHCHECK | `70a0085` | **Unverified** — no Docker on this machine. |
-| TOML injection from unquoted paths, Codex child inheriting every env secret, no run timeout, `--password` on the command line, `process.exit` orphaning the child | agent commit | Five agent-CLI findings. |
-| `shell.json` written 0644 with tokens and BYOK keys, credential prefix logged, verbatim transcripts to PostHog, force-unwrapped URLs from server strings, unused camera entitlement | macOS commit | Five macOS findings. |
+| TOML injection from unquoted paths, Codex child inheriting every env secret, no run timeout, `--password` on the command line, `process.exit` orphaning the child | `698dba1` | Five agent-CLI findings, plus the same env fix for the `codex mcp` child. |
+| `shell.json` written 0644 with tokens and BYOK keys, credential prefix logged, verbatim transcripts to PostHog, force-unwrapped URLs from server strings, unused camera entitlement | `1a509b8` | Five macOS findings. |
 
 ## Deferred, with reasons
 
