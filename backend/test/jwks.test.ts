@@ -4,14 +4,14 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
-import { SignJWT, generateKeyPair, exportJWK, type KeyLike } from "jose";
+import { SignJWT, generateKeyPair, exportJWK } from "jose";
 import { createApp } from "../src/app.js";
 import { verifySupabaseJwt, AuthError } from "../src/auth.js";
 
 let server: http.Server;
 let supabaseUrl: string;
-let privateKey: KeyLike;
-let otherKey: KeyLike;
+let privateKey: CryptoKey;
+let otherKey: CryptoKey;
 let hits = 0;
 
 beforeAll(async () => {
@@ -32,7 +32,7 @@ beforeAll(async () => {
 });
 afterAll(() => server.close());
 
-const sign = (key: KeyLike, kid = "sb-key-1") =>
+const sign = (key: CryptoKey, kid = "sb-key-1") =>
   new SignJWT({ role: "authenticated", email: "jwks@example.com" })
     .setAudience("authenticated")
     .setProtectedHeader({ alg: "ES256", kid })

@@ -15,6 +15,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Type-checks src AND test. The workspaces' build tsconfigs include only `src`, so test files
+      # were never checked — which is how a test importing a type `jose` had already removed, and
+      # test helpers minting JWTs that no Supabase would issue, both went unnoticed.
+      - run: npm run typecheck
       - run: npm test
       - run: npm run build -w backend
       - run: npm run build -w agent

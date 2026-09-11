@@ -15,7 +15,8 @@
     "pretest": "npm run manifest",
     "test": "vitest run",
     "mint-jwt": "node scripts/mint-dev-jwt.mjs",
-    "admin": "node scripts/admin.mjs"
+    "admin": "node scripts/admin.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",

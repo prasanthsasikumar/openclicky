@@ -10,6 +10,7 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
     "dev:backend": "npm run dev --workspace backend",
     "port-skills": "node scripts/port-skills.mjs",
     "release:mac": "bash macos/OpenClicky/scripts/release.sh",
