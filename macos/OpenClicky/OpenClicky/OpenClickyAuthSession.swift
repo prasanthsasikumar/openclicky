@@ -96,7 +96,11 @@ final class OpenClickyAuthSession: ObservableObject {
     // MARK: - Supabase calls
 
     private func authConfig() async throws -> AuthConfig {
-        let url = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/auth/config")!
+        // backendBaseURL is user-configurable (shell.json or an environment override), not a
+        // compile-time literal, so a malformed value must throw instead of crashing the app.
+        guard let url = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/auth/config") else {
+            throw NSError(domain: "OpenClickyAuth", code: 3, userInfo: [NSLocalizedDescriptionKey: "backend URL is invalid"])
+        }
         let (data, response) = try await URLSession.shared.data(from: url)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw NSError(domain: "OpenClickyAuth", code: 1, userInfo: [NSLocalizedDescriptionKey: "this backend has no sign-in configured"])
@@ -105,7 +109,12 @@ final class OpenClickyAuthSession: ObservableObject {
     }
 
     private func requestToken(config: AuthConfig, grant: String, body: [String: String]) async throws -> TokenResponse {
-        var request = URLRequest(url: URL(string: "\(config.supabaseUrl)/auth/v1/token?grant_type=\(grant)")!)
+        // `config.supabaseUrl` comes straight from the backend's /auth/config JSON response — a
+        // malformed or hostile value must throw instead of crashing the app.
+        guard let tokenURL = URL(string: "\(config.supabaseUrl)/auth/v1/token?grant_type=\(grant)") else {
+            throw NSError(domain: "OpenClickyAuth", code: 4, userInfo: [NSLocalizedDescriptionKey: "sign-in backend returned an invalid Supabase URL"])
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")

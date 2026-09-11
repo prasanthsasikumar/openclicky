@@ -81,11 +81,16 @@ enum OpenClickyConfiguration {
 
     static func ensureSettingsFileExists() {
         let fileManager = FileManager.default
-        try? fileManager.createDirectory(at: settingsFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard !fileManager.fileExists(atPath: settingsFileURL.path) else { return }
+        guard !fileManager.fileExists(atPath: settingsFileURL.path) else {
+            // The directory may already exist too, but from before this file learned to lock it
+            // down (or created by some other process) — tighten it every time regardless.
+            tightenSettingsDirectoryPermissionsIfNeeded(at: settingsFileURL.deletingLastPathComponent(), fileManager: fileManager)
+            return
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? encoder.encode(OpenClickyShellSettings()).write(to: settingsFileURL)
+        guard let data = try? encoder.encode(OpenClickyShellSettings()) else { return }
+        try? writeShellSettingsData(data, toFileAt: settingsFileURL, fileManager: fileManager)
     }
 
     static func revealSettingsFile() {
@@ -100,12 +105,45 @@ enum OpenClickyConfiguration {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
-            try FileManager.default.createDirectory(at: settingsFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoder.encode(changedSettings).write(to: settingsFileURL, options: .atomic)
+            let data = try encoder.encode(changedSettings)
+            try writeShellSettingsData(data, toFileAt: settingsFileURL)
         } catch {
             print("⚠️ Could not write \(settingsFileURL.path): \(error.localizedDescription)")
         }
         reload()
+    }
+
+    /// shell.json holds the session token, the refresh token, and the user's own OpenAI/Anthropic
+    /// keys, so it must never be readable by anyone but the owner. `Data.write(to:)` uses the
+    /// process's default file permissions (0644 — world-readable) with no way to pass a mode, so the
+    /// directory is created at 0700 and the file is chmod'd to 0600 unconditionally after every
+    /// write. That "unconditionally" matters: an existing file from before this function existed
+    /// (or one loosened by some other tool) gets tightened on its very next write, not only on
+    /// first creation. Pulled out as a pure, injectable helper so it can be exercised against a
+    /// temp directory in tests instead of the user's real `~/.openclicky`.
+    static func writeShellSettingsData(
+        _ data: Data,
+        toFileAt fileURL: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        let directoryURL = fileURL.deletingLastPathComponent()
+        try fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        // createDirectory only applies `attributes` when it actually creates the directory, so a
+        // pre-existing directory (from an older build, or created some other way) is tightened here.
+        tightenSettingsDirectoryPermissionsIfNeeded(at: directoryURL, fileManager: fileManager)
+        try data.write(to: fileURL, options: .atomic)
+        // The atomic write can replace the file via a temp-file swap, which does not preserve
+        // whatever permissions the destination path had — set them explicitly every time.
+        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+    }
+
+    private static func tightenSettingsDirectoryPermissionsIfNeeded(at directoryURL: URL, fileManager: FileManager) {
+        guard fileManager.fileExists(atPath: directoryURL.path) else { return }
+        try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directoryURL.path)
     }
 
     // MARK: - Derived values

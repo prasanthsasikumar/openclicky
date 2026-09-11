@@ -75,7 +75,14 @@ private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscription
         let text: String
     }
 
-    private static var transcriptionURL: URL { URL(string: "\(OpenClickyConfiguration.backendBaseURL)/agent/transcribe")! }
+    /// `backendBaseURL` is user-configurable (shell.json or an environment override), not a
+    /// compile-time literal, so a malformed value must throw instead of crashing the app.
+    private static func transcriptionURL() throws -> URL {
+        guard let url = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/agent/transcribe") else {
+            throw OpenAIAudioTranscriptionProviderError(message: "OpenClicky backend URL is invalid.")
+        }
+        return url
+    }
     private static let targetSampleRate = 16_000
 
     private let keyterms: [String]
@@ -206,7 +213,7 @@ private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscription
     }
 
     private func requestTranscription(for wavAudioData: Data) async throws -> String {
-        var request = URLRequest(url: Self.transcriptionURL)
+        var request = URLRequest(url: try Self.transcriptionURL())
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         OpenClickyConfiguration.authorize(&request)

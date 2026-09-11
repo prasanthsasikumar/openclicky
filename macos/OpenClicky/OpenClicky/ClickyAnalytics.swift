@@ -5,6 +5,14 @@
 //  Centralized PostHog analytics wrapper. All event names and properties
 //  are defined here so instrumentation is consistent and easy to audit.
 //
+//  Never send verbatim user speech or AI replies here — only non-content signals (that a turn
+//  happened, its length in characters). An earlier version of this file's header claimed that
+//  putting analytics behind a PostHogAPIKey Info.plist entry was the fix for that; it was not —
+//  whenever that key was present, `trackUserMessageSent`/`trackAIResponseReceived` still sent the
+//  full transcript and response text to PostHog. The plist key only gates whether analytics runs
+//  at all, not what leaves the machine once it does, so the content itself had to come out of the
+//  event properties below.
+//
 
 import Foundation
 import PostHog
@@ -86,20 +94,30 @@ enum ClickyAnalytics {
         PostHogSDK.shared.capture("push_to_talk_released")
     }
 
-    /// Transcription completed and the user's message is being sent to the AI.
-    static func trackUserMessageSent(transcript: String) {
-        PostHogSDK.shared.capture("user_message_sent", properties: [
-            "transcript": transcript,
-            "character_count": transcript.count
-        ])
+    /// Transcription completed and the user's message is being sent to the AI. Takes only the
+    /// character count, never the transcript itself — verbatim user speech must never reach
+    /// PostHog. The event name and the `character_count` property stay the same as before so
+    /// existing dashboards keep working; only the `transcript` property (the actual content) is gone.
+    static func trackUserMessageSent(characterCount: Int) {
+        PostHogSDK.shared.capture("user_message_sent", properties: userMessageSentProperties(characterCount: characterCount))
     }
 
-    /// Claude responded and the response is being spoken via TTS.
-    static func trackAIResponseReceived(response: String) {
-        PostHogSDK.shared.capture("ai_response_received", properties: [
-            "response": response,
-            "character_count": response.count
-        ])
+    /// Claude responded and the response is being spoken via TTS. Takes only the character count,
+    /// never the response text itself — verbatim AI replies must never reach PostHog.
+    static func trackAIResponseReceived(characterCount: Int) {
+        PostHogSDK.shared.capture("ai_response_received", properties: aiResponseReceivedProperties(characterCount: characterCount))
+    }
+
+    /// Pulled out as a pure function (rather than inlined into the `capture` call above) so a test
+    /// can assert on the exact property set reaching PostHog — in particular, that no key here ever
+    /// carries message content — without needing a real PostHog SDK instance.
+    static func userMessageSentProperties(characterCount: Int) -> [String: Any] {
+        ["character_count": characterCount]
+    }
+
+    /// See `userMessageSentProperties`: same reasoning, for the AI's side of the turn.
+    static func aiResponseReceivedProperties(characterCount: Int) -> [String: Any] {
+        ["character_count": characterCount]
     }
 
     /// Claude's response included a [POINT:x,y:label] coordinate tag,

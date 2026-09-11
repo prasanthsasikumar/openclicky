@@ -36,6 +36,17 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case alwaysOn
     }
 
+    /// Builds the OpenAI realtime websocket URL for a given model name. `model` arrives verbatim in
+    /// the backend's JSON session response, so a malformed or hostile value (a stray space, an
+    /// unescaped character, …) must not force-unwrap into a crash: this falls back to the same
+    /// "gpt-realtime" default used elsewhere when the backend omits the field, and only returns nil
+    /// in the (practically unreachable) case where even that literal fails to parse. Pulled out as a
+    /// pure static function so it can be unit tested without opening a real connection.
+    nonisolated static func realtimeSocketURL(forModel model: String) -> URL? {
+        URL(string: "wss://api.openai.com/v1/realtime?model=\(model)")
+            ?? URL(string: "wss://api.openai.com/v1/realtime?model=gpt-realtime")
+    }
+
     enum TranscriptRole {
         case user
         case assistant
@@ -210,7 +221,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     private func openConnection(mode: TurnMode) async throws {
         guard OpenClickyConfiguration.isConfigured else { throw RealtimeVoiceError.notConfigured }
-        var secretRequest = URLRequest(url: URL(string: "\(OpenClickyConfiguration.backendBaseURL)/agent/realtime/session")!)
+        // backendBaseURL is user-configurable (shell.json or an environment override), not a
+        // compile-time literal, so a malformed value must throw instead of crashing the app.
+        guard let secretRequestURL = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/agent/realtime/session") else {
+            throw RealtimeVoiceError.invalidURL("OpenClicky backend URL is invalid: \(OpenClickyConfiguration.backendBaseURL)")
+        }
+        var secretRequest = URLRequest(url: secretRequestURL)
         secretRequest.httpMethod = "POST"
         secretRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         OpenClickyConfiguration.authorize(&secretRequest)
@@ -224,7 +240,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         }
         let model = (secretJSON["session"] as? [String: Any])?["model"] as? String ?? "gpt-realtime"
 
-        var socketRequest = URLRequest(url: URL(string: "wss://api.openai.com/v1/realtime?model=\(model)")!)
+        // `model` arrives verbatim in the backend's JSON response, so a malformed or hostile value
+        // must not be allowed to force-unwrap into a crash.
+        guard let socketRequestURL = Self.realtimeSocketURL(forModel: model) else {
+            throw RealtimeVoiceError.invalidURL("OpenAI realtime URL is invalid for model \(model)")
+        }
+        var socketRequest = URLRequest(url: socketRequestURL)
         socketRequest.setValue("Bearer \(clientSecret)", forHTTPHeaderField: "Authorization")
         let task = urlSession.webSocketTask(with: socketRequest)
         webSocketTask = task
@@ -880,6 +901,7 @@ enum RealtimeVoiceError: LocalizedError {
     case notConnected
     case backend(String)
     case audio(String)
+    case invalidURL(String)
 
     var errorDescription: String? {
         switch self {
@@ -887,6 +909,7 @@ enum RealtimeVoiceError: LocalizedError {
         case .notConnected: return "Realtime session is not connected."
         case .backend(let message): return "Realtime session could not be created: \(message)"
         case .audio(let message): return "Audio setup failed: \(message)"
+        case .invalidURL(let message): return message
         }
     }
 }

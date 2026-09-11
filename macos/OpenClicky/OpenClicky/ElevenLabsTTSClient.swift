@@ -19,8 +19,17 @@ final class ElevenLabsTTSClient {
     /// audio finishes playing even if the caller doesn't hold a reference.
     private var audioPlayer: AVAudioPlayer?
 
+    /// `proxyURL` is built from the user-configurable backend URL (shell.json or an environment
+    /// override), not a compile-time literal, so a malformed value falls back to the hosted
+    /// backend's own /tts endpoint instead of crashing the app. That fallback string is a literal
+    /// built from a known-good constant, so force-unwrapping it is safe. Pulled out as a pure static
+    /// function so the fallback behavior can be unit tested without constructing a full client.
+    nonisolated static func resolvedProxyURL(fromProxyURL proxyURL: String) -> URL {
+        URL(string: proxyURL) ?? URL(string: "\(OpenClickyConfiguration.hostedBackendURL)/tts")!
+    }
+
     init(proxyURL: String) {
-        self.proxyURL = URL(string: proxyURL)!
+        self.proxyURL = Self.resolvedProxyURL(fromProxyURL: proxyURL)
 
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 30

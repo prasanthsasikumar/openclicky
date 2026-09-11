@@ -32,7 +32,12 @@ final class BillingStatusModel: ObservableObject {
         }
         Task {
             do {
-                var request = URLRequest(url: URL(string: "\(OpenClickyConfiguration.backendBaseURL)/billing/me")!)
+                // backendBaseURL is user-configurable (shell.json or an environment override), not
+                // a compile-time literal, so a malformed value must throw instead of crashing the app.
+                guard let billingURL = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/billing/me") else {
+                    throw NSError(domain: "OpenClickyBilling", code: -1, userInfo: [NSLocalizedDescriptionKey: "backend URL is invalid"])
+                }
+                var request = URLRequest(url: billingURL)
                 OpenClickyConfiguration.authorize(&request)
                 let (data, response) = try await URLSession.shared.data(for: request)
                 let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0

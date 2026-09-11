@@ -41,7 +41,9 @@ final class AssemblyAIStreamingTranscriptionProvider: BuddyTranscriptionProvider
     ) async throws -> any BuddyStreamingTranscriptionSession {
         // Fetch a fresh temporary token from the proxy before each session
         let temporaryToken = try await fetchTemporaryToken()
-        print("🎙️ AssemblyAI: fetched temporary token (\(temporaryToken.prefix(20))...)")
+        // Log only that a token was obtained, never any part of its value — this reaches
+        // ~/Library/Logs/OpenClicky/app.log, which is not a safe place for even a credential prefix.
+        print("🎙️ AssemblyAI: fetched temporary token (\(temporaryToken.count) chars)")
 
         let session = AssemblyAIStreamingTranscriptionSession(
             apiKey: nil,
@@ -59,7 +61,15 @@ final class AssemblyAIStreamingTranscriptionProvider: BuddyTranscriptionProvider
 
     /// Calls the Cloudflare Worker to get a short-lived AssemblyAI token.
     private func fetchTemporaryToken() async throws -> String {
-        var request = URLRequest(url: URL(string: Self.tokenProxyURL)!)
+        // `tokenProxyURL` is built from the user-configurable backend URL (shell.json or an
+        // environment override), not a compile-time literal, so a malformed value must throw
+        // instead of crashing the app.
+        guard let tokenProxyRequestURL = URL(string: Self.tokenProxyURL) else {
+            throw AssemblyAIStreamingTranscriptionProviderError(
+                message: "OpenClicky backend URL is invalid: \(Self.tokenProxyURL)"
+            )
+        }
+        var request = URLRequest(url: tokenProxyRequestURL)
         request.httpMethod = "POST"
         OpenClickyConfiguration.authorize(&request)
 

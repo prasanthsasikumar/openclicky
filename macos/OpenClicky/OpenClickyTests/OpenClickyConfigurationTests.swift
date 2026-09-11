@@ -80,4 +80,45 @@ struct OpenClickyConfigurationTests {
         let environment = OpenClickyConfiguration.cliProcessEnvironment(from: settings)
         #expect(environment["OPENCLICKY_WRITABLE_ROOTS"] == "~/Desktop,/Volumes/Work")
     }
+
+    // MARK: - shell.json permissions
+
+    /// shell.json carries the session token, refresh token, and the user's own provider keys, so a
+    /// fresh write must land at 0600 (owner-only), never the OS default of 0644 (world-readable).
+    /// Exercises the pure helper against a temp directory rather than the user's real ~/.openclicky.
+    @Test func writingSettingsProducesAnOwnerOnlyFile() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("openclicky-settings-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+        let fileURL = temporaryDirectory.appendingPathComponent("shell.json")
+
+        try OpenClickyConfiguration.writeShellSettingsData(Data("{}".utf8), toFileAt: fileURL)
+
+        let fileAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let filePermissions = fileAttributes[.posixPermissions] as? NSNumber
+        #expect(filePermissions?.uint16Value == 0o600)
+
+        let directoryAttributes = try FileManager.default.attributesOfItem(atPath: temporaryDirectory.path)
+        let directoryPermissions = directoryAttributes[.posixPermissions] as? NSNumber
+        #expect(directoryPermissions?.uint16Value == 0o700)
+    }
+
+    /// The case that actually matters on a machine that already has a loosely-permissioned
+    /// shell.json from before this fix: the very next write must tighten it, not just a fresh file.
+    @Test func writingSettingsTightensAnExistingWorldReadableFile() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("openclicky-settings-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+        let fileURL = temporaryDirectory.appendingPathComponent("shell.json")
+        try FileManager.default.createFile(atPath: fileURL.path, contents: Data("{}".utf8), attributes: [.posixPermissions: 0o644])
+
+        try OpenClickyConfiguration.writeShellSettingsData(Data("{\"token\":\"tok\"}".utf8), toFileAt: fileURL)
+
+        let fileAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        #expect((fileAttributes[.posixPermissions] as? NSNumber)?.uint16Value == 0o600)
+
+        let directoryAttributes = try FileManager.default.attributesOfItem(atPath: temporaryDirectory.path)
+        #expect((directoryAttributes[.posixPermissions] as? NSNumber)?.uint16Value == 0o700)
+    }
 }

@@ -941,7 +941,7 @@ final class CompanionManager: ObservableObject {
         clearDetectedElementLocation()
         dismissCursorCaption()
         lastTranscript = trimmedText
-        ClickyAnalytics.trackUserMessageSent(transcript: trimmedText)
+        ClickyAnalytics.trackUserMessageSent(characterCount: trimmedText.count)
         print("⌨️ Typed request: \(trimmedText)")
 
         guard usesRealtimeVoice else {
@@ -1040,7 +1040,7 @@ final class CompanionManager: ObservableObject {
         finishDictationToFrontApp()
         let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        ClickyAnalytics.trackUserMessageSent(transcript: "[dictation] \(text.count) chars")
+        ClickyAnalytics.trackUserMessageSent(characterCount: text.count)
         switch FrontAppTextInserter.insert(text) {
         case .typed:
             print("⌨️ Dictation typed \(text.count) chars into \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "the front app")")
@@ -1099,7 +1099,7 @@ final class CompanionManager: ObservableObject {
                     submitDraftText: { [weak self] finalTranscript in
                         self?.lastTranscript = finalTranscript
                         print("🗣️ Companion received transcript: \(finalTranscript)")
-                        ClickyAnalytics.trackUserMessageSent(transcript: finalTranscript)
+                        ClickyAnalytics.trackUserMessageSent(characterCount: finalTranscript.count)
                         self?.sendTranscriptToClaudeWithScreenshot(transcript: finalTranscript)
                     }
                 )
@@ -1253,7 +1253,7 @@ final class CompanionManager: ObservableObject {
 
                 print("🧠 Conversation history: \(conversationHistory.count) exchanges")
 
-                ClickyAnalytics.trackAIResponseReceived(response: spokenText)
+                ClickyAnalytics.trackAIResponseReceived(characterCount: spokenText.count)
 
                 // Play the response via TTS. Keep the spinner (processing state)
                 // until the audio actually starts playing, then switch to responding.

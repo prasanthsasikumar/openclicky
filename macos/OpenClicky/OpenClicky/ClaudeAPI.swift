@@ -14,8 +14,18 @@ class ClaudeAPI {
     var model: String
     private let session: URLSession
 
+    /// `proxyURL` is built from the user-configurable backend URL (shell.json or an environment
+    /// override), not a compile-time literal, so a malformed value falls back to the hosted
+    /// backend's own /chat endpoint instead of crashing the app. That fallback string is a literal
+    /// built from a known-good constant, so force-unwrapping it is safe. Pulled out as a pure static
+    /// function so the fallback behavior can be unit tested without constructing a full ClaudeAPI
+    /// (whose init fires a background TLS warmup network request).
+    static func resolvedAPIURL(fromProxyURL proxyURL: String) -> URL {
+        URL(string: proxyURL) ?? URL(string: "\(OpenClickyConfiguration.hostedBackendURL)/chat")!
+    }
+
     init(proxyURL: String, model: String = "claude-sonnet-4-6") {
-        self.apiURL = URL(string: proxyURL)!
+        self.apiURL = Self.resolvedAPIURL(fromProxyURL: proxyURL)
         self.model = model
 
         // Use .default instead of .ephemeral so TLS session tickets are cached.
