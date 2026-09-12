@@ -19,6 +19,9 @@ jobs:
       # were never checked — which is how a test importing a type `jose` had already removed, and
       # test helpers minting JWTs that no Supabase would issue, both went unnoticed.
       - run: npm run typecheck
+      # Errors only. The 371 warnings are the backlog the linter was added to make visible, not a
+      # reason to fail the build; `--max-warnings` stays off until that list is worked down.
+      - run: npm run lint
       - run: npm test
       - run: npm run build -w backend
       - run: npm run build -w agent
@@ -27,6 +30,13 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      # Errors only, matching the TypeScript job. The 85 violations in the current backlog are all
+      # warnings and exit 0; `--strict` would upgrade them to errors and fail every build until the
+      # backlog is cleared, which is not what the linter is here for yet.
+      - name: SwiftLint
+        run: |
+          brew install swiftlint
+          swiftlint lint --quiet
       - name: Build the app and run its unit tests (unsigned)
         working-directory: macos/OpenClicky
         # Both commands pipe into `tail`, and the default shell (`bash -e`) reports the exit status

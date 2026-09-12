@@ -30,8 +30,11 @@ npm run build -w agent
 npm run dev -w backend                # http://localhost:8787
 ```
 
-A backend with no `SUPABASE_*` settings has no accounts and no metering: mint yourself a dev token
-once and put it in `~/.openclicky/shell.json` as `token`, with `backendUrl` set to `http://localhost:8787`:
+The app and the CLI both default to the hosted, invite-only backend
+(`https://api.openclicky.flowsxr.com`), so pointing them at the one you just started is an explicit
+override. A backend with no `SUPABASE_*` settings has no accounts and no metering: mint yourself a
+dev token once and put it in `~/.openclicky/shell.json` as `token`, with `backendUrl` set to
+`http://localhost:8787`:
 
 ```bash
 npm run mint-jwt -w backend -- --sub you --email you@example.com

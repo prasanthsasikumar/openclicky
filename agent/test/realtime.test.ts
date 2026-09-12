@@ -113,6 +113,6 @@ describe("realtime", () => {
   }, 20_000);
 
   it("fails clearly without a token or when the backend refuses", async () => {
-    await expect(new RealtimeSession({ cfg: resolveConfig({ backendUrl, token: undefined }, {} as NodeJS.ProcessEnv) }).start()).rejects.toThrow(/missing token/);
+    await expect(new RealtimeSession({ cfg: resolveConfig({ backendUrl, token: undefined }, {}) }).start()).rejects.toThrow(/missing token/);
   });
 });

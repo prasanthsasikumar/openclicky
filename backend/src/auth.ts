@@ -37,7 +37,15 @@ function safeHeader(token: string) {
 function principalFromSupabasePayload(payload: Record<string, unknown>): Principal {
   const subject = typeof payload.sub === "string" ? payload.sub.trim() : "";
   if (!subject) throw new AuthError("token has no subject: this is an anon or service key, not a user token");
-  if (payload.role !== "authenticated") throw new AuthError(`token role is ${String(payload.role ?? "missing")}, not authenticated`);
+  if (payload.role !== "authenticated") {
+    // `role` is unknown here, and a token carrying an object would otherwise report itself as
+    // "[object Object]" — which says nothing about the token that was actually rejected.
+    const reportedRole =
+      payload.role === undefined ? "missing"
+      : typeof payload.role === "string" ? payload.role
+      : JSON.stringify(payload.role);
+    throw new AuthError(`token role is ${reportedRole}, not authenticated`);
+  }
   return { sub: subject, email: typeof payload.email === "string" ? payload.email : undefined, via: "supabase" };
 }
 
@@ -69,11 +77,11 @@ export async function verifySupabaseJwt(token: string, env: Env): Promise<Princi
     // e.g. ES256) verifies against the project's JWKS. Both may be configured at once.
     if (env.SUPABASE_JWT_SECRET && (header.alg === "HS256" || !env.SUPABASE_URL)) {
       const { payload } = await jwtVerify(token, enc(env.SUPABASE_JWT_SECRET), { algorithms: ["HS256"], audience: "authenticated" });
-      return principalFromSupabasePayload(payload as Record<string, unknown>);
+      return principalFromSupabasePayload(payload);
     }
     if (env.SUPABASE_URL) {
       const { payload } = await jwtVerify(token, jwksFor(env.SUPABASE_URL), { audience: "authenticated" });
-      return principalFromSupabasePayload(payload as Record<string, unknown>);
+      return principalFromSupabasePayload(payload);
     }
   } catch (e) {
     if (e instanceof AuthError) throw e;

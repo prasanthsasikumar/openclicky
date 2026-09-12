@@ -146,8 +146,8 @@ export class CodexAgent {
 
     const child = spawn(this.cfg.codexBin, ["app-server", "--stdio"], { env, stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
-    child.stderr!.setEncoding("utf8");
-    child.stderr!.on("data", (d: string) => {
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (d: string) => {
       if (this.cfg.verbose) process.stderr.write(d.replace(/^/gm, "[codex] "));
     });
     this.exited = new Promise<never>((_, reject) => {
@@ -156,7 +156,7 @@ export class CodexAgent {
     });
     this.exited.catch(() => {}); // observed per-call via race()
 
-    const rpc = new JsonRpcStdio(child.stdin!, child.stdout!);
+    const rpc = new JsonRpcStdio(child.stdin, child.stdout);
     this.rpc = rpc;
     rpc.onServerRequest((id, method, params) => void this.handleServerRequest(id, method, params));
 
@@ -309,6 +309,9 @@ export class CodexAgent {
         },
         (e) => {
           clearTimeout(timer);
+          // Passing the original rejection reason straight through: wrapping it in an Error here
+          // would hide whatever the caller actually threw.
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
           reject(e);
         },
       );
