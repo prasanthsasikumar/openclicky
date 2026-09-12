@@ -19,6 +19,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import os
 
 /// The screen context attached to a Realtime turn: the JPEG the model sees, a caption with the
 /// pointer position, and the capture it came from (display frame + pixel size) so `point_at`
@@ -576,22 +577,24 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         }
         if !isAudioWired {
             isAudioWired = true
-            audio.onMicrophoneFrame = { [weak self] pcm16, level in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.inputLevel = level
-                    guard self.isForwardingMicrophone else { return }
-                    self.microphoneAppends += 1
-                    try? self.send(["type": "input_audio_buffer.append", "audio": pcm16.base64EncodedString()])
+            audio.setCallbacks(
+                onMicrophoneFrame: { [weak self] pcm16, level in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        self.inputLevel = level
+                        guard self.isForwardingMicrophone else { return }
+                        self.microphoneAppends += 1
+                        try? self.send(["type": "input_audio_buffer.append", "audio": pcm16.base64EncodedString()])
+                    }
+                },
+                onPlaybackActiveChanged: { [weak self] isPlaying in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        self.isSpeaking = isPlaying
+                        if !isPlaying { self.scheduleIdlePauseIfNeeded() }
+                    }
                 }
-            }
-            audio.onPlaybackActiveChanged = { [weak self] isPlaying in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.isSpeaking = isPlaying
-                    if !isPlaying { self.scheduleIdlePauseIfNeeded() }
-                }
-            }
+            )
         }
         let description = try await audio.start()
         if description != "audio already running" { log(description) }
@@ -920,16 +923,40 @@ enum RealtimeVoiceError: LocalizedError {
 /// Owns the AVAudioEngine graph: microphone → PCM16 mono 24 kHz frames out, PCM16 playback in.
 /// Tries Apple's voice-processing unit (echo cancellation) first and falls back to plain capture.
 /// Every engine call happens on `queue`, never on the main thread (see RealtimeVoiceClient).
-final class RealtimeAudioEngine: @unchecked Sendable {
+/// Two threads own parts of this class and neither of them is the main one, so it opts out of the
+/// project's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. Without `nonisolated` every stored
+/// property below is implicitly main-actor isolated while in fact being touched from `queue` and
+/// from CoreAudio's render thread — a claim the Swift 5 language mode does not check, and which
+/// produced 53 warnings that said nothing about which accesses were actually unsafe.
+///
+/// The contract: everything private is `queue`'s, except `microphoneCapture`, which is the one
+/// piece the render thread reads and is therefore behind a lock.
+nonisolated final class RealtimeAudioEngine: @unchecked Sendable {
     static let sampleRate: Double = 24_000
     private static let pcm16Format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
     private static let playbackFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
 
-    /// PCM16 mono 24 kHz bytes plus a 0…1 level, delivered from the audio thread.
-    var onMicrophoneFrame: ((Data, CGFloat) -> Void)?
-    var onPlaybackActiveChanged: ((Bool) -> Void)?
+    /// Everything the render thread needs, as one immutable unit it can copy out in a single
+    /// locked read. Published by `configure`, dropped by `tearDown`; a tap already in flight keeps
+    /// its own reference alive, so teardown cannot pull the converter out from under it.
+    private final class MicrophoneCapture: @unchecked Sendable {
+        let converter: AVAudioConverter
+        let monoFormat: AVAudioFormat
+        let onFrame: (Data, CGFloat) -> Void
+
+        init(converter: AVAudioConverter, monoFormat: AVAudioFormat, onFrame: @escaping (Data, CGFloat) -> Void) {
+            self.converter = converter
+            self.monoFormat = monoFormat
+            self.onFrame = onFrame
+        }
+    }
 
     private let queue = DispatchQueue(label: "org.openclicky.realtime.audio")
+    /// `os_unfair_lock` rather than `NSLock`: it donates priority, so the app thread holding it for
+    /// three pointer loads cannot invert the priority of the real-time audio thread waiting on it.
+    private let microphoneCapture = OSAllocatedUnfairLock<MicrophoneCapture?>(initialState: nil)
+    private var onMicrophoneFrame: ((Data, CGFloat) -> Void)?
+    private var onPlaybackActiveChanged: ((Bool) -> Void)?
     private var engine = AVAudioEngine()
     private var playerNode = AVAudioPlayerNode()
     private var converter: AVAudioConverter?
@@ -940,6 +967,18 @@ final class RealtimeAudioEngine: @unchecked Sendable {
     private var framesOut = 0
     private var peakLevel: CGFloat = 0
     private var peakOut: CGFloat = 0
+
+    /// Both callbacks are read from `queue` and from the audio thread, so they are installed on
+    /// `queue` rather than assigned directly. Call before `start()`.
+    func setCallbacks(
+        onMicrophoneFrame: @escaping (Data, CGFloat) -> Void,
+        onPlaybackActiveChanged: @escaping (Bool) -> Void
+    ) {
+        queue.sync {
+            self.onMicrophoneFrame = onMicrophoneFrame
+            self.onPlaybackActiveChanged = onPlaybackActiveChanged
+        }
+    }
 
     /// One-line capture statistics (for --openclicky-smoke-talk and bug reports).
     func debugSummary() async -> String {
@@ -1097,6 +1136,11 @@ final class RealtimeAudioEngine: @unchecked Sendable {
         }
         self.monoFormat = monoFormat
         self.converter = converter
+        if let onMicrophoneFrame {
+            microphoneCapture.withLock {
+                $0 = MicrophoneCapture(converter: converter, monoFormat: monoFormat, onFrame: onMicrophoneFrame)
+            }
+        }
         inputNode.installTap(onBus: 0, bufferSize: 2400, format: hardwareFormat) { [weak self] buffer, _ in
             self?.handleMicrophoneBuffer(buffer)
         }
@@ -1110,6 +1154,7 @@ final class RealtimeAudioEngine: @unchecked Sendable {
         engine.stop()
         engine = AVAudioEngine()
         playerNode = AVAudioPlayerNode()
+        microphoneCapture.withLock { $0 = nil }
         converter = nil
         monoFormat = nil
         queuedBuffers = 0
@@ -1117,9 +1162,19 @@ final class RealtimeAudioEngine: @unchecked Sendable {
     }
 
     /// Audio thread: convert to PCM16 mono 24 kHz and hand the bytes to the client.
-    private func handleMicrophoneBuffer(_ buffer: AVAudioPCMBuffer) {
+    ///
+    /// Everything this touches on `self` is either the capture snapshot (behind the lock) or a
+    /// counter bumped on `queue`. Reading `converter`/`monoFormat`/`onMicrophoneFrame` off `self`
+    /// here — as this did — races `tearDown()` nilling them on `queue`; the Thread Sanitizer
+    /// reports it and aborts, which `RealtimeAudioEngineConcurrencyTests` pins down.
+    ///
+    /// Not `private` so that test can drive it directly from a background thread.
+    func handleMicrophoneBuffer(_ buffer: AVAudioPCMBuffer) {
         queue.async { self.tapCount += 1 }
-        guard let converter, let monoFormat, let onMicrophoneFrame else { return }
+        guard let capture = microphoneCapture.withLock({ $0 }) else { return }
+        let converter = capture.converter
+        let monoFormat = capture.monoFormat
+        let onMicrophoneFrame = capture.onFrame
         let mono: AVAudioPCMBuffer
         if buffer.format.channelCount == 1 && buffer.format.commonFormat == .pcmFormatFloat32 {
             mono = buffer

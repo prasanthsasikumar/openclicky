@@ -101,7 +101,7 @@ open OpenClicky.xcodeproj
 # Select the OpenClicky scheme, set signing team, Cmd+R to build and run
 
 # Known non-blocking warnings: Swift 6 concurrency warnings,
-# deprecated onChange warning in OverlayWindow.swift. Do NOT attempt to fix these.
+# deprecated onChange warning in OverlayWindow.swift.
 
 scripts/release.sh --no-notarize   # fast local install over /Applications, Developer ID signing kept
 scripts/release.sh                 # the same, notarized (needed only for other Macs)
@@ -158,7 +158,17 @@ IMPORTANT: Follow these naming rules strictly. Clarity is the top priority.
 
 - Do not add features, refactor code, or make "improvements" beyond what was asked
 - Do not add docstrings, comments, or type annotations to code you did not change
-- Do not try to fix the known non-blocking warnings (Swift 6 concurrency, deprecated onChange)
+- Do not try to fix the deprecated-onChange warning
+- Treat the Swift 6 concurrency warnings as a backlog, not as noise. They are suppressed only in the
+  sense that the project builds in Swift 5 mode; 139 of them remain and each one is a claim the
+  compiler cannot check. Two of them were real: the audio taps in `RealtimeVoiceClient` and
+  `BuddyDictationManager` read main-actor / queue-owned state from the CoreAudio render thread, which
+  the Thread Sanitizer reports and aborts on (`RealtimeAudioEngineConcurrencyTests` pins it down).
+  Do not fix them in bulk — a file at a time, with a test, is what caught the real ones.
+- **Audio taps are the dangerous case and the compiler is silent about them.** `AVAudioNodeTapBlock`
+  is not `@Sendable`, so a tap closure inside a `@MainActor` class is treated as main-actor isolated
+  while in fact running on the render thread: zero warnings, real race. A tap block must touch
+  nothing mutable on `self` — capture what it needs by value when the tap is installed.
 - The project, targets, and scheme are named OpenClicky (renamed from upstream's "leanring-buddy")
 - Running `xcodebuild` from the terminal is fine now that Debug builds carry their own bundle id (see Build & Run); before that separation it cost the installed app its TCC permissions
 

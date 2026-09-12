@@ -550,8 +550,15 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            self?.activeTranscriptionSession?.appendAudioBuffer(buffer)
+        // AVAudioEngine calls this block on the CoreAudio render thread, but `AVAudioNodeTapBlock`
+        // is not `@Sendable`, so the compiler silently treats the closure as main-actor isolated
+        // like the rest of this class and reports nothing. Reading `self.activeTranscriptionSession`
+        // in here therefore raced the main actor reassigning it in `startRecognitionSession` and
+        // nilling it in `finishCurrentDictationSessionIfNeeded` — invisibly, in both directions.
+        // The session is captured by value instead: this tap feeds the session it was installed
+        // for, and nothing else, for as long as it is installed.
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, activeTranscriptionSession] buffer, _ in
+            activeTranscriptionSession.appendAudioBuffer(buffer)
             self?.updateAudioPowerLevel(from: buffer)
         }
 
@@ -683,7 +690,9 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         return orderedKeyterms
     }
 
-    private func updateAudioPowerLevel(from audioBuffer: AVAudioPCMBuffer) {
+    /// `nonisolated` because the audio tap calls it on the render thread. It reads nothing off
+    /// `self` before hopping to the main queue, which is what makes that safe — keep it that way.
+    private nonisolated func updateAudioPowerLevel(from audioBuffer: AVAudioPCMBuffer) {
         guard let channelData = audioBuffer.floatChannelData else { return }
 
         let channelSamples = channelData[0]
@@ -700,21 +709,26 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         let boostedLevel = min(max(rootMeanSquare * 10.2, 0), 1)
 
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            // `DispatchQueue.main.async` lands on the main thread, so the main actor's state is
+            // genuinely ours here; `assumeIsolated` is how that is stated to the compiler now that
+            // the caller is nonisolated, and it traps rather than corrupts if it ever stops holding.
+            MainActor.assumeIsolated {
+                guard let self else { return }
 
-            let smoothedAudioPowerLevel = max(
-                CGFloat(boostedLevel),
-                self.currentAudioPowerLevel * 0.72
-            )
-            self.currentAudioPowerLevel = smoothedAudioPowerLevel
-
-            let now = Date()
-            if now.timeIntervalSince(self.lastRecordedAudioPowerSampleDate)
-                >= Self.recordedAudioPowerHistorySampleIntervalSeconds {
-                self.lastRecordedAudioPowerSampleDate = now
-                self.appendRecordedAudioPowerSample(
-                    max(CGFloat(boostedLevel), Self.recordedAudioPowerHistoryBaselineLevel)
+                let smoothedAudioPowerLevel = max(
+                    CGFloat(boostedLevel),
+                    self.currentAudioPowerLevel * 0.72
                 )
+                self.currentAudioPowerLevel = smoothedAudioPowerLevel
+
+                let now = Date()
+                if now.timeIntervalSince(self.lastRecordedAudioPowerSampleDate)
+                    >= Self.recordedAudioPowerHistorySampleIntervalSeconds {
+                    self.lastRecordedAudioPowerSampleDate = now
+                    self.appendRecordedAudioPowerSample(
+                        max(CGFloat(boostedLevel), Self.recordedAudioPowerHistoryBaselineLevel)
+                    )
+                }
             }
         }
     }
