@@ -47,7 +47,7 @@ Codex's environment and only ever presents the user's token; the shell does the 
 | `skills/` | `ModelInstructions.md` + 15 skills; regenerate with `npm run port-skills` |
 | `macos/OpenClicky/` | primary native shell, renamed fork of the original open-source Clicky app + OpenClicky integration (`OPENCLICKY.md`); `SkillLibraryStore`, `AppSkillMatcher`, `SkillPromptBuilder`, `FrontmostAppObserver` are the skills side |
 | `macos/OpenClickyShell/` | minimal SwiftPM menu-bar panel used as a headless smoke harness |
-| `reference/`, `REVERSE-ENGINEERING.md`, `docs/superpowers/plans/` | reverse-engineering notes and the plans for each cut |
+| `reference/`, `docs/superpowers/plans/` | reverse-engineering notes and the plans for each cut |
 
 ## Skills
 
@@ -110,7 +110,8 @@ Releases.
 
 ## Reference material
 
-`REVERSE-ENGINEERING.md` is the master spec recovered from HeyClicky v1.0.48; `reference/` holds
+The master spec recovered from HeyClicky v1.0.48 lived in `REVERSE-ENGINEERING.md`, removed on
+2026-09-13 once the cuts it described had shipped (it is in git history); `reference/` holds
 the verbatim model instructions, the original Codex config, the bundled skills, and license notes.
 Hermes skills are MIT (Nous Research); the `powerpoint` skill is proprietary and is not copied;
 cua-driver is third-party — check its license before bundling.

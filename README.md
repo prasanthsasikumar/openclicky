@@ -80,7 +80,6 @@ analytics, crash reporting, auto-update.
 | [Skill authoring](docs/skills.md) | `SKILL.md` format, matching, budgets, activation |
 | [`app-skills/`](app-skills/) | the 16 app-teaching skills and how to add one |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | setup, test commands, where help is welcome |
-| [REVERSE-ENGINEERING.md](REVERSE-ENGINEERING.md) | the master spec recovered from HeyClicky v1.0.48 |
 
 ## Next
 
