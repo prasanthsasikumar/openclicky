@@ -478,7 +478,7 @@ on conflict (id) do nothing;
 Load it once (SUPABASE.md "load a schema file"):
 
 ```bash
-scp backend/supabase/schema.sql root@104.168.48.121:/tmp/oc_schema.sql && ssh root@104.168.48.121 'docker cp /tmp/oc_schema.sql supabase-db:/tmp/ && docker exec supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f /tmp/oc_schema.sql'
+scp backend/supabase/schema.sql "$OPENCLICKY_SERVER":/tmp/oc_schema.sql && ssh "$OPENCLICKY_SERVER" 'docker cp /tmp/oc_schema.sql supabase-db:/tmp/ && docker exec supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f /tmp/oc_schema.sql'
 ```
 
 Then set the Stripe price ids on the `starter` and `pro` rows from Studio once Task 5 creates them.
