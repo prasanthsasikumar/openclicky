@@ -19,6 +19,23 @@ struct ScreenElementGrounderTests {
         #expect(ScreenElementGrounder.parsePoint(from: "Sure — [POINT:237,277]", imageSize: imageSize) == CGPoint(x: 237, y: 277))
     }
 
+    /// The text lets the pointing chain snap Claude's loose point to the exact OCR box: a paper's
+    /// "arXiv" link was located 130 px too high, on the abstract, from the point alone.
+    @Test func theVisibleTextRidesAlongWithThePoint() {
+        let reply = "[POINT:516, 503:arXiv]"
+        #expect(ScreenElementGrounder.parsePoint(from: reply, imageSize: imageSize) == CGPoint(x: 516, y: 503))
+        #expect(ScreenElementGrounder.parseVisibleText(from: reply) == "arXiv")
+        #expect(ScreenElementGrounder.parseVisibleText(from: "[POINT:10,20]") == nil)
+        #expect(ScreenElementGrounder.parseVisibleText(from: "[POINT:10,20: ]") == nil)
+        #expect(ScreenElementGrounder.parsePoint(from: "[POINT:none]", imageSize: imageSize) == nil)
+    }
+
+    @Test func thePromptAsksForTheTextTheElementShows() {
+        let prompt = ScreenElementGrounder.prompt(label: "paper link", text: "", userRequest: "how do I open this paper", imageSize: imageSize)
+        #expect(prompt.contains("[POINT:x,y:visible text]"))
+        #expect(prompt.contains("arXiv"))
+    }
+
     @Test func noneAndMissingTagsGiveNil() {
         #expect(ScreenElementGrounder.parsePoint(from: "[POINT:none]", imageSize: imageSize) == nil)
         #expect(ScreenElementGrounder.parsePoint(from: "I can't see that element.", imageSize: imageSize) == nil)
