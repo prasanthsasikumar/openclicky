@@ -1063,8 +1063,21 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                         if !resolved {
                             let started = Date()
                             if let located = await ScreenElementGrounder.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
-                                point = located
+                                point = located.point
                                 resolution = "located by Claude (\(formatted(point.x)), \(formatted(point.y))) in \(Int(Date().timeIntervalSince(started) * 1000)) ms"
+                                // Claude picks the right element and misplaces it by up to ~150 px;
+                                // the text it named has an exact box in the OCR of the same screenshot.
+                                // Claude's point is far closer than the Realtime guess, so the snap
+                                // uses a tighter ambiguity margin than the one above.
+                                if let visibleText = located.visibleText,
+                                   let lines = await screenText?.value, !lines.isEmpty,
+                                   let match = ScreenTextLocator.locate(
+                                       visibleText, near: located.point, in: lines,
+                                       maxDistance: radius * 0.6, ambiguityMargin: ambiguityMargin * 0.5
+                                   ) {
+                                    point = match.center
+                                    resolution += ", snapped to \"\(match.text)\" (\(formatted(point.x)), \(formatted(point.y)), \(formatted(match.distance)) px from Claude's)"
+                                }
                             } else {
                                 resolution = "Claude could not locate it; using the guess"
                             }
