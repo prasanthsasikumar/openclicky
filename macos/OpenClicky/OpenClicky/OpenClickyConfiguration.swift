@@ -24,6 +24,9 @@ struct OpenClickyShellSettings: Codable {
     var voiceSeconds: Int = 5
     /// "openai" (via the OpenClicky backend, default), "assemblyai" (needs ASSEMBLYAI_API_KEY on the backend), or "apple".
     var transcriptionProvider: String? = nil
+    /// The language OpenClicky speaks and transcribes, as a language code ("en", "hi"). Unset is
+    /// English. See ReplyLanguage.swift for why it is one fixed language and not "follow the user".
+    var language: String? = nil
     /// Opt in to launching at login (upstream OpenClicky registered itself unconditionally).
     var registerAsLoginItem: Bool? = nil
     /// Optional MCP servers for the agent (rendered into the Codex config by the CLI).
@@ -59,6 +62,49 @@ enum OpenClickyConfiguration {
 
     static func reload() {
         settings = load()
+    }
+
+    /// Posted when shell.json changed on disk in a way that matters to a live connection: the
+    /// token, the backend, or one of the user's own keys.
+    static let credentialsChangedNotification = Notification.Name("openClickyCredentialsChanged")
+
+    /// What a live session was opened with. When this changes, the session is stale.
+    nonisolated static func credentialFingerprint(of shellSettings: OpenClickyShellSettings) -> [String] {
+        [shellSettings.backendUrl, shellSettings.token, shellSettings.openaiApiKey ?? "", shellSettings.anthropicApiKey ?? ""]
+    }
+
+    private static var settingsDirectoryWatcher: DispatchSourceFileSystemObject?
+    private static var pendingSettingsReload: DispatchWorkItem?
+
+    /// Picks up shell.json edits made while the app runs — a key pasted in by hand used to need a
+    /// relaunch, because nothing re-read the file except the app's own writes. The directory is
+    /// watched, not the file: an editor's atomic save replaces the file, and a watch on the old
+    /// file would go quiet after the first save.
+    static func startWatchingSettingsFile() {
+        guard settingsDirectoryWatcher == nil else { return }
+        ensureSettingsFileExists()
+        let directoryPath = settingsFileURL.deletingLastPathComponent().path
+        let directoryDescriptor = open(directoryPath, O_EVTONLY)
+        guard directoryDescriptor >= 0 else { return }
+        let watcher = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: directoryDescriptor, eventMask: [.write, .rename, .delete], queue: .main)
+        watcher.setEventHandler {
+            // Editors write in bursts (temp file, rename, attributes); act once they are done.
+            pendingSettingsReload?.cancel()
+            let reloadWorkItem = DispatchWorkItem { reloadAfterExternalChange() }
+            pendingSettingsReload = reloadWorkItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: reloadWorkItem)
+        }
+        watcher.setCancelHandler { close(directoryDescriptor) }
+        watcher.resume()
+        settingsDirectoryWatcher = watcher
+    }
+
+    private static func reloadAfterExternalChange() {
+        let fingerprintBefore = credentialFingerprint(of: settings)
+        reload()
+        guard credentialFingerprint(of: settings) != fingerprintBefore else { return }
+        NotificationCenter.default.post(name: credentialsChangedNotification, object: nil)
     }
 
     /// File settings, then environment overrides (handy when launching from a terminal):

@@ -221,7 +221,7 @@ private final class OpenAIAudioTranscriptionSession: BuddyStreamingTranscription
         var requestBody: [String: Any] = [
             "audio": wavAudioData.base64EncodedString(),
             "mime": "audio/wav",
-            "language": "en"
+            "language": ReplyLanguage.currentCode
         ]
         if let contextualPrompt = transcriptionPromptText() {
             requestBody["prompt"] = contextualPrompt

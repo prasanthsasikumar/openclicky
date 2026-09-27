@@ -168,7 +168,8 @@ final class CompanionManager: ObservableObject {
                 self.realtimeVoiceClient.startListeningContinuously()
                 if !self.didGreetRealtime {
                     self.didGreetRealtime = true
-                    self.realtimeVoiceClient.requestResponse(instructions: "Greet the user in English in one short sentence as OpenClicky.")
+                    let languageName = ReplyLanguage.englishName(for: ReplyLanguage.currentCode)
+                    self.realtimeVoiceClient.requestResponse(instructions: "Greet the user in \(languageName) in one short sentence as OpenClicky.")
                 }
             }
         }
@@ -199,12 +200,24 @@ final class CompanionManager: ObservableObject {
             self.scheduleTransientHideIfNeeded()
         }
         realtimeVoiceClient.onEvent = { line in print("🎙️ \(line)") }
+        // A socket that died under a turn used to leave voiceState on processing for good, which
+        // also refused dictation. Unstick it and say why; the next press reconnects.
+        realtimeVoiceClient.onConnectionLost = { [weak self] reason in
+            guard let self, self.usesRealtimeVoice else { return }
+            AppLog.append("realtime connection lost: \(reason)")
+            guard self.voiceState != .idle else { return }
+            self.voiceState = .idle
+            self.streamCursorCaption("Lost the connection to OpenAI. Press again to reconnect.", holdSeconds: 6)
+            self.scheduleTransientHideIfNeeded()
+        }
         realtimeVoiceClient.screenContextProvider = {
             await CompanionScreenCaptureUtility.captureCursorScreenContext()
         }
         realtimeVoiceClient.instructionsProvider = { [weak self] in
             guard let self else { return RealtimeVoiceClient.defaultInstructions }
-            return Self.composeTalkInstructions(base: self.realtimeVoiceClient.baseInstructions, skillsBlock: self.talkSkillsBlock())
+            return Self.composeTalkInstructions(
+                base: Self.withReplyLanguage(self.realtimeVoiceClient.baseInstructions),
+                skillsBlock: self.talkSkillsBlock())
         }
         realtimeVoiceClient.onPointAt = { [weak self] screenshotPoint, label, capture in
             self?.pointAt(screenshotPoint: screenshotPoint, label: label, in: capture)
@@ -245,6 +258,11 @@ final class CompanionManager: ObservableObject {
     }
 
     /// Base prompt + skills block, separated by a blank line; the base alone when there is nothing to add.
+    /// Both lanes' prompts end with the one language rule. See ReplyLanguage.swift.
+    nonisolated static func withReplyLanguage(_ base: String, code: String? = nil) -> String {
+        base + "\n\n" + ReplyLanguage.instruction(for: code ?? ReplyLanguage.normalizedCode(OpenClickyConfiguration.settings.language))
+    }
+
     nonisolated static func composeTalkInstructions(base: String, skillsBlock: String) -> String {
         let trimmed = skillsBlock.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? base : base + "\n\n" + trimmed
@@ -603,6 +621,18 @@ final class CompanionManager: ObservableObject {
         bindVoiceStateObservation()
         bindAudioPowerLevel()
         bindShortcutTransitions()
+        // A key or token changed in shell.json: the open Realtime session was minted with the old
+        // one, so replace it rather than keep using it until the next relaunch.
+        OpenClickyConfiguration.startWatchingSettingsFile()
+        NotificationCenter.default.addObserver(
+            forName: OpenClickyConfiguration.credentialsChangedNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                AppLog.append("shell.json credentials changed; reconnecting realtime")
+                if self.usesRealtimeVoice { self.warmUpRealtimeVoice() }
+            }
+        }
         // Eagerly touch the Claude API so its TLS warmup handshake completes
         // well before the onboarding demo fires at ~40s into the video.
         _ = claudeAPI
@@ -1209,9 +1239,11 @@ final class CompanionManager: ObservableObject {
 
                 let (fullResponseText, _) = try await claudeAPI.analyzeImageStreaming(
                     images: labeledImages,
-                    systemPrompt: Self.composeTalkInstructions(base: Self.companionVoiceResponseSystemPrompt, skillsBlock: talkSkillsBlock()),
+                    systemPrompt: Self.composeTalkInstructions(base: Self.withReplyLanguage(Self.companionVoiceResponseSystemPrompt), skillsBlock: talkSkillsBlock()),
                     conversationHistory: historyForAPI,
-                    userPrompt: transcript,
+                    userPrompt: SelectedTextReader.currentSelection().map {
+                        transcript + "\n\n[" + SelectedTextReader.contextLine(for: $0) + "]"
+                    } ?? transcript,
                     onTextChunk: { _ in
                         // No streaming text display — spinner stays until TTS plays
                     }
@@ -1313,8 +1345,12 @@ final class CompanionManager: ObservableObject {
                     self.realtimeVoiceClient.beginPushToTalk()
                 } catch {
                     print("⚠️ Realtime unavailable (\(error.localizedDescription))")
+                    AppLog.append("realtime unavailable: \(error.localizedDescription)")
                     self.voiceState = .idle
-                    self.speakWithSystemVoice("Realtime voice is unavailable right now. Check the backend.")
+                    self.speakWithSystemVoice("Realtime voice is unavailable right now.")
+                    // Why, on screen: "check the backend" sent people looking at the network
+                    // when the answer was a rejected key.
+                    self.streamCursorCaption(error.localizedDescription, holdSeconds: 12)
                 }
             }
         case .released:

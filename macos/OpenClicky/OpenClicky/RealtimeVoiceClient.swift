@@ -16,6 +16,7 @@
 //    one call per step, so the model can point while it explains.
 //
 
+import AppKit
 import AVFoundation
 import Combine
 import Foundation
@@ -63,6 +64,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     var onEvent: ((String) -> Void)?
     var onResponseStarted: (() -> Void)?
     var onResponseFinished: (() -> Void)?
+    /// The socket went away (or a send failed) while it was thought to be connected. Without this
+    /// a turn in flight never got its `response.done`, `voiceState` stayed on processing, and that
+    /// in turn blocked dictation, until the app was restarted.
+    var onConnectionLost: ((String) -> Void)?
     /// Runs the agent for a `send_to_agent` tool call; the returned text is spoken by the model.
 
     /// Supplies the screen context attached to every turn: a JPEG of the cursor screen plus a short
@@ -109,6 +114,19 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private lazy var urlSession = URLSession(configuration: .default)
     private var connectTask: Task<Void, Error>?
     private var keepWarmTask: Task<Void, Never>?
+    /// When the current socket was accepted, and when the server last sent anything on it.
+    private var connectedAt: Date?
+    private var lastServerEventAt: Date?
+    /// When the user last started a turn (voice or typed). The keep-warm loop reconnects in the
+    /// background only while this is recent: every session is minted by the backend and billed,
+    /// and a Mac left running overnight must not buy one an hour for nobody.
+    private var lastTurnStartedAt: Date?
+    /// Resolved by the first server event on a new socket, or failed by the socket's first error.
+    private var handshakeContinuation: CheckedContinuation<Void, Error>?
+    /// A refusal that arrived before anything was waiting for the handshake — kept so the wait
+    /// reports it instead of timing out without a reason.
+    private var handshakeFailureBeforeWaiting: String?
+    private var wakeObserver: NSObjectProtocol?
 
     /// Audio runs off the main actor: CoreAudio's first-time setup hops synchronously to the main
     /// queue, so configuring the engine from a main-actor task deadlocks the app.
@@ -142,7 +160,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private static let sampleRate: Double = RealtimeAudioEngine.sampleRate
 
     static let defaultInstructions = """
-    You are OpenClicky, a friendly, fast macOS voice assistant. Speak English unless the user speaks another language. \
+    You are OpenClicky, a friendly, fast macOS voice assistant. \
     Keep spoken replies short (one or two sentences). Every request comes with a screenshot of the user's current screen \
     (with the pointer position noted): "this", "here", "that" refer to what is on screen, usually near the pointer. Look \
     at the screenshot and answer about it directly; never say you cannot see the screen and never mention a camera. \
@@ -162,18 +180,40 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         self.voice = voice
         self.instructions = instructions
         super.init()
+        // After sleep a socket can look open and be dead. Forget when the server was last heard
+        // from, so the next press checks it (a ping) before speaking into it.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Delivered on the main queue (`queue: .main`), so this is already the main actor.
+            MainActor.assumeIsolated { self?.lastServerEventAt = .distantPast }
+        }
     }
 
     // MARK: - Connection
 
     /// Connect (or reuse the live connection). Safe to call before every push-to-talk press.
+    ///
+    /// A live connection is reused only if it is still worth trusting: one close to OpenAI's
+    /// 60-minute session cap is replaced before it is cut off mid-turn, and one the server has been
+    /// quiet on for a while (sleep, a network change) is pinged first.
     func connectIfNeeded(mode: TurnMode) async throws {
-        if isConnected, turnMode == mode { return }
+        if isConnected, turnMode == mode {
+            let now = Date()
+            if !Self.isTooOld(connectedAt: connectedAt, now: now) {
+                if !Self.needsPing(lastServerEventAt: lastServerEventAt, now: now) { return }
+                if let webSocketTask, await Self.ping(webSocketTask) {
+                    lastServerEventAt = Date()
+                    return
+                }
+            }
+            log("realtime connection stale, reconnecting")
+        }
         if let connectTask, turnMode == mode {
             try await connectTask.value
             return
         }
-        disconnect(reason: nil)
+        closeConnection()
         turnMode = mode
         let task = Task { try await self.openConnection(mode: mode) }
         connectTask = task
@@ -181,23 +221,101 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         try await task.value
     }
 
-    /// Keep a session open from launch so the first press only starts audio. Reconnects on drop.
+    /// Keep a session open from launch so the first press only starts audio. Reconnects on drop,
+    /// while it is being used (see `lastTurnStartedAt`) or when always-on needs it.
+    ///
+    /// It used to stop after its first connect: `connectIfNeeded` called `disconnect`, which
+    /// cancelled this very task, so the "reconnects on drop" loop exited on its next sleep and a
+    /// dropped socket was only noticed on the next press.
     func keepWarm(mode: TurnMode) {
         keepWarmTask?.cancel()
+        let warmStartedAt = Date()
         keepWarmTask = Task { [weak self] in
+            var hasConnectedOnce = false
             while !Task.isCancelled {
                 guard let self else { return }
-                if !self.isConnected {
-                    do { try await self.connectIfNeeded(mode: mode) } catch { self.log("warm-up failed: \(error.localizedDescription)") }
+                let recentlyUsed = Self.isRecentlyUsed(lastTurnStartedAt: self.lastTurnStartedAt ?? warmStartedAt, now: Date())
+                if !self.isConnected, !hasConnectedOnce || mode == .alwaysOn || recentlyUsed {
+                    do {
+                        try await self.connectIfNeeded(mode: mode)
+                        hasConnectedOnce = true
+                    } catch {
+                        self.log("warm-up failed: \(error.localizedDescription)")
+                    }
                 }
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
             }
         }
     }
 
+    /// Replaced before OpenAI's 60-minute cap, with room to finish a conversation.
+    nonisolated static let maximumConnectionAge: TimeInterval = 50 * 60
+    /// Quiet this long, a socket is pinged before a turn is spoken into it.
+    nonisolated static let pingAfterSilence: TimeInterval = 60
+    /// How long after the last turn the keep-warm loop still reconnects in the background.
+    nonisolated static let keepWarmWhileUsedWithin: TimeInterval = 15 * 60
+
+    nonisolated static func isTooOld(connectedAt: Date?, now: Date) -> Bool {
+        guard let connectedAt else { return true }
+        return now.timeIntervalSince(connectedAt) >= maximumConnectionAge
+    }
+
+    nonisolated static func needsPing(lastServerEventAt: Date?, now: Date) -> Bool {
+        guard let lastServerEventAt else { return true }
+        return now.timeIntervalSince(lastServerEventAt) >= pingAfterSilence
+    }
+
+    nonisolated static func isRecentlyUsed(lastTurnStartedAt: Date, now: Date) -> Bool {
+        now.timeIntervalSince(lastTurnStartedAt) < keepWarmWhileUsedWithin
+    }
+
+    /// A pong within two seconds, or the socket is treated as gone.
+    private static func ping(_ socketTask: URLSessionWebSocketTask) async -> Bool {
+        final class ResumeOnce: @unchecked Sendable {
+            private let lock = NSLock()
+            private var continuation: CheckedContinuation<Bool, Never>?
+            init(_ continuation: CheckedContinuation<Bool, Never>) { self.continuation = continuation }
+            func resume(_ pongArrived: Bool) {
+                lock.lock()
+                let pendingContinuation = continuation
+                continuation = nil
+                lock.unlock()
+                pendingContinuation?.resume(returning: pongArrived)
+            }
+        }
+        return await withCheckedContinuation { continuation in
+            let resumeOnce = ResumeOnce(continuation)
+            socketTask.sendPing { error in resumeOnce.resume(error == nil) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { resumeOnce.resume(false) }
+        }
+    }
+
+    /// What a refused socket handshake means, in words a person can act on. URLSession reports it
+    /// as "bad server response", which reads as a network fault.
+    nonisolated static func handshakeFailureDescription(statusCode: Int?, underlyingError: String) -> String {
+        switch statusCode {
+        case 401: return "OpenAI refused the realtime session (401): the session key was rejected. Check your sign-in, or your own OpenAI key in ~/.openclicky/shell.json."
+        case 403: return "OpenAI refused the realtime session (403): this key has no access to the realtime model."
+        case 429: return "OpenAI refused the realtime session (429): this key is over its rate limit or out of credit."
+        case let status? where status >= 400: return "OpenAI refused the realtime session (\(status))."
+        default: return underlyingError
+        }
+    }
+
     func disconnect(reason: String?) {
         keepWarmTask?.cancel()
         keepWarmTask = nil
+        closeConnection()
+        if let reason { log(reason) }
+    }
+
+    /// Everything `disconnect` does except stopping the keep-warm loop, which is what calls this
+    /// when it reconnects.
+    private func closeConnection() {
+        failPendingHandshake(RealtimeVoiceError.notConnected)
+        handshakeFailureBeforeWaiting = nil
+        connectedAt = nil
+        lastServerEventAt = nil
         stopForwardingMicrophone()
         pushToTalkArmed = false
         idlePauseTask?.cancel()
@@ -217,7 +335,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         pointingChain = nil
         lastUserTranscript = nil
         sentInstructions = ""
-        if let reason { log(reason) }
+    }
+
+    private func failPendingHandshake(_ error: Error) {
+        let pendingHandshake = handshakeContinuation
+        handshakeContinuation = nil
+        pendingHandshake?.resume(throwing: error)
     }
 
     private func openConnection(mode: TurnMode) async throws {
@@ -234,10 +357,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         let connectInstructions = currentInstructions()
         secretRequest.httpBody = try JSONSerialization.data(withJSONObject: ["voice": voice as Any, "instructions": connectInstructions].compactMapValues { $0 })
         let (secretData, secretResponse) = try await urlSession.data(for: secretRequest)
-        guard let httpResponse = secretResponse as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode),
+        let secretStatusCode = (secretResponse as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200...299).contains(secretStatusCode),
               let secretJSON = try JSONSerialization.jsonObject(with: secretData) as? [String: Any],
               let clientSecret = secretJSON["value"] as? String else {
-            throw RealtimeVoiceError.backend(String(data: secretData, encoding: .utf8) ?? "no client secret")
+            throw RealtimeVoiceError.backend(Self.backendRefusalDescription(statusCode: secretStatusCode, body: secretData))
         }
         let model = (secretJSON["session"] as? [String: Any])?["model"] as? String ?? "gpt-realtime"
 
@@ -251,6 +375,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         let task = urlSession.webSocketTask(with: socketRequest)
         webSocketTask = task
         task.resume()
+        receiveLoop(task)
         currentMode = mode
         // Push-to-talk only opens the microphone while the shortcut is held; always-on keeps it open.
         // The graph is built once here (and released right away) so key-down is a fast engine restart.
@@ -258,9 +383,54 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         if mode == .pushToTalk { audio.pause() }
         try send(sessionUpdate(mode: mode, instructions: connectInstructions))
         sentInstructions = connectInstructions
+        // Connected means OpenAI accepted the socket, not that `resume()` returned. `isConnected`
+        // used to be set here unconditionally, so a refused handshake (a 401) looked like success
+        // to the press, every send after it failed silently, and the turn hung on "processing".
+        do {
+            try await awaitHandshake(on: task)
+        } catch {
+            closeConnection()
+            throw error
+        }
+        connectedAt = Date()
+        lastServerEventAt = Date()
         isConnected = true
         log("realtime connected (\(model), \(mode == .pushToTalk ? "push-to-talk" : "always on"))")
-        receiveLoop(task)
+    }
+
+    /// Waits for the server's first event on `task` (normally `session.created`), for up to ten
+    /// seconds. The receive loop resolves it; the socket's first error fails it.
+    private func awaitHandshake(on task: URLSessionWebSocketTask) async throws {
+        if let refusal = handshakeFailureBeforeWaiting {
+            handshakeFailureBeforeWaiting = nil
+            throw RealtimeVoiceError.backend(refusal)
+        }
+        if lastServerEventAt != nil, webSocketTask === task { return }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            handshakeContinuation = continuation
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                self?.failPendingHandshake(RealtimeVoiceError.backend("OpenAI did not answer the realtime connection within 10 seconds."))
+            }
+        }
+    }
+
+    /// The backend's own error text where it gave one, with the status, so a rejected key reads
+    /// as a rejected key rather than as JSON.
+    nonisolated static func backendRefusalDescription(statusCode: Int, body: Data) -> String {
+        let bodyJSON = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        let stated = (bodyJSON?["error"] as? String)
+            ?? ((bodyJSON?["error"] as? [String: Any])?["message"] as? String)
+            ?? String(data: body, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = stated.flatMap { $0.isEmpty ? nil : $0 } ?? "no client secret"
+        switch statusCode {
+        case 401, 403:
+            return "the backend refused (\(statusCode)): \(detail). Check your sign-in, or your own OpenAI key in ~/.openclicky/shell.json."
+        case 0:
+            return detail
+        default:
+            return "the backend answered \(statusCode): \(detail)"
+        }
     }
 
     /// The local actions OpenClicky performs itself. Typed arguments only: `location` is a closed
@@ -331,7 +501,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private func sessionUpdate(mode: TurnMode, instructions text: String) -> [String: Any] {
         var input: [String: Any] = [
             "format": ["type": "audio/pcm", "rate": Int(Self.sampleRate)],
-            "transcription": ["model": "gpt-4o-mini-transcribe"],
+            // Pinned, like the reply: unpinned, English audio was transcribed as Chinese and the
+            // model took that as the user switching language. See ReplyLanguage.swift.
+            "transcription": ["model": "gpt-4o-mini-transcribe", "language": ReplyLanguage.currentCode],
         ]
         switch mode {
         case .pushToTalk:
@@ -405,6 +577,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     /// Shortcut pressed: interrupt any reply and stream the microphone.
     func beginPushToTalk() {
+        lastTurnStartedAt = Date()
         pushToTalkTailTask?.cancel()
         pushToTalkTailTask = nil
         idlePauseTask?.cancel()
@@ -451,6 +624,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// current screen, then a reply is requested exactly like a released push-to-talk. The reply
     /// is spoken, so the audio graph is started for playback.
     func sendTextTurn(_ text: String) async {
+        lastTurnStartedAt = Date()
         pushToTalkTailTask?.cancel()
         pushToTalkTailTask = nil
         idlePauseTask?.cancel()
@@ -517,11 +691,15 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             log("no screen context (screen recording permission?)")
             return
         }
+        var caption = context.caption
+        if let selectedText = SelectedTextReader.currentSelection() {
+            caption += " " + SelectedTextReader.contextLine(for: selectedText)
+        }
         let item: [String: Any] = [
             "type": "message",
             "role": "user",
             "content": [
-                ["type": "input_text", "text": "[Screen context, not spoken] \(context.caption)"],
+                ["type": "input_text", "text": "[Screen context, not spoken] \(caption)"],
                 ["type": "input_image", "image_url": "data:image/jpeg;base64,\(context.jpeg.base64EncodedString())"],
             ],
         ]
@@ -636,8 +814,16 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private func send(_ object: [String: Any]) throws {
         guard let webSocketTask else { throw RealtimeVoiceError.notConnected }
         let data = try JSONSerialization.data(withJSONObject: object)
+        let sendingTask = webSocketTask
         webSocketTask.send(.string(String(decoding: data, as: UTF8.self))) { [weak self] error in
-            if let error { Task { @MainActor in self?.log("send failed: \(error.localizedDescription)") } }
+            guard let error else { return }
+            Task { @MainActor in
+                guard let self else { return }
+                self.log("send failed: \(error.localizedDescription)")
+                // A failed send means the socket is gone; say so once, and let the next press reconnect.
+                guard self.webSocketTask === sendingTask else { return }
+                self.markConnectionLost("the connection to OpenAI dropped (\(error.localizedDescription))")
+            }
         }
     }
 
@@ -647,16 +833,41 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 guard let self, self.webSocketTask === task else { return }
                 switch result {
                 case .failure(let error):
-                    self.isConnected = false
-                    self.webSocketTask = nil
-                    self.stopForwardingMicrophone()
-                    self.log("realtime disconnected: \(error.localizedDescription)")
+                    let reason = Self.handshakeFailureDescription(
+                        statusCode: (task.response as? HTTPURLResponse)?.statusCode,
+                        underlyingError: error.localizedDescription)
+                    if self.handshakeContinuation != nil {
+                        self.failPendingHandshake(RealtimeVoiceError.backend(reason))
+                        return
+                    }
+                    if !self.isConnected {
+                        // Still connecting, and nothing is waiting yet: keep the reason for the wait.
+                        self.handshakeFailureBeforeWaiting = reason
+                        return
+                    }
+                    self.markConnectionLost(reason)
                 case .success(let message):
+                    self.lastServerEventAt = Date()
+                    if let pendingHandshake = self.handshakeContinuation {
+                        self.handshakeContinuation = nil
+                        pendingHandshake.resume()
+                    }
                     if case .string(let text) = message { await self.handleServerEvent(text) }
                     self.receiveLoop(task)
                 }
             }
         }
+    }
+
+    private func markConnectionLost(_ reason: String) {
+        let wasConnected = isConnected
+        isConnected = false
+        webSocketTask = nil
+        connectedAt = nil
+        stopForwardingMicrophone()
+        responseInProgress = false
+        log("realtime disconnected: \(reason)")
+        if wasConnected { onConnectionLost?(reason) }
     }
 
     private func handleServerEvent(_ text: String) async {
