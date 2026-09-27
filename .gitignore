@@ -20,3 +20,6 @@ macos/OpenClicky/scripts/release.env
 
 # Harness-created git worktrees (see EnterWorktree / superpowers:using-git-worktrees).
 .claude/worktrees/
+
+# Shallow clones of Windows reference projects (see reference/windows/README.md for the list)
+reference/windows/*/

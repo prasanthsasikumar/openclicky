@@ -29,7 +29,7 @@ function parseList(v: string): string[] {
 }
 
 export function parseSkillMarkdown(md: string): ParsedSkill | null {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(md.replace(/^﻿/, ""));
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(md.replace(/^\uFEFF/, ""));
   if (!m) return null;
   const fm: Record<string, string> = {};
   for (const line of m[1].split(/\r?\n/)) {

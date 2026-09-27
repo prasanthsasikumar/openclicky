@@ -28,7 +28,7 @@ function mkCfg(overrides: Partial<Parameters<typeof resolveConfig>[0]> = {}, sce
 describe("buildChildEnv", () => {
   it("carries PATH but not an unrelated secret sitting in the shell", () => {
     const cfg = mkCfg();
-    const env = buildChildEnv(cfg, { PATH: "/usr/bin", AWS_SECRET_ACCESS_KEY: "super-secret", HOME: "/home/x" } as NodeJS.ProcessEnv);
+    const env = buildChildEnv(cfg, { PATH: "/usr/bin", AWS_SECRET_ACCESS_KEY: "super-secret", HOME: "/home/x" });
     expect(env.PATH).toBe("/usr/bin");
     expect(env.HOME).toBe("/home/x");
     expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
@@ -36,7 +36,7 @@ describe("buildChildEnv", () => {
 
   it("carries NODE_* and proxy variables through", () => {
     const cfg = mkCfg();
-    const env = buildChildEnv(cfg, { NODE_OPTIONS: "--max-old-space-size=4096", HTTPS_PROXY: "http://proxy:8080", no_proxy: "localhost" } as NodeJS.ProcessEnv);
+    const env = buildChildEnv(cfg, { NODE_OPTIONS: "--max-old-space-size=4096", HTTPS_PROXY: "http://proxy:8080", no_proxy: "localhost" });
     expect(env.NODE_OPTIONS).toBe("--max-old-space-size=4096");
     expect(env.HTTPS_PROXY).toBe("http://proxy:8080");
     expect(env.no_proxy).toBe("localhost");
@@ -45,7 +45,7 @@ describe("buildChildEnv", () => {
   it("sets the OpenClicky variables config.toml references from cfg, never from the shell", () => {
     const cfg = mkCfg({ token: "session-tok", openaiApiKey: "oai-key", anthropicApiKey: "anth-key", composioApiKey: "ck_test" });
     // A shell OPENAI_API_KEY must never reach the child: Codex must always go through the backend.
-    const env = buildChildEnv(cfg, { OPENAI_API_KEY: "shell-openai-key", ANTHROPIC_API_KEY: "shell-anthropic-key" } as NodeJS.ProcessEnv);
+    const env = buildChildEnv(cfg, { OPENAI_API_KEY: "shell-openai-key", ANTHROPIC_API_KEY: "shell-anthropic-key" });
     expect(env.CODEX_HOME).toBe(cfg.codexHome);
     expect(env.OPENCLICKY_SESSION_TOKEN).toBe("session-tok");
     expect(env.OPENCLICKY_OPENAI_KEY).toBe("oai-key");

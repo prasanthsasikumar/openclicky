@@ -59,7 +59,7 @@ export type Env = {
  * Bindings win so a Worker's secrets and test envs override anything ambient.
  */
 export function getEnv(c: Context): Env {
-  const ambient: Env = typeof process !== "undefined" && process.env ? (process.env as Env) : {};
+  const ambient: Env = typeof process !== "undefined" && process.env ? process.env : {};
   const bindings = (c.env ?? {}) as Env;
   return { ...ambient, ...bindings };
 }

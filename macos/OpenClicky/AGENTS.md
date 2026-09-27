@@ -49,6 +49,8 @@ The app never calls external APIs directly. Every request goes to the OpenClicky
 
 **Transient Cursor Mode**: When "Show OpenClicky" is off, pressing the hotkey fades in the cursor overlay for the duration of the interaction (recording → response → TTS → optional pointing), then fades it out automatically after 1 second of inactivity.
 
+**Realtime connection lifecycle**: `RealtimeVoiceClient` counts as connected only once OpenAI's first event arrives on the socket (a refused handshake is an error with its status, not a silent success). Every press reuses the socket only if it is under 50 minutes old (OpenAI caps sessions at 60) and was heard from in the last minute or answers a ping; otherwise it reconnects. The keep-warm loop reconnects in the background only in always-on mode or within 15 minutes of the last turn, because every session is minted by the backend and billed. A socket lost under a turn calls `onConnectionLost`, which returns `voiceState` to idle (a stuck `.processing` also blocked dictation).
+
 ## Key Files
 
 | File | Lines | Purpose |
@@ -64,7 +66,9 @@ The app never calls external APIs directly. Every request goes to the OpenClicky
 | `BuddyTranscriptionProvider.swift` | ~100 | Protocol surface and provider factory for voice transcription backends. Resolves provider based on `VoiceTranscriptionProvider` in Info.plist — AssemblyAI, OpenAI, or Apple Speech. |
 | `AssemblyAIStreamingTranscriptionProvider.swift` | ~478 | Streaming transcription provider. Fetches temp tokens from the OpenClicky backend, opens an AssemblyAI v3 websocket, streams PCM16 audio, tracks turn-based transcripts, and delivers finalized text on key-up. Shares a single URLSession across all sessions. |
 | `OpenAIAudioTranscriptionProvider.swift` | ~317 | Upload-based transcription provider. Buffers push-to-talk audio locally, uploads as WAV on release, returns finalized transcript. |
-| `AppleSpeechTranscriptionProvider.swift` | ~147 | Local fallback transcription provider backed by Apple's Speech framework. |
+| `AppleSpeechTranscriptionProvider.swift` | ~320 | Local transcription provider, on-device only. macOS 26+: `SpeechAnalyzer` + `DictationTranscriber` (`progressiveLongDictation`, model downloaded through `AssetInventory` on first use); older macOS or an unsupported language: `SFSpeechRecognizer`, which is years behind (it typed "12245" for a spoken sentence in Saathi). `appendAudioBuffer` runs on the render thread, so the analyzer session keeps its state behind a lock. Listens in `ReplyLanguage`. |
+| `ReplyLanguage.swift` | ~85 | The one language OpenClicky speaks and transcribes: `language` in shell.json (Settings → Voice → Language), English when unset. Its rule ends both lanes' prompts (`CompanionManager.withReplyLanguage`) and pins Realtime and upload transcription. Never "follow the user": that freedom made Saathi answer English in Italian, Japanese and Portuguese. Unit-tested. |
+| `SelectedTextReader.swift` | ~65 | The front app's highlighted text (Accessibility, the front app asked first — the system-wide focused-element query fails for Terminal), added to each turn's screen context in both lanes as what "this" means. Capped at 600 characters; nothing from password fields. Unit-tested. |
 | `BuddyAudioConversionSupport.swift` | ~108 | Audio conversion helpers. Converts live mic buffers to PCM16 mono audio and builds WAV payloads for upload-based providers. |
 | `GlobalPushToTalkShortcutMonitor.swift` | ~150 | System-wide shortcut monitor. Owns the listen-only `CGEvent` tap, feeds it to `CompanionShortcutRecognizer`, publishes talk press/release plus the other shortcut events. |
 | `CompanionShortcutRecognizer.swift` | ~140 | Pure state machine for HeyClicky's four shortcuts: Talk (hold ⌃⌥), Text (tap ⌃ twice → notch composer), Dictate (hold fn+⌃ → typed into the front app), Hands-free (tap fn+⌃ twice → always-on toggle). Tap window 350 ms, double-tap window 450 ms; a key press while the modifier is down (⌃C) is never a tap. Unit-tested. |
@@ -81,7 +85,7 @@ The app never calls external APIs directly. Every request goes to the OpenClicky
 | `ClickyAnalytics.swift` | ~121 | PostHog analytics integration for usage tracking. |
 | `WindowPositionManager.swift` | ~275 | Window placement logic, Screen Recording permission flow, accessibility permission helpers, and `relaunchApp()` (`open -n`, then terminate) for the permission that only takes effect on a fresh launch. |
 | `AppBundleConfiguration.swift` | ~28 | Runtime configuration reader for keys stored in the app bundle Info.plist. |
-| `OpenClickyConfiguration.swift` | ~190 | Reads `~/.openclicky/shell.json` + env overrides; bearer auth; CLI environment. Bring your own key: `openaiApiKey` / `anthropicApiKey` become `x-openclicky-*` headers on every backend request (`authorize`) and `OPENCLICKY_OPENAI_KEY` / `OPENCLICKY_ANTHROPIC_KEY` for the CLI, never `OPENAI_API_KEY`. |
+| `OpenClickyConfiguration.swift` | ~190 | Reads `~/.openclicky/shell.json` + env overrides; bearer auth; CLI environment. Bring your own key: `openaiApiKey` / `anthropicApiKey` become `x-openclicky-*` headers on every backend request (`authorize`) and `OPENCLICKY_OPENAI_KEY` / `OPENCLICKY_ANTHROPIC_KEY` for the CLI, never `OPENAI_API_KEY`. The `~/.openclicky` folder is watched (`startWatchingSettingsFile`): an edit made while the app runs is reloaded, and a changed token, backend or key reconnects Realtime. |
 | `BillingStatus.swift` | ~170 | Settings → Account: signed out, an email + password form (invite-only accounts created with `npm run admin -w backend -- invite`); signed in, the plan and credits this month from `GET /billing/me` plus Sign out; with an own key in shell.json, "Keys: your own (not metered)". No Stripe UI (the backend's Stripe routes stay dormant). |
 | `OpenClickyAuthSession.swift` | ~140 | Sign-in and session refresh: `GET /auth/config` on the backend gives the Supabase URL + publishable key, the password grant returns access + refresh tokens, both stored in shell.json (`token`, `refreshToken`, `tokenExpiresAt`, `accountEmail`) and refreshed 10 min before expiry on a 5-min timer (started from `NotchHUDManager.show`). |
 | `OpenClickyAgentClient.swift` | ~200 | Runs the `openclicky` CLI and parses `--events` JSON Lines for agent mode. |
@@ -101,7 +105,7 @@ open OpenClicky.xcodeproj
 # Select the OpenClicky scheme, set signing team, Cmd+R to build and run
 
 # Known non-blocking warnings: Swift 6 concurrency warnings,
-# deprecated onChange warning in OverlayWindow.swift. Do NOT attempt to fix these.
+# deprecated onChange warning in OverlayWindow.swift.
 
 scripts/release.sh --no-notarize   # fast local install over /Applications, Developer ID signing kept
 scripts/release.sh                 # the same, notarized (needed only for other Macs)
@@ -158,7 +162,17 @@ IMPORTANT: Follow these naming rules strictly. Clarity is the top priority.
 
 - Do not add features, refactor code, or make "improvements" beyond what was asked
 - Do not add docstrings, comments, or type annotations to code you did not change
-- Do not try to fix the known non-blocking warnings (Swift 6 concurrency, deprecated onChange)
+- Do not try to fix the deprecated-onChange warning
+- Treat the Swift 6 concurrency warnings as a backlog, not as noise. They are suppressed only in the
+  sense that the project builds in Swift 5 mode; 139 of them remain and each one is a claim the
+  compiler cannot check. Two of them were real: the audio taps in `RealtimeVoiceClient` and
+  `BuddyDictationManager` read main-actor / queue-owned state from the CoreAudio render thread, which
+  the Thread Sanitizer reports and aborts on (`RealtimeAudioEngineConcurrencyTests` pins it down).
+  Do not fix them in bulk — a file at a time, with a test, is what caught the real ones.
+- **Audio taps are the dangerous case and the compiler is silent about them.** `AVAudioNodeTapBlock`
+  is not `@Sendable`, so a tap closure inside a `@MainActor` class is treated as main-actor isolated
+  while in fact running on the render thread: zero warnings, real race. A tap block must touch
+  nothing mutable on `self` — capture what it needs by value when the tap is installed.
 - The project, targets, and scheme are named OpenClicky (renamed from upstream's "leanring-buddy")
 - Running `xcodebuild` from the terminal is fine now that Debug builds carry their own bundle id (see Build & Run); before that separation it cost the installed app its TCC permissions
 

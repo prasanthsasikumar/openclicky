@@ -74,6 +74,6 @@ describe("ask", () => {
   });
 
   it("refuses to run without a token", async () => {
-    await expect(ask(resolveConfig({ backendUrl: url, token: undefined }, {} as NodeJS.ProcessEnv), "x")).rejects.toThrow(/missing token/);
+    await expect(ask(resolveConfig({ backendUrl: url, token: undefined }, {}), "x")).rejects.toThrow(/missing token/);
   });
 });

@@ -168,7 +168,7 @@ export class RealtimeSession {
     const mic = spawn(cmd[0], cmd.slice(1), { stdio: ["ignore", "pipe", "pipe"] });
     this.mic = mic;
     let pending = Buffer.alloc(0);
-    mic.stdout!.on("data", (chunk: Buffer) => {
+    mic.stdout.on("data", (chunk: Buffer) => {
       pending = Buffer.concat([pending, chunk]);
       while (pending.length >= frame) {
         const f = pending.subarray(0, frame);
@@ -177,7 +177,7 @@ export class RealtimeSession {
         this.send({ type: "input_audio_buffer.append", audio: f.toString("base64") });
       }
     });
-    mic.stderr!.on("data", (d: Buffer) => this.log(`mic: ${String(d).trim()}`));
+    mic.stderr.on("data", (d: Buffer) => this.log(`mic: ${String(d).trim()}`));
     mic.on("exit", (code) => {
       if (!this.closed) this.log(`mic exited (code ${code}) — check Microphone permission for your terminal`);
     });
@@ -187,8 +187,11 @@ export class RealtimeSession {
     if (this.player && this.player.exitCode === null) return this.player;
     const cmd = this.opts.playerCommand ?? defaultPlayerCommand();
     const p = spawn(cmd[0], cmd.slice(1), { stdio: ["pipe", "ignore", "pipe"] });
-    p.stdin!.on("error", () => {});
-    p.stderr!.on("data", (d: Buffer) => {
+    p.stdin.on("error", () => {});
+    p.stderr.on("data", (d: Buffer) => {
+      // The control character is the point: this strips ANSI colour codes out of the player's
+      // stderr so the log line is readable.
+      // eslint-disable-next-line no-control-regex
       const text = String(d).replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").trim();
       if (text) this.log(`player: ${text}`);
     });

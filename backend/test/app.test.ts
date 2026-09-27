@@ -80,7 +80,7 @@ const jwt = () =>
     .setSubject("user-1")
     .setIssuedAt()
     .setExpirationTime("5m")
-    .sign(new TextEncoder().encode(env.SUPABASE_JWT_SECRET!));
+    .sign(new TextEncoder().encode(env.SUPABASE_JWT_SECRET));
 const json = (body: unknown, token: string) => ({
   method: "POST",
   headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -190,7 +190,7 @@ describe("app", () => {
   it("mints a Realtime client secret server-side", async () => {
     const r = await call("/agent/realtime/session", json({ voice: "marin", instructions: "be brief" }, await jwt()), { OPENAI_REALTIME_MODEL: "gpt-realtime-test" });
     expect(r.status).toBe(200);
-    const body = (await r.json()) as any;
+    const body = (await r.json());
     expect(body.value).toBe("ek_test_secret");
     const up = seen.at(-1)!;
     expect(up.url).toBe("/v1/realtime/client_secrets");

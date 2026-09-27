@@ -1,0 +1,76 @@
+# SwiftLint for the macOS app.
+#
+# A linter, not a formatter: no rule here rewrites whitespace or reorders anything, so the first run
+# does not touch every file. `swiftformat` is a separate decision, to be taken after the dead-code
+# pass — running it now would rewrite all 63k lines and bury the history of the security fixes.
+#
+# The rule set is deliberately narrow. AGENTS.md asks for long, explicit names and for clarity over
+# concision, so the rules that push the other way (identifier_name's length caps, line_length,
+# function_body_length, type_body_length) are off: they would fight the project's own style guide.
+# What is left are the rules that catch bugs rather than opinions.
+
+included:
+  - macos/OpenClicky/OpenClicky
+  - macos/OpenClicky/OpenClickyTests
+  - macos/OpenClickyShell/Sources
+
+excluded:
+  - macos/OpenClicky/build
+  - macos/OpenClicky/OpenClickyUITests
+
+disabled_rules:
+  # These all argue for shorter code or shorter names. See the note above.
+  - identifier_name
+  - type_name
+  - line_length
+  - function_body_length
+  - type_body_length
+  - file_length
+  - function_parameter_count
+  - cyclomatic_complexity
+  - large_tuple
+  # SwiftUI view bodies are nested by nature; the rule fires on every panel in the app.
+  - nesting
+  # Trailing-closure style is a formatting opinion, and the codebase is consistent without it.
+  - multiple_closures_with_trailing_closure
+  - opening_brace
+  - trailing_comma
+  # Pure whitespace. A formatter's job, and the formatter decision is deliberately deferred until
+  # after the dead-code pass — leaving these on would put noise in a list meant to be all substance.
+  - vertical_whitespace
+  - trailing_whitespace
+  - statement_position
+  - comma
+  - colon
+  - vertical_parameter_alignment
+  - closure_parameter_position
+
+opt_in_rules:
+  # The ones that matter for an app that force-unwraps its way into crashes: a review already found
+  # force-unwrapped URLs built from server strings.
+  - force_unwrapping
+  - empty_count
+  - empty_string
+  - first_where
+  - last_where
+  - contains_over_filter_count
+  - contains_over_first_not_nil
+  - redundant_nil_coalescing
+  - unused_import
+  - toggle_bool
+  - discouraged_optional_boolean
+  - explicit_init
+  - fatal_error_message
+  - overridden_super_call
+  - prohibited_super_call
+
+# `force_unwrapping` is the rule worth having and the rule with the largest backlog, so it warns
+# rather than errors: it belongs in the list where it can be worked down, not blocking every build.
+force_unwrapping:
+  severity: warning
+force_cast:
+  severity: warning
+force_try:
+  severity: warning
+todo:
+  severity: warning

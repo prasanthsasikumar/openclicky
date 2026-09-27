@@ -523,6 +523,8 @@ struct AgentCardView: View {
 
 struct NotchSettingsView: View {
     @ObservedObject var companionManager: CompanionManager
+    /// Mirrors `language` in shell.json; written back on change. See ReplyLanguage.swift.
+    @State private var replyLanguageCode = ReplyLanguage.currentCode
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -550,6 +552,7 @@ struct NotchSettingsView: View {
                     settingRow(systemImage: "cpu", title: "Model", value: OpenClickyConfiguration.agentModelOverride ?? "backend default")
                 }
                 section("VOICE") {
+                    languageRow
                     toggleRow(systemImage: "bolt.fill", title: "Realtime voice", detail: "Speech-to-speech over OpenAI Realtime (fast)", isOn: Binding(
                         get: { companionManager.isRealtimeVoiceEnabled },
                         set: { companionManager.setRealtimeVoiceEnabled($0) }
@@ -591,6 +594,34 @@ struct NotchSettingsView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
         }
+    }
+
+    /// The one language OpenClicky speaks and listens in. Takes effect on the next turn: the
+    /// Realtime session re-sends its instructions and transcription language when they change.
+    private var languageRow: some View {
+        HStack {
+            Image(systemName: "character.bubble").font(.system(size: 12)).foregroundColor(Color.white.opacity(0.6)).frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Language").font(.system(size: 12, weight: .medium)).foregroundColor(.white)
+                Text("OpenClicky speaks and listens in this").font(.system(size: 10)).foregroundColor(Color.white.opacity(0.5))
+            }
+            Spacer()
+            Picker("", selection: Binding(
+                get: { replyLanguageCode },
+                set: { chosenLanguageCode in
+                    replyLanguageCode = chosenLanguageCode
+                    OpenClickyConfiguration.update { $0.language = chosenLanguageCode }
+                }
+            )) {
+                ForEach(ReplyLanguage.choices) { choice in Text(choice.name).tag(choice.code) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 120)
+            .pointerCursor()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

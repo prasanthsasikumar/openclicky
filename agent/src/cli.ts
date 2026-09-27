@@ -61,7 +61,7 @@ const propagate = (e: unknown): never => {
 
 const withCommonOptions = (cmd: Command) =>
   cmd
-    .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL; default http://localhost:8787)")
+    .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL; default https://api.openclicky.flowsxr.com, the hosted backend — point it at http://localhost:8787 to use your own)")
     .option("--token <token>", "Supabase JWT or session token (env OPENCLICKY_TOKEN)")
     .option("--image <path>", "attach a local screenshot/image")
     .option("--screenshot", "capture the screen now (macOS screencapture) and attach it")
@@ -321,6 +321,11 @@ program
     const cfg = configFrom(opts);
     let agent: CodexAgent | undefined;
     let threadId: string | undefined;
+    // Tool calls are dispatched from a fire-and-forget websocket handler, so two `send_to_agent`
+    // calls in one response overlap. Both would read this `threadId`, run against it, and the later
+    // write would win — two turns forked off one thread rather than a conversation that continues.
+    // Chaining the tasks keeps the thread a thread.
+    let agentTasks: Promise<unknown> = Promise.resolve();
     const session = new RealtimeSession({
       cfg,
       voice: opts.voice,
@@ -330,15 +335,24 @@ program
       onTranscript: (role, text) => process.stdout.write(`${role === "user" ? "you" : "openclicky"}: ${text}\n`),
       onAgentTask: opts.agent === false
         ? undefined
-        : async (task) => {
-            if (!agent) {
-              agent = new CodexAgent(cfg, { onEvent: note });
-              await agent.start();
-            }
-            const r = await agent.run(task, { threadId });
-            threadId = r.threadId;
-            const files = r.artifacts.length ? ` Files: ${r.artifacts.map((a) => path.basename(a)).join(", ")}.` : "";
-            return `${r.status === "completed" ? "Done." : `Turn ${r.status}.`} ${r.finalMessage.slice(0, 600)}${files}`;
+        : (task) => {
+            const result = agentTasks.then(async () => {
+              if (!agent) {
+                agent = new CodexAgent(cfg, { onEvent: note });
+                await agent.start();
+              }
+              const r = await agent.run(task, { threadId });
+              // `agentTasks` above is what makes this safe — the rule cannot see serialisation
+              // through a promise chain, only that a read and a write straddle an await.
+              // eslint-disable-next-line require-atomic-updates
+              threadId = r.threadId;
+              const files = r.artifacts.length ? ` Files: ${r.artifacts.map((a) => path.basename(a)).join(", ")}.` : "";
+              return `${r.status === "completed" ? "Done." : `Turn ${r.status}.`} ${r.finalMessage.slice(0, 600)}${files}`;
+            });
+            // The chain must survive a failed task, or one agent error would strand every task
+            // queued behind it; the caller still sees the rejection through `result`.
+            agentTasks = result.catch(() => undefined);
+            return result;
           },
     });
     const shutdown = async () => {

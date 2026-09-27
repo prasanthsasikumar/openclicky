@@ -63,18 +63,18 @@ describe("renderSandboxWritableRoots", () => {
 
 describe("writable roots configuration", () => {
   it("defaults to the whole home folder", () => {
-    const cfg = resolveConfig({}, { HOME: "/Users/x" } as NodeJS.ProcessEnv);
+    const cfg = resolveConfig({}, { HOME: "/Users/x" });
     expect(cfg.writableRoots).toEqual(["/Users/x"]);
   });
   it("takes a comma-separated override and expands ~", () => {
     const cfg = resolveConfig({}, {
       HOME: "/Users/x",
       OPENCLICKY_WRITABLE_ROOTS: "~/Desktop, /Volumes/Work ,",
-    } as NodeJS.ProcessEnv);
+    });
     expect(cfg.writableRoots).toEqual(["/Users/x/Desktop", "/Volumes/Work"]);
   });
   it("takes an empty override to mean workspace-only", () => {
-    const cfg = resolveConfig({}, { HOME: "/Users/x", OPENCLICKY_WRITABLE_ROOTS: "" } as NodeJS.ProcessEnv);
+    const cfg = resolveConfig({}, { HOME: "/Users/x", OPENCLICKY_WRITABLE_ROOTS: "" });
     expect(cfg.writableRoots).toEqual([]);
   });
 });
@@ -114,7 +114,7 @@ describe("ensureCodexHome", () => {
     fs.writeFileSync(userSkillsDir, "not a directory");
     const warnings: string[] = [];
     const orig = process.stderr.write;
-    process.stderr.write = ((chunk: string | Uint8Array) => { warnings.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { warnings.push(String(chunk)); return true; });
     try {
       const cfg = resolveConfig({ codexHome: home, backendUrl: "http://127.0.0.1:1", workspace: "/tmp/ws", userSkillsDir });
       const text = fs.readFileSync(ensureCodexHome(cfg).configPath, "utf8");
@@ -165,7 +165,7 @@ describe("computer-use driver discovery", () => {
     fs.mkdirSync(path.dirname(driver), { recursive: true });
     fs.writeFileSync(driver, "#!/bin/sh\n", { mode: 0o755 });
 
-    const cfg = resolveConfig({}, { HOME: home } as NodeJS.ProcessEnv);
+    const cfg = resolveConfig({}, { HOME: home });
     expect(cfg.cuaDriverBin).toBe(driver);
     expect(renderMcpServers({ cuaDriverBin: cfg.cuaDriverBin })).toContain("[mcp_servers.computer-use]");
   });
@@ -179,7 +179,7 @@ describe("computer-use driver discovery", () => {
     fs.mkdirSync(path.dirname(driver), { recursive: true });
     fs.writeFileSync(driver, "#!/bin/sh\n", { mode: 0o755 });
 
-    expect(resolveConfig({}, { HOME: home } as NodeJS.ProcessEnv).cuaDriverBin).toBe(driver);
+    expect(resolveConfig({}, { HOME: home }).cuaDriverBin).toBe(driver);
   });
 
   it("lets an explicit setting win, and an empty string disable it", () => {
@@ -188,8 +188,8 @@ describe("computer-use driver discovery", () => {
     fs.mkdirSync(path.dirname(driver), { recursive: true });
     fs.writeFileSync(driver, "#!/bin/sh\n", { mode: 0o755 });
 
-    expect(resolveConfig({}, { HOME: home, CUA_DRIVER_BIN: "/opt/other" } as NodeJS.ProcessEnv).cuaDriverBin).toBe("/opt/other");
-    expect(resolveConfig({}, { HOME: home, CUA_DRIVER_BIN: "" } as NodeJS.ProcessEnv).cuaDriverBin).toBeUndefined();
+    expect(resolveConfig({}, { HOME: home, CUA_DRIVER_BIN: "/opt/other" }).cuaDriverBin).toBe("/opt/other");
+    expect(resolveConfig({}, { HOME: home, CUA_DRIVER_BIN: "" }).cuaDriverBin).toBeUndefined();
   });
 });
 

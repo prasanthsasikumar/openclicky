@@ -17,10 +17,10 @@ describe("backendHeaders", () => {
   });
 
   it("reads the keys from the environment", () => {
-    const cfg = resolveConfig({}, { HOME: "/tmp", OPENCLICKY_OPENAI_KEY: "sk-env", OPENCLICKY_ANTHROPIC_KEY: "ak-env" } as NodeJS.ProcessEnv);
+    const cfg = resolveConfig({}, { HOME: "/tmp", OPENCLICKY_OPENAI_KEY: "sk-env", OPENCLICKY_ANTHROPIC_KEY: "ak-env" });
     expect(cfg.openaiApiKey).toBe("sk-env");
     expect(cfg.anthropicApiKey).toBe("ak-env");
-    expect(resolveConfig({}, { HOME: "/tmp" } as NodeJS.ProcessEnv).openaiApiKey).toBeUndefined();
+    expect(resolveConfig({}, { HOME: "/tmp" }).openaiApiKey).toBeUndefined();
   });
 
   it("renders env_http_headers so Codex forwards the user's provider keys to the backend", () => {
