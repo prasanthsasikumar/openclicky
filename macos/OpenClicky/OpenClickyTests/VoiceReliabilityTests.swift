@@ -39,6 +39,16 @@ struct RealtimeConnectionRuleTests {
         #expect(!RealtimeVoiceClient.isRecentlyUsed(lastTurnStartedAt: now.addingTimeInterval(-3 * 60 * 60), now: now))
     }
 
+    /// A press released before the microphone opened sent an empty commit and asked for a reply
+    /// anyway; the model invented a task and handed it to the agent. Under OpenAI's own 100 ms
+    /// minimum, a turn is not sent.
+    @Test func aTurnWithoutAudioIsNeverSent() {
+        #expect(!RealtimeVoiceClient.hasEnoughAudioForATurn(pcm16Bytes: 0))
+        #expect(!RealtimeVoiceClient.hasEnoughAudioForATurn(pcm16Bytes: 4_799))
+        #expect(RealtimeVoiceClient.hasEnoughAudioForATurn(pcm16Bytes: 4_800))
+        #expect(RealtimeVoiceClient.hasEnoughAudioForATurn(pcm16Bytes: 96_000))
+    }
+
     /// A refused handshake reached the user as nothing at all, or as "bad server response".
     @Test func aRefusedHandshakeSaysWhatWasRefused() {
         let rejected = RealtimeVoiceClient.handshakeFailureDescription(statusCode: 401, underlyingError: "bad server response")

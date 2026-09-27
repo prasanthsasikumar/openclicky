@@ -202,6 +202,12 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceClient.onEvent = { line in print("🎙️ \(line)") }
         // A socket that died under a turn used to leave voiceState on processing for good, which
         // also refused dictation. Unstick it and say why; the next press reconnects.
+        realtimeVoiceClient.onTurnHeardNothing = { [weak self] in
+            guard let self, self.usesRealtimeVoice, self.voiceState == .processing else { return }
+            self.voiceState = .idle
+            self.streamCursorCaption("Didn't catch that. Hold ⌃ control + ⌥ option while you talk.", holdSeconds: 5)
+            self.scheduleTransientHideIfNeeded()
+        }
         realtimeVoiceClient.onConnectionLost = { [weak self] reason in
             guard let self, self.usesRealtimeVoice else { return }
             AppLog.append("realtime connection lost: \(reason)")

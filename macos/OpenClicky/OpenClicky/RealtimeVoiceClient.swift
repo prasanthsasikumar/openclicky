@@ -68,6 +68,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// a turn in flight never got its `response.done`, `voiceState` stayed on processing, and that
     /// in turn blocked dictation, until the app was restarted.
     var onConnectionLost: ((String) -> Void)?
+    /// A push-to-talk turn ended with (almost) no audio, and was not sent. See `endPushToTalk`.
+    var onTurnHeardNothing: (() -> Void)?
     /// Runs the agent for a `send_to_agent` tool call; the returned text is spoken by the model.
 
     /// Supplies the screen context attached to every turn: a JPEG of the cursor screen plus a short
@@ -137,6 +139,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private var pushToTalkArmed = false
     private var idlePauseTask: Task<Void, Never>?
     private var microphoneAppends = 0
+    /// PCM16 bytes forwarded since the current push-to-talk press. See `hasEnoughAudioForATurn`.
+    private var pushToTalkTurnAudioBytes = 0
 
     /// Capture/send statistics for diagnostics.
     func debugSummary() async -> String {
@@ -246,6 +250,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
             }
         }
+    }
+
+    /// OpenAI refuses to commit less than 100 ms of audio; a turn shorter than that heard nothing.
+    nonisolated static func hasEnoughAudioForATurn(pcm16Bytes: Int) -> Bool {
+        let minimumBytes = Int(RealtimeAudioEngine.sampleRate * 0.1) * MemoryLayout<Int16>.size
+        return pcm16Bytes >= minimumBytes
     }
 
     /// Replaced before OpenAI's 60-minute cap, with room to finish a conversation.
@@ -578,6 +588,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// Shortcut pressed: interrupt any reply and stream the microphone.
     func beginPushToTalk() {
         lastTurnStartedAt = Date()
+        pushToTalkTurnAudioBytes = 0
         pushToTalkTailTask?.cancel()
         pushToTalkTailTask = nil
         idlePauseTask?.cancel()
@@ -611,6 +622,20 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
             self.stopForwardingMicrophone()
+            // No audio, no turn. Released before the microphone opened (a press during the ~1.5 s
+            // connect, or a tap), the commit used to go out empty — OpenAI answered "buffer only
+            // has 0.00ms of audio" — and the reply was requested anyway, with the screen attached:
+            // the model invented a request ("create a project folder named MyApp…"), handed it to
+            // the agent, and the HUD sat on "Looking at your screen" for a task nobody gave.
+            let turnAudioBytes = self.pushToTalkTurnAudioBytes
+            self.pushToTalkTurnAudioBytes = 0
+            guard Self.hasEnoughAudioForATurn(pcm16Bytes: turnAudioBytes) else {
+                try? self.send(["type": "input_audio_buffer.clear"])
+                self.log("turn not sent: \(turnAudioBytes) bytes of audio")
+                self.onTurnHeardNothing?()
+                self.scheduleIdlePauseIfNeeded()
+                return
+            }
             // Skills for the app in front go up before the screen and the response request.
             self.refreshInstructionsIfNeeded()
             await self.attachScreenContext()
@@ -762,6 +787,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                         self.inputLevel = level
                         guard self.isForwardingMicrophone else { return }
                         self.microphoneAppends += 1
+                        self.pushToTalkTurnAudioBytes += pcm16.count
                         try? self.send(["type": "input_audio_buffer.append", "audio": pcm16.base64EncodedString()])
                     }
                 },
@@ -788,6 +814,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     func injectMicrophoneAudio(pcm16: Data) {
         guard isForwardingMicrophone else { return }
         microphoneAppends += 1
+        pushToTalkTurnAudioBytes += pcm16.count
         try? send(["type": "input_audio_buffer.append", "audio": pcm16.base64EncodedString()])
     }
 
