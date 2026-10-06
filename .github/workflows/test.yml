@@ -27,7 +27,9 @@ jobs:
       - run: npm run build -w agent
 
   macos-app:
-    runs-on: macos-15
+    # macOS 26's SDK: the offline dictation engine uses SpeechAnalyzer (macOS 26), which the
+    # macos-15 image's Xcode cannot compile. The app still runs on macOS 14.2.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       # Errors only, matching the TypeScript job. The 85 violations in the current backlog are all
@@ -45,6 +47,11 @@ jobs:
         shell: bash
         run: |
           xcodebuild -project OpenClicky.xcodeproj -scheme OpenClicky -destination 'platform=macOS' \
-            -derivedDataPath build/DerivedData build-for-testing CODE_SIGNING_ALLOWED=NO | tail -5
+            -derivedDataPath build/DerivedData build-for-testing CODE_SIGNING_ALLOWED=NO 2>&1 | tee build.log | tail -5
           xcodebuild -project OpenClicky.xcodeproj -scheme OpenClicky -destination 'platform=macOS' \
-            -derivedDataPath build/DerivedData test-without-building -only-testing:OpenClickyTests CODE_SIGNING_ALLOWED=NO | tail -20
+            -derivedDataPath build/DerivedData test-without-building -only-testing:OpenClickyTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee test.log | tail -20
+      - name: Show the errors when the build or the tests failed
+        if: failure()
+        working-directory: macos/OpenClicky
+        run: |
+          grep -E "error:|failed on" build.log test.log 2>/dev/null | sort -u | head -60 || true
