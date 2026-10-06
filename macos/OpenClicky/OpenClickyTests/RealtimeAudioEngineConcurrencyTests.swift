@@ -40,10 +40,10 @@ struct RealtimeAudioEngineConcurrencyTests {
     /// The render thread reads `converter`, `monoFormat` and `onMicrophoneFrame` off `self` while
     /// `tearDown()` nils them on the audio queue. TSan reports that pair; the fix is for the tap to
     /// capture what it needs by value so there is nothing shared to read.
-    @Test func deliveringBuffersWhileTheGraphIsTornDownIsRaceFree() async throws {
-        // A CI runner has no audio input; the graph cannot be built there and the race has nothing
-        // to race against.
-        try #require(AVCaptureDevice.default(for: .audio) != nil, "needs a microphone")
+    // A CI runner has no audio input; the graph cannot be built there and the race has nothing to
+    // race against, so the test is skipped rather than failed.
+    @Test(.enabled(if: AVCaptureDevice.default(for: .audio) != nil, "needs a microphone"))
+    func deliveringBuffersWhileTheGraphIsTornDownIsRaceFree() async {
         let engine = RealtimeAudioEngine()
         let deliveredFrameCount = Counter()
         engine.setCallbacks(
