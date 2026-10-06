@@ -41,9 +41,16 @@ was locked). Tick each line the first time it is seen working and note the build
 - [ ] Terminal: pasted; the developer style keeps commands as spoken.
 - [ ] Slack / Messages: the messaging styles (lowercase for personal messaging when the model
       polishes).
-- [ ] A password field (Safari login): "not pasting into a password field".
+- [ ] A password field (Safari login) or a `sudo` prompt in Terminal: "not pasting into a password field".
+- [ ] Hold fn, let go, switch to another app during "moving your words": "the app changed — copy from
+      here"; nothing is pasted into the second app.
+- [ ] Hold fn, let go, press esc during "moving your words", press fn again at once: the second take
+      works normally and the first one's words are nowhere (log: "finished after it was cancelled").
 - [ ] Hold fn, press ⌃ while holding, say "make it formal", let go, with text selected in Notes: the
       selection is replaced (needs a Sarvam key or an account); without either, the orb says so.
+- [ ] Tap fn + ⌃ twice quickly: hands-free toggles (with Realtime on) and no take starts, no tones.
+- [ ] Offline engine, signed in: a take is cleaned up locally only (record banner says so) until
+      Settings → engine → "also polish offline takes" is on.
 
 ## 4. The window
 
