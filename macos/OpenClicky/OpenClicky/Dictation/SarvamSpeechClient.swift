@@ -54,7 +54,9 @@ struct SarvamSpeechClient: Sendable {
     // swiftlint:enable force_unwrapping
     /// The REST transcription model; `saaras:v4` is Sarvam's current default.
     static let transcriptionModel = "saaras:v4"
-    static let chatModel = "sarvam-105b"
+    /// The 30B model: a take's cleanup is a sentence or two, and the 105B one took more than the
+    /// formatter's eight seconds on a slow afternoon.
+    static let chatModel = "sarvam-30b"
     static let sampleRate = 16_000
     /// One session for every client: nothing cached, no cookies.
     static let session = URLSession(configuration: .ephemeral)

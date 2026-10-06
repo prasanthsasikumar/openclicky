@@ -118,6 +118,15 @@ private struct Harness {
     func settle(_ seconds: Double = 0.05) async {
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
+
+    /// Waits for a condition the controller reaches asynchronously, up to a few seconds: a slow CI
+    /// runner takes longer than a fixed sleep allows, and a fast one should not wait for it.
+    func waitUntil(_ seconds: Double = 5, _ condition: () -> Bool) async {
+        let deadline = Date(timeIntervalSinceNow: seconds)
+        while !condition() && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
 }
 
 struct DictationTakeControllerTests {
@@ -126,14 +135,14 @@ struct DictationTakeControllerTests {
         let h = try Harness()
         h.controller.handle(.dictationPressed)
         #expect(h.controller.state == .starting)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         #expect(h.controller.state == .listening)
         #expect(h.capture.starts == 1)
         h.controller.handle(.dictationReleased(wasTap: false))
         #expect(h.controller.state == .finishing)
         #expect(h.capture.stops == 1)
         h.capture.deliverFinal("hello there")
-        await h.settle(0.3)
+        await h.waitUntil { h.controller.state == .idle }
         #expect(h.pasted.texts == ["Hello there"])
         #expect(h.controller.state == .idle)
         let rows = try h.store.recent()
@@ -146,7 +155,7 @@ struct DictationTakeControllerTests {
     @Test @MainActor func aTapKeepsListeningUntilTheNextPress() async throws {
         let h = try Harness()
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         h.controller.handle(.dictationReleased(wasTap: true))
         #expect(h.controller.state == .listening)
         #expect(h.capture.stops == 0)
@@ -161,14 +170,14 @@ struct DictationTakeControllerTests {
     @Test @MainActor func twoQuickTapsCancelWithoutPasting() async throws {
         let h = try Harness()
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         h.controller.handle(.dictationReleased(wasTap: true))
         h.controller.handle(.dictationPressed)
         h.controller.handle(.dictationReleased(wasTap: true))
         h.controller.handle(.dictationDoubleTapped)
         #expect(h.controller.state == .idle)
         #expect(h.capture.cancels == 1)
-        await h.settle(0.3)
+        await h.settle(0.2)
         #expect(h.pasted.texts.isEmpty)
         #expect(try h.store.recent().isEmpty)
     }
@@ -176,7 +185,7 @@ struct DictationTakeControllerTests {
     @Test @MainActor func escapeCancelsAListeningTake() async throws {
         let h = try Harness()
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         #expect(h.controller.handle(.escapePressed))
         #expect(h.controller.state == .idle)
         #expect(h.capture.cancels == 1)
@@ -186,7 +195,7 @@ struct DictationTakeControllerTests {
     @Test @MainActor func aCancelledTakeNeverPastesIntoTheNextOne() async throws {
         let h = try Harness(polisher: SlowPolisher(seconds: 0.4, answer: "Old words, polished."))
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         h.controller.handle(.dictationReleased(wasTap: false))
         h.capture.deliverFinal("old words")
         await h.settle()
@@ -194,7 +203,7 @@ struct DictationTakeControllerTests {
         h.controller.handle(.escapePressed)
         #expect(h.controller.state == .idle)
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         #expect(h.controller.state == .listening)
         #expect(h.capture.starts == 2)
         await h.settle(0.6)
@@ -203,8 +212,9 @@ struct DictationTakeControllerTests {
         #expect(h.controller.state == .listening)
         h.controller.handle(.dictationReleased(wasTap: false))
         h.capture.deliverFinal("new words")
-        await h.settle(0.7)
-        #expect(h.pasted.texts == ["New words, polished.".replacingOccurrences(of: "New words, polished.", with: "Old words, polished.")])
+        await h.waitUntil(8) { !h.pasted.texts.isEmpty }
+        // The slow polisher answers the same for any input; what matters is that only the second take pasted.
+        #expect(h.pasted.texts == ["Old words, polished."])
     }
 
     @Test @MainActor func aQuickControlTapNeverOpensAnEditTake() async throws {
@@ -215,7 +225,7 @@ struct DictationTakeControllerTests {
         h.controller.handle(.dictationEditPressed)
         h.controller.handle(.dictationReleased(wasTap: true))
         #expect(!h.controller.handle(.handsFreeToggleRequested))
-        await h.settle(0.5)
+        await h.settle(0.6)
         #expect(h.controller.state == .idle)
         #expect(h.capture.starts == 0)
     }
@@ -224,7 +234,7 @@ struct DictationTakeControllerTests {
         let h = try Harness()
         h.controller.handle(.dictationEditPressed)
         #expect(h.controller.state == .idle)
-        await h.settle(0.5)
+        await h.waitUntil { h.controller.state == .listening }
         #expect(h.controller.state == .listening)
         #expect(h.orb.phase == .editListening)
     }
@@ -232,7 +242,7 @@ struct DictationTakeControllerTests {
     @Test @MainActor func controlJoiningAHeldKeyTurnsTheTakeIntoAnEdit() async throws {
         let h = try Harness()
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         h.controller.handle(.dictationEditModifierJoined)
         #expect(h.orb.phase == .editListening)
         #expect(h.capture.starts == 1)
@@ -241,10 +251,10 @@ struct DictationTakeControllerTests {
     @Test @MainActor func nothingHeardIsNotRecorded() async throws {
         let h = try Harness()
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         h.controller.handle(.dictationReleased(wasTap: false))
         h.capture.deliverFinal("   ")
-        await h.settle(0.3)
+        await h.waitUntil { h.controller.state == .idle }
         #expect(h.controller.state == .idle)
         #expect(h.pasted.texts.isEmpty)
         #expect(try h.store.recent().isEmpty)
@@ -254,11 +264,11 @@ struct DictationTakeControllerTests {
     @Test @MainActor func aSessionThatEndsWithoutWordsFailsTheTake() async throws {
         let h = try Harness()
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         h.controller.handle(.dictationReleased(wasTap: false))
         // The engine gave up without a transcript: the manager's session flag drops.
         h.capture.cancelCurrentDictation(preserveDraftText: false)
-        await h.settle(0.4)
+        await h.waitUntil { h.controller.state == .idle }
         #expect(h.controller.state == .idle)
         #expect(h.orb.phase == .failed("didn't catch that"))
     }
@@ -266,11 +276,11 @@ struct DictationTakeControllerTests {
     @Test @MainActor func theWordsStayInTheOrbWhenTheAppChanged() async throws {
         let h = try Harness()
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         h.controller.handle(.dictationReleased(wasTap: false))
         h.pasted.frontApp = "com.apple.Safari"
         h.capture.deliverFinal("hello")
-        await h.settle(0.3)
+        await h.waitUntil { h.controller.state == .idle }
         #expect(h.pasted.texts.isEmpty)
         #expect(h.orb.isBoxOpen)
         #expect(h.orb.boxText == "Hello")
@@ -282,10 +292,10 @@ struct DictationTakeControllerTests {
         let h = try Harness(field: secure)
         h.pasted.frontApp = "com.apple.Safari"
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         h.controller.handle(.dictationReleased(wasTap: false))
         h.capture.deliverFinal("my password")
-        await h.settle(0.3)
+        await h.waitUntil { h.controller.state == .idle }
         #expect(h.pasted.texts.isEmpty)
         #expect(h.orb.phase == .done("not pasting into a password field"))
     }
@@ -294,10 +304,10 @@ struct DictationTakeControllerTests {
         let h = try Harness()
         h.settings.incognito = true
         h.controller.handle(.dictationPressed)
-        await h.settle()
+        await h.waitUntil { h.controller.state == .listening }
         h.controller.handle(.dictationReleased(wasTap: false))
         h.capture.deliverFinal("secret plans")
-        await h.settle(0.3)
+        await h.waitUntil { h.controller.state == .idle }
         #expect(h.pasted.texts == ["Secret plans"])
         #expect(try h.store.recent().isEmpty)
     }

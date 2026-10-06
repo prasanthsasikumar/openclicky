@@ -72,7 +72,7 @@ struct SarvamSpeechClientTests {
         #expect(request.url?.absoluteString == "https://api.sarvam.ai/v1/chat/completions")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer k")
         let body = try #require(JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any])
-        #expect(body["model"] as? String == "sarvam-105b")
+        #expect(body["model"] as? String == "sarvam-30b")
         #expect((body["messages"] as? [[String: String]])?.map { $0["role"] } == ["system", "user"])
     }
 
