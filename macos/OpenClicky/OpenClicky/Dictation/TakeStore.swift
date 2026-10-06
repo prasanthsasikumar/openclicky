@@ -230,6 +230,19 @@ final class TakeStore: @unchecked Sendable {
         }
     }
 
+    /// Words dictated on each of the last `days` days, oldest first (today last).
+    func wordsPerDay(days: Int = 7, now: Date = Date(), calendar: Calendar = .current) throws -> [(day: Date, words: Int)] {
+        let startOfToday = calendar.startOfDay(for: now)
+        let firstDay = calendar.date(byAdding: .day, value: -(days - 1), to: startOfToday) ?? startOfToday
+        let takes = try recent(limit: 20000).filter { $0.createdAt >= firstDay && $0.mode != .clipboard && $0.status == .complete }
+        var byDay: [Date: Int] = [:]
+        for take in takes { byDay[calendar.startOfDay(for: take.createdAt), default: 0] += take.wordCount }
+        return (0..<days).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: firstDay) else { return nil }
+            return (day, byDay[day] ?? 0)
+        }
+    }
+
     func stats(now: Date = Date(), calendar: Calendar = .current) throws -> TakeStats {
         let startOfToday = calendar.startOfDay(for: now)
         let startOfWeek = calendar.date(byAdding: .day, value: -6, to: startOfToday) ?? startOfToday

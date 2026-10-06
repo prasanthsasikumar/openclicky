@@ -19,6 +19,7 @@ struct RecordPageView: View {
     @State private var recent: [TakeRecord] = []
     @State private var stats = TakeStats(wordsToday: 0, takesToday: 0, wordsThisWeek: 0, takesThisWeek: 0, mostUsedAppToday: nil, allTimeTakes: 0)
     @State private var greetingIndex = 0
+    @State private var wordsPerDay: [(day: Date, words: Int)] = []
 
     init(model: DictationWindowModel, companionManager: CompanionManager) {
         self.model = model
@@ -161,15 +162,41 @@ struct RecordPageView: View {
                     statRow("history", settings.incognito ? "incognito" : "on this mac")
                 }
                 .padding(18)
+                Rectangle().fill(Paper.hairline).frame(height: 1)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("the last seven days").font(Paper.label(10)).foregroundStyle(Paper.inkTertiary)
+                    weekBars
+                }
+                .padding(18)
                 Spacer(minLength: 0)
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Paper.highlighter.opacity(0.5))
                     OrbMarkShape().fill(Paper.accent).frame(width: 64, height: 64)
                 }
-                .frame(height: 180)
+                .frame(height: 120)
                 .padding(14)
             }
         }
+    }
+
+    /// Seven bars, today on the right, scaled to the busiest day.
+    private var weekBars: some View {
+        let peak = max(1, wordsPerDay.map(\.words).max() ?? 1)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEEE"
+        return HStack(alignment: .bottom, spacing: 6) {
+            ForEach(Array(wordsPerDay.enumerated()), id: \.offset) { index, entry in
+                VStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(index == wordsPerDay.count - 1 ? Paper.accent : Paper.success.opacity(0.55))
+                        .frame(height: max(3, 48 * CGFloat(entry.words) / CGFloat(peak)))
+                        .frame(maxWidth: .infinity)
+                        .help("\(entry.words) words")
+                    Text(formatter.string(from: entry.day).lowercased()).font(Paper.mono(9)).foregroundStyle(Paper.inkTertiary)
+                }
+            }
+        }
+        .frame(height: 64, alignment: .bottom)
     }
 
     private func statRow(_ label: String, _ value: String) -> some View {
@@ -204,6 +231,7 @@ struct RecordPageView: View {
         guard let store = companionManager.dictationTakeStore else { return }
         recent = (try? store.recent(limit: 8, mode: .dictate)) ?? []
         stats = (try? store.stats()) ?? stats
+        wordsPerDay = (try? store.wordsPerDay()) ?? []
     }
 
     private func copy(_ take: TakeRecord) {

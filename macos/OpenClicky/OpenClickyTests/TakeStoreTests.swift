@@ -59,6 +59,17 @@ struct TakeStoreTests {
         #expect(stats.allTimeTakes == 4)
     }
 
+    @Test func wordsPerDayCoversSevenDaysWithTodayLast() throws {
+        let store = try makeStore()
+        try store.insert(TakeRecord(rawText: "", formattedText: "one two"))
+        try store.insert(TakeRecord(createdAt: Date(timeIntervalSinceNow: -2 * 86_400), rawText: "", formattedText: "three"))
+        let days = try store.wordsPerDay()
+        #expect(days.count == 7)
+        #expect(days.last?.words == 2)
+        #expect(days[4].words == 1)
+        #expect(days.reduce(0) { $0 + $1.words } == 3)
+    }
+
     @Test func deleteAllEmptiesTheStore() throws {
         let store = try makeStore()
         try store.insert(TakeRecord(rawText: "a", formattedText: "A."))
