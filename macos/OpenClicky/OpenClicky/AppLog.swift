@@ -10,8 +10,13 @@
 import Foundation
 
 nonisolated enum AppLog {
-    static let fileURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/OpenClicky/app.log")
+    static let fileURL: URL = {
+        // A test run writes its own log, not the installed app's.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            return FileManager.default.temporaryDirectory.appendingPathComponent("openclicky-tests.log")
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/OpenClicky/app.log")
+    }()
     /// Truncated at launch when it has grown past this.
     private static let maxBytesBeforeTruncation: UInt64 = 2_000_000
 
