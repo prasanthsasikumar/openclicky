@@ -38,7 +38,8 @@ protocol TakePolisher: Sendable {
 
 enum TakeFormatter {
 
-    static let modelTimeoutSeconds: TimeInterval = 8
+    /// Long enough for sarvam-105b on a slow afternoon; past this the local result is pasted.
+    static let modelTimeoutSeconds: TimeInterval = 14
 
     /// Only the unmistakable ones: "ah", "er", "eh" and "mm" are words in romanised Indian languages.
     static let fillers: Set<String> = ["um", "umm", "uh", "uhh", "erm", "hmm"]
