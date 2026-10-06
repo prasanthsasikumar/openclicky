@@ -127,9 +127,18 @@ final class CompanionManager: ObservableObject {
 
     /// The menu bar icon is off by default: the notch HUD is the app's home. The onboarding panel
     /// still opens on its own for a first run; permissions are asked for on the island.
-    @Published var isMenuBarIconVisible: Bool = UserDefaults.standard.object(forKey: "isOpenClickyMenuBarIconVisible") == nil
-        ? true
-        : UserDefaults.standard.bool(forKey: "isOpenClickyMenuBarIconVisible")
+    /// On by default since dictation: the menu bar is where the window, history and settings open
+    /// from. Shown once more to everyone who had it off before the dictation release (the
+    /// `dictation.menuBarIconShownOnce` mark), who can turn it off again in the HUD's settings.
+    @Published var isMenuBarIconVisible: Bool = {
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: "dictation.menuBarIconShownOnce") {
+            defaults.set(true, forKey: "dictation.menuBarIconShownOnce")
+            defaults.set(true, forKey: "isOpenClickyMenuBarIconVisible")
+            return true
+        }
+        return defaults.object(forKey: "isOpenClickyMenuBarIconVisible") == nil ? true : defaults.bool(forKey: "isOpenClickyMenuBarIconVisible")
+    }()
 
     func setMenuBarIconVisible(_ visible: Bool) {
         isMenuBarIconVisible = visible
