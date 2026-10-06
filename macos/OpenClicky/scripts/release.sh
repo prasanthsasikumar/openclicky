@@ -80,8 +80,14 @@ if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then
   CODE_SIGN_FLAGS="--timestamp=none"
 fi
 
+# A secure timestamp is what notarization checks; a local install does not need one, and Apple's
+# timestamp server fails often enough that an unattended `--no-notarize` build should not depend on it.
 sign_with_timestamp() {
   local attempt
+  if [[ -z "$NOTARY_PROFILE" ]]; then
+    codesign --force --options runtime --timestamp=none "$@"
+    return $?
+  fi
   for attempt in 1 2 3 4; do
     if codesign --force --options runtime --timestamp "$@"; then return 0; fi
     echo "  codesign (timestamp) failed, attempt $attempt; retrying in 5 s" >&2
