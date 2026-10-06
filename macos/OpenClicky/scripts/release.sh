@@ -71,7 +71,14 @@ CODE_SIGN_FLAGS=""
 CODE_SIGN_STYLE="Automatic"
 # Xcode injects com.apple.security.get-task-allow (debugging) into non-archive builds; notarization rejects it.
 INJECT_BASE_ENTITLEMENTS="YES"
-if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then CODE_SIGN_STYLE="Manual"; INJECT_BASE_ENTITLEMENTS="NO"; fi
+if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then
+  CODE_SIGN_STYLE="Manual"
+  INJECT_BASE_ENTITLEMENTS="NO"
+  # Xcode adds a secure timestamp to every Developer ID signature on its own, and a timestamp-server
+  # hiccup then fails the build on a resource bundle (seen on PostHog's, twice in four runs). Told
+  # not to, Xcode signs without one; the re-signing below adds timestamps with retries.
+  CODE_SIGN_FLAGS="--timestamp=none"
+fi
 
 sign_with_timestamp() {
   local attempt
