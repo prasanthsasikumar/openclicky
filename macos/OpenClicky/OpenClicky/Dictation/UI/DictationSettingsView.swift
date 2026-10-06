@@ -683,6 +683,13 @@ private struct PrivacySettingsPage: View {
                     PaperDivider()
                     PaperRow(title: "clipboard history", detail: "capture what you copy, so it shows in history too.") { PaperToggle(isOn: $settings.clipboardHistoryEnabled) }
                     PaperDivider()
+                    PaperRow(title: "retry failed dictations", detail: "keeps the recording of a take a network engine couldn't finish on this mac (up to 100 takes or 1 GB) until you retry or delete it. turning this off removes them now.") {
+                        PaperToggle(isOn: Binding(get: { settings.retainFailedTakeAudio }, set: { on in
+                            settings.retainFailedTakeAudio = on
+                            if !on { companionManager.dictationTakeController.audioStore.discardAll() }
+                        }))
+                    }
+                    PaperDivider()
                     PaperRow(title: "delete my dictation data…", detail: "wipes every take from this mac now. your dictionary and shortcuts stay.") {
                         Button("delete history…") { confirmDelete = true }.buttonStyle(PaperPillButtonStyle(destructive: true))
                     }
@@ -709,6 +716,7 @@ private struct PrivacySettingsPage: View {
         .confirmationDialog("delete every take on this mac?", isPresented: $confirmDelete) {
             Button("delete all history", role: .destructive) {
                 try? companionManager.dictationTakeStore?.deleteAll()
+                companionManager.dictationTakeController.audioStore.discardAll()
                 companionManager.dictationTakeController.historyDidChange()
             }
         } message: { Text("this can't be undone.") }

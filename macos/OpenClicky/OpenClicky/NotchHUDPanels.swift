@@ -529,6 +529,16 @@ struct NotchSettingsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
+                section("DICTATION") {
+                    actionRow(systemImage: "macwindow", title: "Open OpenClicky", detail: "history, dictionary, shortcuts, styles, settings") {
+                        companionManager.showDictationWindow()
+                    }
+                    settingRow(systemImage: "waveform", title: "Engine", value: companionManager.dictationSettings.engine.displayName)
+                    toggleRow(systemImage: "circle", title: "The orb", detail: "the pill at the bottom of the screen", isOn: Binding(
+                        get: { companionManager.dictationSettings.orbVisible },
+                        set: { companionManager.dictationSettings.orbVisible = $0 }
+                    ))
+                }
                 section("BACKEND") {
                     settingRow(systemImage: "server.rack", title: "Backend", value: OpenClickyConfiguration.backendHostDescription)
                     settingRow(systemImage: "key", title: "Token", value: OpenClickyConfiguration.isConfigured ? "configured" : "missing")
@@ -564,8 +574,9 @@ struct NotchSettingsView: View {
                     settingRow(systemImage: "mic.badge.waveform", title: "Speech to text", value: companionManager.isRealtimeVoiceEnabled ? "Realtime" : companionManager.buddyDictationManager.transcriptionProviderDisplayName)
                     settingRow(systemImage: "keyboard", title: "Talk shortcut", value: "hold ⌃ control + ⌥ option")
                     settingRow(systemImage: "text.cursor", title: "Text shortcut", value: "tap ⌃ control twice")
-                    settingRow(systemImage: "character.cursor.ibeam", title: "Dictate shortcut", value: "hold fn + ⌃ control (types into the app in front)")
-                    settingRow(systemImage: "ear.badge.waveform", title: "Hands-free shortcut", value: "tap fn + ⌃ control twice")
+                    settingRow(systemImage: "character.cursor.ibeam", title: "Dictate", value: "hold \(companionManager.dictationSettings.dictationKey.keycapLabel), or tap it to start and tap again to finish")
+                    settingRow(systemImage: "pencil.line", title: "Hey Clicky", value: "\(companionManager.dictationSettings.dictationKey.keycapLabel) + ⌃ held: say an edit for the selected text")
+                    settingRow(systemImage: "ear.badge.waveform", title: "Hands-free shortcut", value: "tap \(companionManager.dictationSettings.dictationKey.keycapLabel) + ⌃ control twice")
                 }
                 section("CURSOR") {
                     toggleRow(systemImage: "arrow.up.to.line.compact", title: "Dock cursor in the notch", detail: "The buddy lives in the HUD", isOn: Binding(

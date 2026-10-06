@@ -97,7 +97,8 @@ struct HistoryPageView: View {
                     }
                     .padding(.bottom, 6)
                     ForEach(group.takes) { take in
-                        HistoryRow(take: take, onOpen: { selected = take }, onCopy: { copy(take) })
+                        HistoryRow(take: take, canRetry: controller.canRetry(takeID: take.id), onOpen: { selected = take }, onCopy: { copy(take) },
+                                   onRetry: { Task { await controller.retry(takeID: take.id) } })
                     }
                 }
             }
@@ -163,8 +164,10 @@ struct HistoryPageView: View {
 
 private struct HistoryRow: View {
     let take: TakeRecord
+    var canRetry = false
     let onOpen: () -> Void
     let onCopy: () -> Void
+    var onRetry: () -> Void = {}
 
     private static let time: DateFormatter = {
         let formatter = DateFormatter()
@@ -188,6 +191,9 @@ private struct HistoryRow: View {
             .buttonStyle(.plain).pointerCursor()
             .help("open \(take.mode == .edit ? "hey clicky edit" : "dictation") from \(take.appName ?? "unknown app")")
             if take.status == .failed { Text("couldn't finish").font(Paper.mono(10)).foregroundStyle(Paper.danger) }
+            if take.status == .failed, canRetry {
+                Button("retry", action: onRetry).buttonStyle(PaperPillButtonStyle()).help("hear the saved recording again")
+            }
             if take.mode == .edit { Text("edit").font(Paper.mono(10)).foregroundStyle(Paper.inkTertiary) }
             Text(Self.time.string(from: take.createdAt).lowercased()).font(Paper.body(11)).foregroundStyle(Paper.inkSecondary)
             Button(action: onCopy) { Image(systemName: "doc.on.doc").font(.system(size: 11)).foregroundStyle(Paper.inkTertiary) }

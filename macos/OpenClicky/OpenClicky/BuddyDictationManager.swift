@@ -300,6 +300,9 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
     /// The input device to record from (its CoreAudio UID); nil = the system default.
     var preferredMicrophoneUID: String?
+    /// Every captured buffer, on the render thread, for a caller that keeps the take's audio
+    /// (dictation retains a failed take so it can be retried). Captured when the tap is installed.
+    var audioRetentionSink: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
     func updateContextualKeyterms(_ contextualKeyterms: [String]) {
         self.contextualKeyterms = contextualKeyterms
@@ -576,8 +579,10 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         // nilling it in `finishCurrentDictationSessionIfNeeded` — invisibly, in both directions.
         // The session is captured by value instead: this tap feeds the session it was installed
         // for, and nothing else, for as long as it is installed.
+        let audioRetentionSink = self.audioRetentionSink
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, activeTranscriptionSession] buffer, _ in
             activeTranscriptionSession.appendAudioBuffer(buffer)
+            audioRetentionSink?(buffer)
             self?.updateAudioPowerLevel(from: buffer)
         }
 

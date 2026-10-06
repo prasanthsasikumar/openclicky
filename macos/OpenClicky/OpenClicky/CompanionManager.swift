@@ -1655,7 +1655,7 @@ final class CompanionManager: ObservableObject {
     func explainWhatOpenClickyDoes() {
         let message = "hi, i'm openclicky. hold control + option and ask about anything on your screen — "
             + "i'll answer out loud and point at what you need. tap control twice to type instead, "
-            + "hold fn + control to dictate into any app, and real work goes to the agent."
+            + "hold fn to dictate into any app, and real work goes to the agent."
         if isCursorDocked {
             notchHUDManager.showCaption(message)
             return

@@ -68,7 +68,11 @@ final class DictationTakeController: ObservableObject {
     let takeStore: TakeStore?
     let orb: OrbModel
     let earcons: DictationEarconPlayer
+    let audioStore = TakeAudioStore()
     private(set) var dictationManager: BuddyDictationManager
+    /// A failed take whose audio is on disk and can be heard again (the orb's "retry").
+    @Published private(set) var retryableTakeID: UUID?
+    @Published private(set) var isRetrying = false
 
     /// Called before the microphone opens (the Realtime engine must let go of it) and after a take.
     var beforeMicrophoneOpens: (() async -> Void)?
@@ -102,6 +106,8 @@ final class DictationTakeController: ObservableObject {
         self.earcons = DictationEarconPlayer(settings: settings)
         self.currentEngine = settings.engine
         self.dictationManager = BuddyDictationManager(transcriptionProvider: DictationEngineResolver.makeProvider(for: settings.engine, settings: settings))
+        let audioStore = self.audioStore
+        self.dictationManager.audioRetentionSink = { buffer in audioStore.append(buffer) }
         bind()
     }
 
@@ -219,6 +225,7 @@ final class DictationTakeController: ObservableObject {
         lastLoudMomentAt = Date()
         fieldAtPress = FocusedFieldReader.snapshot()
         nearbyTermsAtPress = settings.readNearbyText ? FocusedFieldReader.nearbyTerms() : []
+        audioStore.beginCapture()
         orb.liveTranscript = ""
         orb.isBoxOpen = settings.orbRestsExpanded && orb.boxText != nil
         orb.phase = mode == .edit ? .editListening : .listening
@@ -271,6 +278,7 @@ final class DictationTakeController: ObservableObject {
         pendingStartTask?.cancel()
         pendingStartTask = nil
         dictationManager.cancelCurrentDictation(preserveDraftText: false)
+        _ = audioStore.endCapture()
         earcons.play(.blocked)
         orb.phase = .failed(reason)
         orb.liveTranscript = ""
@@ -287,6 +295,7 @@ final class DictationTakeController: ObservableObject {
         orb.phase = .failed(message)
         orb.liveTranscript = ""
         AppLog.append("take \(takeID.uuidString.prefix(8)) failed: \(message)")
+        let pcm = audioStore.endCapture()
         if !settings.incognito, !message.hasPrefix("didn't catch") {
             let record = TakeRecord(id: takeID, createdAt: takeStartedAt, mode: takeMode == .edit ? .edit : .dictate, status: .failed,
                                     rawText: orb.liveTranscript, formattedText: "", appBundleID: fieldAtPress.appBundleID,
@@ -294,6 +303,16 @@ final class DictationTakeController: ObservableObject {
                                     durationSeconds: Date().timeIntervalSince(takeStartedAt), failureReason: message)
             try? takeStore?.insert(record)
             historyVersion += 1
+            // The words are still in the audio: keep it so the take can be heard again.
+            if settings.retainFailedTakeAudio, settings.engine != .offline, pcm.count > 16_000 {
+                do {
+                    try audioStore.retain(takeID: takeID, pcm16: pcm)
+                    retryableTakeID = takeID
+                    orb.phase = .failed("\(message) · take saved, retry from history")
+                } catch {
+                    AppLog.append("take \(takeID.uuidString.prefix(8)) audio not retained: \(error.localizedDescription)")
+                }
+            }
         }
         endTake()
         scheduleIdle(after: 2.5)
@@ -307,6 +326,7 @@ final class DictationTakeController: ObservableObject {
 
     private func finishTake(rawText: String) async {
         guard isTakeInProgress, !takeWasCancelled else { return }
+        _ = audioStore.endCapture()
         let raw = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else {
             failTake("didn't catch that")
@@ -443,6 +463,58 @@ final class DictationTakeController: ObservableObject {
                     self.stopTake()
                 }
             }
+        }
+    }
+
+    // MARK: retrying a failed take
+
+    func canRetry(takeID: UUID) -> Bool { audioStore.hasAudio(for: takeID) }
+
+    /// Hears a failed take's retained audio again with the current engine, formats it, and puts the
+    /// words in the orb's box and in history (the cursor has moved on, so nothing is pasted).
+    func retry(takeID: UUID) async {
+        guard !isTakeInProgress, !isRetrying, audioStore.hasAudio(for: takeID) else { return }
+        if let reason = DictationEngineResolver.unavailableReason(for: settings.engine) {
+            orb.phase = .failed(reason)
+            scheduleIdle(after: 2.5)
+            return
+        }
+        isRetrying = true
+        orb.phase = .working("retrying your recording")
+        defer { isRetrying = false }
+        let provider = DictationEngineResolver.makeProvider(for: settings.engine, settings: settings)
+        let original = try? takeStore?.fetch(id: takeID)
+        do {
+            let raw = try await TakeAudioStore.transcribe(fileURL: audioStore.url(for: takeID), provider: provider, keyterms: spaceStore.space.dictionary.map(\.written))
+            guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                orb.phase = .failed("didn't catch that")
+                scheduleIdle(after: 2.5)
+                return
+            }
+            let space = spaceStore.space
+            let context = TakeFormattingContext(
+                style: space.style(forAppBundleID: original?.appBundleID), dictionary: space.dictionary, shortcuts: space.shortcuts,
+                appName: original?.appName, language: settings.language, script: settings.script)
+            let formatted = await TakeFormatter.format(raw, context: context, polisher: DictationEngineResolver.makePolisher(), wantsModel: settings.polishWithModel)
+            let record = TakeRecord(id: takeID, createdAt: original?.createdAt ?? Date(), mode: .dictate, status: .complete,
+                                    rawText: raw, formattedText: formatted.text, appBundleID: original?.appBundleID, appName: original?.appName,
+                                    language: settings.language.bareCode, engine: settings.engine.rawValue,
+                                    durationSeconds: original?.durationSeconds ?? 0, pasteOutcome: .leftInOrb)
+            if !settings.incognito { try? takeStore?.insert(record) }
+            historyVersion += 1
+            lastTake = record
+            audioStore.discard(takeID: takeID)
+            if retryableTakeID == takeID { retryableTakeID = nil }
+            orb.boxText = formatted.text
+            orb.isBoxOpen = true
+            earcons.play(.complete)
+            orb.phase = .done("retried · copy from the box")
+            AppLog.append("take \(takeID.uuidString.prefix(8)) retried: \(formatted.text.count) chars")
+            scheduleIdle(after: 2.5)
+        } catch {
+            orb.phase = .failed("couldn't retry: \(error.localizedDescription)")
+            AppLog.append("take \(takeID.uuidString.prefix(8)) retry failed: \(error.localizedDescription)")
+            scheduleIdle(after: 3)
         }
     }
 

@@ -879,7 +879,7 @@ struct NotchCompactStatusView: View {
         if let agentActivityText = companionManager.agentActivityText { return agentActivityText }
         let isDictating = companionManager.isDictatingToFrontApp
         switch companionManager.voiceState {
-        case .idle: return companionManager.isAlwaysListening ? "Just talk — I'm listening" : "Hold ⌃⌥ to talk · tap ⌃ twice to type"
+        case .idle: return companionManager.isAlwaysListening ? "Just talk — I'm listening" : "Hold fn to dictate · hold ⌃⌥ to talk · tap ⌃ twice to type"
         case .listening:
             if isDictating { return "Release fn + ⌃ to type it into the app" }
             return companionManager.isAlwaysListening ? "Just talk — I'm listening" : "Release ⌃⌥ when you're done"
