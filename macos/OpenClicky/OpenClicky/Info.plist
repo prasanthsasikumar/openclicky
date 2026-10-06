@@ -4,6 +4,14 @@
 <dict>
 	<key>LSUIElement</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/prasanthsasikumar/openclicky/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>Dgr1iPs5GdoIt9pHsGJ3Kl/89sd8FPW/LalSsQTmKec=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 	<key>VoiceTranscriptionProvider</key>
 	<string>assemblyai</string>
 	<key>NSMicrophoneUsageDescription</key>

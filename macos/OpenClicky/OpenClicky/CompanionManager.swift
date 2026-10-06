@@ -716,6 +716,7 @@ final class CompanionManager: ObservableObject {
 
     func stop() {
         orbPanelManager.stop()
+        clipboardHistoryMonitor.stop()
         permissionPromptController.stop()
         appConnectPromptController.stop()
         notchHUDManager.hide()
@@ -964,6 +965,9 @@ final class CompanionManager: ObservableObject {
     }()
 
     private var dictationKeyCancellable: AnyCancellable?
+    private lazy var clipboardHistoryMonitor = ClipboardHistoryMonitor(settings: dictationSettings, takeStore: dictationTakeStore) { [weak self] in
+        self?.dictationTakeController.historyDidChange()
+    }
     private var dictationWindowController: DictationWindowController?
     private var onboardingWindowController: OnboardingWindowController?
 
@@ -994,6 +998,7 @@ final class CompanionManager: ObservableObject {
         dictationSettings.preferredMicrophoneUIDDidChange = { [weak self] uid in self?.dictationTakeController.dictationManager.preferredMicrophoneUID = uid }
         dictationTakeController.dictationManager.preferredMicrophoneUID = dictationSettings.preferredMicrophoneUID
         AppUpdater.shared.start()
+        clipboardHistoryMonitor.start()
         if !dictationSettings.hasCompletedDictationOnboarding {
             showDictationOnboarding()
         }

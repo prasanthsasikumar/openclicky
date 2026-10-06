@@ -91,7 +91,10 @@ final class DictationWindowController: NSWindowController, NSWindowDelegate {
         window.backgroundColor = NSColor(Paper.background)
         super.init(window: window)
         window.delegate = self
-        window.contentView = NSHostingView(rootView: DictationRootView(model: model, companionManager: companionManager))
+        let hosting = NSHostingView(rootView: DictationRootView(model: model, companionManager: companionManager))
+        // The window keeps its own size; the view fills it (SwiftUI would otherwise grow the window to its ideal height).
+        hosting.sizingOptions = []
+        window.contentView = hosting
         applyAppearance()
         appearanceCancellable = companionManager.dictationSettings.$appearance.sink { [weak self] _ in
             DispatchQueue.main.async { self?.applyAppearance() }

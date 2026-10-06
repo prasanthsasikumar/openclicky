@@ -97,41 +97,51 @@ final class MenuBarPanelManager: NSObject {
         button.image?.isTemplate = true
         button.action = #selector(statusItemClicked)
         button.target = self
+        // Left click: the companion panel. Right click: the app menu (window, settings, quit).
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
-    /// Draws the openclicky triangle as a menu bar icon. Uses the same shape
-    /// and rotation as the in-app cursor so the menu bar icon matches.
+    private func showStatusMenu() {
+        guard let statusItem else { return }
+        let menu = NSMenu()
+        menu.addItem(withTitle: "open openclicky", action: #selector(openWindow), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "history", action: #selector(openHistory), keyEquivalent: "").target = self
+        let dictationItem = NSMenuItem(title: companionManager.dictationSettings.orbVisible ? "hide the orb" : "show the orb", action: #selector(toggleOrb), keyEquivalent: "")
+        dictationItem.target = self
+        menu.addItem(dictationItem)
+        let incognito = NSMenuItem(title: "incognito", action: #selector(toggleIncognito), keyEquivalent: "")
+        incognito.target = self
+        incognito.state = companionManager.dictationSettings.incognito ? .on : .off
+        menu.addItem(incognito)
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "check for updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "quit openclicky", action: #selector(quit), keyEquivalent: "q").target = self
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        // The menu is attached only for the click, so a left click keeps opening the panel.
+        DispatchQueue.main.async { statusItem.menu = nil }
+    }
+
+    @objc private func openWindow() { companionManager.showDictationWindow(section: .record) }
+    @objc private func openHistory() { companionManager.showDictationWindow(section: .history) }
+    @objc private func openSettings() { companionManager.showDictationWindow(settingsPage: .general) }
+    @objc private func toggleOrb() { companionManager.dictationSettings.orbVisible.toggle() }
+    @objc private func toggleIncognito() { companionManager.dictationSettings.incognito.toggle() }
+    @objc private func checkForUpdates() { AppUpdater.shared.start(); AppUpdater.shared.checkNow() }
+    @objc private func quit() { NSApp.terminate(nil) }
+
+    /// The mark, as a template image: the rounded pointer with its dot, matching the app icon.
     private func makeClickyMenuBarIcon() -> NSImage {
         let iconSize: CGFloat = 18
-        let image = NSImage(size: NSSize(width: iconSize, height: iconSize))
-        image.lockFocus()
-
-        let triangleSize = iconSize * 0.7
-        let cx = iconSize * 0.50
-        let cy = iconSize * 0.50
-        let height = triangleSize * sqrt(3.0) / 2.0
-
-        let top = CGPoint(x: cx, y: cy + height / 1.5)
-        let bottomLeft = CGPoint(x: cx - triangleSize / 2, y: cy - height / 3)
-        let bottomRight = CGPoint(x: cx + triangleSize / 2, y: cy - height / 3)
-
-        let angle = 35.0 * .pi / 180.0
-        func rotate(_ point: CGPoint) -> CGPoint {
-            let dx = point.x - cx, dy = point.y - cy
-            let cosA = CGFloat(cos(angle)), sinA = CGFloat(sin(angle))
-            return CGPoint(x: cx + cosA * dx - sinA * dy, y: cy + sinA * dx + cosA * dy)
+        let image = NSImage(size: NSSize(width: iconSize, height: iconSize), flipped: true) { rect in
+            let path = OpenClickyMark.bezierPath(in: rect.insetBy(dx: 2, dy: 2))
+            NSColor.black.setFill()
+            path.fill()
+            return true
         }
-
-        let path = NSBezierPath()
-        path.move(to: rotate(top))
-        path.line(to: rotate(bottomLeft))
-        path.line(to: rotate(bottomRight))
-        path.close()
-
-        NSColor.black.setFill()
-        path.fill()
-
-        image.unlockFocus()
+        image.isTemplate = true
         return image
     }
 
@@ -145,6 +155,11 @@ final class MenuBarPanelManager: NSObject {
     }
 
     @objc private func statusItemClicked() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            hidePanel()
+            showStatusMenu()
+            return
+        }
         if let panel, panel.isVisible {
             hidePanel()
         } else {

@@ -41,7 +41,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         window.backgroundColor = NSColor(Paper.background)
         super.init(window: window)
         window.delegate = self
-        window.contentView = NSHostingView(rootView: OnboardingView(model: model, companionManager: companionManager, finish: { [weak self] in self?.finish() }))
+        let hosting = NSHostingView(rootView: OnboardingView(model: model, companionManager: companionManager, finish: { [weak self] in self?.finish() }))
+        // The window keeps its own size; the view fills it (SwiftUI would otherwise grow the window to its ideal height).
+        hosting.sizingOptions = []
+        window.contentView = hosting
         window.center()
     }
 
