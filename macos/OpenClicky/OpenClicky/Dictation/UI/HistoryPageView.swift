@@ -19,6 +19,8 @@ struct HistoryPageView: View {
     @State private var takes: [TakeRecord] = []
     @State private var modeFilter: TakeRecord.Mode?
     @State private var selected: TakeRecord?
+    @State private var answer: String?
+    @State private var isAsking = false
 
     init(model: DictationWindowModel, companionManager: CompanionManager) {
         self.model = model
@@ -34,7 +36,8 @@ struct HistoryPageView: View {
                     Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Paper.inkTertiary)
                     TextField("search your words — try: the offsite flights", text: $query)
                         .textFieldStyle(.plain).font(Paper.body(13)).foregroundStyle(Paper.ink)
-                        .onSubmit(reload)
+                        .onSubmit(ask)
+                    Text("press enter to ask").font(Paper.mono(9)).foregroundStyle(Paper.inkTertiary)
                     if !query.isEmpty {
                         Button(action: { query = ""; reload() }) { Image(systemName: "xmark.circle.fill").foregroundStyle(Paper.inkTertiary) }.buttonStyle(.plain)
                     }
@@ -60,6 +63,22 @@ struct HistoryPageView: View {
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Paper.hairline))
             }
             .onChange(of: query) { _, _ in reload() }
+
+            if isAsking || answer != nil {
+                PaperCard {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "sparkles").foregroundStyle(Paper.accent).padding(.top, 2)
+                        if isAsking {
+                            Text("asking across your takes…").font(Paper.body(13)).foregroundStyle(Paper.inkSecondary)
+                        } else if let answer {
+                            Text(answer).font(Paper.body(13)).foregroundStyle(Paper.ink).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Button(action: { self.answer = nil }) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Paper.inkTertiary) }.buttonStyle(.plain)
+                    }
+                    .padding(16)
+                }
+            }
 
             if takes.isEmpty {
                 VStack(spacing: 10) {
@@ -114,6 +133,18 @@ struct HistoryPageView: View {
         case .dictate: return "dictations"
         case .edit: return "hey clicky edits"
         case .clipboard: return "clipboard"
+        }
+    }
+
+    /// Enter in the search box: a question goes to the model over the matching takes.
+    private func ask() {
+        let question = query.trimmingCharacters(in: .whitespaces)
+        guard !question.isEmpty else { return }
+        isAsking = true
+        Task {
+            let reply = await companionManager.dictationTakeController.askHistory(question)
+            answer = reply
+            isAsking = false
         }
     }
 

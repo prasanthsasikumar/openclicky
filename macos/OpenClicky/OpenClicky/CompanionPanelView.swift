@@ -403,6 +403,21 @@ struct CompanionPanelView: View {
     private var footerSection: some View {
         HStack {
             Button(action: {
+                NotificationCenter.default.post(name: .clickyDismissPanel, object: nil)
+                companionManager.showDictationWindow()
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "macwindow")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Open OpenClicky")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundColor(DS.Colors.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .pointerCursor()
+            Spacer()
+            Button(action: {
                 NSApp.terminate(nil)
             }) {
                 HStack(spacing: 6) {

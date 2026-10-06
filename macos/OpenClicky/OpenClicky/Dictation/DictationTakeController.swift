@@ -89,6 +89,8 @@ final class DictationTakeController: ObservableObject {
     private var takeStartedByTap = false
     private var takeIsToggle = false
     private var takeWasCancelled = false
+    /// The engine delivered its final words; the "nothing heard" fallback must stand down.
+    private var takeReceivedFinalTranscript = false
     private var fieldAtPress = FocusedFieldSnapshot.unknown
     private var nearbyTermsAtPress: [String] = []
 
@@ -134,7 +136,8 @@ final class DictationTakeController: ObservableObject {
                 guard let self, self.isTakeInProgress, !active, self.pendingStartTask == nil else { return }
                 // Give the final transcript callback a tick to land first.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                    guard let self, self.isTakeInProgress, !self.dictationManager.isDictationInProgress else { return }
+                    guard let self, self.isTakeInProgress, !self.takeReceivedFinalTranscript,
+                          !self.dictationManager.isDictationInProgress else { return }
                     self.failTake("didn't catch that")
                 }
             }
@@ -212,13 +215,14 @@ final class DictationTakeController: ObservableObject {
         takeStartedAt = Date()
         takeIsToggle = false
         takeWasCancelled = false
+        takeReceivedFinalTranscript = false
         lastLoudMomentAt = Date()
         fieldAtPress = FocusedFieldReader.snapshot()
         nearbyTermsAtPress = settings.readNearbyText ? FocusedFieldReader.nearbyTerms() : []
         orb.liveTranscript = ""
         orb.isBoxOpen = settings.orbRestsExpanded && orb.boxText != nil
         orb.phase = mode == .edit ? .editListening : .listening
-        orb.hint = nil
+        orb.hint = "tap / release to transcribe"
         earcons.play(.start)
         earcons.tap()
         startInactivityTimer()
@@ -234,6 +238,7 @@ final class DictationTakeController: ObservableObject {
                 updateDraftText: { [weak self] partial in self?.orb.liveTranscript = partial },
                 submitDraftText: { [weak self] final in
                     guard let self else { return }
+                    self.takeReceivedFinalTranscript = true
                     Task { await self.finishTake(rawText: final) }
                 })
             self.pendingStartTask = nil
@@ -396,7 +401,32 @@ final class DictationTakeController: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             guard let self, !self.isTakeInProgress, self.orb.phase == expectedPhase else { return }
             self.orb.phase = .idle
-            self.orb.hint = nil
+            self.orb.hint = self.idleHint
+        }
+    }
+
+    /// The hint pill under a resting orb ("tooltips" in Settings → the orb).
+    var idleHint: String { "tap / hold \(settings.dictationKey.keycapLabel) to talk" }
+
+    /// Asks the configured model a question over the takes that match it (history → "press enter to ask").
+    func askHistory(_ question: String) async -> String {
+        guard let polisher = DictationEngineResolver.makePolisher() else {
+            return "asking needs a model: add a sarvam key or sign in under settings."
+        }
+        let words = question.split(whereSeparator: { $0.isWhitespace }).map(String.init).filter { $0.count > 3 }
+        var candidates = (try? takeStore?.recent(limit: 60, query: words.joined(separator: " "))) ?? []
+        if candidates.isEmpty { candidates = (try? takeStore?.recent(limit: 60)) ?? [] }
+        guard !candidates.isEmpty else { return "nothing in history to ask about yet." }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE d MMM, h:mm a"
+        let context = candidates.prefix(60).map { take in
+            "[\(formatter.string(from: take.createdAt))] (\(take.appName ?? "?")) \(take.displayText.replacingOccurrences(of: "\n", with: " ").prefix(400))"
+        }.joined(separator: "\n")
+        let system = "You answer questions about a person's own dictation history. Use only the takes given; quote the relevant words and say when they were said. If nothing matches, say so in one sentence. Answer in two or three sentences, plainly."
+        do {
+            return try await polisher.polish(system: system, user: "Question: \(question)\n\nTakes:\n\(context)")
+        } catch {
+            return "couldn't ask right now: \(error.localizedDescription)"
         }
     }
 

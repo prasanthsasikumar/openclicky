@@ -952,10 +952,14 @@ final class CompanionManager: ObservableObject {
     lazy var dictationTakeController: DictationTakeController = {
         let controller = DictationTakeController(settings: dictationSettings, spaceStore: dictationSpaceStore, takeStore: dictationTakeStore, orb: orbModel)
         controller.beforeMicrophoneOpens = { [weak self] in
+            guard let self else { return }
+            self.isDictatingToFrontApp = true
             // The Realtime engine's voice-processing input must be gone first, or the dictation
-            // engine records silence (and an upload model then echoes its prompt).
-            await self?.realtimeVoiceClient.releaseMicrophoneForDictation()
-            await MainActor.run { self?.isDictatingToFrontApp = true }
+            // engine records silence (and an upload model then echoes its prompt). Only when a
+            // session is open: releasing an idle engine would just delay the first words.
+            if self.realtimeVoiceClient.isConnected {
+                await self.realtimeVoiceClient.releaseMicrophoneForDictation()
+            }
         }
         controller.afterMicrophoneCloses = { [weak self] in
             self?.isDictatingToFrontApp = false
