@@ -195,7 +195,9 @@ final class CompanionManager: ObservableObject {
             case .user:
                 self.lastTranscript = text
                 print("🗣️ (realtime) \(text)")
+                AppLog.append("talk: you said: \(text.prefix(300))")
             case .assistant:
+                AppLog.append("talk: openclicky said: \(text.prefix(300))")
                 self.conversationHistory.append((userTranscript: self.lastTranscript ?? "", assistantResponse: text))
                 if self.conversationHistory.count > 10 { self.conversationHistory.removeFirst(self.conversationHistory.count - 10) }
                 print("🔊 (realtime) \(text)")
