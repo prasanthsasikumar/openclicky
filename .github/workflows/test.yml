@@ -39,6 +39,9 @@ jobs:
         run: |
           brew install swiftlint
           swiftlint lint --quiet
+      # RealtimeAudioEngineConcurrencyTests is a CoreAudio race test that needs a real audio graph;
+      # the hosted runner reports an audio device but cannot build one, and the test host dies. It
+      # runs by hand (see its header) and under the Thread Sanitizer, not here.
       - name: Build the app and run its unit tests (unsigned)
         working-directory: macos/OpenClicky
         # Both commands pipe into `tail`, and the default shell (`bash -e`) reports the exit status
@@ -49,7 +52,8 @@ jobs:
           xcodebuild -project OpenClicky.xcodeproj -scheme OpenClicky -destination 'platform=macOS' \
             -derivedDataPath build/DerivedData build-for-testing CODE_SIGNING_ALLOWED=NO 2>&1 | tee build.log | tail -5
           xcodebuild -project OpenClicky.xcodeproj -scheme OpenClicky -destination 'platform=macOS' \
-            -derivedDataPath build/DerivedData test-without-building -only-testing:OpenClickyTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee test.log | tail -20
+            -derivedDataPath build/DerivedData test-without-building -only-testing:OpenClickyTests \
+            -skip-testing:OpenClickyTests/RealtimeAudioEngineConcurrencyTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee test.log | tail -20
       - name: Show the errors when the build or the tests failed
         if: failure()
         working-directory: macos/OpenClicky
