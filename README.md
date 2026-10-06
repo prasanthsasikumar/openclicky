@@ -21,7 +21,7 @@ at the answer, and hand real work to a Codex agent. MIT licensed.
 
 Nothing leaves your Mac until you choose an engine that needs the network (Settings → engine):
 **Sarvam** with your own key (Saaras hears Hindi, Tamil, Telugu, Malayalam, Kannada, Bengali, Marathi,
-Gujarati, Punjabi, Odia and English, streaming as you speak), or the **OpenClicky** backend with an
+Gujarati, Punjabi, Odia and English, with the words appearing while you speak), or the **OpenClicky** backend with an
 invite or your OpenAI key. The same key or account polishes takes with a model (punctuation, "three
 p.m." → "3 PM", your style's rules) and powers **Hey Clicky**: hold fn + ⌃, say "make it formal", and
 the selected text is rewritten.
@@ -94,9 +94,8 @@ Notion / Sheets / Slack, and Wispr Flow import.
 
 ## Next
 
-- Dictation: Sarvam's realtime socket (`saaras:v3-realtime`) for word-by-word partials, rich paste
-  for Notion / Sheets / Slack, retry of failed takes from retained audio, history sync, Wispr Flow
-  import, a Windows client.
+- Dictation: rich paste for Notion / Sheets / Slack, history sync between Macs, Wispr Flow import, a
+  Windows client.
 - Shell (`macos/OpenClicky`): stream agent milestones onto the cursor bubble, Keychain token entry
   (upstream PR #80 is a good template), active-document reader.
 - Voice: wake word, spoken task-finished summaries, Deepgram/Whisper STT fallback.

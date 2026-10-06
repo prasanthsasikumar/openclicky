@@ -290,7 +290,8 @@ OPENCLICKY_SARVAM_KEY=… OpenClicky.app/Contents/MacOS/OpenClicky --openclicky-
 ```
 
 It prints the words heard, then the formatted take (model polish when a key or account is set). The
-Sarvam run was verified live on 2026-10-06 in English and Hindi over the streaming socket.
+Sarvam run was verified live on 2026-10-06 in English and Hindi over both sockets (realtime, with
+partial words as the audio plays, and chunked).
 
 The minimal SwiftPM panel is still available for headless checks:
 

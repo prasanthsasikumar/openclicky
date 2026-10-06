@@ -132,6 +132,63 @@ struct SarvamSpeechClient: Sendable {
         return request
     }
 
+    // MARK: ears (realtime)
+
+    /// The realtime socket: `saaras:v3-realtime` with manual endpointing, so the key decides where
+    /// the utterance ends and partial words arrive while it is held. `language_code` must be named
+    /// (`auto` detects).
+    static func realtimeRequest(language: DictationLanguage, keyterms: [String], key: String, host: URL = SarvamSpeechClient.streamingHost) -> URLRequest {
+        var components = URLComponents(url: host.appendingPathComponent("speech-to-text-realtime/ws"), resolvingAgainstBaseURL: false) ?? URLComponents()
+        var items = [
+            URLQueryItem(name: "language_code", value: language.code == "auto" ? "auto" : language.code),
+            URLQueryItem(name: "model", value: "saaras:v3-realtime"),
+            URLQueryItem(name: "stream_type", value: "balanced"),
+            URLQueryItem(name: "encoding", value: "linear16"),
+            URLQueryItem(name: "sample_rate", value: String(sampleRate)),
+            URLQueryItem(name: "endpointing", value: "manual"),
+        ]
+        if !keyterms.isEmpty { items.append(URLQueryItem(name: "keyterms", value: keyterms.prefix(50).joined(separator: ","))) }
+        components.queryItems = items
+        var request = URLRequest(url: components.url ?? host)
+        request.setValue(key.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "Api-Subscription-Key")
+        return request
+    }
+
+    static func realtimeAudioMessage(pcm16: Data) -> String {
+        json(["event": "audio_input", "audio": pcm16.base64EncodedString()])
+    }
+
+    static func realtimeEventMessage(_ event: String) -> String {
+        json(["event": event])
+    }
+
+    /// What a realtime frame means.
+    enum RealtimeServerMessage: Equatable {
+        case partial(String)
+        case final(String)
+        case sessionBegin
+        case sessionEnd
+        case error(String, fatal: Bool)
+        case other
+    }
+
+    static func decodeRealtimeMessage(_ text: String) -> RealtimeServerMessage {
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any],
+              let event = object["event"] as? String else { return .other }
+        switch event {
+        case "transcript.partial": return .partial((object["text"] as? String) ?? "")
+        case "transcript.final": return .final((object["text"] as? String) ?? "")
+        case "session.begin": return .sessionBegin
+        case "session.end": return .sessionEnd
+        case "error": return .error((object["message"] as? String) ?? (object["code"] as? String) ?? "unknown error", fatal: (object["is_fatal"] as? Bool) ?? true)
+        default: return .other
+        }
+    }
+
+    private static func json(_ object: [String: Any]) -> String {
+        String(decoding: (try? JSONSerialization.data(withJSONObject: object)) ?? Data(), as: UTF8.self)
+    }
+
     /// One audio chunk as the socket wants it: a base64 WAV at 16 kHz.
     static func streamingAudioMessage(pcm16: Data) -> String {
         let wav = BuddyWAVFileBuilder.buildWAVData(fromPCM16MonoAudio: pcm16, sampleRate: sampleRate)

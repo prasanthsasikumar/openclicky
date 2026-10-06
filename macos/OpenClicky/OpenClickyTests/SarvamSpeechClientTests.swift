@@ -90,3 +90,28 @@ struct SarvamSpeechClientTests {
         #expect(SarvamUploadSession.peak(of: pcm) == 900)
     }
 }
+
+struct SarvamRealtimeClientTests {
+    @Test func theRealtimeSocketUsesManualEndpointingAndRawPCM() {
+        let request = SarvamSpeechClient.realtimeRequest(language: .auto, keyterms: [], key: "k")
+        let url = request.url!.absoluteString
+        #expect(url.hasPrefix("wss://api.sarvam.ai/speech-to-text-realtime/ws?"))
+        #expect(url.contains("language_code=auto"))
+        #expect(url.contains("model=saaras:v3-realtime"))
+        #expect(url.contains("endpointing=manual"))
+        #expect(url.contains("encoding=linear16"))
+        #expect(request.value(forHTTPHeaderField: "Api-Subscription-Key") == "k")
+    }
+
+    @Test func realtimeMessagesEncodeAndDecode() throws {
+        let audio = try #require(JSONSerialization.jsonObject(with: Data(SarvamSpeechClient.realtimeAudioMessage(pcm16: Data([1, 0])).utf8)) as? [String: String])
+        #expect(audio["event"] == "audio_input")
+        #expect(audio["audio"] == Data([1, 0]).base64EncodedString())
+        #expect(SarvamSpeechClient.realtimeEventMessage("flush") == "{\"event\":\"flush\"}")
+        #expect(SarvamSpeechClient.decodeRealtimeMessage("{\"event\":\"transcript.partial\",\"utterance_idx\":0,\"text\":\"tech week\"}") == .partial("tech week"))
+        #expect(SarvamSpeechClient.decodeRealtimeMessage("{\"event\":\"transcript.final\",\"utterance_idx\":0,\"text\":\"Tech Week starts.\"}") == .final("Tech Week starts."))
+        #expect(SarvamSpeechClient.decodeRealtimeMessage("{\"event\":\"error\",\"code\":\"invalid_config\",\"is_fatal\":false,\"message\":\"no\"}") == .error("no", fatal: false))
+        #expect(SarvamSpeechClient.decodeRealtimeMessage("{\"event\":\"session.end\",\"request_id\":\"r\"}") == .sessionEnd)
+        #expect(SarvamSpeechClient.decodeRealtimeMessage("{\"event\":\"pong\"}") == .other)
+    }
+}

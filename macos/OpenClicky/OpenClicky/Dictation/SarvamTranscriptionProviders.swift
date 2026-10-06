@@ -47,9 +47,18 @@ final class SarvamTranscriptionProvider: BuddyTranscriptionProvider {
         }
         let language = language()
         if preferStreaming {
+            // The realtime socket gives words while the key is held; the chunked socket gives them
+            // at the end; the upload is the last resort. Each is tried in turn.
             do {
                 return try await SarvamStreamingSession.open(
-                    key: key, language: language, keyterms: keyterms,
+                    key: key, language: language, keyterms: keyterms, flavour: .realtime,
+                    onTranscriptUpdate: onTranscriptUpdate, onFinalTranscriptReady: onFinalTranscriptReady, onError: onError)
+            } catch {
+                AppLog.append("sarvam realtime socket could not open (\(error.localizedDescription)); trying the chunked socket")
+            }
+            do {
+                return try await SarvamStreamingSession.open(
+                    key: key, language: language, keyterms: keyterms, flavour: .chunked,
                     onTranscriptUpdate: onTranscriptUpdate, onFinalTranscriptReady: onFinalTranscriptReady, onError: onError)
             } catch {
                 AppLog.append("sarvam streaming could not open (\(error.localizedDescription)); uploading the take instead")
@@ -66,6 +75,11 @@ final class SarvamTranscriptionProvider: BuddyTranscriptionProvider {
 final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession, URLSessionWebSocketDelegate, @unchecked Sendable {
     let finalTranscriptFallbackDelaySeconds: TimeInterval = 6
 
+    /// Which of Sarvam's sockets this is: the realtime one (partials, manual endpointing, raw PCM)
+    /// or the chunked one (a transcript per chunk, WAV).
+    enum Flavour { case realtime, chunked }
+    private let flavour: Flavour
+
     /// Frames are batched into chunks this long before they go out (a frame per message is too chatty).
     static let chunkDurationSeconds = 0.25
     private static var chunkByteCount: Int { Int(Double(SarvamSpeechClient.sampleRate) * 2 * chunkDurationSeconds) }
@@ -73,6 +87,8 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
     private struct State {
         var pending = Data()
         var pieces: [String] = []
+        /// Realtime: the words of the utterance in progress, replaced by each partial.
+        var partial = ""
         var hasRequestedFinal = false
         var hasDeliveredFinal = false
         var isClosed = false
@@ -91,7 +107,8 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
     private let opened = OSAllocatedUnfairLock<CheckedContinuation<Void, Error>?>(initialState: nil)
     private let finalDeliveryWork = OSAllocatedUnfairLock<DispatchWorkItem?>(initialState: nil)
 
-    private init(onTranscriptUpdate: @escaping (String) -> Void, onFinalTranscriptReady: @escaping (String) -> Void, onError: @escaping (Error) -> Void) {
+    private init(flavour: Flavour, onTranscriptUpdate: @escaping (String) -> Void, onFinalTranscriptReady: @escaping (String) -> Void, onError: @escaping (Error) -> Void) {
+        self.flavour = flavour
         self.onTranscriptUpdate = onTranscriptUpdate
         self.onFinalTranscriptReady = onFinalTranscriptReady
         self.onError = onError
@@ -99,16 +116,19 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
     }
 
     static func open(
-        key: String, language: DictationLanguage, keyterms: [String],
+        key: String, language: DictationLanguage, keyterms: [String], flavour: Flavour = .chunked,
         onTranscriptUpdate: @escaping (String) -> Void,
         onFinalTranscriptReady: @escaping (String) -> Void,
         onError: @escaping (Error) -> Void
     ) async throws -> SarvamStreamingSession {
-        let session = SarvamStreamingSession(onTranscriptUpdate: onTranscriptUpdate, onFinalTranscriptReady: onFinalTranscriptReady, onError: onError)
+        let session = SarvamStreamingSession(flavour: flavour, onTranscriptUpdate: onTranscriptUpdate, onFinalTranscriptReady: onFinalTranscriptReady, onError: onError)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         session.urlSession = URLSession(configuration: configuration, delegate: session, delegateQueue: nil)
-        session.socket = session.urlSession.webSocketTask(with: SarvamSpeechClient.streamingRequest(language: language, keyterms: keyterms, key: key))
+        let request = flavour == .realtime
+            ? SarvamSpeechClient.realtimeRequest(language: language, keyterms: keyterms, key: key)
+            : SarvamSpeechClient.streamingRequest(language: language, keyterms: keyterms, key: key)
+        session.socket = session.urlSession.webSocketTask(with: request)
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
@@ -130,6 +150,7 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
             throw error
         }
         session.receiveLoop()
+        if flavour == .realtime { session.send(SarvamSpeechClient.realtimeEventMessage("speech_start")) }
         return session
     }
 
@@ -190,6 +211,10 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
     }
 
     private func handle(serverText: String) {
+        if flavour == .realtime {
+            handleRealtime(serverText)
+            return
+        }
         switch SarvamSpeechClient.decodeStreamingMessage(serverText) {
         case .transcript(let piece):
             let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -210,6 +235,35 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
         }
     }
 
+    private func handleRealtime(_ serverText: String) {
+        switch SarvamSpeechClient.decodeRealtimeMessage(serverText) {
+        case .partial(let words):
+            let text = state.withLock { box -> String in
+                box.partial = words
+                return (box.pieces + [words]).joined(separator: " ")
+            }
+            onTranscriptUpdate(text.trimmingCharacters(in: .whitespaces))
+        case .final(let words):
+            let trimmed = words.trimmingCharacters(in: .whitespacesAndNewlines)
+            let (text, requested) = state.withLock { box -> (String, Bool) in
+                if !trimmed.isEmpty { box.pieces.append(trimmed) }
+                box.partial = ""
+                return (box.pieces.joined(separator: " "), box.hasRequestedFinal)
+            }
+            onTranscriptUpdate(text)
+            // The final after the flush is the last word; the session is ended right after.
+            if requested { scheduleFinalDelivery(after: 0.3) }
+        case .sessionEnd:
+            state.withLock { $0.isClosed = true }
+            deliverFinalIfRequested()
+        case .error(let message, let fatal):
+            AppLog.append("sarvam realtime error: \(message) (fatal: \(fatal))")
+            if fatal { onError(SarvamSpeechError.refused(status: 0, message: message)) }
+        case .sessionBegin, .other:
+            break
+        }
+    }
+
     // MARK: BuddyStreamingTranscriptionSession
 
     func appendAudioBuffer(_ audioBuffer: AVAudioPCMBuffer) {
@@ -223,7 +277,11 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
             box.sentBytes += out.count
             return out
         }
-        if let chunk { send(SarvamSpeechClient.streamingAudioMessage(pcm16: chunk)) }
+        if let chunk { send(audioMessage(pcm16: chunk)) }
+    }
+
+    private func audioMessage(pcm16: Data) -> String {
+        flavour == .realtime ? SarvamSpeechClient.realtimeAudioMessage(pcm16: pcm16) : SarvamSpeechClient.streamingAudioMessage(pcm16: pcm16)
     }
 
     func requestFinalTranscript() {
@@ -235,8 +293,13 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
             return out
         }
         guard let remainder else { return }
-        if !remainder.isEmpty { send(SarvamSpeechClient.streamingAudioMessage(pcm16: remainder)) }
-        send(SarvamSpeechClient.streamingFlushMessage)
+        if !remainder.isEmpty { send(audioMessage(pcm16: remainder)) }
+        if flavour == .realtime {
+            send(SarvamSpeechClient.realtimeEventMessage("speech_end"))
+            send(SarvamSpeechClient.realtimeEventMessage("flush"))
+        } else {
+            send(SarvamSpeechClient.streamingFlushMessage)
+        }
         // The flushed pieces normally arrive within a second; the manager's own fallback covers more.
         scheduleFinalDelivery(after: 2.5)
     }
@@ -267,9 +330,11 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
         let text: String? = state.withLock { box in
             guard box.hasRequestedFinal, !box.hasDeliveredFinal else { return nil }
             box.hasDeliveredFinal = true
-            return box.pieces.joined(separator: " ")
+            // A partial that never got its final still counts: those words were heard.
+            return (box.pieces + (box.partial.isEmpty ? [] : [box.partial])).joined(separator: " ")
         }
         guard let text else { return }
+        if flavour == .realtime { send(SarvamSpeechClient.realtimeEventMessage("end")) }
         socket.cancel(with: .normalClosure, reason: nil)
         urlSession.finishTasksAndInvalidate()
         onFinalTranscriptReady(text.trimmingCharacters(in: .whitespacesAndNewlines))
