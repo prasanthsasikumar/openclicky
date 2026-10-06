@@ -140,7 +140,67 @@ final class DictationTakeController: ObservableObject {
         self.currentEngine = settings.engine
         self.dictationManager = capture ?? BuddyDictationManager(transcriptionProvider: DictationEngineResolver.makeProvider(for: settings.engine, settings: settings))
         self.dictationManager.audioRetentionSink = { buffer in audioStore.append(buffer) }
+        orb.onQuickRewrite = { [weak self] instruction in Task { await self?.rewriteLastTake(instruction: instruction) } }
+        orb.onPasteFromBox = { [weak self] in self?.pasteFromBox() }
         bind()
+    }
+
+    /// The rewrites the box offers: Kivi's casual and formal keys, as chips, plus shorter.
+    static let quickRewrites: [(label: String, instruction: String)] = [
+        ("formal", "Rewrite it formally: full sentences, full forms, no slang, polite."),
+        ("casual", "Rewrite it casually: lowercase, shorthand welcome, light punctuation, warm."),
+        ("shorter", "Make it shorter: the fewest words that still say it, nothing added."),
+    ]
+
+    /// A chip under the box: the last take is rewritten by the model and the box shows the result;
+    /// history keeps the previous text as a revision.
+    func rewriteLastTake(instruction label: String) async {
+        guard !orb.isRewriting, let text = orb.boxText, !text.isEmpty,
+              let rewrite = Self.quickRewrites.first(where: { $0.label == label }),
+              let polisher = host.makePolisher() else { return }
+        boxCloseWork?.cancel()
+        orb.isRewriting = true
+        defer { orb.isRewriting = false }
+        let space = spaceStore.space
+        let context = TakeFormattingContext(
+            style: space.style(forAppBundleID: lastTake?.appBundleID), dictionary: space.dictionary, shortcuts: space.shortcuts,
+            appName: lastTake?.appName, language: settings.language, script: settings.script)
+        do {
+            let rewritten = try await HeyClickyEditor.edit(selection: text, instruction: rewrite.instruction, context: context, polisher: polisher)
+            orb.boxText = rewritten
+            orb.boxReason = "\(label) · paste or copy"
+            orb.isBoxOpen = true
+            if let last = lastTake, !settings.incognito {
+                try? takeStore?.revise(takeID: last.id, newText: rewritten, editor: "quick-\(label)")
+                lastTake?.formattedText = rewritten
+                historyVersion += 1
+            }
+            AppLog.append("quick rewrite (\(label)): \(rewritten.count) chars")
+        } catch {
+            orb.boxReason = "couldn't rewrite: \(error.localizedDescription)"
+        }
+        scheduleBoxClose(after: 20)
+    }
+
+    /// "paste" in the box: the words go to the app in front (the orb never takes focus).
+    func pasteFromBox() {
+        guard let text = orb.boxText, !text.isEmpty else { return }
+        guard host.frontAppBundleID() != Bundle.main.bundleIdentifier else {
+            orb.boxReason = "click into the app you want it in, then paste"
+            return
+        }
+        switch host.paste(text) {
+        case .typed: orb.boxReason = "pasted"
+        case .leftOnPasteboard: orb.boxReason = "copied — press ⌘V"
+        }
+        if let last = lastTake, last.pasteOutcome == .leftInOrb, !settings.incognito {
+            var pasted = last
+            pasted.pasteOutcome = .posted
+            try? takeStore?.insert(pasted)
+            lastTake = pasted
+            historyVersion += 1
+        }
+        scheduleBoxClose(after: 3)
     }
 
     private func bind() {
@@ -528,6 +588,7 @@ final class DictationTakeController: ObservableObject {
         let showBox = pasteOutcome == .leftInOrb || pasteOutcome == .leftOnPasteboard
             || (pasteOutcome == .posted && settings.orbOpensBoxWhenPasteUnverified) || settings.orbRestsExpanded
         orb.boxReason = pasteOutcome == .verified || pasteOutcome == .posted ? "your last take" : pasteMessage
+        orb.quickRewrites = host.makePolisher() == nil ? [] : Self.quickRewrites.map(\.label)
         orb.isBoxOpen = showBox
         scheduleBoxClose()
         earcons.play(pasteOutcome == .verified || pasteOutcome == .posted ? .complete : .notify)
@@ -540,15 +601,15 @@ final class DictationTakeController: ObservableObject {
     }
 
     /// The box is for the moment the words had nowhere to go; it does not stay on screen.
-    private func scheduleBoxClose() {
+    private func scheduleBoxClose(after seconds: TimeInterval = DictationTakeController.boxLingerSeconds) {
         boxCloseWork?.cancel()
         guard orb.isBoxOpen, !settings.orbRestsExpanded else { return }
         let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.isTakeInProgress, !self.settings.orbRestsExpanded else { return }
+            guard let self, !self.isTakeInProgress, !self.orb.isRewriting, !self.settings.orbRestsExpanded else { return }
             self.orb.isBoxOpen = false
         }
         boxCloseWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.boxLingerSeconds, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
 
     private func scheduleIdle(after seconds: TimeInterval) {

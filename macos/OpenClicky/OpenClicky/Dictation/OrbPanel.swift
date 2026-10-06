@@ -37,6 +37,13 @@ final class OrbModel: ObservableObject {
     @Published var audioLevel: CGFloat = 0
     /// A hint under the pill ("tap / hold to talk"), when tooltips are on.
     @Published var hint: String?
+    /// Rewrites offered under the box's text ("formal", "casual", "shorter") when a model can do them.
+    @Published var quickRewrites: [String] = []
+    /// A rewrite is on its way; the box says so and keeps its old words until it lands.
+    @Published var isRewriting = false
+    /// The box's text can be pasted into the app in front.
+    var onQuickRewrite: ((String) -> Void)?
+    var onPasteFromBox: (() -> Void)?
 
     var isBusy: Bool {
         switch phase {
@@ -52,7 +59,7 @@ enum OrbMetrics {
         size == .mini ? CGSize(width: 44, height: 20) : CGSize(width: 76, height: 30)
     }
     static let boxWidth: CGFloat = 380
-    static let boxHeight: CGFloat = 150
+    static let boxHeight: CGFloat = 170
     static let hintHeight: CGFloat = 22
     static let padding: CGFloat = 12
     /// Where the pill rests when nothing was dragged: this far above the bottom of the main screen.
@@ -264,7 +271,11 @@ struct OrbRootView: View {
     var body: some View {
         VStack(spacing: 8) {
             if model.isBoxOpen, let text = model.boxText {
-                OrbTranscriptBox(text: text, reason: model.boxReason, theme: settings.orbTheme, onCopy: {
+                OrbTranscriptBox(text: text, reason: model.isRewriting ? "rewriting…" : model.boxReason, theme: settings.orbTheme,
+                                 quickRewrites: model.isRewriting ? [] : model.quickRewrites,
+                                 onRewrite: { model.onQuickRewrite?($0) },
+                                 onPaste: model.onPasteFromBox.map { paste in { paste() } },
+                                 onCopy: {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                     if !settings.orbRestsExpanded { model.isBoxOpen = false }
@@ -417,6 +428,9 @@ private struct OrbTranscriptBox: View {
     let text: String
     let reason: String
     let theme: OrbTheme
+    var quickRewrites: [String] = []
+    var onRewrite: (String) -> Void = { _ in }
+    var onPaste: (() -> Void)?
     let onCopy: () -> Void
     let onClose: () -> Void
 
@@ -428,9 +442,23 @@ private struct OrbTranscriptBox: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if !quickRewrites.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(quickRewrites, id: \.self) { rewrite in
+                        Button(rewrite) { onRewrite(rewrite) }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .medium))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Capsule().fill(Color.primary.opacity(0.08)))
+                            .pointerCursor()
+                    }
+                    Spacer()
+                }
+            }
             HStack {
                 Text(reason).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
+                if let onPaste { Button("paste", action: onPaste).controlSize(.small) }
                 Button("copy", action: onCopy).controlSize(.small)
                 Button(action: onClose) { Image(systemName: "xmark") }.controlSize(.small)
             }
