@@ -125,11 +125,19 @@ struct SarvamSpeechClient: Sendable {
             URLQueryItem(name: "input_audio_codec", value: "wav"),
             URLQueryItem(name: "vad_signals", value: "true"),
         ]
-        if !keyterms.isEmpty { items.append(URLQueryItem(name: "keyterms", value: keyterms.prefix(50).joined(separator: ","))) }
+        if let encoded = keytermsQueryValue(keyterms) { items.append(URLQueryItem(name: "keyterms", value: encoded)) }
         components.queryItems = items
         var request = URLRequest(url: components.url ?? host)
         request.setValue(key.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "Api-Subscription-Key")
         return request
+    }
+
+    /// The chunked socket takes `keyterms` as a JSON array of strings ("'keyterms' must be a valid
+    /// JSON array of strings"), fifty at most; nil when there are none.
+    static func keytermsQueryValue(_ keyterms: [String]) -> String? {
+        let cleaned = Array(keyterms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.prefix(50))
+        guard !cleaned.isEmpty, let data = try? JSONSerialization.data(withJSONObject: cleaned) else { return nil }
+        return String(decoding: data, as: UTF8.self)
     }
 
     // MARK: ears (realtime)
@@ -147,7 +155,10 @@ struct SarvamSpeechClient: Sendable {
             URLQueryItem(name: "sample_rate", value: String(sampleRate)),
             URLQueryItem(name: "endpointing", value: "manual"),
         ]
-        if !keyterms.isEmpty { items.append(URLQueryItem(name: "keyterms", value: keyterms.prefix(50).joined(separator: ","))) }
+        // This model takes no `keyterms` ("only supported by model 'saaras:v4'"); the dictionary's
+        // words go in `prompt`, which it does take.
+        let hint = keyterms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.prefix(50).joined(separator: ", ")
+        if !hint.isEmpty { items.append(URLQueryItem(name: "prompt", value: "Names and terms that may come up: \(hint).")) }
         components.queryItems = items
         var request = URLRequest(url: components.url ?? host)
         request.setValue(key.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "Api-Subscription-Key")

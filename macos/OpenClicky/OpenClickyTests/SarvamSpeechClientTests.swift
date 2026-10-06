@@ -37,7 +37,8 @@ struct SarvamSpeechClientTests {
         #expect(url.contains("language-code=hi-IN"))
         #expect(url.contains("model=saaras:v4"))
         #expect(url.contains("sample_rate=16000"))
-        #expect(url.contains("keyterms=Kochi,FlowsXR"))
+        // The socket wants a JSON array ("'keyterms' must be a valid JSON array of strings"), percent-encoded in the query.
+        #expect(url.contains("keyterms=%5B%22Kochi%22,%22FlowsXR%22%5D"))
         #expect(request.value(forHTTPHeaderField: "Api-Subscription-Key") == "k")
     }
 
@@ -93,8 +94,12 @@ struct SarvamSpeechClientTests {
 
 struct SarvamRealtimeClientTests {
     @Test func theRealtimeSocketUsesManualEndpointingAndRawPCM() {
-        let request = SarvamSpeechClient.realtimeRequest(language: .auto, keyterms: [], key: "k")
+        let request = SarvamSpeechClient.realtimeRequest(language: .auto, keyterms: ["FlowsXR", " "], key: "k")
         let url = request.url!.absoluteString
+        // v3-realtime refuses `keyterms` outright; the words ride in `prompt`.
+        #expect(!url.contains("keyterms="))
+        #expect(url.contains("prompt=Names%20and%20terms%20that%20may%20come%20up:%20FlowsXR."))
+        #expect(!SarvamSpeechClient.realtimeRequest(language: .auto, keyterms: [], key: "k").url!.absoluteString.contains("prompt"))
         #expect(url.hasPrefix("wss://api.sarvam.ai/speech-to-text-realtime/ws?"))
         #expect(url.contains("language_code=auto"))
         #expect(url.contains("model=saaras:v3-realtime"))
