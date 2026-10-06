@@ -204,7 +204,11 @@ final class OrbPanelManager {
         let hintSpace = showsHint ? OrbMetrics.hintHeight : 0
         let frame = NSRect(x: anchor.x - width / 2, y: anchor.y - OrbMetrics.padding - hintSpace, width: width, height: height)
         window.setFrame(frame, display: true)
-        if !window.isVisible { window.orderFrontRegardless() }
+        if !window.isVisible {
+            // Hidden-when-idle starts out of sight; it fades in with the first take.
+            if settings.orbHidesWhenIdle && !model.isBusy && !model.isBoxOpen { window.alphaValue = 0 }
+            window.orderFrontRegardless()
+        }
         scheduleHideIfIdle()
     }
 
@@ -246,7 +250,10 @@ final class OrbPanelManager {
             return
         }
         if model.isBusy || model.isBoxOpen {
-            window.alphaValue = 1
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = settings.reduceAnimation ? 0 : 0.15
+                window.animator().alphaValue = 1
+            }
             return
         }
         let work = DispatchWorkItem { [weak self] in

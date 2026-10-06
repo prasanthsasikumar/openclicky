@@ -131,6 +131,12 @@ final class DictationSettings: ObservableObject {
         orbLook = OrbLook(rawValue: defaults.string(forKey: Keys.orbLook) ?? "") ?? .pill
         orbTheme = OrbTheme(rawValue: defaults.string(forKey: Keys.orbTheme) ?? "") ?? .black
         orbSize = OrbSize(rawValue: defaults.string(forKey: Keys.orbSize) ?? "") ?? .full
+        // Out of the way until a take starts: the pill resting on the Dock all day was the first
+        // thing asked to go. Applied once, so a user who turns it off keeps it off.
+        if !defaults.bool(forKey: Keys.orbHidesWhenIdleDefaultApplied) {
+            defaults.set(true, forKey: Keys.orbHidesWhenIdleDefaultApplied)
+            defaults.set(true, forKey: Keys.orbHidesWhenIdle)
+        }
         orbHidesWhenIdle = defaults.bool(forKey: Keys.orbHidesWhenIdle)
         orbRestsExpanded = defaults.bool(forKey: Keys.orbRestsExpanded)
         orbOpensBoxWhenPasteUnverified = defaults.bool(forKey: Keys.orbOpensBoxWhenPasteUnverified)
@@ -163,6 +169,7 @@ final class DictationSettings: ObservableObject {
         static let orbTheme = "dictation.orb.theme"
         static let orbSize = "dictation.orb.size"
         static let orbHidesWhenIdle = "dictation.orb.hidesWhenIdle"
+        static let orbHidesWhenIdleDefaultApplied = "dictation.orb.hidesWhenIdle.defaultApplied"
         static let orbRestsExpanded = "dictation.orb.restsExpanded"
         static let orbOpensBoxWhenPasteUnverified = "dictation.orb.opensBoxWhenPasteUnverified"
         static let orbIsDraggable = "dictation.orb.draggable"
@@ -248,7 +255,7 @@ final class DictationSettings: ObservableObject {
     /// Settings → general → reset, and the orb page's reset: back to a fresh install's values.
     func resetOrbToDefaults() {
         orbVisible = true; orbLook = .pill; orbTheme = .black; orbSize = .full
-        orbHidesWhenIdle = false; orbRestsExpanded = false; orbOpensBoxWhenPasteUnverified = false
+        orbHidesWhenIdle = true; orbRestsExpanded = false; orbOpensBoxWhenPasteUnverified = false
         orbIsDraggable = true; orbPosition = nil; tooltips = false; sounds = true; haptics = true
     }
 
