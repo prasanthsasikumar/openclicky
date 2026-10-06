@@ -7,8 +7,9 @@ was locked). Tick each line the first time it is seen working and note the build
 
 ## 1. First launch
 
-- [ ] The onboarding window opens: five chapters (welcome, permissions, key, engine, first take), each
-      skippable; the progress capsules at the top right fill in.
+- [x] The onboarding window opens: five chapters (welcome, permissions, key, engine, first take), each
+      skippable; the progress capsules at the top right fill in. *(welcome chapter seen on build 130,
+      2026-10-06; the other chapters not yet)*
 - [ ] Permissions chapter: microphone, accessibility and speech recognition show "granted" or a
       grant button; the rows turn green on their own within a second of granting.
 - [ ] Key chapter: fn is selected; if macOS still has fn on Emoji & Symbols, the amber card offers
@@ -20,7 +21,8 @@ was locked). Tick each line the first time it is seen working and note the build
 
 ## 2. The orb
 
-- [ ] A small dark pill with two dashes rests at the bottom centre of the main screen.
+- [x] A small dark pill with two dashes rests at the bottom centre of the main screen. *(seen on
+      build 130; it rested on the external display until build 131 moved it to the primary one)*
 - [ ] Hold fn: start tone, the pill widens, five bars follow your voice, live words show (Sarvam /
       Apple engines stream; the OpenClicky engine shows "listening…").
 - [ ] Let go: stop tone, "moving your words", then "moved to text box" with the done tone, then idle.
