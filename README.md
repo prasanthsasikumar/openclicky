@@ -87,6 +87,7 @@ Notion / Sheets / Slack, and Wispr Flow import.
 | [Setup and running from source](docs/setup.md) | prerequisites, backend, CLI, macOS app, provider choices, keys vs invites, auth flow, releases and the update feed |
 | [Dictation design](docs/superpowers/specs/2026-10-06-dictation-kivi-port-design.md) | the take loop, engines, formatting, the space, the orb, installation — what was built and why |
 | [Kivi, reverse-engineered](docs/research/2026-10-06-kivi-reverse-engineering.md) | the report the dictation product shape was taken from |
+| [Dictation hand test](docs/dictation-hand-test.md) | what to try by hand after a build, step by step |
 | [Skill authoring](docs/skills.md) | `SKILL.md` format, matching, budgets, activation |
 | [`app-skills/`](app-skills/) | the 16 app-teaching skills and how to add one |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | setup, test commands, where help is welcome |
