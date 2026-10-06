@@ -33,7 +33,7 @@ struct TakeStoreTests {
         #expect(try store.recent(query: "francisco").count == 1)
         #expect(try store.recent(query: "kilograms").count == 1)
         #expect(try store.recent(query: "today week").count == 1)
-        #expect(try store.recent(query: "nothing%").count == 0)
+        #expect(try store.recent(query: "nothing%").isEmpty)
     }
 
     @Test func revisionsKeepThePreviousTextAndUpdateTheTake() throws {
