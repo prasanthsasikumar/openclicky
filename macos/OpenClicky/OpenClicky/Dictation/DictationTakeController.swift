@@ -375,6 +375,7 @@ final class DictationTakeController: ObservableObject {
         nearbyTermsAtPress = []
         audioStore.beginCapture()
         boxCloseWork?.cancel()
+        dictationManager.updateContextualKeyterms(spaceStore.space.dictionary.map(\.written))
         orb.liveTranscript = ""
         orb.isBoxOpen = settings.orbRestsExpanded && orb.boxText != nil
         orb.phase = mode == .edit ? .editListening : .listening

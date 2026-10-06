@@ -34,6 +34,8 @@ protocol DictationCapturing: AnyObject {
     func stopPushToTalkFromKeyboardShortcut()
     func cancelCurrentDictation(preserveDraftText: Bool)
     func replaceTranscriptionProvider(_ provider: any BuddyTranscriptionProvider)
+    /// Words the engine should expect (the dictionary); sent with the next session.
+    func updateContextualKeyterms(_ contextualKeyterms: [String])
 }
 
 extension BuddyDictationManager: DictationCapturing {

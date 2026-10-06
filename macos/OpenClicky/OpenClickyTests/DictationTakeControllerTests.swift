@@ -49,6 +49,7 @@ private final class FakeCapture: DictationCapturing {
     }
 
     func replaceTranscriptionProvider(_ provider: any BuddyTranscriptionProvider) {}
+    func updateContextualKeyterms(_ contextualKeyterms: [String]) {}
 
     /// The engine's words arrive: the session ends, then the final text is delivered (as the real
     /// manager does: state first, callback second).
