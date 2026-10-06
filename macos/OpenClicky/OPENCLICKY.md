@@ -82,3 +82,23 @@ Headless agent check: `OpenClicky.app/Contents/MacOS/OpenClicky --openclicky-smo
 Headless voice checks (need a real OpenAI key behind the backend): `--openclicky-smoke-talk 12` opens an always-on session, greets and prints capture statistics; `--openclicky-smoke-talk-file utterance.wav` runs a real push-to-talk turn with a recorded utterance instead of the microphone (make one with `say -o utterance.wav --data-format=LEI16@24000 "what is two plus two"`), prints your transcript, the reply, and confirms the microphone was released afterwards.
 
 Settings → VOICE: "Realtime voice" (default on) switches push-to-talk to the Realtime loop; "Always listening" keeps the mic open with server-side turn detection so you can just talk. It is session-only: every launch starts in push-to-talk (a hands-free toggle left on used to greet the user unprompted at the next launch).
+
+## The dictation port (2026-10-06)
+
+`OpenClicky/Dictation/` is new, not from upstream: the take loop, the orb, the main window, onboarding,
+the self-installer and the update feed — the product shape of Sarvam's Kivi, reverse-engineered in
+`../../docs/research/2026-10-06-kivi-reverse-engineering.md` and designed in
+`../../docs/superpowers/specs/2026-10-06-dictation-kivi-port-design.md`. Upstream files it touched:
+
+| File | Change |
+|---|---|
+| `CompanionShortcutRecognizer.swift` | The dictation key (fn by default) is its own event family: pressed, edit modifier joined, released(wasTap), double tapped, escape. fn+⌃ held is no longer "dictate"; it is Hey Clicky. Hands-free stays on fn+⌃ ×2. |
+| `GlobalPushToTalkShortcutMonitor.swift` | Forwards the new events; `dictationKey` follows Settings. |
+| `CompanionManager.swift` | Owns `DictationSettings`, `DictationSpaceStore`, `TakeStore`, `OrbModel`/`OrbPanelManager`, `DictationTakeController`, the window and onboarding controllers, the clipboard monitor; `startDictation()` at launch. The old fn+⌃ dictate-to-front-app path is gone. The menu bar icon is on by default. |
+| `BuddyDictationManager.swift` | `init(transcriptionProvider:)`, `replaceTranscriptionProvider`, `preferredMicrophoneUID`. |
+| `MenuBarPanelManager.swift` | Right click → app menu (open openclicky, history, orb, incognito, settings, updates, quit); the new mark. |
+| `OpenClickyApp.swift` | Self-install from the dmg on launch, `applicationShouldHandleReopen` → the window, `--openclicky-smoke-transcribe`. |
+| `OpenClickyConfiguration.swift` | `sarvamKey` in shell.json. |
+| `Info.plist`, `Assets.xcassets/AppIcon` | Sparkle feed + EdDSA key, daily checks; the new icon. |
+| `scripts/release.sh` | Signs the zip, writes and uploads `appcast.xml`. |
+

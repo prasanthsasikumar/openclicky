@@ -69,6 +69,21 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-smoke-transcribe"), argumentIndex + 1 < launchArguments.count {
+            // Headless check of a dictation engine with a recording instead of the microphone:
+            //   OpenClicky --openclicky-smoke-transcribe take.wav [offline|sarvam|openclicky]
+            // The Sarvam key comes from shell.json or OPENCLICKY_SARVAM_KEY. Prints the raw words,
+            // the formatted take, and exits 0 when something was heard.
+            let filePath = launchArguments[argumentIndex + 1]
+            let engineName = argumentIndex + 2 < launchArguments.count ? launchArguments[argumentIndex + 2] : "offline"
+            setvbuf(stdout, nil, _IONBF, 0)
+            Task { @MainActor in
+                let exitCode = await DictationSmokeRun.transcribe(filePath: filePath, engineName: engineName)
+                exit(exitCode)
+            }
+            return
+        }
+
         if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-smoke-talk-file"), argumentIndex + 1 < launchArguments.count {
             // Headless push-to-talk check with a recorded utterance instead of the microphone:
             // connect, press, stream the file as mic audio in real time, release, print the reply.
@@ -174,6 +189,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         print("🎯 OpenClicky: Starting...")
         print("🎯 OpenClicky: Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
 
+        // Launched from the disk image: offer to move to /Applications and run from there.
+        if DiskImageSelfInstaller.offerToInstallIfNeeded() { return }
+
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
 
         ClickyAnalytics.configure()
@@ -195,6 +213,12 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         companionManager.stop()
+    }
+
+    /// The Dock icon (while the window is open) or `open -a OpenClicky`: show the window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        companionManager.showDictationWindow()
+        return false
     }
 
     /// Registers the app as a login item so it launches automatically on

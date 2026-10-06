@@ -5,7 +5,15 @@
 
 ## Overview
 
-macOS menu bar companion app. Lives entirely in the macOS status bar (no dock icon, no main window). Clicking the menu bar icon opens a custom floating panel with companion voice controls. Uses push-to-talk (ctrl+option) to capture voice input, transcribes it through the OpenClicky backend, and either sends the transcript + a screenshot to Claude (teacher lane) or hands it to a Codex agent thread via the `openclicky` CLI (agent mode). Claude responds with text (streamed via SSE) and voice (ElevenLabs TTS). A blue cursor overlay can fly to and point at UI elements Claude references on any connected monitor.
+macOS dictation app and voice companion. **Dictation first** (the Kivi port, `OpenClicky/Dictation/`):
+hold the dictation key (fn) anywhere, the take is heard by the chosen engine (offline Apple,
+Sarvam, OpenClicky backend, AssemblyAI), formatted in the front app's style with the dictionary and
+spoken shortcuts, pasted and verified through Accessibility, and written to a local SQLite history;
+the orb at the bottom of the screen shows every step; the main window (record, history, dictionary,
+shortcuts, styles, settings) opens from the menu bar. Design: `../../docs/superpowers/specs/2026-10-06-dictation-kivi-port-design.md`;
+the product it follows: `../../docs/research/2026-10-06-kivi-reverse-engineering.md`.
+
+The companion is unchanged underneath: a menu bar companion app. Lives entirely in the macOS status bar (no dock icon, no main window). Clicking the menu bar icon opens a custom floating panel with companion voice controls. Uses push-to-talk (ctrl+option) to capture voice input, transcribes it through the OpenClicky backend, and either sends the transcript + a screenshot to Claude (teacher lane) or hands it to a Codex agent thread via the `openclicky` CLI (agent mode). Claude responds with text (streamed via SSE) and voice (ElevenLabs TTS). A blue cursor overlay can fly to and point at UI elements Claude references on any connected monitor.
 
 All model calls go through the OpenClicky backend (`../../backend`), which holds the provider keys — nothing sensitive ships in the app. The user's token lives in `~/.openclicky/shell.json`.
 
@@ -41,7 +49,7 @@ The app never calls external APIs directly. Every request goes to the OpenClicky
 
 **Cursor Overlay**: A full-screen transparent `NSPanel` hosts the blue cursor companion. It's non-activating, joins all Spaces, and never steals focus. The cursor position, response text, waveform, and pointing animations all render in this overlay via SwiftUI through `NSHostingView`.
 
-**Global Push-To-Talk Shortcut**: Background push-to-talk uses a listen-only `CGEvent` tap instead of an AppKit global monitor so modifier-based shortcuts like `ctrl + option` are detected more reliably while the app is running in the background. The same tap feeds `CompanionShortcutRecognizer` for HeyClicky's other shortcuts: ⌃ ×2 opens the notch text composer (`submitTypedRequest` → Realtime `sendTextTurn`, or the teacher lane), fn+⌃ held dictates into the app in front (classic transcription pipeline → `FrontAppTextInserter`), fn+⌃ ×2 toggles hands-free (Realtime always-on).
+**Global Push-To-Talk Shortcut**: Background push-to-talk uses a listen-only `CGEvent` tap instead of an AppKit global monitor so modifier-based shortcuts like `ctrl + option` are detected more reliably while the app is running in the background. The same tap feeds `CompanionShortcutRecognizer`: the dictation key (fn by default, `DictationHotkey`, identified by its key code on the flagsChanged event) held or tapped → `DictationTakeController`; ⌃ joining the held key → Hey Clicky edit mode; two quick taps or esc → cancel; ⌃ ×2 opens the notch text composer; fn+⌃ ×2 toggles hands-free (Realtime always-on).
 
 **Screenshot pixel size for pointing**: `CompanionScreenCapture` records the captured image's real pixel size, not the size requested from ScreenCaptureKit; a capture that comes back at another size would otherwise put every pointed-at element off by that ratio.
 
@@ -52,6 +60,26 @@ The app never calls external APIs directly. Every request goes to the OpenClicky
 **Realtime connection lifecycle**: `RealtimeVoiceClient` counts as connected only once OpenAI's first event arrives on the socket (a refused handshake is an error with its status, not a silent success). Every press reuses the socket only if it is under 50 minutes old (OpenAI caps sessions at 60) and was heard from in the last minute or answers a ping; otherwise it reconnects. The keep-warm loop reconnects in the background only in always-on mode or within 15 minutes of the last turn, because every session is minted by the backend and billed. A socket lost under a turn calls `onConnectionLost`, which returns `voiceState` to idle (a stuck `.processing` also blocked dictation).
 
 ## Key Files
+
+Dictation (`OpenClicky/Dictation/`):
+
+| File | Purpose |
+|------|---------|
+| `DictationTakeController.swift` | One take at a time as a state machine (idle → starting → listening → finishing): press → mic → engine → `TakeFormatter` → paste (`FrontAppTextInserter` + `PasteLanding.verify`, refused when the app changed or secure input is on) → `TakeStore`. Every continuation carries the take id, so a cancelled take never pastes into the next. Hold vs tap vs double-tap vs esc, Hey Clicky edits (`HeyClickyEditor`; a control-held press waits out the tap window so the hands-free gesture never opens one), inactivity timeout, the orb's phases, earcons, retry from retained audio. `DictationEngineResolver` builds the provider for the chosen engine, says why one is unavailable, and decides whether a model may polish (never for the offline engine unless "also polish offline takes"). Unit-tested through the seams in `DictationCapturing.swift`. |
+| `DictationCapturing.swift` | The seams the controller is tested through: `DictationCapturing` (the microphone-and-engine side; `BuddyDictationManager` conforms) and `DictationHost` (focused field, front app, secure input, the paste, the polisher). |
+| `DictationSettings.swift` | Every dictation preference in UserDefaults (`dictation.*`): engine, language, script, key, the orb's look/theme/size/behaviour, sounds, haptics, appearance, timeout, incognito, clipboard history. |
+| `DictationHotkey.swift` | The dictation key (fn, right ⌥, right ⌘, right ⌃) and how a flagsChanged event is read as its down/up. |
+| `SarvamSpeechClient.swift`, `SarvamTranscriptionProviders.swift` | Sarvam: the realtime socket (`/speech-to-text-realtime/ws`, `saaras:v3-realtime`, manual endpointing, raw PCM, partial words while the key is held), the chunked socket (`/speech-to-text/ws`, base64 WAV chunks, `flush`), REST transcription (multipart WAV, `saaras:v4`), chat completions (`sarvam-105b`) for polish and edits. One session class serves both sockets; a session falls back realtime → chunked → upload. Request builders and decoders are pure and tested; both sockets verified live 2026-10-06. |
+| `TakeFormatter.swift` | Raw transcript → pasted text: shortcuts, dictionary, fillers, sentence case locally; one model rewrite when configured (Sarvam key → `SarvamTakePolisher`, account → `BackendTakePolisher`), guarded by a timeout and a same-take check. |
+| `DictationSpace.swift` | Styles (five seeded, app assignments), dictionary terms, spoken shortcuts; JSON under `~/.openclicky/dictation`, watched. |
+| `TakeStore.swift` | SQLite history (`~/Library/Application Support/OpenClicky/dictation.sqlite`): takes, revisions, search, stats. |
+| `FocusedFieldReader.swift` | The focused element through Accessibility: editable?, secure?, value, selection, nearby captions; `PasteLanding.verify` reads the field back after a paste. |
+| `OrbPanel.swift` | The orb: `OrbModel` (phase, live transcript, box, level), the non-activating panel sized to its content, dragging, hide-when-idle, the SwiftUI pill and transcript box. |
+| `UI/` | `PaperTheme` (tokens + small views), `DictationWindow` (controller, rail, root), `RecordPageView`, `HistoryPageView`, `DictionaryPageView`, `ShortcutsPageView`, `StylesPageView`, `DictationSettingsView` (ten pages), `OnboardingWindow` (five chapters). |
+| `DiskImageSelfInstaller.swift`, `AppUpdater.swift`, `FnKeyGuard.swift`, `SMAppServiceBridge.swift` | Installation: move-to-Applications from the dmg, Sparkle, the fn key's system action, the login item. |
+| `ClipboardHistoryMonitor.swift`, `MicrophoneDevices.swift`, `DictationEarcons.swift`, `DictationSmokeRun.swift`, `OpenClickyMark.swift` | Opt-in clipboard capture, input device list/selection, synthesised tones + haptics, `--openclicky-smoke-transcribe`, the mark drawn by the icon, menu bar, orb and window. |
+
+Companion (`OpenClicky/`):
 
 | File | Lines | Purpose |
 |------|-------|---------|
@@ -71,7 +99,7 @@ The app never calls external APIs directly. Every request goes to the OpenClicky
 | `SelectedTextReader.swift` | ~65 | The front app's highlighted text (Accessibility, the front app asked first — the system-wide focused-element query fails for Terminal), added to each turn's screen context in both lanes as what "this" means. Capped at 600 characters; nothing from password fields. Unit-tested. |
 | `BuddyAudioConversionSupport.swift` | ~108 | Audio conversion helpers. Converts live mic buffers to PCM16 mono audio and builds WAV payloads for upload-based providers. |
 | `GlobalPushToTalkShortcutMonitor.swift` | ~150 | System-wide shortcut monitor. Owns the listen-only `CGEvent` tap, feeds it to `CompanionShortcutRecognizer`, publishes talk press/release plus the other shortcut events. |
-| `CompanionShortcutRecognizer.swift` | ~140 | Pure state machine for HeyClicky's four shortcuts: Talk (hold ⌃⌥), Text (tap ⌃ twice → notch composer), Dictate (hold fn+⌃ → typed into the front app), Hands-free (tap fn+⌃ twice → always-on toggle). Tap window 350 ms, double-tap window 450 ms; a key press while the modifier is down (⌃C) is never a tap. Unit-tested. |
+| `CompanionShortcutRecognizer.swift` | ~180 | Pure state machine for the shortcuts: Dictate (the dictation key held or tapped; ⌃ joining = Hey Clicky; two taps = cancel; esc), Talk (hold ⌃⌥), Text (tap ⌃ twice → notch composer), Hands-free (tap key+⌃ twice → always-on toggle). Tap window 350 ms, double-tap window 450 ms; a key press while the modifier is down (⌃C) is never a tap. Unit-tested. |
 | `FrontAppTextInserter.swift` | ~70 | Types dictated text into the app in front: pasteboard + posted ⌘V (needs Accessibility), pasteboard restored 0.6 s later; without Accessibility the text stays on the pasteboard. |
 | `CursorFlightPlanner.swift` | ~100 | Splits a buddy flight whose destination is on another display (dock into the notch from an external monitor, fly back to a mouse that moved screens) into a leg to this display's nearest edge and a leg across the destination display. Unit-tested against this Mac's layout. |
 | `ScreenTextLocator.swift` | ~190 | `point_at` snapping. The Realtime model's pixel guesses are 30–100 px off, so the screenshot it saw is OCR'd (Vision, accurate, no language correction, upscaled 2× because 11 px captions come back as "Now"/"HNew" otherwise) and the guess snaps to the element's visible `text` nearest to it: whole hint → distinctive words (never "button"/"menu"…), exact matches only, within 30 % of the width. Near misses ("reditt" for a Reddit tab) are left to the Claude fallback, and so are ambiguous ones: when a second candidate sits within 10 % of the width of the winner ("Edit" on every row of a list), the model's own 30–100 px error is what separates them, so nothing is resolved and Claude picks with the user's request in hand. Unit-tested, including a rendered-caption OCR test. |

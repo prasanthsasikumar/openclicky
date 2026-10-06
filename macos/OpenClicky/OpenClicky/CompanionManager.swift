@@ -127,7 +127,9 @@ final class CompanionManager: ObservableObject {
 
     /// The menu bar icon is off by default: the notch HUD is the app's home. The onboarding panel
     /// still opens on its own for a first run; permissions are asked for on the island.
-    @Published var isMenuBarIconVisible: Bool = UserDefaults.standard.bool(forKey: "isOpenClickyMenuBarIconVisible")
+    @Published var isMenuBarIconVisible: Bool = UserDefaults.standard.object(forKey: "isOpenClickyMenuBarIconVisible") == nil
+        ? true
+        : UserDefaults.standard.bool(forKey: "isOpenClickyMenuBarIconVisible")
 
     func setMenuBarIconVisible(_ visible: Bool) {
         isMenuBarIconVisible = visible
@@ -660,6 +662,7 @@ final class CompanionManager: ObservableObject {
 
         // OpenClicky: the notch HUD is always available; it needs no permissions.
         notchHUDManager.show(companionManager: self)
+        startDictation()
         startPermissionPrompts()
         appConnectPromptController.start(
             skillLibraryStore: skillLibraryStore,
@@ -712,6 +715,8 @@ final class CompanionManager: ObservableObject {
     }
 
     func stop() {
+        orbPanelManager.stop()
+        clipboardHistoryMonitor.stop()
         permissionPromptController.stop()
         appConnectPromptController.stop()
         notchHUDManager.hide()
@@ -896,10 +901,6 @@ final class CompanionManager: ObservableObject {
                     self.voiceState = .processing
                 } else {
                     self.voiceState = .idle
-                    // A dictation session that ended without a transcript (error, nothing said).
-                    if self.isDictatingToFrontApp && !self.buddyDictationManager.isDictationInProgress {
-                        self.finishDictationToFrontApp()
-                    }
                     // If the user pressed and released the hotkey without
                     // saying anything, no response task runs — schedule the
                     // transient hide here so the overlay doesn't get stuck.
@@ -932,9 +933,80 @@ final class CompanionManager: ObservableObject {
 
     private var companionShortcutCancellable: AnyCancellable?
 
-    /// True while fn + control dictation is recording or transcribing: the words are typed into
-    /// the app in front, not asked of OpenClicky.
+    /// True while a dictation take is listening or transcribing: the words go where the cursor is,
+    /// not to OpenClicky. Mirrors the take controller for the HUD.
     @Published private(set) var isDictatingToFrontApp = false
+
+    /// Dictation: the orb, the engines, the formatting, history. Owned here so the shortcut tap,
+    /// the Realtime microphone and the window all meet in one place.
+    let dictationSettings = DictationSettings.shared
+    let dictationSpaceStore = DictationSpaceStore()
+    let dictationTakeStore: TakeStore? = {
+        do { return try TakeStore() } catch {
+            AppLog.append("take store unavailable: \(error.localizedDescription)")
+            return nil
+        }
+    }()
+    let orbModel = OrbModel()
+    lazy var orbPanelManager = OrbPanelManager(model: orbModel, settings: dictationSettings)
+    lazy var dictationTakeController: DictationTakeController = {
+        let controller = DictationTakeController(settings: dictationSettings, spaceStore: dictationSpaceStore, takeStore: dictationTakeStore, orb: orbModel)
+        controller.beforeMicrophoneOpens = { [weak self] in
+            guard let self else { return }
+            self.isDictatingToFrontApp = true
+            // The Realtime engine's voice-processing input must be gone first, or the dictation
+            // engine records silence (and an upload model then echoes its prompt). Only when a
+            // session is open: releasing an idle engine would just delay the first words.
+            if self.realtimeVoiceClient.isConnected {
+                await self.realtimeVoiceClient.releaseMicrophoneForDictation()
+            }
+        }
+        controller.afterMicrophoneCloses = { [weak self] in
+            self?.isDictatingToFrontApp = false
+            self?.realtimeVoiceClient.resumeListeningAfterDictation()
+        }
+        return controller
+    }()
+
+    private var dictationKeyCancellable: AnyCancellable?
+    private lazy var clipboardHistoryMonitor = ClipboardHistoryMonitor(settings: dictationSettings, takeStore: dictationTakeStore) { [weak self] in
+        self?.dictationTakeController.historyDidChange()
+    }
+    private var dictationWindowController: DictationWindowController?
+    private var onboardingWindowController: OnboardingWindowController?
+
+    /// The main window (record, history, dictionary, shortcuts, styles, settings).
+    func showDictationWindow(section: DictationSection? = nil, settingsPage: DictationSettingsPage? = nil) {
+        if dictationWindowController == nil { dictationWindowController = DictationWindowController(companionManager: self) }
+        dictationWindowController?.show(section: section, settingsPage: settingsPage)
+    }
+
+    /// The first-run chapters; `replay` shows them again after they were completed.
+    func showDictationOnboarding(replay: Bool = false) {
+        guard replay || !dictationSettings.hasCompletedDictationOnboarding else { return }
+        if onboardingWindowController == nil { onboardingWindowController = OnboardingWindowController(companionManager: self) }
+        onboardingWindowController?.model.chapter = .welcome
+        onboardingWindowController?.model.firstTakeText = ""
+        onboardingWindowController?.show()
+    }
+
+    /// Starts the orb and keeps the event tap's dictation key in step with Settings.
+    func startDictation() {
+        dictationSpaceStore.startWatching()
+        globalPushToTalkShortcutMonitor.dictationKey = dictationSettings.dictationKey
+        dictationKeyCancellable = dictationSettings.$dictationKey.sink { [weak self] key in
+            self?.globalPushToTalkShortcutMonitor.dictationKey = key
+        }
+        orbPanelManager.onOrbClicked = { [weak self] in self?.dictationTakeController.orbClicked() }
+        orbPanelManager.start()
+        dictationSettings.preferredMicrophoneUIDDidChange = { [weak self] uid in self?.dictationTakeController.dictationManager.preferredMicrophoneUID = uid }
+        dictationTakeController.dictationManager.preferredMicrophoneUID = dictationSettings.preferredMicrophoneUID
+        AppUpdater.shared.start()
+        clipboardHistoryMonitor.start()
+        if !dictationSettings.hasCompletedDictationOnboarding {
+            showDictationOnboarding()
+        }
+    }
 
     private func handleCompanionShortcut(_ shortcutEvent: CompanionShortcutEvent) {
         switch shortcutEvent {
@@ -942,10 +1014,9 @@ final class CompanionManager: ObservableObject {
             openTextComposer()
         case .handsFreeToggleRequested:
             toggleHandsFree()
-        case .dictatePressed:
-            beginDictationToFrontApp()
-        case .dictateReleased(let wasTap):
-            endDictationToFrontApp(discardingTranscript: wasTap)
+        case .dictationPressed, .dictationEditPressed, .dictationEditModifierJoined, .dictationReleased, .dictationDoubleTapped, .escapePressed:
+            guard !showOnboardingVideo else { return }
+            dictationTakeController.handle(shortcutEvent)
         case .talkPressed, .talkReleased:
             // Delivered through shortcutTransitionPublisher.
             break
@@ -1014,76 +1085,6 @@ final class CompanionManager: ObservableObject {
         }
         print("👂 Hands-free \(isAlwaysListening ? "on" : "off")")
         AppLog.append("hands-free \(isAlwaysListening ? "on" : "off")")
-    }
-
-    /// fn + control held: record through the classic dictation pipeline (upload transcription),
-    /// then type the words into the app in front.
-    private func beginDictationToFrontApp() {
-        guard !showOnboardingVideo, !isDictatingToFrontApp else { return }
-        guard !buddyDictationManager.isDictationInProgress else { return }
-        guard voiceState == .idle || voiceState == .responding else { return }
-        isDictatingToFrontApp = true
-        transientHideTask?.cancel()
-        transientHideTask = nil
-        if !isClickyCursorEnabled && !isOverlayVisible && !isCursorDocked {
-            overlayWindowManager.hasShownOverlayBefore = true
-            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-            isOverlayVisible = true
-        }
-        elevenLabsTTSClient.stopPlayback()
-        systemSpeechSynthesizer.stopSpeaking(at: .immediate)
-        dismissCursorCaption()
-        print("⌨️ Dictation to the front app started")
-
-        pendingKeyboardShortcutStartTask?.cancel()
-        pendingKeyboardShortcutStartTask = Task {
-            // The Realtime engine's voice-processing input must be gone first, or the dictation
-            // engine records silence (and the transcription model then echoes its prompt).
-            await realtimeVoiceClient.releaseMicrophoneForDictation()
-            guard !Task.isCancelled else { return }
-            await buddyDictationManager.startPushToTalkFromKeyboardShortcut(
-                currentDraftText: "",
-                updateDraftText: { _ in },
-                submitDraftText: { [weak self] finalTranscript in
-                    self?.typeDictatedTextIntoFrontApp(finalTranscript)
-                }
-            )
-        }
-    }
-
-    private func endDictationToFrontApp(discardingTranscript: Bool) {
-        guard isDictatingToFrontApp else { return }
-        pendingKeyboardShortcutStartTask?.cancel()
-        pendingKeyboardShortcutStartTask = nil
-        if discardingTranscript {
-            // A tap (or half of a hands-free double tap): nothing worth typing was said.
-            buddyDictationManager.cancelCurrentDictation(preserveDraftText: false)
-            finishDictationToFrontApp()
-            return
-        }
-        buddyDictationManager.stopPushToTalkFromKeyboardShortcut()
-        // isDictatingToFrontApp clears when the transcript is typed or the session ends.
-    }
-
-    /// Dictation is over (typed, empty, cancelled, or failed): hands the microphone back.
-    private func finishDictationToFrontApp() {
-        guard isDictatingToFrontApp else { return }
-        isDictatingToFrontApp = false
-        realtimeVoiceClient.resumeListeningAfterDictation()
-    }
-
-    private func typeDictatedTextIntoFrontApp(_ transcript: String) {
-        finishDictationToFrontApp()
-        let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        ClickyAnalytics.trackUserMessageSent(characterCount: text.count)
-        switch FrontAppTextInserter.insert(text) {
-        case .typed:
-            print("⌨️ Dictation typed \(text.count) chars into \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "the front app")")
-        case .leftOnPasteboard:
-            print("⌨️ Dictation could not type (no Accessibility permission); text is on the pasteboard")
-            streamCursorCaption("i couldn't type that in — it's on your clipboard, press ⌘V. (allow accessibility for openclicky to fix this)", holdSeconds: 8)
-        }
     }
 
     private func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
@@ -1654,7 +1655,7 @@ final class CompanionManager: ObservableObject {
     func explainWhatOpenClickyDoes() {
         let message = "hi, i'm openclicky. hold control + option and ask about anything on your screen — "
             + "i'll answer out loud and point at what you need. tap control twice to type instead, "
-            + "hold fn + control to dictate into any app, and real work goes to the agent."
+            + "hold fn to dictate into any app, and real work goes to the agent."
         if isCursorDocked {
             notchHUDManager.showCaption(message)
             return

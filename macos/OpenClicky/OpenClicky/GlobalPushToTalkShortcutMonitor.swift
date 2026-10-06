@@ -22,6 +22,12 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
     /// Recognises all four shortcuts from the tap's modifier and key events (main thread only).
     private var shortcutRecognizer = CompanionShortcutRecognizer()
 
+    /// The key that dictates (Settings → shortcuts). Takes effect on the next press.
+    var dictationKey: DictationHotkey {
+        get { shortcutRecognizer.dictationKey }
+        set { shortcutRecognizer.dictationKey = newValue }
+    }
+
     private var globalEventTap: CFMachPort?
     private var globalEventTapRunLoopSource: CFRunLoopSource?
     /// Mutated exclusively from the CGEvent tap callback, which runs on
@@ -142,7 +148,8 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
             case .talkReleased:
                 isShortcutCurrentlyPressed = false
                 shortcutTransitionPublisher.send(.released)
-            case .dictatePressed, .dictateReleased, .textComposerRequested, .handsFreeToggleRequested:
+            case .dictationPressed, .dictationEditPressed, .dictationEditModifierJoined, .dictationReleased, .dictationDoubleTapped,
+                 .escapePressed, .textComposerRequested, .handsFreeToggleRequested:
                 companionShortcutPublisher.send(shortcutEvent)
             }
         }

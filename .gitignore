@@ -23,3 +23,5 @@ macos/OpenClicky/scripts/release.env
 
 # Shallow clones of Windows reference projects (see reference/windows/README.md for the list)
 reference/windows/*/
+# Sparkle's private EdDSA key, exported for the release script (generate_keys -x); never committed
+macos/OpenClicky/scripts/*.key

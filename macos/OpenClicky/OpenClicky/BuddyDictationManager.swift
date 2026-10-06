@@ -262,7 +262,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         return AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined
     }
 
-    private let transcriptionProvider: any BuddyTranscriptionProvider
+    private var transcriptionProvider: any BuddyTranscriptionProvider
     private let audioEngine = AVAudioEngine()
     private var activeTranscriptionSession: (any BuddyStreamingTranscriptionSession)?
     private var activeStartSource: BuddyDictationStartSource?
@@ -280,12 +280,29 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     /// rapid follow-up requests that arrive before macOS updates its cache.
     private var lastPermissionRequestCompletedAt: Date?
 
-    override init() {
-        let transcriptionProvider = BuddyTranscriptionProviderFactory.makeDefaultProvider()
+    override convenience init() {
+        self.init(transcriptionProvider: BuddyTranscriptionProviderFactory.makeDefaultProvider())
+    }
+
+    /// A manager around one provider; the dictation take controller picks its engine this way.
+    init(transcriptionProvider: any BuddyTranscriptionProvider) {
         self.transcriptionProvider = transcriptionProvider
         self.transcriptionProviderDisplayName = transcriptionProvider.displayName
         super.init()
     }
+
+    /// Swaps the engine between takes (Settings → engine). Ignored while a take is in progress.
+    func replaceTranscriptionProvider(_ provider: any BuddyTranscriptionProvider) {
+        guard !isDictationInProgress else { return }
+        transcriptionProvider = provider
+        transcriptionProviderDisplayName = provider.displayName
+    }
+
+    /// The input device to record from (its CoreAudio UID); nil = the system default.
+    var preferredMicrophoneUID: String?
+    /// Every captured buffer, on the render thread, for a caller that keeps the take's audio
+    /// (dictation retains a failed take so it can be retried). Captured when the tap is installed.
+    var audioRetentionSink: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
     func updateContextualKeyterms(_ contextualKeyterms: [String]) {
         self.contextualKeyterms = contextualKeyterms
@@ -521,7 +538,10 @@ final class BuddyDictationManager: NSObject, ObservableObject {
             keyterms: buildTranscriptionKeyterms(),
             onTranscriptUpdate: { [weak self] transcriptText in
                 Task { @MainActor in
-                    self?.latestRecognizedText = transcriptText
+                    guard let self else { return }
+                    self.latestRecognizedText = transcriptText
+                    // Live words for the orb; the companion's callers ignore partials.
+                    self.draftCallbacks?.updateDraftText(self.composeDraftText(withTranscribedText: transcriptText))
                 }
             },
             onFinalTranscriptReady: { [weak self] transcriptText in
@@ -547,6 +567,8 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         print("🎙️ BuddyDictationManager: provider ready, starting audio engine")
 
         let inputNode = audioEngine.inputNode
+        // Settings → microphone: a chosen input device, else the system default.
+        MicrophoneDevices.apply(preferredUID: preferredMicrophoneUID, to: audioEngine)
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         inputNode.removeTap(onBus: 0)
@@ -557,8 +579,10 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         // nilling it in `finishCurrentDictationSessionIfNeeded` — invisibly, in both directions.
         // The session is captured by value instead: this tap feeds the session it was installed
         // for, and nothing else, for as long as it is installed.
+        let audioRetentionSink = self.audioRetentionSink
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, activeTranscriptionSession] buffer, _ in
             activeTranscriptionSession.appendAudioBuffer(buffer)
+            audioRetentionSink?(buffer)
             self?.updateAudioPowerLevel(from: buffer)
         }
 

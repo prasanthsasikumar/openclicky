@@ -71,10 +71,23 @@ CODE_SIGN_FLAGS=""
 CODE_SIGN_STYLE="Automatic"
 # Xcode injects com.apple.security.get-task-allow (debugging) into non-archive builds; notarization rejects it.
 INJECT_BASE_ENTITLEMENTS="YES"
-if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then CODE_SIGN_STYLE="Manual"; INJECT_BASE_ENTITLEMENTS="NO"; fi
+if [[ "$SIGN_IDENTITY" == Developer\ ID* ]]; then
+  CODE_SIGN_STYLE="Manual"
+  INJECT_BASE_ENTITLEMENTS="NO"
+  # Xcode adds a secure timestamp to every Developer ID signature on its own, and a timestamp-server
+  # hiccup then fails the build on a resource bundle (seen on PostHog's, twice in four runs). Told
+  # not to, Xcode signs without one; the re-signing below adds timestamps with retries.
+  CODE_SIGN_FLAGS="--timestamp=none"
+fi
 
+# A secure timestamp is what notarization checks; a local install does not need one, and Apple's
+# timestamp server fails often enough that an unattended `--no-notarize` build should not depend on it.
 sign_with_timestamp() {
   local attempt
+  if [[ -z "$NOTARY_PROFILE" ]]; then
+    codesign --force --options runtime --timestamp=none "$@"
+    return $?
+  fi
   for attempt in 1 2 3 4; do
     if codesign --force --options runtime --timestamp "$@"; then return 0; fi
     echo "  codesign (timestamp) failed, attempt $attempt; retrying in 5 s" >&2
@@ -150,8 +163,37 @@ if [[ -n "$NOTARY_PROFILE" ]]; then
   xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$DMG_PATH"
 fi
+# 3b. Sparkle: sign the zip with the EdDSA key in the login keychain (`generate_keys`, whose public
+#     half is SUPublicEDKey in Info.plist) and write the appcast the app checks daily
+#     (SUFeedURL points at the latest release's appcast.xml). Skipped when the tools or key are
+#     missing, so a build without them is still a build.
+SPARKLE_BIN="$DERIVED_DATA/SourcePackages/artifacts/sparkle/Sparkle/bin"
+APPCAST_PATH="$EXPORT_DIR/appcast.xml"
+# The private key as a file (OPENCLICKY_SPARKLE_KEY_FILE, default scripts/sparkle-ed25519.key, made
+# with `generate_keys -x`): generate_appcast reading it from the keychain asks for permission in a
+# dialog, which hangs an unattended build.
+SPARKLE_KEY_FILE="${OPENCLICKY_SPARKLE_KEY_FILE:-$SCRIPT_DIR/sparkle-ed25519.key}"
+SPARKLE_KEY_ARGS=()
+[[ -f "$SPARKLE_KEY_FILE" ]] && SPARKLE_KEY_ARGS=(--ed-key-file "$SPARKLE_KEY_FILE")
+if [[ -x "$SPARKLE_BIN/generate_appcast" ]] && { [[ -f "$SPARKLE_KEY_FILE" ]] || "$SPARKLE_BIN/generate_keys" -p >/dev/null 2>&1; }; then
+  echo "▸ writing the Sparkle appcast"
+  APPCAST_DIR="$EXPORT_DIR/appcast"
+  rm -rf "$APPCAST_DIR" && mkdir -p "$APPCAST_DIR"
+  cp "$ZIP_PATH" "$APPCAST_DIR/"
+  RELEASE_NOTES="$APPCAST_DIR/$APP_NAME-$VERSION.html"
+  printf '<html><body><h2>OpenClicky %s</h2><p>Build %s (%s).</p></body></html>\n' "$VERSION" "$BUILD_NUMBER" "$COMMIT" > "$RELEASE_NOTES"
+  "$SPARKLE_BIN/generate_appcast" "${SPARKLE_KEY_ARGS[@]}" \
+    --download-url-prefix "https://github.com/$GITHUB_REPO/releases/download/$TAG/" \
+    --embed-release-notes \
+    "$APPCAST_DIR" >/dev/null
+  mv "$APPCAST_DIR/appcast.xml" "$APPCAST_PATH"
+  rm -rf "$APPCAST_DIR"
+else
+  echo "▸ Sparkle appcast skipped (no generate_appcast or no signing key in the keychain)"
+  APPCAST_PATH=""
+fi
 echo "▸ artifacts:"
-ls -la "$ZIP_PATH" "$DMG_PATH" | sed 's/^/    /'
+ls -la "$ZIP_PATH" "$DMG_PATH" ${APPCAST_PATH:+"$APPCAST_PATH"} | sed 's/^/    /'
 
 # 4. Install locally so Spotlight can launch it.
 if [[ -n "$INSTALL_DIR" ]]; then
@@ -183,12 +225,14 @@ if [[ $PUBLISH -eq 1 ]]; then
       echo "Signed with Developer ID${NOTARY_PROFILE:+ and notarized}."
     fi
     echo
-    echo "Requires macOS 14.2+ (Apple Silicon). Sign in with your invite under Settings → Account, or add your own OpenAI key (\`openaiApiKey\`) to \`~/.openclicky/shell.json\`. The agent lane needs the \`openclicky\` CLI and Codex installed (see README)."
+    echo "Requires macOS 14.2+ (Apple Silicon). Open the dmg and click **Move to Applications** when OpenClicky offers. Dictation works offline out of the box; add a Sarvam key under Settings → engine for Indian languages, or sign in with your invite under Settings → account. The agent lane needs the \`openclicky\` CLI and Codex installed (see README). Updates arrive through the app (Sparkle, from this release's appcast)."
   } > "$NOTES_FILE"
+  RELEASE_ASSETS=("$ZIP_PATH" "$DMG_PATH")
+  [[ -n "$APPCAST_PATH" ]] && RELEASE_ASSETS+=("$APPCAST_PATH")
   if gh release view "$TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
-    gh release upload "$TAG" "$ZIP_PATH" "$DMG_PATH" --repo "$GITHUB_REPO" --clobber
+    gh release upload "$TAG" "${RELEASE_ASSETS[@]}" --repo "$GITHUB_REPO" --clobber
   else
-    gh release create "$TAG" "$ZIP_PATH" "$DMG_PATH" --repo "$GITHUB_REPO" --title "OpenClicky $VERSION" --notes-file "$NOTES_FILE"
+    gh release create "$TAG" "${RELEASE_ASSETS[@]}" --repo "$GITHUB_REPO" --title "OpenClicky $VERSION" --notes-file "$NOTES_FILE"
   fi
   gh release view "$TAG" --repo "$GITHUB_REPO" --json url --jq .url
 fi

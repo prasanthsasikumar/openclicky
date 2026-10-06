@@ -266,6 +266,33 @@ Macs must right-click → Open). For public downloads set `OPENCLICKY_SIGN_IDENT
 Application: …"` and, once `xcrun notarytool store-credentials` is set up, `OPENCLICKY_NOTARY_PROFILE`.
 Bump `macos/OpenClicky/VERSION` before publishing. Releases: https://github.com/prasanthsasikumar/openclicky/releases
 
+**The dmg installs itself.** Launched from the mounted image, the app offers "Move to Applications"
+(`DiskImageSelfInstaller`), copies itself there, strips the quarantine flag and relaunches the
+installed copy — the copy that then collects the Accessibility and Microphone grants.
+
+**Updates come through Sparkle.** `Info.plist` carries `SUFeedURL`
+(`https://github.com/prasanthsasikumar/openclicky/releases/latest/download/appcast.xml`) and the
+EdDSA public key `SUPublicEDKey`. The private half lives in the login keychain of the Mac that cuts
+releases (made once with Sparkle's `generate_keys`; `generate_keys -p` prints the public key).
+`release.sh` reads it from `scripts/sparkle-ed25519.key` (`generate_keys -x` writes it; git-ignored;
+`OPENCLICKY_SPARKLE_KEY_FILE` overrides the path) because `generate_appcast` reading the keychain
+asks for permission in a dialog, which hangs an unattended build. It signs the zip, writes
+`appcast.xml` with `generate_appcast`, and uploads it beside the zip and dmg, so the app's daily
+check (About → check now) sees the new build. A dev build without the key skips the appcast; the app
+then shows "no update feed".
+
+**Checking an engine without the microphone.** A recording stands in for the mic:
+
+```bash
+say -o take.aiff "Tech week starts in San Francisco today." && afconvert -f WAVE -d LEI16@16000 -c 1 take.aiff take.wav
+OpenClicky.app/Contents/MacOS/OpenClicky --openclicky-smoke-transcribe take.wav offline
+OPENCLICKY_SARVAM_KEY=… OpenClicky.app/Contents/MacOS/OpenClicky --openclicky-smoke-transcribe take.wav sarvam
+```
+
+It prints the words heard, then the formatted take (model polish when a key or account is set). The
+Sarvam run was verified live on 2026-10-06 in English and Hindi over both sockets (realtime, with
+partial words as the audio plays, and chunked).
+
 The minimal SwiftPM panel is still available for headless checks:
 
 ```bash
