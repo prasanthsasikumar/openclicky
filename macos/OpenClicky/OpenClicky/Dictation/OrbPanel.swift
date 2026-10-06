@@ -267,6 +267,7 @@ struct OrbRootView: View {
                 OrbTranscriptBox(text: text, reason: model.boxReason, theme: settings.orbTheme, onCopy: {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
+                    if !settings.orbRestsExpanded { model.isBoxOpen = false }
                 }, onClose: { model.isBoxOpen = false })
                 .frame(width: OrbMetrics.boxWidth, height: OrbMetrics.boxHeight)
                 .transition(.opacity)

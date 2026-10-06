@@ -113,6 +113,11 @@ final class DictationTakeController: ObservableObject {
     private var pendingEditStartWork: DispatchWorkItem?
     private var inactivityTimer: Timer?
     private var lastLoudMomentAt = Date()
+    /// Closes the orb's transcript box a moment after it opened for a take.
+    private var boxCloseWork: DispatchWorkItem?
+    /// The box stays this long after a take whose words had nowhere to go; a click on it or a new
+    /// take ends that early. "rest with the box open" keeps it instead.
+    static let boxLingerSeconds: TimeInterval = 8
 
     // The take in progress.
     private var takeID = UUID()
@@ -309,6 +314,7 @@ final class DictationTakeController: ObservableObject {
         fieldAtPress = host.readFocusedField()
         nearbyTermsAtPress = []
         audioStore.beginCapture()
+        boxCloseWork?.cancel()
         orb.liveTranscript = ""
         orb.isBoxOpen = settings.orbRestsExpanded && orb.boxText != nil
         orb.phase = mode == .edit ? .editListening : .listening
@@ -523,6 +529,7 @@ final class DictationTakeController: ObservableObject {
             || (pasteOutcome == .posted && settings.orbOpensBoxWhenPasteUnverified) || settings.orbRestsExpanded
         orb.boxReason = pasteOutcome == .verified || pasteOutcome == .posted ? "your last take" : pasteMessage
         orb.isBoxOpen = showBox
+        scheduleBoxClose()
         earcons.play(pasteOutcome == .verified || pasteOutcome == .posted ? .complete : .notify)
         earcons.tap()
         if formattingDegraded, pasteOutcome == .verified || pasteOutcome == .posted { pasteMessage = "moved to text box · cleaned up locally" }
@@ -530,6 +537,18 @@ final class DictationTakeController: ObservableObject {
         AppLog.append("take \(thisTakeID.uuidString.prefix(8)) done: \(outputText.count) chars, paste=\(pasteOutcome.rawValue), engine=\(settings.engine.rawValue), degraded=\(formattingDegraded)")
         endTake()
         scheduleIdle(after: 1.8)
+    }
+
+    /// The box is for the moment the words had nowhere to go; it does not stay on screen.
+    private func scheduleBoxClose() {
+        boxCloseWork?.cancel()
+        guard orb.isBoxOpen, !settings.orbRestsExpanded else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.isTakeInProgress, !self.settings.orbRestsExpanded else { return }
+            self.orb.isBoxOpen = false
+        }
+        boxCloseWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.boxLingerSeconds, execute: work)
     }
 
     private func scheduleIdle(after seconds: TimeInterval) {
@@ -626,6 +645,7 @@ final class DictationTakeController: ObservableObject {
             orb.boxText = formatted.text
             orb.boxReason = "retried · copy from here"
             orb.isBoxOpen = true
+            scheduleBoxClose()
             earcons.play(.complete)
             orb.phase = .done("retried · copy from the box")
             AppLog.append("take \(takeID.uuidString.prefix(8)) retried: \(formatted.text.count) chars")
