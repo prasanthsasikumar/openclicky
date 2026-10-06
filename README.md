@@ -26,6 +26,22 @@ invite or your OpenAI key. The same key or account polishes takes with a model (
 p.m." → "3 PM", your style's rules) and powers **Hey Clicky**: hold fn + ⌃, say "make it formal", and
 the selected text is rewritten.
 
+### See it work
+
+| | |
+|---|---|
+| ![The record page: a greeting, the engine banner, the take box, recent takes, words today](docs/media/dictation-record.jpg) | ![History: takes grouped by day, searchable, with a question box](docs/media/dictation-history.jpg) |
+| **record.** The engine banner says where your voice goes; takes land in the box when this window is in front. | **history.** Every take with what you said and what was written; type a question and press enter to ask across them. |
+| ![Styles: language and script, then one style per group of apps](docs/media/dictation-styles.jpg) | ![Settings: general, with the second rail of pages](docs/media/dictation-settings.jpg) |
+| **styles.** Auto-detect or pin a language, native or roman script, and the apps written in each style. | **settings.** General, shortcuts, the orb, microphone, permissions, engine, privacy, plan, account, about. |
+
+<p align="center"><img src="docs/media/dictation-orb.png" width="120" alt="The orb: a small dark pill with two dashes"></p>
+
+The orb rests at the bottom of the screen and shows each take: bars while listening, "moving your
+words", "moved to text box". The first run is a five-chapter walkthrough:
+
+![Onboarding: you talk, openclicky writes](docs/media/dictation-onboarding.jpg)
+
 ### What dictation gives you
 
 | | |
