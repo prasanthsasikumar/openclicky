@@ -23,6 +23,8 @@ was locked). Tick each line the first time it is seen working and note the build
 
 - [x] A small dark pill with two dashes rests at the bottom centre of the main screen. *(seen on
       build 130; it rested on the external display until build 131 moved it to the primary one)*
+- [x] The transcript box closes itself about eight seconds after a take (build 133), or on copy;
+      "rest with the box open" keeps it.
 - [ ] Hold fn: start tone, the pill widens, five bars follow your voice, live words show (Sarvam /
       Apple engines stream; the OpenClicky engine shows "listening…").
 - [ ] Let go: stop tone, "moving your words", then "moved to text box" with the done tone, then idle.
@@ -38,8 +40,9 @@ was locked). Tick each line the first time it is seen working and note the build
 
 ## 3. Takes into apps
 
-- [ ] Notes: the take is pasted at the cursor, the clipboard is restored afterwards, history shows
-      the Notes icon, "pasted" in the inspector.
+- [x] TextEdit: the take is pasted at the cursor, history shows the app icon, "pasted" in the
+      inspector. *(seen on build 133 with the offline engine, 2026-10-06)*
+- [ ] Notes: the same, with the clipboard restored afterwards.
 - [ ] Terminal: pasted; the developer style keeps commands as spoken.
 - [ ] Slack / Messages: the messaging styles (lowercase for personal messaging when the model
       polishes).
@@ -56,8 +59,9 @@ was locked). Tick each line the first time it is seen working and note the build
 
 ## 4. The window
 
-- [ ] record: greeting for the time of day, engine banner, the box, recent takes, words today, seven
-      bars, "all takes →".
+- [x] record: greeting for the time of day, engine banner, the box, recent takes, words today, seven
+      bars, "all takes →". *(seen on build 132; history, dictionary, shortcuts, styles and settings →
+      general also seen; the styles page's empty language popup and grey app squares were fixed in 134)*
 - [ ] history: day groups, search as you type, enter asks a question (needs a model), open → inspector
       with edit / copy / delete; failed takes show "couldn't finish" and, for network engines, "retry".
 - [ ] dictionary: teach a term ("you say" aliases), then dictate it: it is written as taught.
