@@ -1,56 +1,63 @@
 # OpenClicky
 
-**An open-source voice companion for your Mac.** It lives in the notch, sees what is on your screen,
-answers out loud, flies a little cursor to the thing you asked about, types what you dictate, and hands
-real work to a Codex agent. MIT licensed. Bring your own OpenAI key, or self-host the whole thing.
-
-[![Watch the OpenClicky demo](https://img.youtube.com/vi/bWsjCIrmoKA/maxresdefault.jpg)](https://youtu.be/bWsjCIrmoKA)
-
-<p align="center"><a href="https://youtu.be/bWsjCIrmoKA"><b>▶ Watch the demo</b></a> — asking about the screen, being pointed at the answer, and handing real work to the agent.</p>
+**Dictation for your Mac that never has to leave it.** Hold one key anywhere, say what you mean, let
+go: the words are cleaned up in the style of the app in front and land where your cursor is. Offline
+by default with Apple's on-device recogniser; add your Sarvam key and it hears eleven Indian languages.
+And it is still the open-source voice companion it was: hold ⌃⌥ to ask about your screen, be pointed
+at the answer, and hand real work to a Codex agent. MIT licensed.
 
 [**Download OpenClicky for macOS**](https://github.com/prasanthsasikumar/openclicky/releases/latest)
 (Apple Silicon, macOS 14.2+, notarized) · [How it works](docs/architecture.md) · [Contributing](CONTRIBUTING.md)
 
 ### Try it in three steps
 
-1. Open the dmg, drag OpenClicky to Applications, launch it, and grant Accessibility, Screen Recording,
-   and Microphone when asked (it needs all three to see, point, and listen).
-2. Hover the notch → Settings → Account → "Use my own API key": add your OpenAI key as `openaiApiKey`
-   in the `shell.json` that opens. Your key travels with each request and is never stored anywhere.
-   (Hosted accounts without a key are invite-only for now.)
-3. Hold **⌃ control + ⌥ option** and ask about anything on screen. Tap **⌃ twice** to type instead,
-   hold **fn + ⌃** to dictate into any app, tap **fn + ⌃ twice** for hands-free.
+1. Open the dmg and click **Move to Applications** when OpenClicky offers (or drag it there). Grant
+   Microphone and Accessibility when the walkthrough asks: the first hears you, the second pastes.
+2. Hold **fn** in any text box, say a sentence, let go. It is typed where your cursor is; the orb at
+   the bottom of the screen shows every step. Tap fn to start a take and tap again to finish; two quick
+   taps or esc discard it.
+3. Open OpenClicky (menu bar → open openclicky) for your history, the dictionary ("you say *aditya
+   shatriya* → it writes **Aaditya Kshatriya**"), spoken shortcuts ("my sign-off"), and a style per app.
 
-The "do work" lane (files, commands, apps) additionally needs the `openclicky` CLI and
-[Codex](https://github.com/openai/codex) on your Mac: see [Run the agent](docs/setup.md#run-the-agent). Without
-them, talking, pointing, and dictation all work.
+Nothing leaves your Mac until you choose an engine that needs the network (Settings → engine):
+**Sarvam** with your own key (Saaras hears Hindi, Tamil, Telugu, Malayalam, Kannada, Bengali, Marathi,
+Gujarati, Punjabi, Odia and English, streaming as you speak), or the **OpenClicky** backend with an
+invite or your OpenAI key. The same key or account polishes takes with a model (punctuation, "three
+p.m." → "3 PM", your style's rules) and powers **Hey Clicky**: hold fn + ⌃, say "make it formal", and
+the selected text is rewritten.
 
-The Mac app is derived from Farza's MIT-licensed [Clicky](https://github.com/farzaa/clicky); HeyClicky
-is a separate product and this project is not affiliated with it.
-
-### See it work
+### What dictation gives you
 
 | | |
 |---|---|
-| ![Holding control + option: the notch turns into a listening pill over whatever app is in front](docs/media/listening.jpg) | ![The cursor buddy pointing at GitHub's "Change visibility" button](docs/media/point-at.jpg) |
-| **Hold ⌃⌥ and ask.** The notch becomes a listening pill over whatever you are looking at. | **It points at the answer.** The buddy flies to the control you asked about, then clicks it if you asked it to. |
-| ![The cursor buddy speaking a reply in a bubble on the desktop](docs/media/answer-bubble.jpg) | ![The notch HUD showing the skills row, the four shortcuts, and active integrations](docs/media/hud-home.jpg) |
-| **It answers out loud** and writes the same reply in a bubble next to the buddy. | **The notch is the whole UI:** skills, the four shortcuts, active integrations, and Dock Cursor. |
+| **The orb** | a pill at the bottom of the screen: resting, listening with live bars, "moving your words", "moved to text box". Three looks, three themes, draggable, can hide when idle. |
+| **Styles, app by app** | developer (code stays code), work messaging, personal messaging (lowercase, shorthand), email, other apps. Assign any app to any style; edit the rules the model reads. |
+| **Dictionary & shortcuts** | names spelled your way, replaced inside any sentence; shortcuts that expand when you say exactly the trigger. Plain JSON under `~/.openclicky/dictation`. |
+| **History** | every take with what you said and what was written, grouped by day, searchable, editable, on this Mac in SQLite. Incognito keeps takes out of it. |
+| **Language & script** | auto-detect or pin a language; native script or roman letters for Indian languages. |
+| **Installed like an app** | self-installs from the dmg, updates itself (Sparkle), opens at login if you want, frees the fn key from Emoji & Symbols with one click. |
 
-![OpenClicky settings: realtime voice, always listening, the four shortcuts, and cursor options](docs/media/settings.jpg)
+The companion features are unchanged: hold **⌃ control + ⌥ option** and ask about anything on screen,
+tap **⌃ twice** to type instead, tap **fn + ⌃ twice** for hands-free. The "do work" lane (files,
+commands, apps) additionally needs the `openclicky` CLI and [Codex](https://github.com/openai/codex):
+see [Run the agent](docs/setup.md#run-the-agent).
 
-Settings live in the same HUD — Realtime voice on or off, hands-free listening, the four shortcuts,
-and whether the buddy docks in the notch or only appears while you talk.
+[![Watch the OpenClicky demo](https://img.youtube.com/vi/bWsjCIrmoKA/maxresdefault.jpg)](https://youtu.be/bWsjCIrmoKA)
 
----
+The Mac app is derived from Farza's MIT-licensed [Clicky](https://github.com/farzaa/clicky); HeyClicky
+is a separate product and this project is not affiliated with it. The dictation product shape follows
+Sarvam's Kivi, studied in [docs/research/2026-10-06-kivi-reverse-engineering.md](docs/research/2026-10-06-kivi-reverse-engineering.md);
+no Kivi code, art or fonts are used.
 
 ## What is inside
 
 Modeled on the HeyClicky idea, built as a **headless agent core plus a native shell**:
 
-- **`macos/OpenClicky`** — the native shell, a renamed fork of Farza's MIT-licensed Clicky: the
-  cursor buddy, ScreenCaptureKit capture, the four shortcuts, in-process OpenAI Realtime voice, and
-  an **Agent mode** that hands "make / fix / run…" requests to a Codex thread.
+- **`macos/OpenClicky`** — the native app. `Dictation/` is the take loop (the key, the engines, the
+  formatter, the paste, the store), the orb, the main window and onboarding; the rest is the shell
+  forked from Farza's MIT-licensed Clicky: the cursor buddy, ScreenCaptureKit capture, the
+  companion shortcuts, in-process OpenAI Realtime voice, and an **Agent mode** that hands "make /
+  fix / run…" requests to a Codex thread.
 - **`agent/`** — a TypeScript CLI that drives the **OpenAI Codex CLI** over JSON-RPC stdio (the "do
   work" lane), plus the ask lane, a cheap gate that routes between them, screenshots, push-to-talk
   voice, an always-on `talk` loop, and thread management.
@@ -68,24 +75,29 @@ environment and only ever presents the user's token, and the app does the same f
 model calls with [your own key or an invite](docs/setup.md#paying-for-model-calls-your-own-keys-or-an-invite).
 
 Not there yet: active-document reading, Composio/cua-driver themselves (only the wiring), HeyClicky's
-skill approval queue and team-shared skills, drawing/circling annotations on screen, paywall,
-analytics, crash reporting, auto-update.
+skill approval queue and team-shared skills, drawing/circling annotations on screen, a paywall, crash
+reporting; on the dictation side, history sync between Macs, teams and a leaderboard, rich paste for
+Notion / Sheets / Slack, and Wispr Flow import.
 
 ## Documentation
 
 | Document | What |
 |---|---|
 | [How it works](docs/architecture.md) | the request flow end to end, repository layout, the three skill layers, following upstream HeyClicky |
-| [Setup and running from source](docs/setup.md) | prerequisites, backend, CLI, macOS app, provider choices, keys vs invites, auth flow, releases |
+| [Setup and running from source](docs/setup.md) | prerequisites, backend, CLI, macOS app, provider choices, keys vs invites, auth flow, releases and the update feed |
+| [Dictation design](docs/superpowers/specs/2026-10-06-dictation-kivi-port-design.md) | the take loop, engines, formatting, the space, the orb, installation — what was built and why |
+| [Kivi, reverse-engineered](docs/research/2026-10-06-kivi-reverse-engineering.md) | the report the dictation product shape was taken from |
 | [Skill authoring](docs/skills.md) | `SKILL.md` format, matching, budgets, activation |
 | [`app-skills/`](app-skills/) | the 16 app-teaching skills and how to add one |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | setup, test commands, where help is welcome |
 
 ## Next
 
-- Shell (`macos/OpenClicky`): stream agent milestones onto the cursor bubble, a text-input mode and
-  Keychain token entry (upstream PR #80 is a good template), active-document reader, Sparkle feed
-  for our own releases.
+- Dictation: Sarvam's realtime socket (`saaras:v3-realtime`) for word-by-word partials, rich paste
+  for Notion / Sheets / Slack, retry of failed takes from retained audio, history sync, Wispr Flow
+  import, a Windows client.
+- Shell (`macos/OpenClicky`): stream agent milestones onto the cursor bubble, Keychain token entry
+  (upstream PR #80 is a good template), active-document reader.
 - Voice: wake word, spoken task-finished summaries, Deepgram/Whisper STT fallback.
 - Backend: `/agent/realtime/turn|warmup`, `/skills/activations/sync` (cross-machine activations), Composio session brokering.
 - Skills: the approval queue + "My Skills" filter, team sharing, and more app skills (HeyClicky covers 89 apps).
