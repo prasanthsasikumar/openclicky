@@ -18,6 +18,8 @@ struct HistoryPageView: View {
     @State private var query = ""
     @State private var takes: [TakeRecord] = []
     @State private var modeFilter: TakeRecord.Mode?
+    @State private var appFilter: String?
+    @State private var appsUsed: [(bundleID: String, name: String?, count: Int)] = []
     @State private var selected: TakeRecord?
     @State private var answer: String?
     @State private var isAsking = false
@@ -46,14 +48,23 @@ struct HistoryPageView: View {
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Paper.cardRaised))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Paper.hairline))
                 Menu {
-                    Button("everything") { modeFilter = nil; reload() }
+                    Button("everything") { modeFilter = nil; appFilter = nil; reload() }
                     Button("dictations") { modeFilter = .dictate; reload() }
                     Button("hey clicky edits") { modeFilter = .edit; reload() }
                     if settings.clipboardHistoryEnabled { Button("clipboard") { modeFilter = .clipboard; reload() } }
+                    if !appsUsed.isEmpty {
+                        Divider()
+                        Menu("by app") {
+                            Button("any app") { appFilter = nil; reload() }
+                            ForEach(appsUsed, id: \.bundleID) { app in
+                                Button(app.name ?? app.bundleID) { appFilter = app.bundleID; reload() }
+                            }
+                        }
+                    }
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "line.3.horizontal.decrease").font(.system(size: 11))
-                        Text(modeFilter.map { filterName($0) } ?? "filter").font(Paper.body(12, weight: .medium))
+                        Text(filterLabel).font(Paper.body(12, weight: .medium))
                     }
                     .foregroundStyle(Paper.ink)
                 }
@@ -129,6 +140,13 @@ struct HistoryPageView: View {
         return groups
     }
 
+    private var filterLabel: String {
+        var parts: [String] = []
+        if let modeFilter { parts.append(filterName(modeFilter)) }
+        if let appFilter { parts.append(appsUsed.first { $0.bundleID == appFilter }?.name ?? appFilter) }
+        return parts.isEmpty ? "filter" : parts.joined(separator: " · ")
+    }
+
     private func filterName(_ mode: TakeRecord.Mode) -> String {
         switch mode {
         case .dictate: return "dictations"
@@ -151,7 +169,8 @@ struct HistoryPageView: View {
 
     private func reload() {
         guard let store = companionManager.dictationTakeStore else { return }
-        var rows = (try? store.recent(limit: 500, query: query.isEmpty ? nil : query, mode: modeFilter)) ?? []
+        appsUsed = (try? store.appsUsed()) ?? []
+        var rows = (try? store.recent(limit: 500, query: query.isEmpty ? nil : query, mode: modeFilter, appBundleID: appFilter)) ?? []
         if !settings.clipboardHistoryEnabled, modeFilter == nil { rows = rows.filter { $0.mode != .clipboard } }
         takes = rows
     }
@@ -190,6 +209,7 @@ private struct HistoryRow: View {
             }
             .buttonStyle(.plain).pointerCursor()
             .help("open \(take.mode == .edit ? "hey clicky edit" : "dictation") from \(take.appName ?? "unknown app")")
+            if take.pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Paper.accent) }
             if take.status == .failed { Text("couldn't finish").font(Paper.mono(10)).foregroundStyle(Paper.danger) }
             if take.status == .failed, canRetry {
                 Button("retry", action: onRetry).buttonStyle(PaperPillButtonStyle()).help("hear the saved recording again")
@@ -250,6 +270,15 @@ struct TakeInspectorView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                 }.buttonStyle(PaperPillButtonStyle())
+                Button(take.pinned ? "unpin" : "pin") {
+                    try? companionManager.dictationTakeStore?.setPinned(!take.pinned, takeID: take.id)
+                    companionManager.dictationTakeController.historyDidChange()
+                    onClose()
+                }.buttonStyle(PaperPillButtonStyle())
+                Button("paste again") {
+                    onClose()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { _ = FrontAppTextInserter.insert(text) }
+                }.buttonStyle(PaperPillButtonStyle()).help("closes this window, then pastes into the app in front")
                 Button("delete") {
                     try? companionManager.dictationTakeStore?.delete(takeID: take.id)
                     companionManager.dictationTakeController.historyDidChange()
