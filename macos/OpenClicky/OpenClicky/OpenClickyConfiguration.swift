@@ -46,6 +46,9 @@ struct OpenClickyShellSettings: Codable {
     /// keys under your plan.
     var openaiApiKey: String? = nil
     var anthropicApiKey: String? = nil
+    /// Your Sarvam key (dashboard.sarvam.ai): Saaras transcribes takes and a Sarvam model polishes
+    /// them, straight from this Mac. Never sent to the OpenClicky backend.
+    var sarvamKey: String? = nil
     /// Written by sign-in (OpenClickyAuthSession): the refresh token that keeps `token` fresh, when it
     /// expires (unix seconds), and whose account it is. Absent when the token was pasted by hand.
     var refreshToken: String? = nil

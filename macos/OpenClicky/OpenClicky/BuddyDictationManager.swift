@@ -262,7 +262,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         return AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined
     }
 
-    private let transcriptionProvider: any BuddyTranscriptionProvider
+    private var transcriptionProvider: any BuddyTranscriptionProvider
     private let audioEngine = AVAudioEngine()
     private var activeTranscriptionSession: (any BuddyStreamingTranscriptionSession)?
     private var activeStartSource: BuddyDictationStartSource?
@@ -280,12 +280,26 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     /// rapid follow-up requests that arrive before macOS updates its cache.
     private var lastPermissionRequestCompletedAt: Date?
 
-    override init() {
-        let transcriptionProvider = BuddyTranscriptionProviderFactory.makeDefaultProvider()
+    override convenience init() {
+        self.init(transcriptionProvider: BuddyTranscriptionProviderFactory.makeDefaultProvider())
+    }
+
+    /// A manager around one provider; the dictation take controller picks its engine this way.
+    init(transcriptionProvider: any BuddyTranscriptionProvider) {
         self.transcriptionProvider = transcriptionProvider
         self.transcriptionProviderDisplayName = transcriptionProvider.displayName
         super.init()
     }
+
+    /// Swaps the engine between takes (Settings → engine). Ignored while a take is in progress.
+    func replaceTranscriptionProvider(_ provider: any BuddyTranscriptionProvider) {
+        guard !isDictationInProgress else { return }
+        transcriptionProvider = provider
+        transcriptionProviderDisplayName = provider.displayName
+    }
+
+    /// The input device to record from (its CoreAudio UID); nil = the system default.
+    var preferredMicrophoneUID: String?
 
     func updateContextualKeyterms(_ contextualKeyterms: [String]) {
         self.contextualKeyterms = contextualKeyterms
@@ -547,6 +561,8 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         print("🎙️ BuddyDictationManager: provider ready, starting audio engine")
 
         let inputNode = audioEngine.inputNode
+        // Settings → microphone: a chosen input device, else the system default.
+        MicrophoneDevices.apply(preferredUID: preferredMicrophoneUID, to: audioEngine)
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         inputNode.removeTap(onBus: 0)
