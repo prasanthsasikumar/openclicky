@@ -156,14 +156,20 @@ fi
 #     missing, so a build without them is still a build.
 SPARKLE_BIN="$DERIVED_DATA/SourcePackages/artifacts/sparkle/Sparkle/bin"
 APPCAST_PATH="$EXPORT_DIR/appcast.xml"
-if [[ -x "$SPARKLE_BIN/generate_appcast" ]] && "$SPARKLE_BIN/generate_keys" -p >/dev/null 2>&1; then
+# The private key as a file (OPENCLICKY_SPARKLE_KEY_FILE, default scripts/sparkle-ed25519.key, made
+# with `generate_keys -x`): generate_appcast reading it from the keychain asks for permission in a
+# dialog, which hangs an unattended build.
+SPARKLE_KEY_FILE="${OPENCLICKY_SPARKLE_KEY_FILE:-$SCRIPT_DIR/sparkle-ed25519.key}"
+SPARKLE_KEY_ARGS=()
+[[ -f "$SPARKLE_KEY_FILE" ]] && SPARKLE_KEY_ARGS=(--ed-key-file "$SPARKLE_KEY_FILE")
+if [[ -x "$SPARKLE_BIN/generate_appcast" ]] && { [[ -f "$SPARKLE_KEY_FILE" ]] || "$SPARKLE_BIN/generate_keys" -p >/dev/null 2>&1; }; then
   echo "▸ writing the Sparkle appcast"
   APPCAST_DIR="$EXPORT_DIR/appcast"
   rm -rf "$APPCAST_DIR" && mkdir -p "$APPCAST_DIR"
   cp "$ZIP_PATH" "$APPCAST_DIR/"
   RELEASE_NOTES="$APPCAST_DIR/$APP_NAME-$VERSION.html"
   printf '<html><body><h2>OpenClicky %s</h2><p>Build %s (%s).</p></body></html>\n' "$VERSION" "$BUILD_NUMBER" "$COMMIT" > "$RELEASE_NOTES"
-  "$SPARKLE_BIN/generate_appcast" \
+  "$SPARKLE_BIN/generate_appcast" "${SPARKLE_KEY_ARGS[@]}" \
     --download-url-prefix "https://github.com/$GITHUB_REPO/releases/download/$TAG/" \
     --embed-release-notes \
     "$APPCAST_DIR" >/dev/null

@@ -273,8 +273,10 @@ installed copy — the copy that then collects the Accessibility and Microphone 
 **Updates come through Sparkle.** `Info.plist` carries `SUFeedURL`
 (`https://github.com/prasanthsasikumar/openclicky/releases/latest/download/appcast.xml`) and the
 EdDSA public key `SUPublicEDKey`. The private half lives in the login keychain of the Mac that cuts
-releases (made once with Sparkle's `generate_keys`; `generate_keys -p` prints the public key, and
-`generate_keys -x key.txt` exports it for a second machine). `release.sh` signs the zip, writes
+releases (made once with Sparkle's `generate_keys`; `generate_keys -p` prints the public key).
+`release.sh` reads it from `scripts/sparkle-ed25519.key` (`generate_keys -x` writes it; git-ignored;
+`OPENCLICKY_SPARKLE_KEY_FILE` overrides the path) because `generate_appcast` reading the keychain
+asks for permission in a dialog, which hangs an unattended build. It signs the zip, writes
 `appcast.xml` with `generate_appcast`, and uploads it beside the zip and dmg, so the app's daily
 check (About → check now) sees the new build. A dev build without the key skips the appcast; the app
 then shows "no update feed".

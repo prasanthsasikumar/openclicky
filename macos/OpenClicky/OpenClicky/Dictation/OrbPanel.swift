@@ -62,31 +62,51 @@ private final class OrbWindow: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// A hosting view that drags the window when the orb is dragged and reports a plain click.
+/// A hosting view that drags the window when the pill is dragged and reports a plain click on
+/// it; everything above the pill (the transcript box and its buttons) is SwiftUI's as usual.
 private final class OrbHostingView<Content: View>: NSHostingView<Content> {
     var onClick: (() -> Void)?
     var isDraggable: () -> Bool = { true }
     var onDragEnded: (() -> Void)?
-    private var mouseDownLocation: NSPoint?
+    /// The pill's rect in the view's coordinates (bottom-left origin), asked at each press.
+    var pillRect: () -> NSRect = { .zero }
+    private var dragStartScreenPoint: NSPoint?
+    private var dragStartWindowOrigin: NSPoint?
     private var didDrag = false
+    private var pressIsOnPill = false
 
     override func mouseDown(with event: NSEvent) {
-        mouseDownLocation = event.locationInWindow
+        let location = convert(event.locationInWindow, from: nil)
+        pressIsOnPill = pillRect().contains(location)
+        guard pressIsOnPill else {
+            super.mouseDown(with: event)
+            return
+        }
+        dragStartScreenPoint = NSEvent.mouseLocation
+        dragStartWindowOrigin = window?.frame.origin
         didDrag = false
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard isDraggable(), let start = mouseDownLocation, let window else { return }
-        let distance = hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y)
-        if !didDrag && distance < 3 { return }
+        guard pressIsOnPill else {
+            super.mouseDragged(with: event)
+            return
+        }
+        guard isDraggable(), let window, let start = dragStartScreenPoint, let origin = dragStartWindowOrigin else { return }
+        let now = NSEvent.mouseLocation
+        let delta = NSPoint(x: now.x - start.x, y: now.y - start.y)
+        if !didDrag && hypot(delta.x, delta.y) < 3 { return }
         didDrag = true
-        window.performDrag(with: event)
-        onDragEnded?()
+        window.setFrameOrigin(NSPoint(x: origin.x + delta.x, y: origin.y + delta.y))
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { mouseDownLocation = nil }
-        if !didDrag { onClick?() }
+        guard pressIsOnPill else {
+            super.mouseUp(with: event)
+            return
+        }
+        defer { dragStartScreenPoint = nil; dragStartWindowOrigin = nil; pressIsOnPill = false }
+        if didDrag { onDragEnded?() } else { onClick?() }
     }
 
     override var acceptsFirstResponder: Bool { false }
@@ -153,6 +173,7 @@ final class OrbPanelManager {
         hosting.onClick = { [weak self] in self?.onOrbClicked?() }
         hosting.isDraggable = { [weak self] in self?.settings.orbIsDraggable ?? true }
         hosting.onDragEnded = { [weak self] in self?.rememberPosition() }
+        hosting.pillRect = { [weak self] in self?.pillRectInWindow() ?? .zero }
         window.contentView = hosting
         self.window = window
     }
@@ -174,6 +195,16 @@ final class OrbPanelManager {
         window.setFrame(frame, display: true)
         if !window.isVisible { window.orderFrontRegardless() }
         scheduleHideIfIdle()
+    }
+
+    /// The pill's rect in window coordinates (bottom-left origin), from the same layout as `layout()`.
+    private func pillRectInWindow() -> NSRect {
+        guard let window else { return .zero }
+        let pill = OrbMetrics.pillSize(settings.orbSize)
+        let showsHint = model.hint != nil && settings.tooltips
+        let hintSpace = showsHint ? OrbMetrics.hintHeight : 0
+        let width = model.phase == .idle ? pill.width : max(pill.width, 220)
+        return NSRect(x: window.frame.width / 2 - width / 2, y: hintSpace + OrbMetrics.padding, width: width, height: max(pill.height, model.phase == .idle ? pill.height : 30))
     }
 
     /// Bottom-centre of the pill in screen points: the remembered drag, or the main screen's bottom.

@@ -535,7 +535,10 @@ final class BuddyDictationManager: NSObject, ObservableObject {
             keyterms: buildTranscriptionKeyterms(),
             onTranscriptUpdate: { [weak self] transcriptText in
                 Task { @MainActor in
-                    self?.latestRecognizedText = transcriptText
+                    guard let self else { return }
+                    self.latestRecognizedText = transcriptText
+                    // Live words for the orb; the companion's callers ignore partials.
+                    self.draftCallbacks?.updateDraftText(self.composeDraftText(withTranscribedText: transcriptText))
                 }
             },
             onFinalTranscriptReady: { [weak self] transcriptText in

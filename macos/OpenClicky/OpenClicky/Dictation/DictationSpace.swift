@@ -74,7 +74,8 @@ struct DictionaryTerm: Codable, Identifiable, Equatable {
         self.id = id
         self.written = written
         self.heardAs = heardAs
-        self.createdAt = createdAt
+        // Whole seconds: the JSON file stores seconds, and a term must read back equal to itself.
+        self.createdAt = Date(timeIntervalSince1970: createdAt.timeIntervalSince1970.rounded(.down))
     }
 }
 
@@ -90,7 +91,7 @@ struct SpokenShortcut: Codable, Identifiable, Equatable {
         self.id = id
         self.trigger = trigger
         self.replacement = replacement
-        self.createdAt = createdAt
+        self.createdAt = Date(timeIntervalSince1970: createdAt.timeIntervalSince1970.rounded(.down))
     }
 }
 
