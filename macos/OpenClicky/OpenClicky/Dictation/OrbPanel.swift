@@ -216,7 +216,9 @@ final class OrbPanelManager {
         if let remembered = settings.orbPosition, NSScreen.screens.contains(where: { $0.frame.insetBy(dx: -20, dy: -20).contains(remembered) }) {
             return remembered
         }
-        let screen = NSScreen.main ?? NSScreen.screens.first
+        // The primary display (the one with the menu bar), not whichever screen holds the key
+        // window: the orb rests in one place.
+        let screen = NSScreen.screens.first ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         return CGPoint(x: visible.midX, y: visible.minY + OrbMetrics.restingBottomInset)
     }
