@@ -14,7 +14,6 @@
 //
 
 import AppKit
-import Carbon.HIToolbox
 import Combine
 import Foundation
 
@@ -96,8 +95,9 @@ final class DictationTakeController: ObservableObject {
     let takeStore: TakeStore?
     let orb: OrbModel
     let earcons: DictationEarconPlayer
-    let audioStore = TakeAudioStore()
-    private(set) var dictationManager: BuddyDictationManager
+    let audioStore: TakeAudioStore
+    private(set) var dictationManager: any DictationCapturing
+    private let host: DictationHost
 
     /// Called before the microphone opens (the Realtime engine must let go of it) and after a take.
     var beforeMicrophoneOpens: (() async -> Void)?
@@ -123,15 +123,17 @@ final class DictationTakeController: ObservableObject {
     private var fieldAtPress = FocusedFieldSnapshot.unknown
     private var nearbyTermsAtPress: [String] = []
 
-    init(settings: DictationSettings, spaceStore: DictationSpaceStore, takeStore: TakeStore?, orb: OrbModel) {
+    init(settings: DictationSettings, spaceStore: DictationSpaceStore, takeStore: TakeStore?, orb: OrbModel,
+         capture: (any DictationCapturing)? = nil, host: DictationHost = DictationHost(), audioStore: TakeAudioStore = TakeAudioStore()) {
         self.settings = settings
         self.spaceStore = spaceStore
         self.takeStore = takeStore
         self.orb = orb
+        self.host = host
+        self.audioStore = audioStore
         self.earcons = DictationEarconPlayer(settings: settings)
         self.currentEngine = settings.engine
-        self.dictationManager = BuddyDictationManager(transcriptionProvider: DictationEngineResolver.makeProvider(for: settings.engine, settings: settings))
-        let audioStore = self.audioStore
+        self.dictationManager = capture ?? BuddyDictationManager(transcriptionProvider: DictationEngineResolver.makeProvider(for: settings.engine, settings: settings))
         self.dictationManager.audioRetentionSink = { buffer in audioStore.append(buffer) }
         bind()
     }
@@ -146,7 +148,7 @@ final class DictationTakeController: ObservableObject {
                 AppLog.append("dictation engine → \(engine.rawValue)")
             }
             .store(in: &cancellables)
-        dictationManager.$currentAudioPowerLevel
+        dictationManager.audioPowerLevelPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
                 guard let self else { return }
@@ -154,7 +156,7 @@ final class DictationTakeController: ObservableObject {
                 if level > 0.08 { self.lastLoudMomentAt = Date() }
             }
             .store(in: &cancellables)
-        dictationManager.$lastErrorMessage
+        dictationManager.errorMessagePublisher
             .compactMap { $0 }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] message in
@@ -166,7 +168,7 @@ final class DictationTakeController: ObservableObject {
             .store(in: &cancellables)
         // A session that ended without a transcript (nothing said, permission denied) leaves the
         // controller thinking a take is open; the manager's state says otherwise.
-        dictationManager.$isKeyboardShortcutSessionActiveOrFinalizing
+        dictationManager.sessionActivityPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] active in
                 guard let self, self.isTakeInProgress, !active, self.pendingStartTask == nil else { return }
@@ -201,25 +203,28 @@ final class DictationTakeController: ObservableObject {
             }
             return true
 
+        case .dictationEditPressed:
+            // Control was already down when the key went down: a Hey Clicky press, unless it
+            // turns out to be a tap (the hands-free gesture), which the tap window decides.
+            guard state == .idle else { return true }
+            pendingEditStartWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.state == .idle else { return }
+                self.pendingEditStartWork = nil
+                self.beginTake(mode: .edit)
+            }
+            pendingEditStartWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + CompanionShortcutRecognizer.tapMaxHoldSeconds + 0.05, execute: work)
+            return true
+
         case .dictationEditModifierJoined:
             switch state {
-            case .idle:
-                // Control was already down when the key went down: a Hey Clicky press, unless it
-                // turns out to be a tap (hands-free), which the tap window decides.
-                pendingEditStartWork?.cancel()
-                cancelPendingPlainStart()
-                let work = DispatchWorkItem { [weak self] in
-                    guard let self, self.state == .idle else { return }
-                    self.beginTake(mode: .edit)
-                }
-                pendingEditStartWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + CompanionShortcutRecognizer.tapMaxHoldSeconds + 0.05, execute: work)
             case .starting, .listening:
                 guard takeMode == .dictate else { break }
                 takeMode = .edit
                 orb.phase = .editListening
                 orb.hint = "say your edit, then let go"
-            case .finishing:
+            case .idle, .finishing:
                 break
             }
             return true
@@ -267,18 +272,6 @@ final class DictationTakeController: ObservableObject {
         }
     }
 
-    /// A plain press became an edit press before the microphone opened: forget the plain start.
-    private func cancelPendingPlainStart() {
-        guard state == .starting else { return }
-        pendingStartTask?.cancel()
-        pendingStartTask = nil
-        dictationManager.cancelCurrentDictation(preserveDraftText: false)
-        _ = audioStore.endCapture()
-        inactivityTimer?.invalidate()
-        state = .idle
-        afterMicrophoneCloses?()
-    }
-
     /// The orb was clicked: like a tap of the key.
     func orbClicked() {
         switch state {
@@ -297,7 +290,7 @@ final class DictationTakeController: ObservableObject {
 
     private func beginTake(mode: TakeMode) {
         guard state == .idle, !dictationManager.isDictationInProgress else { return }
-        if let reason = DictationEngineResolver.unavailableReason(for: settings.engine) {
+        if let reason = host.engineUnavailableReason(settings.engine) {
             earcons.play(.blocked)
             orb.phase = .failed(reason)
             scheduleIdle(after: 2.5)
@@ -313,7 +306,7 @@ final class DictationTakeController: ObservableObject {
         lastLoudMomentAt = Date()
         // The focused element is read now (a few AX calls); the window's captions, which can take
         // hundreds of milliseconds in a browser, are read once the microphone is open.
-        fieldAtPress = FocusedFieldReader.snapshot()
+        fieldAtPress = host.readFocusedField()
         nearbyTermsAtPress = []
         audioStore.beginCapture()
         orb.liveTranscript = ""
@@ -345,7 +338,8 @@ final class DictationTakeController: ObservableObject {
             self.pendingStartTask = nil
             if self.state == .starting { self.state = .listening }
             if self.settings.readNearbyText {
-                let terms = await Task.detached(priority: .utility) { FocusedFieldReader.nearbyTerms() }.value
+                let readNearbyTerms = self.host.readNearbyTerms
+                let terms = await Task.detached(priority: .utility) { readNearbyTerms() }.value
                 if self.takeID == thisTakeID { self.nearbyTermsAtPress = terms }
             }
         }
@@ -446,7 +440,7 @@ final class DictationTakeController: ObservableObject {
         let context = TakeFormattingContext(
             style: style, dictionary: space.dictionary, shortcuts: space.shortcuts, appName: fieldAtPress.appName,
             language: settings.language, script: settings.script, nearbyTerms: nearbyTermsAtPress)
-        let polisher = DictationEngineResolver.makePolisher()
+        let polisher = host.makePolisher()
         let mode = takeMode
         let field = fieldAtPress
 
@@ -482,20 +476,20 @@ final class DictationTakeController: ObservableObject {
         }
 
         // Paste where the cursor was when the key went down — and only there.
-        let frontNow = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let frontNow = host.frontAppBundleID()
         var pasteOutcome = TakeRecord.PasteOutcome.none
         var pasteMessage = "moved to text box"
-        if field.isSecure || IsSecureEventInputEnabled() {
+        if field.isSecure || host.isSecureInputOn() {
             pasteOutcome = .leftInOrb
             pasteMessage = "not pasting into a password field"
         } else if let target = field.appBundleID, let frontNow, target != frontNow {
             pasteOutcome = .leftInOrb
             pasteMessage = "the app changed — copy from here"
-        } else if field.isEditable || !AXIsProcessTrusted() || field.role == nil {
+        } else if field.isEditable || !host.isAccessibilityTrusted() || field.role == nil {
             // Editable, or unknown (no permission / the app exposes nothing): try the paste.
-            switch FrontAppTextInserter.insert(outputText) {
+            switch host.paste(outputText) {
             case .typed:
-                let landing = await PasteLanding.verify(text: outputText, before: field)
+                let landing = await host.verifyPaste(outputText, field)
                 switch landing {
                 case .verified: pasteOutcome = .verified
                 case .posted: pasteOutcome = .posted
@@ -570,7 +564,7 @@ final class DictationTakeController: ObservableObject {
 
     /// Asks the configured model a question over the takes that match it (history → "press enter to ask").
     func askHistory(_ question: String) async -> String {
-        guard let polisher = DictationEngineResolver.makePolisher() else {
+        guard let polisher = host.makePolisher() else {
             return "asking needs a model: add a sarvam key or sign in under settings."
         }
         let words = question.split(whereSeparator: { $0.isWhitespace }).map(String.init).filter { $0.count > 3 }
@@ -598,7 +592,7 @@ final class DictationTakeController: ObservableObject {
     /// words in the orb's box and in history (the cursor has moved on, so nothing is pasted).
     func retry(takeID: UUID) async {
         guard !isTakeInProgress, !isRetrying, audioStore.hasAudio(for: takeID) else { return }
-        if let reason = DictationEngineResolver.unavailableReason(for: settings.engine) {
+        if let reason = host.engineUnavailableReason(settings.engine) {
             orb.phase = .failed(reason)
             scheduleIdle(after: 2.5)
             return
@@ -619,7 +613,7 @@ final class DictationTakeController: ObservableObject {
             let context = TakeFormattingContext(
                 style: space.style(forAppBundleID: original?.appBundleID), dictionary: space.dictionary, shortcuts: space.shortcuts,
                 appName: original?.appName, language: settings.language, script: settings.script)
-            let formatted = await TakeFormatter.format(raw, context: context, polisher: DictationEngineResolver.makePolisher(), wantsModel: DictationEngineResolver.wantsModelPolish(settings: settings))
+            let formatted = await TakeFormatter.format(raw, context: context, polisher: host.makePolisher(), wantsModel: DictationEngineResolver.wantsModelPolish(settings: settings))
             let record = TakeRecord(id: takeID, createdAt: original?.createdAt ?? Date(), mode: .dictate, status: .complete,
                                     rawText: raw, formattedText: formatted.text, appBundleID: original?.appBundleID, appName: original?.appName,
                                     language: settings.language.bareCode, engine: settings.engine.rawValue,

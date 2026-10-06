@@ -1014,7 +1014,7 @@ final class CompanionManager: ObservableObject {
             openTextComposer()
         case .handsFreeToggleRequested:
             toggleHandsFree()
-        case .dictationPressed, .dictationEditModifierJoined, .dictationReleased, .dictationDoubleTapped, .escapePressed:
+        case .dictationPressed, .dictationEditPressed, .dictationEditModifierJoined, .dictationReleased, .dictationDoubleTapped, .escapePressed:
             guard !showOnboardingVideo else { return }
             dictationTakeController.handle(shortcutEvent)
         case .talkPressed, .talkReleased:

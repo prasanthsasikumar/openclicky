@@ -40,7 +40,8 @@ enum TakeFormatter {
 
     static let modelTimeoutSeconds: TimeInterval = 8
 
-    static let fillers: Set<String> = ["um", "umm", "uh", "uhh", "er", "erm", "hmm", "mm", "ah", "eh"]
+    /// Only the unmistakable ones: "ah", "er", "eh" and "mm" are words in romanised Indian languages.
+    static let fillers: Set<String> = ["um", "umm", "uh", "uhh", "erm", "hmm"]
 
     // MARK: local pass
 

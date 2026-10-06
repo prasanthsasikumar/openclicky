@@ -21,6 +21,9 @@ enum CompanionShortcutEvent: Equatable {
     case talkReleased
     /// The dictation key went down: start listening now, before knowing whether it is a hold or a tap.
     case dictationPressed
+    /// The dictation key went down with control already held: a Hey Clicky press — or the first
+    /// half of the hands-free gesture, which only the release can tell.
+    case dictationEditPressed
     /// Control joined while the dictation key is held: this take is a Hey Clicky instruction.
     case dictationEditModifierJoined
     /// `wasTap`: the key came back up within the tap window with nothing else pressed.
@@ -120,8 +123,7 @@ struct CompanionShortcutRecognizer {
                 dictationHoldStartedAt = time
                 keyWasPressedDuringHold = false
                 editModifierJoinedDuringHold = trackedFlags.contains(.control)
-                events.append(.dictationPressed)
-                if editModifierJoinedDuringHold { events.append(.dictationEditModifierJoined) }
+                events.append(editModifierJoinedDuringHold ? .dictationEditPressed : .dictationPressed)
             } else {
                 let holdDuration = dictationHoldStartedAt.map { time - $0 } ?? .infinity
                 let wasTap = holdDuration <= Self.tapMaxHoldSeconds && !keyWasPressedDuringHold

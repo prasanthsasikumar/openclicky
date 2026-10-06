@@ -105,7 +105,7 @@ struct CompanionShortcutRecognizerTests {
     @Test func fnPressedWhileControlIsDownIsHeyClickyFromTheStart() {
         var recognizer = CompanionShortcutRecognizer()
         _ = flags(&recognizer, [.control], keyCode: Self.leftControlKeyCode, at: 0)
-        #expect(flags(&recognizer, [.control, .function], keyCode: Self.fnKeyCode, at: 0.05) == [.dictationPressed, .dictationEditModifierJoined])
+        #expect(flags(&recognizer, [.control, .function], keyCode: Self.fnKeyCode, at: 0.05) == [.dictationEditPressed])
     }
 
     @Test func tappingFnAndControlTwiceTogglesHandsFree() {
