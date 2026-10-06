@@ -34,11 +34,12 @@ struct StylesPageView: View {
                             Button("auto-detect") { settings.languageCode = DictationLanguage.auto.code }
                                 .buttonStyle(PaperPillButtonStyle(prominent: settings.language == .auto))
                             Picker("", selection: $settings.languageCode) {
+                                Text("choose language").tag(DictationLanguage.auto.code)
                                 ForEach(DictationLanguage.choices.filter { $0 != .auto }) { language in
                                     Text("\(language.name) · \(language.nativeName)").tag(language.code)
                                 }
                             }
-                            .labelsHidden().frame(width: 170)
+                            .labelsHidden().frame(width: 190)
                         }
                     }
                     PaperDivider()
@@ -66,13 +67,15 @@ struct StylesPageView: View {
                                 Text(style.tagline).font(Paper.body(12)).foregroundStyle(Paper.inkSecondary)
                             }
                             Spacer()
+                            // Only apps this Mac has: a seeded style names apps that may not be installed.
+                            let installed = style.appBundleIDs.filter { AppIconCache.shared.icon(for: $0) != nil }
                             HStack(spacing: -4) {
-                                ForEach(style.appBundleIDs.prefix(5), id: \.self) { bundleID in
+                                ForEach(installed.prefix(5), id: \.self) { bundleID in
                                     AppIconView(bundleID: bundleID, size: 22)
                                 }
                             }
-                            if style.appBundleIDs.count > 5 { Text("+\(style.appBundleIDs.count - 5)").font(Paper.body(11)).foregroundStyle(Paper.inkSecondary) }
-                            if style.appBundleIDs.isEmpty { Text("writes wherever no app has its own voice").font(Paper.body(11)).foregroundStyle(Paper.inkTertiary) }
+                            if installed.count > 5 { Text("+\(installed.count - 5)").font(Paper.body(11)).foregroundStyle(Paper.inkSecondary) }
+                            if installed.isEmpty { Text(style.appBundleIDs.isEmpty ? "writes wherever no app has its own voice" : "none of its apps are on this mac").font(Paper.body(11)).foregroundStyle(Paper.inkTertiary) }
                             Image(systemName: "arrow.right").font(.system(size: 12)).foregroundStyle(Paper.inkSecondary)
                         }
                         .padding(18)
