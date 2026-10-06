@@ -43,6 +43,9 @@ was locked). Tick each line the first time it is seen working and note the build
 - [x] TextEdit: the take is pasted at the cursor, history shows the app icon, "pasted" in the
       inspector. *(seen on build 133 with the offline engine, 2026-10-06)*
 - [ ] Notes: the same, with the clipboard restored afterwards.
+- [x] Sarvam engine: a dictionary term ("flows x r" → FlowsXR) and a spoken shortcut ("my sign off" →
+      the saved sign-off) both came through the realtime socket and the local rules (build 142). The
+      model polish timed out once on the 105B model; polish now uses sarvam-30b.
 - [ ] Terminal: pasted; the developer style keeps commands as spoken.
 - [ ] Slack / Messages: the messaging styles (lowercase for personal messaging when the model
       polishes).
