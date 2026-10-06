@@ -118,8 +118,9 @@ struct RecordPageView: View {
         .onAppear(perform: reload)
         .onReceive(controller.$historyVersion) { _ in reload() }
         .onReceive(controller.$lastTake.compactMap { $0 }) { take in
-            // A take while this window was in front: the paste went nowhere, so it lands here.
-            if take.pasteOutcome == .leftInOrb || take.appBundleID == Bundle.main.bundleIdentifier {
+            // A take while this window was in front and no field took it: it lands here. (A take
+            // pasted into the box itself is already there — verified — and is not added twice.)
+            if take.pasteOutcome == .leftInOrb || (take.appBundleID == Bundle.main.bundleIdentifier && take.pasteOutcome != .verified) {
                 boxText = boxText.isEmpty ? take.displayText : boxText + " " + take.displayText
             }
         }

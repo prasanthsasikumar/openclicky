@@ -153,8 +153,8 @@ struct NotchHomeView: View {
                     // HeyClicky's four shortcuts, recognised by CompanionShortcutRecognizer.
                     shortcutRow(title: "Talk", keys: ["⌃ control", "⌥ option"])
                     shortcutRow(title: "Text", keys: ["⌃ control", "2×"])
-                    shortcutRow(title: "Dictate", keys: ["fn", "⌃ control"])
-                    shortcutRow(title: companionManager.isAlwaysListening ? "Hands-free ●" : "Hands-free", keys: ["fn", "⌃ control", "2×"])
+                    shortcutRow(title: "Dictate", keys: [companionManager.dictationSettings.dictationKey.keycapLabel])
+                    shortcutRow(title: companionManager.isAlwaysListening ? "Hands-free ●" : "Hands-free", keys: [companionManager.dictationSettings.dictationKey.keycapLabel, "⌃ control", "2×"])
                 }
                 .frame(width: 180, alignment: .leading)
             }
