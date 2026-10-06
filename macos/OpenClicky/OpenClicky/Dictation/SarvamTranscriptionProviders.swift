@@ -49,12 +49,14 @@ final class SarvamTranscriptionProvider: BuddyTranscriptionProvider {
         if preferStreaming {
             // The realtime socket gives words while the key is held; the chunked socket gives them
             // at the end; the upload is the last resort. Each is tried in turn.
-            do {
-                return try await SarvamStreamingSession.open(
-                    key: key, language: language, keyterms: keyterms, flavour: .realtime,
-                    onTranscriptUpdate: onTranscriptUpdate, onFinalTranscriptReady: onFinalTranscriptReady, onError: onError)
-            } catch {
-                AppLog.append("sarvam realtime socket could not open (\(error.localizedDescription)); trying the chunked socket")
+            for model in [SarvamSpeechClient.RealtimeModel.v4, .v3] {
+                do {
+                    return try await SarvamStreamingSession.open(
+                        key: key, language: language, keyterms: keyterms, flavour: .realtime, realtimeModel: model,
+                        onTranscriptUpdate: onTranscriptUpdate, onFinalTranscriptReady: onFinalTranscriptReady, onError: onError)
+                } catch {
+                    AppLog.append("sarvam realtime socket (\(model.rawValue)) could not open (\(error.localizedDescription)); trying the next")
+                }
             }
             do {
                 return try await SarvamStreamingSession.open(
@@ -117,6 +119,7 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
 
     static func open(
         key: String, language: DictationLanguage, keyterms: [String], flavour: Flavour = .chunked,
+        realtimeModel: SarvamSpeechClient.RealtimeModel = .v4,
         onTranscriptUpdate: @escaping (String) -> Void,
         onFinalTranscriptReady: @escaping (String) -> Void,
         onError: @escaping (Error) -> Void
@@ -126,7 +129,7 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
         configuration.timeoutIntervalForRequest = 15
         session.urlSession = URLSession(configuration: configuration, delegate: session, delegateQueue: nil)
         let request = flavour == .realtime
-            ? SarvamSpeechClient.realtimeRequest(language: language, keyterms: keyterms, key: key)
+            ? SarvamSpeechClient.realtimeRequest(language: language, keyterms: keyterms, key: key, model: realtimeModel)
             : SarvamSpeechClient.streamingRequest(language: language, keyterms: keyterms, key: key)
         session.socket = session.urlSession.webSocketTask(with: request)
         do {

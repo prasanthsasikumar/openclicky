@@ -96,13 +96,17 @@ struct SarvamRealtimeClientTests {
     @Test func theRealtimeSocketUsesManualEndpointingAndRawPCM() {
         let request = SarvamSpeechClient.realtimeRequest(language: .auto, keyterms: ["FlowsXR", " "], key: "k")
         let url = request.url!.absoluteString
-        // v3-realtime refuses `keyterms` outright; the words ride in `prompt`.
-        #expect(!url.contains("keyterms="))
-        #expect(url.contains("prompt=Names%20and%20terms%20that%20may%20come%20up:%20FlowsXR."))
-        #expect(!SarvamSpeechClient.realtimeRequest(language: .auto, keyterms: [], key: "k").url!.absoluteString.contains("prompt"))
+        // v4 takes keyterms as a JSON array; v3-realtime refuses them and gets a prompt instead.
+        #expect(url.contains("model=saaras:v4"))
+        #expect(url.contains("keyterms=%5B%22FlowsXR%22%5D"))
+        #expect(!url.contains("prompt="))
+        let v3 = SarvamSpeechClient.realtimeRequest(language: .auto, keyterms: ["FlowsXR"], key: "k", model: .v3).url!.absoluteString
+        #expect(v3.contains("model=saaras:v3-realtime"))
+        #expect(!v3.contains("keyterms="))
+        #expect(v3.contains("prompt=Names%20and%20terms%20that%20may%20come%20up:%20FlowsXR."))
+        #expect(!SarvamSpeechClient.realtimeRequest(language: .auto, keyterms: [], key: "k").url!.absoluteString.contains("keyterms"))
         #expect(url.hasPrefix("wss://api.sarvam.ai/speech-to-text-realtime/ws?"))
         #expect(url.contains("language_code=auto"))
-        #expect(url.contains("model=saaras:v3-realtime"))
         #expect(url.contains("endpointing=manual"))
         #expect(url.contains("encoding=linear16"))
         #expect(request.value(forHTTPHeaderField: "Api-Subscription-Key") == "k")

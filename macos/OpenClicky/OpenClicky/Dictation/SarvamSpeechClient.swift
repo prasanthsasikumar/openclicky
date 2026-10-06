@@ -147,20 +147,29 @@ struct SarvamSpeechClient: Sendable {
     /// The realtime socket: `saaras:v3-realtime` with manual endpointing, so the key decides where
     /// the utterance ends and partial words arrive while it is held. `language_code` must be named
     /// (`auto` detects).
-    static func realtimeRequest(language: DictationLanguage, keyterms: [String], key: String, host: URL = SarvamSpeechClient.streamingHost) -> URLRequest {
+    /// The realtime socket's models: Saaras v4 first (keyterms, global English, the best language
+    /// ID; same latency measured), v3-realtime as the fallback should v4 refuse the session.
+    enum RealtimeModel: String { case v4 = "saaras:v4", v3 = "saaras:v3-realtime" }
+
+    static func realtimeRequest(language: DictationLanguage, keyterms: [String], key: String, model: RealtimeModel = .v4, host: URL = SarvamSpeechClient.streamingHost) -> URLRequest {
         var components = URLComponents(url: host.appendingPathComponent("speech-to-text-realtime/ws"), resolvingAgainstBaseURL: false) ?? URLComponents()
         var items = [
             URLQueryItem(name: "language_code", value: language.code == "auto" ? "auto" : language.code),
-            URLQueryItem(name: "model", value: "saaras:v3-realtime"),
+            URLQueryItem(name: "model", value: model.rawValue),
             URLQueryItem(name: "stream_type", value: "balanced"),
             URLQueryItem(name: "encoding", value: "linear16"),
             URLQueryItem(name: "sample_rate", value: String(sampleRate)),
             URLQueryItem(name: "endpointing", value: "manual"),
         ]
-        // This model takes no `keyterms` ("only supported by model 'saaras:v4'"); the dictionary's
-        // words go in `prompt`, which it does take.
-        let hint = keyterms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.prefix(50).joined(separator: ", ")
-        if !hint.isEmpty { items.append(URLQueryItem(name: "prompt", value: "Names and terms that may come up: \(hint).")) }
+        // v4 takes `keyterms` (a JSON array); v3-realtime refuses them ("only supported by model
+        // 'saaras:v4'") but takes a `prompt`, so the dictionary's words go there instead.
+        switch model {
+        case .v4:
+            if let encoded = keytermsQueryValue(keyterms) { items.append(URLQueryItem(name: "keyterms", value: encoded)) }
+        case .v3:
+            let hint = keyterms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.prefix(50).joined(separator: ", ")
+            if !hint.isEmpty { items.append(URLQueryItem(name: "prompt", value: "Names and terms that may come up: \(hint).")) }
+        }
         components.queryItems = items
         var request = URLRequest(url: components.url ?? host)
         request.setValue(key.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "Api-Subscription-Key")
