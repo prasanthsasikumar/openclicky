@@ -277,8 +277,10 @@ struct TakeInspectorView: View {
                 }.buttonStyle(PaperPillButtonStyle())
                 Button("paste again") {
                     onClose()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { _ = FrontAppTextInserter.insert(text) }
-                }.buttonStyle(PaperPillButtonStyle()).help("closes this window, then pastes into the app in front")
+                    // The window hides so the app behind it is in front for the paste.
+                    NSApp.hide(nil)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { _ = FrontAppTextInserter.insert(text) }
+                }.buttonStyle(PaperPillButtonStyle()).help("hides openclicky, then pastes into the app behind it")
                 Button("delete") {
                     try? companionManager.dictationTakeStore?.delete(takeID: take.id)
                     companionManager.dictationTakeController.historyDidChange()

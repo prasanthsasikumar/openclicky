@@ -78,6 +78,7 @@ final class TakeStore: @unchecked Sendable {
             throw TakeStoreError(message: "could not open \(fileURL.path)")
         }
         try execute("PRAGMA journal_mode = WAL")
+        try execute("PRAGMA foreign_keys = ON")
         try execute("""
         CREATE TABLE IF NOT EXISTS takes (
             id TEXT PRIMARY KEY,

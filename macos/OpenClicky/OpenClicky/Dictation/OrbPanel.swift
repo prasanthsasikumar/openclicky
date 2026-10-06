@@ -30,6 +30,8 @@ final class OrbModel: ObservableObject {
     @Published var liveTranscript = ""
     /// The transcript box above the pill: the text of the last take when it is open.
     @Published var boxText: String?
+    /// The line under the box's text: why it is open.
+    @Published var boxReason = "your last take"
     @Published var isBoxOpen = false
     /// 0…1 microphone level for the bars.
     @Published var audioLevel: CGFloat = 0
@@ -133,7 +135,9 @@ final class OrbPanelManager {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.applySettings() } }
             .store(in: &cancellables)
-        model.objectWillChange
+        // Only what changes the geometry: the level bars redraw inside the pill on their own.
+        model.$phase.map { _ in () }
+            .merge(with: model.$isBoxOpen.map { _ in () }, model.$boxText.map { _ in () }, model.$hint.map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.layout() } }
             .store(in: &cancellables)
@@ -227,7 +231,11 @@ final class OrbPanelManager {
     /// "hide when not in use": the orb fades out a moment after a take finishes.
     private func scheduleHideIfIdle() {
         hideWorkItem?.cancel()
-        guard settings.orbHidesWhenIdle, let window else { return }
+        guard let window else { return }
+        guard settings.orbHidesWhenIdle else {
+            window.alphaValue = 1
+            return
+        }
         if model.isBusy || model.isBoxOpen {
             window.alphaValue = 1
             return
@@ -254,7 +262,7 @@ struct OrbRootView: View {
     var body: some View {
         VStack(spacing: 8) {
             if model.isBoxOpen, let text = model.boxText {
-                OrbTranscriptBox(text: text, theme: settings.orbTheme, onCopy: {
+                OrbTranscriptBox(text: text, reason: model.boxReason, theme: settings.orbTheme, onCopy: {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                 }, onClose: { model.isBoxOpen = false })
@@ -320,6 +328,9 @@ private struct OrbPillView: View {
         case .idle:
             if settings.orbLook == .classic {
                 OrbMarkShape().fill(ink).frame(width: size.height * 0.5, height: size.height * 0.5)
+            } else if settings.orbLook == .pixel {
+                OrbMarkShape().fill(ink).frame(width: size.height * 0.55, height: size.height * 0.55)
+                    .mask(OrbPixelGrid().fill(.black))
             } else {
                 HStack(spacing: 6) {
                     dash; dash
@@ -401,6 +412,7 @@ struct OrbLevelBars: View {
 
 private struct OrbTranscriptBox: View {
     let text: String
+    let reason: String
     let theme: OrbTheme
     let onCopy: () -> Void
     let onClose: () -> Void
@@ -414,7 +426,7 @@ private struct OrbTranscriptBox: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack {
-                Text("no text box found, copy from here").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(reason).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 Button("copy", action: onCopy).controlSize(.small)
                 Button(action: onClose) { Image(systemName: "xmark") }.controlSize(.small)
@@ -424,5 +436,23 @@ private struct OrbTranscriptBox: View {
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.regularMaterial))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+    }
+}
+
+/// The pixel look: the mark seen through a 3 pt grid.
+struct OrbPixelGrid: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let cell: CGFloat = 3
+        var y = rect.minY
+        while y < rect.maxY {
+            var x = rect.minX
+            while x < rect.maxX {
+                path.addRect(CGRect(x: x, y: y, width: cell - 0.8, height: cell - 0.8))
+                x += cell
+            }
+            y += cell
+        }
+        return path
     }
 }

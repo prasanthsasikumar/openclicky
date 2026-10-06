@@ -87,8 +87,9 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
     private let onError: (Error) -> Void
     private var urlSession: URLSession!
     private var socket: URLSessionWebSocketTask!
-    private var opened: CheckedContinuation<Void, Error>?
-    private var finalDeliveryWork: DispatchWorkItem?
+    /// The continuation `open` waits on, resumed once, from whichever delegate call comes first.
+    private let opened = OSAllocatedUnfairLock<CheckedContinuation<Void, Error>?>(initialState: nil)
+    private let finalDeliveryWork = OSAllocatedUnfairLock<DispatchWorkItem?>(initialState: nil)
 
     private init(onTranscriptUpdate: @escaping (String) -> Void, onFinalTranscriptReady: @escaping (String) -> Void, onError: @escaping (Error) -> Void) {
         self.onTranscriptUpdate = onTranscriptUpdate
@@ -108,19 +109,25 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
         configuration.timeoutIntervalForRequest = 15
         session.urlSession = URLSession(configuration: configuration, delegate: session, delegateQueue: nil)
         session.socket = session.urlSession.webSocketTask(with: SarvamSpeechClient.streamingRequest(language: language, keyterms: keyterms, key: key))
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask {
-                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                    session.opened = continuation
-                    session.socket.resume()
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        session.opened.withLock { $0 = continuation }
+                        session.socket.resume()
+                    }
                 }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 6_000_000_000)
+                    throw SarvamSpeechError.unreachable("the streaming socket did not open in 6 s")
+                }
+                try await group.next()
+                group.cancelAll()
             }
-            group.addTask {
-                try await Task.sleep(nanoseconds: 6_000_000_000)
-                throw SarvamSpeechError.unreachable("the streaming socket did not open in 6 s")
-            }
-            try await group.next()
-            group.cancelAll()
+        } catch {
+            // The socket may still open later; it is torn down so a late delegate call goes nowhere.
+            session.cancel()
+            throw error
         }
         session.receiveLoop()
         return session
@@ -128,30 +135,35 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
 
     // MARK: URLSessionWebSocketDelegate
 
+    private func takeOpenContinuation() -> CheckedContinuation<Void, Error>? {
+        opened.withLock { box in defer { box = nil }; return box }
+    }
+
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        opened?.resume()
-        opened = nil
+        takeOpenContinuation()?.resume()
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        state.withLock { $0.isClosed = true }
+        let wasClosed = state.withLock { box -> Bool in defer { box.isClosed = true }; return box.isClosed }
         let reasonText = reason.map { String(decoding: $0, as: UTF8.self) } ?? ""
-        if let opened {
-            opened.resume(throwing: SarvamSpeechError.refused(status: closeCode.rawValue, message: reasonText))
-            self.opened = nil
+        if let continuation = takeOpenContinuation() {
+            continuation.resume(throwing: SarvamSpeechError.refused(status: closeCode.rawValue, message: reasonText))
+            return
         }
+        guard !wasClosed else { return }
         AppLog.append("sarvam stream closed (\(closeCode.rawValue)) \(reasonText)")
         deliverFinalIfRequested()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error else { return }
-        state.withLock { $0.isClosed = true }
-        if let opened {
-            opened.resume(throwing: SarvamSpeechError.unreachable(error.localizedDescription))
-            self.opened = nil
+        let wasClosed = state.withLock { box -> Bool in defer { box.isClosed = true }; return box.isClosed }
+        if let continuation = takeOpenContinuation() {
+            continuation.resume(throwing: SarvamSpeechError.unreachable(error.localizedDescription))
             return
         }
+        // After cancel() every callback is the teardown's own; nothing is reported.
+        guard !wasClosed else { return }
         let hasText = state.withLock { !$0.pieces.isEmpty }
         if hasText { deliverFinalIfRequested() } else { onError(SarvamSpeechError.unreachable(error.localizedDescription)) }
     }
@@ -166,8 +178,10 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
                 let closed = self.state.withLock { $0.isClosed }
                 if !closed { self.receiveLoop() }
             case .failure(let error):
-                let (hadText, closed) = self.state.withLock { ($0.pieces.isEmpty == false, $0.isClosed) }
-                self.state.withLock { $0.isClosed = true }
+                let (hadText, closed) = self.state.withLock { box -> (Bool, Bool) in
+                    defer { box.isClosed = true }
+                    return (!box.pieces.isEmpty, box.isClosed)
+                }
                 if !closed {
                     if hadText { self.deliverFinalIfRequested() } else { self.onError(SarvamSpeechError.unreachable(error.localizedDescription)) }
                 }
@@ -229,7 +243,8 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
 
     func cancel() {
         state.withLock { $0.isClosed = true; $0.hasDeliveredFinal = true }
-        finalDeliveryWork?.cancel()
+        finalDeliveryWork.withLock { $0?.cancel(); $0 = nil }
+        takeOpenContinuation()?.resume(throwing: SarvamSpeechError.unreachable("cancelled"))
         socket.cancel(with: .normalClosure, reason: nil)
         urlSession.invalidateAndCancel()
     }
@@ -243,9 +258,8 @@ final class SarvamStreamingSession: NSObject, BuddyStreamingTranscriptionSession
     }
 
     private func scheduleFinalDelivery(after seconds: TimeInterval) {
-        finalDeliveryWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.deliverFinalIfRequested() }
-        finalDeliveryWork = work
+        finalDeliveryWork.withLock { $0?.cancel(); $0 = work }
         sendQueue.asyncAfter(deadline: .now() + seconds, execute: work)
     }
 

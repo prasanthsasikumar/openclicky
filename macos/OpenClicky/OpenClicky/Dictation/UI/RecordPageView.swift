@@ -118,7 +118,7 @@ struct RecordPageView: View {
         }
         .onAppear(perform: reload)
         .onReceive(controller.$historyVersion) { _ in reload() }
-        .onReceive(controller.$lastTake.compactMap { $0 }) { take in
+        .onReceive(controller.$lastTake.dropFirst().compactMap { $0 }) { take in
             // A take while this window was in front and no field took it: it lands here. (A take
             // pasted into the box itself is already there — verified — and is not added twice.)
             if take.pasteOutcome == .leftInOrb || (take.appBundleID == Bundle.main.bundleIdentifier && take.pasteOutcome != .verified) {
@@ -134,7 +134,9 @@ struct RecordPageView: View {
                 .font(Paper.mono(10)).foregroundStyle(Paper.ink)
                 .padding(.horizontal, 7).padding(.vertical, 2)
                 .background(RoundedRectangle(cornerRadius: 5).fill(Paper.highlighter))
-            Text(reason ?? (settings.engine == .offline ? "your voice stays on this mac — words never leave it." : "mode is active — \(settings.engine.detail)"))
+            Text(reason ?? (settings.engine == .offline
+                ? (settings.polishOfflineTakes && DictationEngineResolver.makePolisher() != nil ? "heard on this mac · polished by a model (settings → engine)" : "your voice stays on this mac — words never leave it.")
+                : "mode is active — \(settings.engine.detail)"))
                 .font(Paper.body(12)).foregroundStyle(reason == nil ? Paper.inkSecondary : Paper.danger).lineLimit(1)
             Spacer()
             Button("change") { model.section = .settings; model.settingsPage = .engine }.buttonStyle(.plain).font(Paper.body(11)).foregroundStyle(Paper.inkTertiary).pointerCursor()

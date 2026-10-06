@@ -17,15 +17,18 @@ enum DictationSmokeRun {
             print("smoke: unknown engine \(engineName); one of \(DictationEngineChoice.allCases.map(\.rawValue).joined(separator: ", "))")
             return 2
         }
-        if engine == .sarvam, let key = ProcessInfo.processInfo.environment["OPENCLICKY_SARVAM_KEY"], !key.isEmpty {
-            OpenClickyConfiguration.update { $0.sarvamKey = key }
-        }
-        if let reason = DictationEngineResolver.unavailableReason(for: engine) {
-            print("smoke: \(engine.rawValue) unavailable: \(reason)")
-            return 2
-        }
         let settings = DictationSettings.shared
-        let provider = DictationEngineResolver.makeProvider(for: engine, settings: settings)
+        let provider: any BuddyTranscriptionProvider
+        if engine == .sarvam, let key = ProcessInfo.processInfo.environment["OPENCLICKY_SARVAM_KEY"], !key.isEmpty {
+            // The environment's key is for this run only; nothing is written to shell.json.
+            provider = SarvamTranscriptionProvider(key: { key }, language: { settings.language })
+        } else {
+            if let reason = DictationEngineResolver.unavailableReason(for: engine) {
+                print("smoke: \(engine.rawValue) unavailable: \(reason)")
+                return 2
+            }
+            provider = DictationEngineResolver.makeProvider(for: engine, settings: settings)
+        }
         print("smoke: engine \(provider.displayName), language \(settings.language.code), file \(filePath)")
 
         let file: AVAudioFile
@@ -86,7 +89,11 @@ enum DictationSmokeRun {
         print("smoke: heard in \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(raw)")
         let space = DictationSpaceStore().space
         let context = TakeFormattingContext(style: space.style(forAppBundleID: nil), dictionary: space.dictionary, shortcuts: space.shortcuts, appName: "smoke", language: settings.language, script: settings.script)
-        let formatted = await TakeFormatter.format(raw, context: context, polisher: DictationEngineResolver.makePolisher(), wantsModel: settings.polishWithModel)
+        let polisher: (any TakePolisher)? = {
+            if let key = ProcessInfo.processInfo.environment["OPENCLICKY_SARVAM_KEY"], !key.isEmpty { return SarvamTakePolisher(client: SarvamSpeechClient(key: key)) }
+            return DictationEngineResolver.makePolisher()
+        }()
+        let formatted = await TakeFormatter.format(raw, context: context, polisher: polisher, wantsModel: engine == .offline ? settings.polishOfflineTakes : settings.polishWithModel)
         print("smoke: formatted (\(formatted.formattingDegraded ? "local rules" : "model")): \(formatted.text)")
         return raw.isEmpty ? 1 : 0
     }

@@ -101,9 +101,12 @@ final class TakeAudioStore: @unchecked Sendable {
         try file.read(into: buffer)
         return try await withCheckedThrowingContinuation { continuation in
             let resumed = OSAllocatedUnfairLock(initialState: false)
+            let openSession = OSAllocatedUnfairLock<(any BuddyStreamingTranscriptionSession)?>(initialState: nil)
             func finish(_ result: Result<String, Error>) {
                 let first = resumed.withLock { done -> Bool in defer { done = true }; return !done }
                 guard first else { return }
+                // Whatever ended it, the engine's session goes with it (a timeout would otherwise leak it).
+                openSession.withLock { $0?.cancel(); $0 = nil }
                 continuation.resume(with: result)
             }
             Task {
@@ -113,6 +116,7 @@ final class TakeAudioStore: @unchecked Sendable {
                         onTranscriptUpdate: { _ in },
                         onFinalTranscriptReady: { text in finish(.success(text)) },
                         onError: { error in finish(.failure(error)) })
+                    openSession.withLock { $0 = session }
                     // Paced like a microphone for the streaming engines.
                     let sliceFrames = AVAudioFrameCount(file.processingFormat.sampleRate / 4)
                     var offset: AVAudioFrameCount = 0

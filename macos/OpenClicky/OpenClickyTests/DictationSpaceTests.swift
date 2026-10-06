@@ -15,6 +15,8 @@ struct DictationSpaceTests {
         #expect(space.style(forAppBundleID: "com.apple.dt.Xcode").id == "developer")
         #expect(space.style(forAppBundleID: "com.tinyspeck.slackmacgap").id == "work-messaging")
         #expect(space.style(forAppBundleID: "com.example.unknown").id == "other")
+        // Browsers carry Slack, GitHub and Notion as much as Gmail: they are "other apps", not email.
+        #expect(space.style(forAppBundleID: "com.google.Chrome").id == "other")
         #expect(space.style(forAppBundleID: nil).id == "other")
     }
 

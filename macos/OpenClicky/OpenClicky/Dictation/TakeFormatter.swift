@@ -103,7 +103,8 @@ enum TakeFormatter {
             .replacingOccurrences(of: " .", with: ".")
     }
 
-    /// Capital after a sentence end, a full stop at the very end when there is no terminal punctuation.
+    /// A capital letter after each sentence end. No punctuation is added: the engines punctuate,
+    /// and "git status" must land in a terminal as spoken.
     static func sentenceCased(_ text: String) -> String {
         var characters = Array(text)
         var atSentenceStart = true
@@ -117,9 +118,7 @@ enum TakeFormatter {
             }
             if ".!?".contains(character) || character == "\n" { atSentenceStart = true }
         }
-        var result = String(characters)
-        if let last = result.last, last.isLetter || last.isNumber { result.append(".") }
-        return result
+        return String(characters)
     }
 
     static func collapseWhitespace(_ text: String) -> String {

@@ -28,7 +28,7 @@ struct TakeFormatterTests {
         let shortcut = SpokenShortcut(trigger: "my sign-off", replacement: "x")
         let result = TakeFormatter.formatLocally("add my sign off at the end", context: context(shortcuts: [shortcut]))
         #expect(result.expandedShortcut == nil)
-        #expect(result.text == "Add my sign off at the end.")
+        #expect(result.text == "Add my sign off at the end")
     }
 
     @Test func dictionaryTermsReplaceWholeWordsOnly() {
@@ -42,10 +42,11 @@ struct TakeFormatterTests {
         #expect(TakeFormatter.removeFillers(from: "the drum is loud") == "the drum is loud")
     }
 
-    @Test func sentenceCaseCapitalisesAndEnds() {
-        #expect(TakeFormatter.sentenceCased("hello there. how are you") == "Hello there. How are you.")
-        #expect(TakeFormatter.sentenceCased("3 kg of atta") == "3 kg of atta.")
+    @Test func sentenceCaseCapitalisesWithoutAddingPunctuation() {
+        #expect(TakeFormatter.sentenceCased("hello there. how are you") == "Hello there. How are you")
+        #expect(TakeFormatter.sentenceCased("3 kg of atta") == "3 kg of atta")
         #expect(TakeFormatter.sentenceCased("done!") == "Done!")
+        #expect(TakeFormatter.sentenceCased("git status") == "Git status")
     }
 
     @Test func theCasualStyleKeepsLowercase() {
@@ -81,7 +82,7 @@ struct TakeFormatterTests {
 
     @Test func withoutAModelTheLocalResultIsMarkedDegraded() async {
         let result = await TakeFormatter.format("hello there", context: context(), polisher: nil, wantsModel: true)
-        #expect(result.text == "Hello there.")
+        #expect(result.text == "Hello there")
         #expect(result.formattingDegraded)
         let local = await TakeFormatter.format("hello there", context: context(), polisher: nil, wantsModel: false)
         #expect(!local.formattingDegraded)

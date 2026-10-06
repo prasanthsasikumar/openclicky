@@ -62,6 +62,8 @@ final class ClipboardHistoryMonitor {
         guard pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
         guard !settings.incognito, let takeStore else { return }
+        // A take's paste changes the pasteboard twice (the words, then the restore): neither is a copy.
+        if Date().timeIntervalSince(FrontAppTextInserter.lastInsertedAt) < 1.5 { return }
         let types = pasteboard.types ?? []
         guard !types.contains(where: { Self.transientTypes.contains($0) }) else { return }
         guard let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }

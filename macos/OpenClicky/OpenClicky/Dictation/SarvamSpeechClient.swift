@@ -48,8 +48,10 @@ enum SarvamSpeechError: Error, LocalizedError, Equatable {
 }
 
 struct SarvamSpeechClient: Sendable {
+    // swiftlint:disable force_unwrapping — literal URLs
     static let host = URL(string: "https://api.sarvam.ai")!
     static let streamingHost = URL(string: "wss://api.sarvam.ai")!
+    // swiftlint:enable force_unwrapping
     /// The REST transcription model; `saaras:v4` is Sarvam's current default.
     static let transcriptionModel = "saaras:v4"
     static let chatModel = "sarvam-105b"
@@ -115,7 +117,7 @@ struct SarvamSpeechClient: Sendable {
     /// The socket a streaming session opens: `/speech-to-text/ws` with the language, the model and
     /// the sample rate in the query, the key in a header.
     static func streamingRequest(language: DictationLanguage, keyterms: [String], key: String, host: URL = SarvamSpeechClient.streamingHost) -> URLRequest {
-        var components = URLComponents(url: host.appendingPathComponent("speech-to-text/ws"), resolvingAgainstBaseURL: false)!
+        var components = URLComponents(url: host.appendingPathComponent("speech-to-text/ws"), resolvingAgainstBaseURL: false) ?? URLComponents()
         var items = [
             URLQueryItem(name: "language-code", value: languageCode(for: language)),
             URLQueryItem(name: "model", value: transcriptionModel),
@@ -125,7 +127,7 @@ struct SarvamSpeechClient: Sendable {
         ]
         if !keyterms.isEmpty { items.append(URLQueryItem(name: "keyterms", value: keyterms.prefix(50).joined(separator: ","))) }
         components.queryItems = items
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: components.url ?? host)
         request.setValue(key.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "Api-Subscription-Key")
         return request
     }
@@ -134,7 +136,7 @@ struct SarvamSpeechClient: Sendable {
     static func streamingAudioMessage(pcm16: Data) -> String {
         let wav = BuddyWAVFileBuilder.buildWAVData(fromPCM16MonoAudio: pcm16, sampleRate: sampleRate)
         let message: [String: Any] = ["audio": ["data": wav.base64EncodedString(), "sample_rate": String(sampleRate), "encoding": "audio/wav"]]
-        return String(decoding: try! JSONSerialization.data(withJSONObject: message), as: UTF8.self)
+        return String(decoding: (try? JSONSerialization.data(withJSONObject: message)) ?? Data(), as: UTF8.self)
     }
 
     static let streamingFlushMessage = "{\"type\":\"flush\"}"

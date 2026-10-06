@@ -3,13 +3,18 @@
 //  OpenClicky
 //
 //  One take at a time: the dictation key goes down, the microphone opens, words arrive, the key
-//  comes up, the words are formatted in the front app's style and pasted where the cursor is, and
+//  comes up, the words are formatted in the front app's style and pasted where the cursor was, and
 //  the take is written to history. Holding the key is one take; a tap starts a take that the next
 //  tap ends; two quick taps or esc discard it; control joining the held key turns the take into a
 //  Hey Clicky edit of the selection. The orb shows every step.
 //
+//  The take is a small state machine (idle → starting → listening → finishing → idle) and every
+//  asynchronous continuation carries the take's id: a take that was cancelled, or that ended while
+//  a model was still polishing it, can never paste into the one that came after.
+//
 
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import Foundation
 
@@ -19,7 +24,7 @@ enum DictationEngineResolver {
     static func makeProvider(for choice: DictationEngineChoice, settings: DictationSettings) -> any BuddyTranscriptionProvider {
         switch choice {
         case .offline:
-            return AppleSpeechTranscriptionProvider()
+            return AppleSpeechTranscriptionProvider(preferredLocale: settings.language.bareCode == nil ? nil : Locale(identifier: settings.language.code))
         case .sarvam:
             return SarvamTranscriptionProvider(language: { settings.language })
         case .openclicky:
@@ -50,6 +55,15 @@ enum DictationEngineResolver {
         if OpenClickyConfiguration.isConfigured { return BackendTakePolisher() }
         return nil
     }
+
+    /// Whether a take's words may go to a model: the switch, and — for the offline engine, whose
+    /// promise is that nothing leaves the Mac — only when that was explicitly allowed.
+    @MainActor
+    static func wantsModelPolish(settings: DictationSettings) -> Bool {
+        guard settings.polishWithModel else { return false }
+        if settings.engine == .offline { return settings.polishOfflineTakes }
+        return true
+    }
 }
 
 @MainActor
@@ -57,11 +71,25 @@ final class DictationTakeController: ObservableObject {
 
     enum TakeMode { case dictate, edit }
 
-    /// What the controller is doing, for the UI that is not the orb (menu bar, record page).
-    @Published private(set) var isTakeInProgress = false
+    /// Where the take is.
+    enum TakeState: Equatable {
+        case idle
+        /// The key is down; the microphone is being opened.
+        case starting
+        case listening
+        /// The key came up; the engine, the formatter and the paste are at work.
+        case finishing
+    }
+
+    @Published private(set) var state: TakeState = .idle
     @Published private(set) var lastTake: TakeRecord?
     /// Bumped when history changes, so the window's pages reload.
     @Published private(set) var historyVersion = 0
+    /// A failed take whose audio is on disk and can be heard again (history's "retry").
+    @Published private(set) var retryableTakeID: UUID?
+    @Published private(set) var isRetrying = false
+
+    var isTakeInProgress: Bool { state != .idle }
 
     let settings: DictationSettings
     let spaceStore: DictationSpaceStore
@@ -70,9 +98,6 @@ final class DictationTakeController: ObservableObject {
     let earcons: DictationEarconPlayer
     let audioStore = TakeAudioStore()
     private(set) var dictationManager: BuddyDictationManager
-    /// A failed take whose audio is on disk and can be heard again (the orb's "retry").
-    @Published private(set) var retryableTakeID: UUID?
-    @Published private(set) var isRetrying = false
 
     /// Called before the microphone opens (the Realtime engine must let go of it) and after a take.
     var beforeMicrophoneOpens: (() async -> Void)?
@@ -83,6 +108,9 @@ final class DictationTakeController: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var currentEngine: DictationEngineChoice
     private var pendingStartTask: Task<Void, Never>?
+    /// A Hey Clicky press (control already down) waits out the tap window before it opens the
+    /// microphone: a quick tap of the key with control is the hands-free gesture, not an edit.
+    private var pendingEditStartWork: DispatchWorkItem?
     private var inactivityTimer: Timer?
     private var lastLoudMomentAt = Date()
 
@@ -90,10 +118,7 @@ final class DictationTakeController: ObservableObject {
     private var takeID = UUID()
     private var takeMode: TakeMode = .dictate
     private var takeStartedAt = Date()
-    private var takeStartedByTap = false
     private var takeIsToggle = false
-    private var takeWasCancelled = false
-    /// The engine delivered its final words; the "nothing heard" fallback must stand down.
     private var takeReceivedFinalTranscript = false
     private var fieldAtPress = FocusedFieldSnapshot.unknown
     private var nearbyTermsAtPress: [String] = []
@@ -112,10 +137,10 @@ final class DictationTakeController: ObservableObject {
     }
 
     private func bind() {
-        settings.$engine
-            .removeDuplicates()
-            .sink { [weak self] engine in
-                guard let self, engine != self.currentEngine, !self.isTakeInProgress else { return }
+        settings.$engine.combineLatest(settings.$languageCode)
+            .dropFirst()
+            .sink { [weak self] engine, _ in
+                guard let self, !self.isTakeInProgress else { return }
                 self.currentEngine = engine
                 self.dictationManager.replaceTranscriptionProvider(DictationEngineResolver.makeProvider(for: engine, settings: self.settings))
                 AppLog.append("dictation engine → \(engine.rawValue)")
@@ -132,7 +157,12 @@ final class DictationTakeController: ObservableObject {
         dictationManager.$lastErrorMessage
             .compactMap { $0 }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] message in self?.failTake(message) }
+            .sink { [weak self] message in
+                // An error belongs to the take whose session is open; one that lands after the
+                // engine already delivered its words (a late socket close) is noise.
+                guard let self, self.isTakeInProgress, !self.takeReceivedFinalTranscript else { return }
+                self.failTake(message, takeID: self.takeID)
+            }
             .store(in: &cancellables)
         // A session that ended without a transcript (nothing said, permission denied) leaves the
         // controller thinking a take is open; the manager's state says otherwise.
@@ -140,11 +170,12 @@ final class DictationTakeController: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] active in
                 guard let self, self.isTakeInProgress, !active, self.pendingStartTask == nil else { return }
+                let endedTakeID = self.takeID
                 // Give the final transcript callback a tick to land first.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                    guard let self, self.isTakeInProgress, !self.takeReceivedFinalTranscript,
+                    guard let self, self.isTakeInProgress, self.takeID == endedTakeID, !self.takeReceivedFinalTranscript,
                           !self.dictationManager.isDictationInProgress else { return }
-                    self.failTake("didn't catch that")
+                    self.failTake("didn't catch that", takeID: endedTakeID)
                 }
             }
             .store(in: &cancellables)
@@ -159,145 +190,216 @@ final class DictationTakeController: ObservableObject {
     func handle(_ event: CompanionShortcutEvent) -> Bool {
         switch event {
         case .dictationPressed:
-            if isTakeInProgress {
+            switch state {
+            case .idle:
+                beginTake(mode: .dictate)
+            case .listening where takeIsToggle:
                 // A second press while a tapped take listens: this press ends it.
-                if takeIsToggle { stopTake() }
-                return true
+                stopTake()
+            case .starting, .listening, .finishing:
+                break
             }
-            beginTake(mode: .dictate)
             return true
+
         case .dictationEditModifierJoined:
-            guard isTakeInProgress, takeMode == .dictate else { return true }
-            takeMode = .edit
-            orb.phase = .editListening
-            orb.hint = "say your edit, then let go"
+            switch state {
+            case .idle:
+                // Control was already down when the key went down: a Hey Clicky press, unless it
+                // turns out to be a tap (hands-free), which the tap window decides.
+                pendingEditStartWork?.cancel()
+                cancelPendingPlainStart()
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self, self.state == .idle else { return }
+                    self.beginTake(mode: .edit)
+                }
+                pendingEditStartWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + CompanionShortcutRecognizer.tapMaxHoldSeconds + 0.05, execute: work)
+            case .starting, .listening:
+                guard takeMode == .dictate else { break }
+                takeMode = .edit
+                orb.phase = .editListening
+                orb.hint = "say your edit, then let go"
+            case .finishing:
+                break
+            }
             return true
+
         case .dictationReleased(let wasTap):
-            guard isTakeInProgress, !takeIsToggle else { return true }
-            if wasTap {
-                // A tap: keep listening until the next tap (or a double tap cancels).
-                takeIsToggle = true
-                orb.hint = "say it, then tap \(settings.dictationKey.keycapLabel)"
+            if let pendingEditStartWork {
+                // Released inside the tap window: not an edit, nothing was opened.
+                pendingEditStartWork.cancel()
+                self.pendingEditStartWork = nil
                 return true
             }
-            stopTake()
+            switch state {
+            case .idle, .finishing:
+                break
+            case .starting, .listening:
+                if takeIsToggle { break }
+                if wasTap {
+                    // A tap: keep listening until the next tap (or a double tap cancels).
+                    takeIsToggle = true
+                    orb.hint = "say it, then tap \(settings.dictationKey.keycapLabel)"
+                } else {
+                    stopTake()
+                }
+            }
             return true
+
         case .dictationDoubleTapped:
-            cancelTake(reason: "cancelled")
+            if isTakeInProgress { cancelTake(reason: "cancelled") }
             return true
+
         case .escapePressed:
             guard isTakeInProgress else { return false }
             cancelTake(reason: "cancelled")
             return true
-        case .talkPressed, .talkReleased, .textComposerRequested, .handsFreeToggleRequested:
+
+        case .handsFreeToggleRequested:
+            // The gesture's taps never opened a take (see dictationEditModifierJoined); the
+            // companion toggles always-on listening.
+            pendingEditStartWork?.cancel()
+            pendingEditStartWork = nil
+            return false
+
+        case .talkPressed, .talkReleased, .textComposerRequested:
             return false
         }
     }
 
+    /// A plain press became an edit press before the microphone opened: forget the plain start.
+    private func cancelPendingPlainStart() {
+        guard state == .starting else { return }
+        pendingStartTask?.cancel()
+        pendingStartTask = nil
+        dictationManager.cancelCurrentDictation(preserveDraftText: false)
+        _ = audioStore.endCapture()
+        inactivityTimer?.invalidate()
+        state = .idle
+        afterMicrophoneCloses?()
+    }
+
     /// The orb was clicked: like a tap of the key.
     func orbClicked() {
-        if isTakeInProgress {
-            stopTake()
-        } else {
+        switch state {
+        case .idle:
             beginTake(mode: .dictate)
             takeIsToggle = true
             orb.hint = "say it, then tap the orb"
+        case .starting, .listening:
+            stopTake()
+        case .finishing:
+            break
         }
     }
 
     // MARK: the take
 
     private func beginTake(mode: TakeMode) {
-        guard !isTakeInProgress, !dictationManager.isDictationInProgress else { return }
+        guard state == .idle, !dictationManager.isDictationInProgress else { return }
         if let reason = DictationEngineResolver.unavailableReason(for: settings.engine) {
             earcons.play(.blocked)
             orb.phase = .failed(reason)
             scheduleIdle(after: 2.5)
             return
         }
-        isTakeInProgress = true
-        takeID = UUID()
+        let thisTakeID = UUID()
+        takeID = thisTakeID
+        state = .starting
         takeMode = mode
         takeStartedAt = Date()
         takeIsToggle = false
-        takeWasCancelled = false
         takeReceivedFinalTranscript = false
         lastLoudMomentAt = Date()
+        // The focused element is read now (a few AX calls); the window's captions, which can take
+        // hundreds of milliseconds in a browser, are read once the microphone is open.
         fieldAtPress = FocusedFieldReader.snapshot()
-        nearbyTermsAtPress = settings.readNearbyText ? FocusedFieldReader.nearbyTerms() : []
+        nearbyTermsAtPress = []
         audioStore.beginCapture()
         orb.liveTranscript = ""
         orb.isBoxOpen = settings.orbRestsExpanded && orb.boxText != nil
         orb.phase = mode == .edit ? .editListening : .listening
-        orb.hint = "tap / release to transcribe"
+        orb.hint = mode == .edit ? "say your edit, then let go" : "tap / release to transcribe"
         earcons.play(.start)
         earcons.tap()
         startInactivityTimer()
-        AppLog.append("take \(takeID.uuidString.prefix(8)) started (\(mode)) in \(fieldAtPress.appName ?? "?") field=\(fieldAtPress.role ?? "none") editable=\(fieldAtPress.isEditable)")
+        AppLog.append("take \(thisTakeID.uuidString.prefix(8)) started (\(mode)) in \(fieldAtPress.appName ?? "?") field=\(fieldAtPress.role ?? "none") editable=\(fieldAtPress.isEditable)")
 
         pendingStartTask?.cancel()
         pendingStartTask = Task { [weak self] in
             guard let self else { return }
             await self.beforeMicrophoneOpens?()
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, self.takeID == thisTakeID, self.state == .starting else { return }
             await self.dictationManager.startPushToTalkFromKeyboardShortcut(
                 currentDraftText: "",
-                updateDraftText: { [weak self] partial in self?.orb.liveTranscript = partial },
+                updateDraftText: { [weak self] partial in
+                    guard let self, self.takeID == thisTakeID else { return }
+                    self.orb.liveTranscript = partial
+                },
                 submitDraftText: { [weak self] final in
-                    guard let self else { return }
+                    guard let self, self.takeID == thisTakeID else { return }
                     self.takeReceivedFinalTranscript = true
-                    Task { await self.finishTake(rawText: final) }
+                    Task { await self.finishTake(rawText: final, takeID: thisTakeID) }
                 })
+            guard self.takeID == thisTakeID else { return }
             self.pendingStartTask = nil
+            if self.state == .starting { self.state = .listening }
+            if self.settings.readNearbyText {
+                let terms = await Task.detached(priority: .utility) { FocusedFieldReader.nearbyTerms() }.value
+                if self.takeID == thisTakeID { self.nearbyTermsAtPress = terms }
+            }
         }
     }
 
     private func stopTake() {
-        guard isTakeInProgress else { return }
+        guard state == .starting || state == .listening else { return }
+        let thisTakeID = takeID
         inactivityTimer?.invalidate()
         let heldFor = Date().timeIntervalSince(takeStartedAt)
-        AppLog.append("take \(takeID.uuidString.prefix(8)) stopped after \(String(format: "%.1f", heldFor)) s")
+        AppLog.append("take \(thisTakeID.uuidString.prefix(8)) stopped after \(String(format: "%.1f", heldFor)) s")
         earcons.play(.stop)
         orb.phase = .working(takeMode == .edit ? "finishing your edit" : "moving your words")
         orb.hint = nil
-        if let pendingStartTask {
+        if state == .starting, let pendingStartTask {
             // Released before the microphone opened: nothing was said.
             pendingStartTask.cancel()
             self.pendingStartTask = nil
             dictationManager.cancelCurrentDictation(preserveDraftText: false)
-            failTake("didn't catch that")
+            state = .finishing
+            failTake("didn't catch that", takeID: thisTakeID)
             return
         }
+        state = .finishing
         dictationManager.stopPushToTalkFromKeyboardShortcut()
     }
 
     func cancelTake(reason: String) {
         guard isTakeInProgress else { return }
-        takeWasCancelled = true
+        let thisTakeID = takeID
         inactivityTimer?.invalidate()
         pendingStartTask?.cancel()
         pendingStartTask = nil
         dictationManager.cancelCurrentDictation(preserveDraftText: false)
-        _ = audioStore.endCapture()
         earcons.play(.blocked)
         orb.phase = .failed(reason)
         orb.liveTranscript = ""
         orb.hint = nil
-        AppLog.append("take \(takeID.uuidString.prefix(8)) cancelled: \(reason)")
+        AppLog.append("take \(thisTakeID.uuidString.prefix(8)) cancelled: \(reason)")
+        _ = audioStore.endCapture()
         endTake()
         scheduleIdle(after: 1.4)
     }
 
-    private func failTake(_ message: String) {
-        guard isTakeInProgress else { return }
+    private func failTake(_ message: String, takeID failedTakeID: UUID) {
+        guard isTakeInProgress, takeID == failedTakeID else { return }
         inactivityTimer?.invalidate()
         earcons.play(.error)
         orb.phase = .failed(message)
         orb.liveTranscript = ""
-        AppLog.append("take \(takeID.uuidString.prefix(8)) failed: \(message)")
+        AppLog.append("take \(failedTakeID.uuidString.prefix(8)) failed: \(message)")
         let pcm = audioStore.endCapture()
         if !settings.incognito, !message.hasPrefix("didn't catch") {
-            let record = TakeRecord(id: takeID, createdAt: takeStartedAt, mode: takeMode == .edit ? .edit : .dictate, status: .failed,
+            let record = TakeRecord(id: failedTakeID, createdAt: takeStartedAt, mode: takeMode == .edit ? .edit : .dictate, status: .failed,
                                     rawText: orb.liveTranscript, formattedText: "", appBundleID: fieldAtPress.appBundleID,
                                     appName: fieldAtPress.appName, language: settings.language.bareCode, engine: settings.engine.rawValue,
                                     durationSeconds: Date().timeIntervalSince(takeStartedAt), failureReason: message)
@@ -306,11 +408,11 @@ final class DictationTakeController: ObservableObject {
             // The words are still in the audio: keep it so the take can be heard again.
             if settings.retainFailedTakeAudio, settings.engine != .offline, pcm.count > 16_000 {
                 do {
-                    try audioStore.retain(takeID: takeID, pcm16: pcm)
-                    retryableTakeID = takeID
+                    try audioStore.retain(takeID: failedTakeID, pcm16: pcm)
+                    retryableTakeID = failedTakeID
                     orb.phase = .failed("\(message) · take saved, retry from history")
                 } catch {
-                    AppLog.append("take \(takeID.uuidString.prefix(8)) audio not retained: \(error.localizedDescription)")
+                    AppLog.append("take \(failedTakeID.uuidString.prefix(8)) audio not retained: \(error.localizedDescription)")
                 }
             }
         }
@@ -319,17 +421,23 @@ final class DictationTakeController: ObservableObject {
     }
 
     private func endTake() {
-        isTakeInProgress = false
+        state = .idle
         takeIsToggle = false
         afterMicrophoneCloses?()
     }
 
-    private func finishTake(rawText: String) async {
-        guard isTakeInProgress, !takeWasCancelled else { return }
+    /// Still this take, still wanted: false once it was cancelled or another take began.
+    private func isCurrent(_ id: UUID) -> Bool {
+        takeID == id && state == .finishing
+    }
+
+    private func finishTake(rawText: String, takeID thisTakeID: UUID) async {
+        guard takeID == thisTakeID, state == .listening || state == .starting || state == .finishing else { return }
+        state = .finishing
         _ = audioStore.endCapture()
         let raw = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else {
-            failTake("didn't catch that")
+            failTake("didn't catch that", takeID: thisTakeID)
             return
         }
         let duration = Date().timeIntervalSince(takeStartedAt)
@@ -339,44 +447,55 @@ final class DictationTakeController: ObservableObject {
             style: style, dictionary: space.dictionary, shortcuts: space.shortcuts, appName: fieldAtPress.appName,
             language: settings.language, script: settings.script, nearbyTerms: nearbyTermsAtPress)
         let polisher = DictationEngineResolver.makePolisher()
+        let mode = takeMode
+        let field = fieldAtPress
 
         let outputText: String
         var formattingDegraded = false
-        if takeMode == .edit {
+        if mode == .edit {
             orb.phase = .working("finishing your edit")
             guard let polisher else {
-                failTake("hey clicky needs a model: add a sarvam key or sign in")
+                failTake("hey clicky needs a model: add a sarvam key or sign in", takeID: thisTakeID)
                 return
             }
-            let selection = fieldAtPress.selectedText ?? lastTake?.displayText ?? ""
+            let selection = field.selectedText ?? lastTake?.displayText ?? ""
             guard !selection.isEmpty else {
-                failTake("select some text first, or dictate something to edit")
+                failTake("select some text first, or dictate something to edit", takeID: thisTakeID)
                 return
             }
             do {
                 outputText = try await HeyClickyEditor.edit(selection: selection, instruction: raw, context: context, polisher: polisher)
             } catch {
-                failTake("couldn't finish your edit")
+                guard isCurrent(thisTakeID) else { return }
+                failTake("couldn't finish your edit", takeID: thisTakeID)
                 return
             }
         } else {
-            let formatted = await TakeFormatter.format(raw, context: context, polisher: polisher, wantsModel: settings.polishWithModel)
+            let formatted = await TakeFormatter.format(raw, context: context, polisher: polisher, wantsModel: DictationEngineResolver.wantsModelPolish(settings: settings))
             outputText = formatted.text
             formattingDegraded = formatted.formattingDegraded
         }
-        guard isTakeInProgress, !takeWasCancelled else { return }
+        // Cancelled, or another take began, while the model was at work: these words are dropped.
+        guard isCurrent(thisTakeID) else {
+            AppLog.append("take \(thisTakeID.uuidString.prefix(8)) finished after it was cancelled; words dropped")
+            return
+        }
 
-        // Paste where the cursor was when the key went down, if that was a text box.
+        // Paste where the cursor was when the key went down — and only there.
+        let frontNow = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         var pasteOutcome = TakeRecord.PasteOutcome.none
         var pasteMessage = "moved to text box"
-        if fieldAtPress.isSecure {
+        if field.isSecure || IsSecureEventInputEnabled() {
             pasteOutcome = .leftInOrb
             pasteMessage = "not pasting into a password field"
-        } else if fieldAtPress.isEditable || !AXIsProcessTrusted() || fieldAtPress.role == nil {
+        } else if let target = field.appBundleID, let frontNow, target != frontNow {
+            pasteOutcome = .leftInOrb
+            pasteMessage = "the app changed — copy from here"
+        } else if field.isEditable || !AXIsProcessTrusted() || field.role == nil {
             // Editable, or unknown (no permission / the app exposes nothing): try the paste.
             switch FrontAppTextInserter.insert(outputText) {
             case .typed:
-                let landing = await PasteLanding.verify(text: outputText, before: fieldAtPress)
+                let landing = await PasteLanding.verify(text: outputText, before: field)
                 switch landing {
                 case .verified: pasteOutcome = .verified
                 case .posted: pasteOutcome = .posted
@@ -391,10 +510,11 @@ final class DictationTakeController: ObservableObject {
             pasteOutcome = .leftInOrb
             pasteMessage = "no text box found, copy from here"
         }
+        guard takeID == thisTakeID else { return }
 
-        let record = TakeRecord(id: takeID, createdAt: takeStartedAt, mode: takeMode == .edit ? .edit : .dictate, status: .complete,
-                                rawText: takeMode == .edit ? raw : raw, formattedText: outputText, appBundleID: fieldAtPress.appBundleID,
-                                appName: fieldAtPress.appName, language: settings.language.bareCode, engine: settings.engine.rawValue,
+        let record = TakeRecord(id: thisTakeID, createdAt: takeStartedAt, mode: mode == .edit ? .edit : .dictate, status: .complete,
+                                rawText: raw, formattedText: outputText, appBundleID: field.appBundleID,
+                                appName: field.appName, language: settings.language.bareCode, engine: settings.engine.rawValue,
                                 durationSeconds: duration, pasteOutcome: pasteOutcome)
         lastTake = record
         if !settings.incognito {
@@ -407,11 +527,13 @@ final class DictationTakeController: ObservableObject {
         orb.liveTranscript = ""
         let showBox = pasteOutcome == .leftInOrb || pasteOutcome == .leftOnPasteboard
             || (pasteOutcome == .posted && settings.orbOpensBoxWhenPasteUnverified) || settings.orbRestsExpanded
+        orb.boxReason = pasteOutcome == .verified || pasteOutcome == .posted ? "your last take" : pasteMessage
         orb.isBoxOpen = showBox
         earcons.play(pasteOutcome == .verified || pasteOutcome == .posted ? .complete : .notify)
         earcons.tap()
-        orb.phase = .done(formattingDegraded && pasteOutcome != .leftInOrb ? "moved to text box · cleaned up locally" : pasteMessage)
-        AppLog.append("take \(takeID.uuidString.prefix(8)) done: \(outputText.count) chars, paste=\(pasteOutcome.rawValue), engine=\(settings.engine.rawValue), degraded=\(formattingDegraded)")
+        if formattingDegraded, pasteOutcome == .verified || pasteOutcome == .posted { pasteMessage = "moved to text box · cleaned up locally" }
+        orb.phase = .done(pasteMessage)
+        AppLog.append("take \(thisTakeID.uuidString.prefix(8)) done: \(outputText.count) chars, paste=\(pasteOutcome.rawValue), engine=\(settings.engine.rawValue), degraded=\(formattingDegraded)")
         endTake()
         scheduleIdle(after: 1.8)
     }
@@ -427,6 +549,24 @@ final class DictationTakeController: ObservableObject {
 
     /// The hint pill under a resting orb ("tooltips" in Settings → the orb).
     var idleHint: String { "tap / hold \(settings.dictationKey.keycapLabel) to talk" }
+
+    /// "inactivity timeout": a take with that long of silence ends on its own.
+    private func startInactivityTimer() {
+        inactivityTimer?.invalidate()
+        guard settings.inactivityTimeoutMinutes > 0 else { return }
+        let limit = TimeInterval(settings.inactivityTimeoutMinutes * 60)
+        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.state == .listening else { return }
+                if Date().timeIntervalSince(self.lastLoudMomentAt) >= limit {
+                    AppLog.append("take \(self.takeID.uuidString.prefix(8)) ended by the inactivity timeout")
+                    self.stopTake()
+                }
+            }
+        }
+    }
+
+    // MARK: asking history
 
     /// Asks the configured model a question over the takes that match it (history → "press enter to ask").
     func askHistory(_ question: String) async -> String {
@@ -447,22 +587,6 @@ final class DictationTakeController: ObservableObject {
             return try await polisher.polish(system: system, user: "Question: \(question)\n\nTakes:\n\(context)")
         } catch {
             return "couldn't ask right now: \(error.localizedDescription)"
-        }
-    }
-
-    /// "inactivity timeout": a take with that long of silence ends on its own.
-    private func startInactivityTimer() {
-        inactivityTimer?.invalidate()
-        guard settings.inactivityTimeoutMinutes > 0 else { return }
-        let limit = TimeInterval(settings.inactivityTimeoutMinutes * 60)
-        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.isTakeInProgress else { return }
-                if Date().timeIntervalSince(self.lastLoudMomentAt) >= limit {
-                    AppLog.append("take \(self.takeID.uuidString.prefix(8)) ended by the inactivity timeout")
-                    self.stopTake()
-                }
-            }
         }
     }
 
@@ -495,7 +619,7 @@ final class DictationTakeController: ObservableObject {
             let context = TakeFormattingContext(
                 style: space.style(forAppBundleID: original?.appBundleID), dictionary: space.dictionary, shortcuts: space.shortcuts,
                 appName: original?.appName, language: settings.language, script: settings.script)
-            let formatted = await TakeFormatter.format(raw, context: context, polisher: DictationEngineResolver.makePolisher(), wantsModel: settings.polishWithModel)
+            let formatted = await TakeFormatter.format(raw, context: context, polisher: DictationEngineResolver.makePolisher(), wantsModel: DictationEngineResolver.wantsModelPolish(settings: settings))
             let record = TakeRecord(id: takeID, createdAt: original?.createdAt ?? Date(), mode: .dictate, status: .complete,
                                     rawText: raw, formattedText: formatted.text, appBundleID: original?.appBundleID, appName: original?.appName,
                                     language: settings.language.bareCode, engine: settings.engine.rawValue,
@@ -506,6 +630,7 @@ final class DictationTakeController: ObservableObject {
             audioStore.discard(takeID: takeID)
             if retryableTakeID == takeID { retryableTakeID = nil }
             orb.boxText = formatted.text
+            orb.boxReason = "retried · copy from here"
             orb.isBoxOpen = true
             earcons.play(.complete)
             orb.phase = .done("retried · copy from the box")
@@ -520,9 +645,11 @@ final class DictationTakeController: ObservableObject {
 
     // MARK: history actions used by the window
 
+    /// Pastes the last take into the app in front, after the window has given focus back.
     func pasteLast() {
-        guard let text = lastTake?.displayText ?? (try? takeStore?.recent(limit: 1).first?.displayText) ?? nil else { return }
-        _ = FrontAppTextInserter.insert(text)
+        guard let text = lastTake?.displayText ?? (try? takeStore?.recent(limit: 1, mode: .dictate).first?.displayText) ?? nil else { return }
+        NSApp.hide(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { _ = FrontAppTextInserter.insert(text) }
     }
 
     func historyDidChange() {

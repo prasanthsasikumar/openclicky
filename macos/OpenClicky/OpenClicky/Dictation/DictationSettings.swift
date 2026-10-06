@@ -125,6 +125,7 @@ final class DictationSettings: ObservableObject {
         languageCode = defaults.string(forKey: Keys.language) ?? DictationLanguage.auto.code
         script = DictationScript(rawValue: defaults.string(forKey: Keys.script) ?? "") ?? .native
         polishWithModel = defaults.object(forKey: Keys.polishWithModel) == nil ? true : defaults.bool(forKey: Keys.polishWithModel)
+        polishOfflineTakes = defaults.bool(forKey: Keys.polishOfflineTakes)
         dictationKey = DictationHotkey(rawValue: defaults.string(forKey: Keys.dictationKey) ?? "") ?? .fn
         orbVisible = defaults.object(forKey: Keys.orbVisible) == nil ? true : defaults.bool(forKey: Keys.orbVisible)
         orbLook = OrbLook(rawValue: defaults.string(forKey: Keys.orbLook) ?? "") ?? .pill
@@ -155,6 +156,7 @@ final class DictationSettings: ObservableObject {
         static let language = "dictation.language"
         static let script = "dictation.script"
         static let polishWithModel = "dictation.polishWithModel"
+        static let polishOfflineTakes = "dictation.polishOfflineTakes"
         static let dictationKey = "dictation.key"
         static let orbVisible = "dictation.orb.visible"
         static let orbLook = "dictation.orb.look"
@@ -187,6 +189,9 @@ final class DictationSettings: ObservableObject {
     @Published var script: DictationScript { didSet { defaults.set(script.rawValue, forKey: Keys.script) } }
     /// Clean the raw transcript up with a model (style rules, punctuation) when one is configured.
     @Published var polishWithModel: Bool { didSet { defaults.set(polishWithModel, forKey: Keys.polishWithModel) } }
+    /// The offline engine's promise is that nothing leaves the Mac; sending its words to a model
+    /// for polish is off until asked for by name.
+    @Published var polishOfflineTakes: Bool { didSet { defaults.set(polishOfflineTakes, forKey: Keys.polishOfflineTakes) } }
 
     var language: DictationLanguage { DictationLanguage.named(languageCode) }
 

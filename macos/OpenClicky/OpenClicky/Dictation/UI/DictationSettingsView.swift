@@ -629,7 +629,9 @@ private struct EngineSettingsPage: View {
             PaperSectionLabel(text: "how your words are cleaned up")
             PaperCard {
                 VStack(spacing: 0) {
-                    PaperRow(title: "polish with a model", detail: "punctuation, numbers, your style's rules — through sarvam with your key, or your openclicky account. off: local rules only, which is all the offline engine ever needs.") { PaperToggle(isOn: $settings.polishWithModel) }
+                    PaperRow(title: "polish with a model", detail: "punctuation, numbers, your style's rules — through sarvam with your key, or your openclicky account. applies to the network engines; off: local rules only.") { PaperToggle(isOn: $settings.polishWithModel) }
+                    PaperDivider()
+                    PaperRow(title: "also polish offline takes", detail: "the offline engine keeps your voice on this mac; with this on, its words are sent to the model above for cleanup. off by default.") { PaperToggle(isOn: $settings.polishOfflineTakes) }
                     PaperDivider()
                     PaperRow(title: "language", detail: "pins every engine to one language; auto lets them detect.") {
                         Picker("", selection: $settings.languageCode) {
@@ -677,7 +679,7 @@ private struct PrivacySettingsPage: View {
             PaperSectionLabel(text: "your data")
             PaperCard {
                 VStack(spacing: 0) {
-                    PaperRow(title: "keep my memory on this mac only", detail: "history, dictionary and styles stay here. with the offline engine, nothing leaves this mac at all.") { PaperToggle(isOn: $settings.keepMemoryOnThisMac) }
+                    PaperRow(title: "keep my memory on this mac only", detail: "history, dictionary and styles stay here. with the offline engine and \"also polish offline takes\" off (the default), nothing leaves this mac at all.") { PaperToggle(isOn: $settings.keepMemoryOnThisMac) }
                     PaperDivider()
                     PaperRow(title: "incognito", detail: "takes still paste, but nothing is saved to history.") { PaperToggle(isOn: $settings.incognito) }
                     PaperDivider()
@@ -870,7 +872,7 @@ private struct AboutSettingsPage: View {
                         }
                     }
                     PaperDivider()
-                    PaperRow(title: "privacy", detail: "with the offline engine nothing leaves this mac. other engines send audio to the provider you chose, with your key or account.") { EmptyView() }
+                    PaperRow(title: "privacy", detail: "with the offline engine nothing leaves this mac unless you turn on \"also polish offline takes\". other engines send audio to the provider you chose, with your key or account.") { EmptyView() }
                 }
             }
         }

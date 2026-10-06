@@ -68,6 +68,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         companionManager.dictationSettings.hasCompletedDictationOnboarding = true
         companionManager.dictationTakeController.onTakeFinished = nil
+        DispatchQueue.main.async {
+            if !(NSApp.windows.contains { $0.isVisible && !($0 is NSPanel) }) { NSApp.setActivationPolicy(.accessory) }
+        }
     }
 }
 

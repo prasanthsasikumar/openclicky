@@ -51,7 +51,7 @@ struct DictationStyle: Codable, Identifiable, Equatable {
                 id: "email", name: "email", tagline: "composed, complete sentences",
                 rules: "Composed, complete sentences with full punctuation and grammar; contractions are fine. Paragraphs where the thought changes. Never invent a greeting or a sign-off that was not spoken.",
                 sentenceCase: true, removeFillers: true, polishWithModel: true,
-                appBundleIDs: ["com.apple.mail", "com.microsoft.Outlook", "com.google.Chrome", "com.apple.Safari", "company.thebrowser.Browser", "com.readdle.smartemail-Mac"]),
+                appBundleIDs: ["com.apple.mail", "com.microsoft.Outlook", "com.readdle.smartemail-Mac", "com.sparkmailapp.spark"]),
             DictationStyle(
                 id: "other", name: "other apps", tagline: "clean sentences, your voice kept",
                 rules: "Light cleanup only: punctuation, capitalisation, fillers removed, your wording kept.",

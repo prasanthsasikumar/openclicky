@@ -20,11 +20,15 @@ enum FrontAppTextInserter {
     }
 
     private static let virtualKeyCodeV: CGKeyCode = 9
+    /// When the last paste was posted; the clipboard history monitor ignores the pasteboard for a
+    /// moment after it.
+    @MainActor static var lastInsertedAt = Date.distantPast
 
     @MainActor
     static func insert(_ text: String) -> Outcome {
         let pasteboard = NSPasteboard.general
         let previousPasteboardItems = snapshot(of: pasteboard)
+        lastInsertedAt = Date()
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 

@@ -23,6 +23,12 @@ final class AppleSpeechTranscriptionProvider: BuddyTranscriptionProvider {
     let requiresSpeechRecognitionPermission = true
     let isConfigured = true
     let unavailableExplanation: String? = nil
+    /// Dictation's pinned language (Settings → engine), when one is chosen; else the reply language.
+    let preferredLocale: Locale?
+
+    init(preferredLocale: Locale? = nil) {
+        self.preferredLocale = preferredLocale
+    }
 
     func startStreamingSession(
         keyterms: [String],
@@ -36,6 +42,7 @@ final class AppleSpeechTranscriptionProvider: BuddyTranscriptionProvider {
         if #available(macOS 26, *) {
             do {
                 return try await SpeechAnalyzerDictationSession.start(
+                    preferredLocale: preferredLocale,
                     onTranscriptUpdate: onTranscriptUpdate,
                     onFinalTranscriptReady: onFinalTranscriptReady,
                     onError: onError)
@@ -43,7 +50,7 @@ final class AppleSpeechTranscriptionProvider: BuddyTranscriptionProvider {
                 print("🎙️ Apple Speech: SpeechAnalyzer unavailable (\(error.localizedDescription)), using SFSpeechRecognizer")
             }
         }
-        guard let speechRecognizer = Self.makeBestAvailableSpeechRecognizer() else {
+        guard let speechRecognizer = Self.makeBestAvailableSpeechRecognizer(preferredLocale: preferredLocale) else {
             throw AppleSpeechTranscriptionProviderError(message: "dictation is not available on this mac.")
         }
 
@@ -55,16 +62,17 @@ final class AppleSpeechTranscriptionProvider: BuddyTranscriptionProvider {
         )
     }
 
-    private static func makeBestAvailableSpeechRecognizer() -> SFSpeechRecognizer? {
+    private static func makeBestAvailableSpeechRecognizer(preferredLocale: Locale?) -> SFSpeechRecognizer? {
         // The language OpenClicky is set to speak, not this Mac's: the two lanes must hear the
         // same language they answer in.
         let preferredLocales = [
+            preferredLocale,
             ReplyLanguage.recognitionLocale,
             Locale(identifier: ReplyLanguage.currentCode),
             Locale(identifier: "en-US")
         ]
 
-        for preferredLocale in preferredLocales {
+        for preferredLocale in preferredLocales.compactMap({ $0 }) {
             if let speechRecognizer = SFSpeechRecognizer(locale: preferredLocale) {
                 return speechRecognizer
             }
@@ -187,11 +195,12 @@ private final class SpeechAnalyzerDictationSession: BuddyStreamingTranscriptionS
     private let onError: (Error) -> Void
 
     static func start(
+        preferredLocale: Locale?,
         onTranscriptUpdate: @escaping (String) -> Void,
         onFinalTranscriptReady: @escaping (String) -> Void,
         onError: @escaping (Error) -> Void
     ) async throws -> SpeechAnalyzerDictationSession {
-        let requestedLocale = ReplyLanguage.recognitionLocale
+        let requestedLocale = preferredLocale ?? ReplyLanguage.recognitionLocale
         var supportedLocale = await DictationTranscriber.supportedLocale(equivalentTo: requestedLocale)
         if supportedLocale == nil {
             supportedLocale = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: ReplyLanguage.currentCode))
