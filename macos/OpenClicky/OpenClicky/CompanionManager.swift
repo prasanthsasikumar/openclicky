@@ -1146,7 +1146,7 @@ final class CompanionManager: ObservableObject {
             ? "hands-free is on — just talk, i'm listening. tap fn + control twice to stop."
             : "hands-free is off. hold control + option to talk."
         if isCursorDocked {
-            notchHUDManager.showCaption(feedback, holdSeconds: 5)
+            showCaptionBesideMouseWhileDocked(feedback, holdSeconds: 6)
         } else {
             streamCursorCaption(feedback, holdSeconds: 6)
         }
@@ -1713,7 +1713,32 @@ final class CompanionManager: ObservableObject {
             guard let self, self.cursorCaptionOpacity == 0.0 else { return }
             self.isCursorCaptionVisible = false
             self.cursorCaptionText = ""
+            self.hideCaptionOnlyOverlayIfDocked()
         }
+    }
+
+    /// While docked, a caption still types out beside the mouse pointer on the display in use —
+    /// not as a strip under every display's notch, which read as something else appearing. The
+    /// overlay is shown for the caption alone: the overlay hides the buddy while it is docked and
+    /// following, so it stays in the notch.
+    private func showCaptionBesideMouseWhileDocked(_ message: String, holdSeconds: TimeInterval) {
+        if !isOverlayVisible {
+            transientHideTask?.cancel()
+            transientHideTask = nil
+            overlayWindowManager.hasShownOverlayBefore = true
+            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+            isOverlayVisible = true
+        }
+        streamCursorCaption(message, holdSeconds: holdSeconds)
+    }
+
+    /// The caption-only overlay goes away with its caption, unless the docked buddy has since
+    /// launched to point at something (it hides the overlay itself when it docks again).
+    private func hideCaptionOnlyOverlayIfDocked() {
+        guard isCursorDocked, isOverlayVisible, !isDockingInProgress,
+              detectedElementScreenLocation == nil, cursorFlightLeg == nil else { return }
+        overlayWindowManager.hideOverlay()
+        isOverlayVisible = false
     }
 
     /// The Home tab's (i): the buddy types out what OpenClicky does, next to itself. While the
@@ -1724,7 +1749,7 @@ final class CompanionManager: ObservableObject {
             + "i'll answer out loud and point at what you need. tap control twice to type instead, "
             + "hold fn to dictate into any app, and real work goes to the agent."
         if isCursorDocked {
-            notchHUDManager.showCaption(message)
+            showCaptionBesideMouseWhileDocked(message, holdSeconds: 8)
             return
         }
         if !isOverlayVisible {

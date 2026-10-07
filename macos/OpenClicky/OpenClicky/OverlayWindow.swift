@@ -460,6 +460,11 @@ struct BlueCursorView: View {
             if let flightLeg = companionManager.cursorFlightLeg, flightLeg.screenFrame != screenFrame {
                 return false
             }
+            // Docked, the buddy lives in the notch; an overlay shown then is for a caption beside
+            // the mouse (the (i), hands-free feedback), so only the caption shows.
+            if companionManager.isCursorDocked {
+                return false
+            }
             return isCursorOnThisScreen
         case .navigatingToTarget, .pointingAtTarget, .flyingToDock:
             return true
