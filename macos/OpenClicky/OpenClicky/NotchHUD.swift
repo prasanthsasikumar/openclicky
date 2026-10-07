@@ -4,12 +4,14 @@
 //
 //  The notch HUD, drawn like HeyClicky's: a solid black island hanging from the top of the screen
 //  around the notch, its top corners flaring into the menu bar and its bottom corners rounded, with
-//  no border and no shadow. Four states:
-//    collapsed — exactly the notch (or a virtual notch on other displays); nothing shows below it
-//    compact   — a Dynamic-Island-style strip that opens while OpenClicky listens / thinks / speaks
-//    connect   — the "Connect <app> to OpenClicky" card that opens when a supported app or site
-//                comes to the front for the first time (No / Not now / Yes + example prompts)
-//    full      — the notch app that opens on hover or click: Home, Agents, Settings tabs
+//  no border and no shadow. Colours and sizes come from `DS.HUD` (the refinement sheet). States:
+//    collapsed — exactly the notch (or a virtual notch on other displays); while the pointer is
+//                docked, a 24 pt strip under it with the pointer and "docked · click to release"
+//    compact   — a 380 × 37 strip that opens while OpenClicky listens / thinks / speaks, one
+//                caption line taller when there is something to say under it
+//    connect   — the "connect <app> to openclicky?" card that opens when a supported app or site
+//                comes to the front for the first time (never / not now / connect + example prompts)
+//    full      — the notch app that opens on hover or click: home, agents, settings tabs
 //  The cursor buddy can dock here: it flies into the notch and lives in the HUD as a glowing badge.
 //
 
@@ -82,22 +84,26 @@ final class NotchHUDModel: ObservableObject {
     @Published var activeTab: NotchHUDTab = .home
     @Published var geometry: NotchGeometry
 
-    // Sizes measured from HeyClicky running next to us: the connect card is 606 × 115 pt and the
-    // open Home panel 512 × 232 pt, both including the menu-bar band the island hangs from.
+    // Sizes from the refinement sheet: every card and the open panel are 512 pt wide, the Home
+    // panel 512 × 232 pt and the Agents panel 512 × 392 pt, including the menu-bar band the island
+    // hangs from.
     /// Nothing shows below the notch while idle (HeyClicky's collapsed state is the notch itself).
     let collapsedLipHeight: CGFloat = 0
-    /// The busy strip is 300 × 54; the caption strip (the (i) text while the buddy is docked) is wider.
-    var compactWidth: CGFloat { isShowingCaption ? 400 : 300 }
-    var compactContentHeight: CGFloat { isShowingCaption ? 70 : 54 }
-    let connectWidth: CGFloat = 606
-    let connectTotalHeight: CGFloat = 115
-    /// The permission card, sized from HeyClicky's (both include the menu-bar band).
-    let permissionWidth: CGFloat = 424
-    let permissionTotalHeight: CGFloat = 168
+    /// The busy strip is 380 × 37 and grows by one caption line; the caption strip (the (i) text
+    /// while the buddy is docked) is wider and three lines tall.
+    var compactWidth: CGFloat { isShowingCaption ? 400 : DS.HUD.stripWidth }
+    var compactContentHeight: CGFloat {
+        if isShowingCaption { return 70 }
+        return DS.HUD.stripHeight + (hasCompactDetailLine ? compactDetailLineHeight : 0)
+    }
+    let compactDetailLineHeight: CGFloat = 26
+    let connectWidth: CGFloat = 512
+    let permissionWidth: CGFloat = 512
     let composerWidth: CGFloat = 460
     let composerContentHeight: CGFloat = 52
     let fullWidth: CGFloat = 512
     let homeTotalHeight: CGFloat = 232
+    let agentsTotalHeight: CGFloat = 392
 
     /// The band the tab bar sits in: the hardware notch, or at least 34 pt on a display without
     /// one (whose menu bar band may be 0 pt when that display shows no menu bar).
@@ -115,6 +121,9 @@ final class NotchHUDModel: ObservableObject {
     @Published private(set) var captionText: String?
     /// True while the text composer is open on this island.
     @Published private(set) var isComposerOpen = false
+    /// True while the busy strip has a line to show under its status (the agent's progress, or
+    /// what was asked while the answer is spoken); set by the HUD manager.
+    @Published private(set) var hasCompactDetailLine = false
 
     /// The caption strip shows only while nothing busier needs the island.
     var isShowingCaption: Bool { captionText != nil && !isBusy }
@@ -123,8 +132,8 @@ final class NotchHUDModel: ObservableObject {
     @Published private(set) var isCursorDocked = false
     /// Whether this screen's island is the one the buddy docks into (the notch screen).
     var hostsDockedCursor = false
-    /// The strip under the notch that shows the docked buddy (HeyClicky's triangle under the notch).
-    let dockedBadgeStripHeight: CGFloat = 26
+    /// The strip under the notch that shows the docked buddy; the whole strip is its hit target.
+    let dockedBadgeStripHeight: CGFloat = 24
 
     /// Displays without a notch show only the handle line, flush with the top edge of the screen
     /// (inside the menu bar band, where the notch would be), like HeyClicky's.
@@ -134,18 +143,25 @@ final class NotchHUDModel: ObservableObject {
         return geometry.hasHardwareNotch ? geometry.notchHeight + collapsedLipHeight : handleStripHeight
     }
     var compactHeight: CGFloat { geometry.notchHeight + compactContentHeight }
-    var connectHeight: CGFloat { max(connectTotalHeight, geometry.notchHeight + 78) }
+    /// Where a card's content starts: under the notch band on a notch screen; elsewhere the island
+    /// covers the menu bar and the content uses that height too.
+    var cardTopInset: CGFloat { geometry.hasHardwareNotch ? geometry.notchHeight : 8 }
+    var connectHeight: CGFloat {
+        // 12 top + 40 icon row + 12 + 30 buttons + 16 bottom, and the example chips (26 + 12).
+        let hasExamplePrompts = !(connectPrompt?.examplePrompts.isEmpty ?? true)
+        return cardTopInset + 110 + (hasExamplePrompts ? 38 : 0)
+    }
     var permissionHeight: CGFloat {
-        // The stale-row escape hatch adds a line under the button.
-        let contentHeight: CGFloat = permissionPrompt?.offersAccessibilityTrustReset == true ? 152 : 132
-        return max(permissionTotalHeight, geometry.notchHeight + contentHeight)
+        // The stale-row escape hatch adds a line under the card's row.
+        let contentHeight: CGFloat = permissionPrompt?.offersAccessibilityTrustReset == true ? 118 : 96
+        return cardTopInset + contentHeight
     }
     var composerHeight: CGFloat { geometry.notchHeight + composerContentHeight }
     var fullHeight: CGFloat {
         switch activeTab {
-        case .home: return max(homeTotalHeight, topBandHeight + 195)
-        case .agents: return topBandHeight + 380
-        case .settings: return topBandHeight + 590
+        case .home: return max(homeTotalHeight, topBandHeight + 200)
+        case .agents: return max(agentsTotalHeight, topBandHeight + 360)
+        case .settings: return topBandHeight + 520
         }
     }
 
@@ -218,6 +234,12 @@ final class NotchHUDModel: ObservableObject {
         isComposerOpen = false
         isHovering = false
         reconcile(immediately: true)
+    }
+
+    func setCompactDetailLine(_ hasDetailLine: Bool) {
+        guard hasCompactDetailLine != hasDetailLine else { return }
+        hasCompactDetailLine = hasDetailLine
+        if expansion == .compact { onLayoutChanged?() }
     }
 
     func setCursorDocked(_ docked: Bool) {
@@ -360,6 +382,7 @@ final class NotchHUDManager {
     private weak var companionManager: CompanionManager?
     private var isShown = false
     private var isBusy = false
+    private var hasCompactDetailLine = false
     private var screenChangeObserver: NSObjectProtocol?
     private var clickOutsideMonitor: Any?
     private var hoverPollTimer: Timer?
@@ -551,6 +574,7 @@ final class NotchHUDManager {
             let model = NotchHUDModel(geometry: geometry)
             model.hostsDockedCursor = Self.primaryScreen.map(Self.screenID(of:)) == screenID
             model.setBusy(isBusy)
+            model.setCompactDetailLine(hasCompactDetailLine)
             model.setCursorDocked(companionManager.isCursorDocked)
             model.setConnectPrompt(connectPrompt)
             model.setPermissionPrompt(permissionPrompt)
@@ -587,6 +611,18 @@ final class NotchHUDManager {
                 guard let self else { return }
                 self.isBusy = busy
                 self.instances.forEach { $0.model.setBusy(busy) }
+            }
+            .store(in: &busyCancellables)
+        companionManager.$voiceState
+            .combineLatest(companionManager.$agentActivityText, companionManager.$lastTranscript)
+            .map { voiceState, agentActivityText, lastTranscript in
+                NotchCompactStatusView.detailLine(voiceState: voiceState, agentActivityText: agentActivityText, lastTranscript: lastTranscript) != nil
+            }
+            .removeDuplicates()
+            .sink { [weak self] hasDetailLine in
+                guard let self else { return }
+                self.hasCompactDetailLine = hasDetailLine
+                self.instances.forEach { $0.model.setCompactDetailLine(hasDetailLine) }
             }
             .store(in: &busyCancellables)
         companionManager.$isCursorDocked
@@ -696,8 +732,16 @@ struct NotchHUDView: View {
 
     private var expansion: NotchHUDExpansion { model.expansion }
     private var notchHeight: CGFloat { model.geometry.notchHeight }
-    /// The hardware notch's own bottom radius when collapsed; HeyClicky's 16 pt once open.
-    private var bottomCornerRadius: CGFloat { expansion == .collapsed ? 11 : 16 }
+    /// The hardware notch's own bottom radius when collapsed (16 pt with the docked strip under
+    /// it), 18 pt for the busy strip, the sheet's 22 pt island radius for cards and the panel.
+    private var bottomCornerRadius: CGFloat {
+        switch expansion {
+        case .collapsed: return isShowingDockedStrip ? 16 : 11
+        case .compact: return 18
+        default: return DS.HUD.islandRadius
+        }
+    }
+    private var isShowingDockedStrip: Bool { model.hostsDockedCursor && companionManager.isCursorDocked }
     /// How far the top corners curve outward into the menu bar (measured from HeyClicky: ~6 pt).
     private let topCornerFlare: CGFloat = 6
 
@@ -707,11 +751,11 @@ struct NotchHUDView: View {
             // without a notch nothing is drawn while collapsed (no fake notch over the menu bar): only
             // the thin handle below marks where to hover.
             if expansion != .collapsed || model.geometry.hasHardwareNotch {
-                // Collapsed on a notch screen the black stops at the notch's bottom edge: the docked
-                // buddy's triangle floats below it on its own, like HeyClicky's.
+                // Collapsed, the black is the notch itself, plus the docked strip under it while
+                // the pointer lives there.
                 NotchIslandShape(bottomCornerRadius: bottomCornerRadius, topCornerFlare: topCornerFlare)
-                    .fill(Color.black)
-                    .frame(width: model.width + topCornerFlare * 2, height: expansion == .collapsed ? notchHeight : model.height)
+                    .fill(DS.HUD.island)
+                    .frame(width: model.width + topCornerFlare * 2, height: expansion == .collapsed && !isShowingDockedStrip ? notchHeight : model.height)
                     .onTapGesture { if expansion != .connect && expansion != .permission && expansion != .composer { model.togglePinned() } }
             }
 
@@ -720,21 +764,12 @@ struct NotchHUDView: View {
             // content inside the smaller window.
             switch expansion {
             case .collapsed:
-                if model.hostsDockedCursor && companionManager.isCursorDocked {
-                    // The docked buddy peeks out under the notch; a click releases it.
-                    Button(action: { companionManager.setCursorDocked(false) }) {
-                        Triangle()
-                            .fill(DS.Colors.overlayCursorColor)
-                            .frame(width: 16, height: 16)
-                            .rotationEffect(.degrees(-35))
-                            .shadow(color: DS.Colors.overlayCursorColor, radius: 8, x: 0, y: 0)
-                            .frame(width: 30, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .pointerCursor()
-                    .help("Release the cursor")
-                    .padding(.top, notchHeight + 1)
-                    .transition(.opacity)
+                if isShowingDockedStrip {
+                    // The docked pointer under the notch; the whole strip releases it.
+                    NotchDockedStripView(companionManager: companionManager)
+                        .frame(width: model.width, height: model.dockedBadgeStripHeight)
+                        .padding(.top, notchHeight)
+                        .transition(.opacity)
                 } else if model.geometry.hasHardwareNotch {
                     // The island is exactly the notch: no lip, no handle. Hovering the notch opens it.
                     EmptyView()
@@ -771,7 +806,7 @@ struct NotchHUDView: View {
                     AppConnectPromptView(
                         prompt: connectPrompt,
                         controller: companionManager.appConnectPromptController,
-                        topInset: model.geometry.hasHardwareNotch ? notchHeight : 8
+                        topInset: model.cardTopInset
                     )
                         .frame(width: model.connectWidth, height: model.connectHeight)
                         .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
@@ -781,7 +816,7 @@ struct NotchHUDView: View {
                     PermissionPromptView(
                         prompt: permissionPrompt,
                         controller: companionManager.permissionPromptController,
-                        topInset: model.geometry.hasHardwareNotch ? notchHeight : 8
+                        topInset: model.cardTopInset
                     )
                         .frame(width: model.permissionWidth, height: model.permissionHeight)
                         .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
@@ -838,53 +873,66 @@ struct NotchIslandShape: Shape {
 
 // MARK: - Compact status strip
 
+/// The busy strip (380 × 37): the indicator on the left — level bars while listening, a spinner
+/// while thinking, the pointer while speaking — and what is happening, in a few words, on the
+/// right. One caption line opens under it when there is something to read: the agent's progress,
+/// or what was asked while the answer is spoken.
 struct NotchCompactStatusView: View {
     @ObservedObject var companionManager: CompanionManager
 
     var body: some View {
-        HStack(spacing: 12) {
-            NotchBuddyBadge(companionManager: companionManager)
-                .frame(width: 30, height: 30)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(primaryStatusText)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                Text(secondaryStatusText)
-                    .font(.system(size: 11))
-                    .foregroundColor(Color.white.opacity(0.55))
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                NotchBuddyBadge(companionManager: companionManager)
+                    .frame(width: 20, height: 18)
+                Spacer(minLength: 8)
+                Text(statusText)
+                    .font(.system(size: 12))
+                    .foregroundColor(DS.HUD.text2)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            .frame(height: DS.HUD.stripHeight)
+
+            if let detailLine = Self.detailLine(
+                voiceState: companionManager.voiceState,
+                agentActivityText: companionManager.agentActivityText,
+                lastTranscript: companionManager.lastTranscript
+            ) {
+                Text(detailLine)
+                    .font(.system(size: 14))
+                    .foregroundColor(DS.HUD.text)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
     }
 
-    private var primaryStatusText: String {
-        let isDictating = companionManager.isDictatingToFrontApp
-        switch companionManager.voiceState {
-        case .idle: return companionManager.isAlwaysListening ? "Hands-free" : "OpenClicky"
-        case .listening: return isDictating ? "Dictating…" : "Listening…"
-        case .processing:
-            if isDictating { return "Typing…" }
-            return companionManager.agentActivityText == nil ? "Thinking…" : "Working…"
-        case .responding: return "Speaking"
-        }
+    /// The strip's caption line, or nil for a strip with only its status. The HUD manager asks the
+    /// same question to size the island, so it is static and takes the published values.
+    static func detailLine(voiceState: CompanionVoiceState, agentActivityText: String?, lastTranscript: String?) -> String? {
+        if voiceState == .idle { return nil }
+        if let agentActivityText, !agentActivityText.isEmpty { return agentActivityText }
+        if voiceState == .responding, let lastTranscript, !lastTranscript.isEmpty { return "“\(lastTranscript)”" }
+        return nil
     }
 
-    private var secondaryStatusText: String {
-        if let agentActivityText = companionManager.agentActivityText { return agentActivityText }
+    private var statusText: String {
         let isDictating = companionManager.isDictatingToFrontApp
         switch companionManager.voiceState {
-        case .idle: return companionManager.isAlwaysListening ? "Just talk — I'm listening" : "Hold fn to dictate · hold ⌃⌥ to talk · tap ⌃ twice to type"
+        case .idle:
+            if companionManager.agentActivityText != nil { return "an agent is working" }
+            return companionManager.isAlwaysListening ? "hands-free · just talk" : "openclicky"
         case .listening:
-            if isDictating { return "Release fn + ⌃ to type it into the app" }
-            return companionManager.isAlwaysListening ? "Just talk — I'm listening" : "Release ⌃⌥ when you're done"
-        case .processing: return isDictating ? "Transcribing what you said" : "Looking at your screen"
-        case .responding: return companionManager.lastTranscript.map { "“\($0)”" } ?? ""
+            if isDictating { return "dictating" }
+            return companionManager.isAlwaysListening ? "listening · hands-free" : "listening"
+        case .processing:
+            if isDictating { return "typing it in" }
+            return companionManager.agentActivityText == nil ? "looking at your screen" : "working"
+        case .responding: return "speaking"
         }
     }
 }
@@ -897,17 +945,66 @@ struct NotchCaptionView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             NotchBuddyBadge(companionManager: companionManager)
-                .frame(width: 30, height: 30)
+                .frame(width: 20, height: 20)
             Text(captionText)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.white)
+                .font(.system(size: 13))
+                .foregroundColor(DS.HUD.text)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+}
+
+/// The 24 pt strip under the notch while the pointer is docked: the glowing pointer and
+/// "docked · click to release", which fades after 3 s so only the pointer stays. The whole strip
+/// is the button.
+struct NotchDockedStripView: View {
+    @ObservedObject var companionManager: CompanionManager
+    @State private var isLabelVisible = true
+
+    var body: some View {
+        Button(action: { companionManager.setCursorDocked(false) }) {
+            HStack(spacing: 7) {
+                NotchPointerMark(isDimmed: false)
+                if isLabelVisible {
+                    Text("docked · click to release")
+                        .font(.system(size: 11))
+                        .foregroundColor(DS.HUD.text2)
+                        .lineLimit(1)
+                        .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .help("release the pointer")
+        .accessibilityLabel("release the pointer")
+        .task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            withAnimation(.easeOut(duration: 0.4)) { isLabelVisible = false }
+        }
+    }
+}
+
+/// The pointer as the HUD draws it: the orange arrow with its glow, dimmed while it rests in the
+/// notch on the Home card.
+struct NotchPointerMark: View {
+    var isDimmed: Bool
+
+    var body: some View {
+        Triangle()
+            .fill(DS.HUD.pointer)
+            .frame(width: 12, height: 12)
+            .rotationEffect(.degrees(-35))
+            .shadow(color: isDimmed ? .clear : DS.HUD.pointer, radius: 4, x: 0, y: 0)
+            .opacity(isDimmed ? 0.5 : 1)
+            .frame(width: 14, height: 14)
     }
 }
 
@@ -921,10 +1018,10 @@ struct NotchComposerView: View {
         HStack(spacing: 10) {
             Image(systemName: "text.cursor")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(DS.Colors.overlayCursorColor)
+                .foregroundColor(DS.HUD.pointer)
             NotchComposerTextField(
                 text: $requestText,
-                placeholder: "Ask OpenClicky anything about your screen…",
+                placeholder: "ask clicky anything about your screen…",
                 onSubmit: submitRequest,
                 onEscape: { companionManager.notchHUDManager.closeTextComposer() }
             )
@@ -1024,19 +1121,13 @@ struct NotchBuddyBadge: View {
         case .idle, .responding:
             if companionManager.isCursorDocked {
                 Button(action: { companionManager.setCursorDocked(false) }) {
-                    Triangle()
-                        .fill(DS.Colors.overlayCursorColor)
-                        .frame(width: 16, height: 16)
-                        .rotationEffect(.degrees(-35))
-                        .shadow(color: DS.Colors.overlayCursorColor, radius: 8, x: 0, y: 0)
+                    NotchPointerMark(isDimmed: false)
                 }
                 .buttonStyle(.plain)
                 .pointerCursor()
-                .help("Release the cursor")
+                .help("release the pointer")
             } else {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(Color.white.opacity(0.85))
+                NotchPointerMark(isDimmed: false)
             }
         }
     }
