@@ -851,6 +851,46 @@ private struct PointerCursorView: NSViewRepresentable {
     }
 }
 
+// MARK: - Hover in the notch panel
+
+/// Hover that works in the notch panel. SwiftUI's onHover (and `.help` tooltips) only track while
+/// the window is key in an active app, and the notch panel is neither, so this installs an
+/// always-active tracking area instead. It passes every click through.
+private class AlwaysActiveHoverNSView: NSView {
+    var onHoverChanged: ((Bool) -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHoverChanged?(true) }
+    override func mouseExited(with event: NSEvent) { onHoverChanged?(false) }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+private struct AlwaysActiveHoverView: NSViewRepresentable {
+    let onHoverChanged: (Bool) -> Void
+
+    func makeNSView(context: Context) -> AlwaysActiveHoverNSView {
+        let view = AlwaysActiveHoverNSView()
+        view.onHoverChanged = onHoverChanged
+        return view
+    }
+
+    func updateNSView(_ nsView: AlwaysActiveHoverNSView, context: Context) {
+        nsView.onHoverChanged = onHoverChanged
+    }
+}
+
+extension View {
+    /// Like `onHover`, but fires in a non-key panel of a background app (the notch HUD).
+    func onHoverInPanel(_ onHoverChanged: @escaping (Bool) -> Void) -> some View {
+        overlay(AlwaysActiveHoverView(onHoverChanged: onHoverChanged))
+    }
+}
+
 // MARK: - I-Beam Cursor (AppKit Bridge)
 
 /// Uses AppKit's cursor rect system to reliably show an I-beam (text selection) cursor.

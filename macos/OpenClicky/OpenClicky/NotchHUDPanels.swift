@@ -324,7 +324,8 @@ struct NotchPointerCard: View {
             }
         }
         .padding(12)
-        .frame(height: 104, alignment: .top)
+        // Without a hint line the status and button sit in the middle rather than leave a gap below.
+        .frame(height: 104, alignment: hintText == nil ? .center : .top)
         .background(RoundedRectangle(cornerRadius: DS.HUD.cardRadius, style: .continuous).fill(DS.HUD.surface))
     }
 
@@ -477,6 +478,8 @@ struct NotchSkillsAndIntegrationsRow: View {
     @ObservedObject var store: SkillLibraryStore
     @State private var isComposing = false
     @State private var request = ""
+    /// The skill tile under the mouse: the header line then says what it does and how to use it.
+    @State private var hoveredSkillID: String?
     @FocusState private var isRequestFieldFocused: Bool
 
     private let tileSize = DS.HUD.tileSize
@@ -484,21 +487,10 @@ struct NotchSkillsAndIntegrationsRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                NotchSectionHeader(title: "SKILLS & INTEGRATIONS")
-                Spacer()
-                if let error = store.lastError {
-                    Text(error)
-                        .font(.system(size: 11))
-                        .foregroundColor(DS.HUD.pointer)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .help(error)
-                } else {
-                    Text("app know-how is built in")
-                        .font(.system(size: 11))
-                        .foregroundColor(DS.HUD.text3)
-                }
+            if let hoveredSkill = store.librarySkills.first(where: { $0.id == hoveredSkillID }) {
+                skillExplanation(hoveredSkill)
+            } else {
+                header
             }
 
             HStack(spacing: 8) {
@@ -533,6 +525,46 @@ struct NotchSkillsAndIntegrationsRow: View {
             }
             .frame(height: tileSize)
         }
+    }
+
+    private var header: some View {
+        HStack {
+            NotchSectionHeader(title: "SKILLS & INTEGRATIONS")
+            Spacer()
+            if let error = store.lastError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.HUD.pointer)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(error)
+            } else {
+                Text("app know-how is built in")
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.HUD.text3)
+            }
+        }
+    }
+
+    /// What a hovered skill tile is and how to use it, in the header's place: its name, how to
+    /// call on it (or that it is off), then its description, cut to the line.
+    private func skillExplanation(_ skill: SkillFile) -> some View {
+        let isActive = store.activeIds.contains(skill.id)
+        let howToUse: String
+        if !isActive {
+            howToUse = "off · click to turn on"
+        } else if skill.isForTalk {
+            howToUse = "hold ⌃ ⌥ and ask"
+        } else {
+            howToUse = "used when the agent works"
+        }
+        return (Text(skill.name.lowercased()).font(.system(size: 11, weight: .semibold)).foregroundColor(DS.HUD.text)
+            + Text("  \(howToUse)").font(.system(size: 11, weight: .medium)).foregroundColor(isActive ? DS.HUD.live : DS.HUD.waiting)
+            + Text("  \(skill.description)").font(.system(size: 11)).foregroundColor(DS.HUD.text3))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(height: 14, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// An integration lights up in its colour once configured; until then it is dimmed and a click
@@ -620,7 +652,13 @@ struct NotchSkillsAndIntegrationsRow: View {
         }
         .buttonStyle(.plain)
         .pointerCursor()
-        .help("\(skill.name) — \(skill.description)\n\(isActive ? "on for talk and agent. click to turn off." : "off. click to turn on.")")
+        .onHoverInPanel { isHovering in
+            if isHovering {
+                hoveredSkillID = skill.id
+            } else if hoveredSkillID == skill.id {
+                hoveredSkillID = nil
+            }
+        }
         .accessibilityLabel("\(skill.name), \(isActive ? "on" : "off")")
         .contextMenu {
             Button(isActive ? "turn off" : "turn on") { store.setActive(skill.id, !isActive) }
