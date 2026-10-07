@@ -316,10 +316,12 @@ struct NotchPointerCard: View {
                 .accessibilityLabel("what can you do?")
             }
 
-            Text(hintText)
-                .font(.system(size: 11))
-                .foregroundColor(DS.HUD.text3)
-                .lineLimit(1)
+            if let hintText {
+                Text(hintText)
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.HUD.text3)
+                    .lineLimit(1)
+            }
         }
         .padding(12)
         .frame(height: 104, alignment: .top)
@@ -338,12 +340,12 @@ struct NotchPointerCard: View {
         }
     }
 
-    private var hintText: String {
+    private var hintText: String? {
         if companionManager.isCursorDocked { return "talk still works while docked" }
         if companionManager.isClickyCursorEnabled && companionManager.pointerPresence == .onShake {
-            return "or shake the mouse · (i) shows what it can do"
+            return "or shake the mouse"
         }
-        return "(i) shows what it can do"
+        return nil
     }
 }
 
