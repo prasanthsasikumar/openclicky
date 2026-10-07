@@ -6,7 +6,9 @@
 //  remembered answers (Yes / No / Not now) that decide whether the card opens again.
 //
 
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import OpenClicky
 
@@ -93,5 +95,29 @@ struct AppConnectPromptTests {
         let relaunched = AppConnectPromptController(userDefaults: userDefaults)
         #expect(relaunched.declinedSkillIds == ["youtube"])
         #expect(relaunched.prompt(for: front, skills: [youtube]) == nil)
+    }
+}
+
+/// The card must fit the 512 pt island however long the example prompts are: chips that do not
+/// fit are left out rather than widening the card (which pushed it off both edges).
+@MainActor
+struct AppConnectPromptLayoutTests {
+    @Test func longExamplePromptsDoNotWidenTheCard() throws {
+        let prompt = AppConnectPrompt(
+            skillId: "gmail", appName: "Gmail", integration: "gmail", frontBundleIdentifier: nil,
+            examplePrompts: ["How do I write an email?", "Where is search?", "How do I filter / advanced search?", "Where are my drafts and scheduled emails?"])
+        let controller = AppConnectPromptController(userDefaults: UserDefaults(suiteName: "AppConnectPromptLayoutTests")!)
+        let hostingView = NSHostingView(rootView: AppConnectPromptView(prompt: prompt, controller: controller).frame(width: 512, height: 160))
+        hostingView.frame = NSRect(x: 0, y: 0, width: 512, height: 160)
+        hostingView.layoutSubtreeIfNeeded()
+        // Offered the island's width, the card must not ask for more.
+        let sizingController = NSHostingController(rootView: AppConnectPromptView(prompt: prompt, controller: controller))
+        let fittedSize = sizingController.sizeThatFits(in: CGSize(width: 512, height: 400))
+        #expect(fittedSize.width <= 512)
+        if let outputPath = ProcessInfo.processInfo.environment["OPENCLICKY_CARD_SNAPSHOT"],
+           let bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) {
+            hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+            try bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: outputPath))
+        }
     }
 }

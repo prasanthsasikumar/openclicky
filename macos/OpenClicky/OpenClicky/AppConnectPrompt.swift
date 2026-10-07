@@ -354,9 +354,9 @@ struct AppConnectPromptView: View {
         }
     }
 
-    /// The skill's example prompts, as many as fit on one line.
+    /// The skill's example prompts, as many whole chips as fit on one line.
     private var exampleChips: some View {
-        HStack(spacing: 6) {
+        WholeItemsRowLayout(spacing: 6) {
             ForEach(Array(prompt.examplePrompts.prefix(4).enumerated()), id: \.offset) { _, examplePrompt in
                 Text("“\(examplePrompt)”")
                     .font(.system(size: 12))
@@ -401,5 +401,36 @@ struct AppConnectPromptView: View {
         }
         .buttonStyle(.plain)
         .pointerCursor()
+    }
+}
+
+
+/// A row that lays its items out left to right and leaves out every item from the first one that
+/// would cross the right edge, so a chip is never cut in half. A plain HStack of fixed-size chips
+/// asks for their full width instead, which pushed the whole connect card wider than the island.
+struct WholeItemsRowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let height = sizes.map(\.height).max() ?? 0
+        let naturalWidth = sizes.map(\.width).reduce(0, +) + spacing * CGFloat(max(0, sizes.count - 1))
+        return CGSize(width: min(proposal.width ?? naturalWidth, naturalWidth), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var rowIsFull = false
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if rowIsFull || x + size.width > bounds.maxX + 0.5 {
+                // Out of room: this and every later item are placed out of sight (the row clips).
+                rowIsFull = true
+                subview.place(at: CGPoint(x: bounds.maxX + 10_000, y: bounds.minY), proposal: .zero)
+                continue
+            }
+            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(size))
+            x += size.width + spacing
+        }
     }
 }
