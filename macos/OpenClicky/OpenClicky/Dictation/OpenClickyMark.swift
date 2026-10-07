@@ -2,50 +2,53 @@
 //  OpenClickyMark.swift
 //  OpenClicky
 //
-//  The mark, as one path: a rounded pointer (the buddy's arrow, softened) with a dot at its tip —
-//  "click", said once. Drawn by the app icon, the menu bar, the orb and the window so they agree.
+//  The mark: a ring whose top-right corner is drawn square, like a pin turned on its side, with
+//  the pointer inside it aiming up and to the left. One path, filled even-odd so the ring stays
+//  open. Drawn by the menu bar and the window, and the same proportions are in the app icon
+//  (scripts/make-app-icon.py) so they agree.
 //
 
 import AppKit
 import SwiftUI
 
 enum OpenClickyMark {
-    /// The pointer in a unit square, y down (flipped), with the dot.
+    // Proportions in a unit square, y down, measured off the icon artwork.
+    static let innerRadius: CGFloat = 0.4125
+    static let arrowTip = CGPoint(x: 0.3125, y: 0.3125)
+    static let arrowRight = CGPoint(x: 0.7475, y: 0.475)
+    static let arrowNotch = CGPoint(x: 0.505, y: 0.52)
+    static let arrowBottom = CGPoint(x: 0.4775, y: 0.7525)
+
+    /// The mark in `rect` for a flipped (y down) context. Fill with the even-odd rule.
     static func bezierPath(in rect: CGRect) -> NSBezierPath {
         let path = NSBezierPath()
-        let w = rect.width, h = rect.height, x0 = rect.minX, y0 = rect.minY
-        func p(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint { CGPoint(x: x0 + fx * w, y: y0 + fy * h) }
-        // The arrow: a rounded, chunky pointer leaning right.
-        path.move(to: p(0.22, 0.10))
-        path.line(to: p(0.22, 0.86))
-        path.line(to: p(0.42, 0.66))
-        path.line(to: p(0.56, 0.96))
-        path.line(to: p(0.70, 0.90))
-        path.line(to: p(0.56, 0.62))
-        path.line(to: p(0.84, 0.60))
-        path.close()
-        // The dot: the click, up and to the right of the tip.
-        path.appendOval(in: CGRect(x: x0 + 0.70 * w, y: y0 + 0.08 * h, width: 0.22 * w, height: 0.22 * h))
+        path.windingRule = .evenOdd
+        path.append(NSBezierPath(cgPath: OpenClickyMarkShape().path(in: rect).cgPath))
         return path
     }
-
-    static func shape() -> some Shape { OpenClickyMarkShape() }
 }
 
 struct OpenClickyMarkShape: Shape {
     func path(in rect: CGRect) -> Path {
+        let side = min(rect.width, rect.height)
+        let x0 = rect.midX - side / 2, y0 = rect.midY - side / 2
+        func p(_ point: CGPoint) -> CGPoint { CGPoint(x: x0 + point.x * side, y: y0 + point.y * side) }
+        let center = CGPoint(x: x0 + side / 2, y: y0 + side / 2)
         var path = Path()
-        let w = rect.width, h = rect.height, x0 = rect.minX, y0 = rect.minY
-        func p(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint { CGPoint(x: x0 + fx * w, y: y0 + fy * h) }
-        path.move(to: p(0.22, 0.10))
-        path.addLine(to: p(0.22, 0.86))
-        path.addLine(to: p(0.42, 0.66))
-        path.addLine(to: p(0.56, 0.96))
-        path.addLine(to: p(0.70, 0.90))
-        path.addLine(to: p(0.56, 0.62))
-        path.addLine(to: p(0.84, 0.60))
+        // The outer edge: three quarters of a circle, then the square top-right corner.
+        path.move(to: CGPoint(x: center.x + side / 2, y: center.y))
+        path.addArc(center: center, radius: side / 2, startAngle: .degrees(0), endAngle: .degrees(270), clockwise: false)
+        path.addLine(to: CGPoint(x: x0 + side, y: y0))
         path.closeSubpath()
-        path.addEllipse(in: CGRect(x: x0 + 0.70 * w, y: y0 + 0.08 * h, width: 0.22 * w, height: 0.22 * h))
+        // The hole.
+        let inner = OpenClickyMark.innerRadius * side
+        path.addEllipse(in: CGRect(x: center.x - inner, y: center.y - inner, width: inner * 2, height: inner * 2))
+        // The pointer.
+        path.move(to: p(OpenClickyMark.arrowTip))
+        path.addLine(to: p(OpenClickyMark.arrowRight))
+        path.addLine(to: p(OpenClickyMark.arrowNotch))
+        path.addLine(to: p(OpenClickyMark.arrowBottom))
+        path.closeSubpath()
         return path
     }
 }

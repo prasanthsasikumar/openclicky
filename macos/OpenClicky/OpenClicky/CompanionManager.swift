@@ -1043,6 +1043,8 @@ final class CompanionManager: ObservableObject {
     /// The main window (record, history, dictionary, shortcuts, styles, settings).
     func showDictationWindow(section: DictationSection? = nil, settingsPage: DictationSettingsPage? = nil) {
         if dictationWindowController == nil { dictationWindowController = DictationWindowController(companionManager: self) }
+        // The HUD would otherwise stay open over the window, since the pointer is still on it.
+        notchHUDManager.dismissPanels()
         dictationWindowController?.show(section: section, settingsPage: settingsPage)
     }
 

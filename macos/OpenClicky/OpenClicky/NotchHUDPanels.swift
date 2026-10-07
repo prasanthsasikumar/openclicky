@@ -1061,10 +1061,8 @@ struct NotchSettingsView: View {
             }
             Spacer(minLength: 4)
             Toggle("", isOn: isOn)
-                .toggleStyle(.switch)
+                .toggleStyle(HUDSwitchToggleStyle())
                 .labelsHidden()
-                .tint(DS.HUD.live)
-                .controlSize(.mini)
                 .pointerCursor()
                 .accessibilityLabel(title)
         }
@@ -1200,10 +1198,8 @@ struct NotchSettingsView: View {
             }
             Spacer()
             Toggle("", isOn: isOn)
-                .toggleStyle(.switch)
+                .toggleStyle(HUDSwitchToggleStyle())
                 .labelsHidden()
-                .tint(DS.HUD.live)
-                .controlSize(.mini)
                 .pointerCursor()
                 .accessibilityLabel(title)
         }

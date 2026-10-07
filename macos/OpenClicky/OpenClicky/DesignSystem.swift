@@ -279,6 +279,31 @@ enum DS {
     }
 }
 
+// MARK: - HUD switch
+
+/// The HUD's on/off switch, drawn by hand: the system switch greys its "on" colour whenever its
+/// window is not key, and the notch panel never becomes key from a click, so every switch read as
+/// off until it was clicked.
+struct HUDSwitchToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button(action: { configuration.isOn.toggle() }) {
+            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(configuration.isOn ? DS.HUD.live : DS.HUD.surfaceRaised)
+                Circle()
+                    .fill(Color.white)
+                    .padding(2)
+                    .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+            }
+            .frame(width: 32, height: 18)
+            .animation(.easeOut(duration: 0.15), value: configuration.isOn)
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(configuration.isOn ? "on" : "off")
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
 // MARK: - Button Styles
 
 /// Primary button — the main call-to-action per screen.

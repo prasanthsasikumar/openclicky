@@ -132,11 +132,11 @@ final class MenuBarPanelManager: NSObject {
     @objc private func checkForUpdates() { AppUpdater.shared.start(); AppUpdater.shared.checkNow() }
     @objc private func quit() { NSApp.terminate(nil) }
 
-    /// The mark, as a template image: the rounded pointer with its dot, matching the app icon.
+    /// The mark, as a template image: the ring and its pointer, matching the app icon.
     private func makeClickyMenuBarIcon() -> NSImage {
         let iconSize: CGFloat = 18
         let image = NSImage(size: NSSize(width: iconSize, height: iconSize), flipped: true) { rect in
-            let path = OpenClickyMark.bezierPath(in: rect.insetBy(dx: 2, dy: 2))
+            let path = OpenClickyMark.bezierPath(in: rect.insetBy(dx: 1.5, dy: 1.5))
             NSColor.black.setFill()
             path.fill()
             return true

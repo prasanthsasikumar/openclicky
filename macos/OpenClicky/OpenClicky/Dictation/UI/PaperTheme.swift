@@ -283,8 +283,10 @@ final class AppIconCache {
 struct OpenClickyWordmark: View {
     var body: some View {
         HStack(spacing: 8) {
-            OrbMarkShape().fill(Paper.accent).frame(width: 22, height: 22)
-            Text("openclicky").font(.system(size: 26, weight: .medium, design: .serif)).foregroundStyle(Paper.ink)
+            OpenClickyMarkShape().fill(Paper.accent, style: FillStyle(eoFill: true)).frame(width: 20, height: 20)
+            // One line always: the 220 pt rail leaves the name about 150 pt beside the mark and the sidebar button.
+            Text("openclicky").font(.system(size: 22, weight: .medium, design: .serif)).foregroundStyle(Paper.ink)
+                .lineLimit(1).fixedSize()
         }
     }
 }

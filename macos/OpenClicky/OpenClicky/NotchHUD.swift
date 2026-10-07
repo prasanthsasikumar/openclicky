@@ -5,8 +5,8 @@
 //  The notch HUD, drawn like HeyClicky's: a solid black island hanging from the top of the screen
 //  around the notch, its top corners flaring into the menu bar and its bottom corners rounded, with
 //  no border and no shadow. Colours and sizes come from `DS.HUD` (the refinement sheet). States:
-//    collapsed — exactly the notch (or a virtual notch on other displays); while the pointer is
-//                docked, a 24 pt strip under it with the pointer and "docked · click to release"
+//    collapsed — exactly the notch (or a virtual notch on other displays), docked pointer or not:
+//                hovering opens the panel, whose pointer card says it is docked and releases it
 //    compact   — a 380 × 37 strip that opens while OpenClicky listens / thinks / speaks, one
 //                caption line taller when there is something to say under it
 //    connect   — the "connect <app> to openclicky?" card that opens when a supported app or site
@@ -132,14 +132,11 @@ final class NotchHUDModel: ObservableObject {
     @Published private(set) var isCursorDocked = false
     /// Whether this screen's island is the one the buddy docks into (the notch screen).
     var hostsDockedCursor = false
-    /// The strip under the notch that shows the docked buddy; the whole strip is its hit target.
-    let dockedBadgeStripHeight: CGFloat = 24
 
     /// Displays without a notch show only the handle line, flush with the top edge of the screen
     /// (inside the menu bar band, where the notch would be), like HeyClicky's.
     let handleStripHeight: CGFloat = 12
     var collapsedHeight: CGFloat {
-        if hostsDockedCursor && isCursorDocked { return geometry.notchHeight + dockedBadgeStripHeight }
         return geometry.hasHardwareNotch ? geometry.notchHeight + collapsedLipHeight : handleStripHeight
     }
     var compactHeight: CGFloat { geometry.notchHeight + compactContentHeight }
@@ -191,6 +188,9 @@ final class NotchHUDModel: ObservableObject {
     var onLayoutChanged: (() -> Void)?
 
     private var isHovering = false
+    /// Set when something the panel opened takes over (a window comes forward): the pointer is
+    /// still over the island, but it should stay closed until the pointer leaves and comes back.
+    private var ignoresHoverUntilExit = false
     private var isBusy = false
     /// The user clicked the HUD: stay open until they click elsewhere or close it.
     private var isPinnedOpen = false
@@ -201,6 +201,10 @@ final class NotchHUDModel: ObservableObject {
     }
 
     func setHovering(_ hovering: Bool) {
+        if ignoresHoverUntilExit {
+            guard !hovering else { return }
+            ignoresHoverUntilExit = false
+        }
         guard isHovering != hovering else { return }
         isHovering = hovering
         reconcile()
@@ -257,6 +261,12 @@ final class NotchHUDModel: ObservableObject {
         isPinnedOpen = false
         isHovering = false
         reconcile(immediately: true)
+    }
+
+    /// Closes the panel for good this time: hovering reopens it only after the pointer has left.
+    func dismiss() {
+        ignoresHoverUntilExit = isHovering || expansion == .full
+        close()
     }
 
     func select(_ tab: NotchHUDTab) {
@@ -464,6 +474,13 @@ final class NotchHUDManager {
             if let textField = firstTextField(in: subview) { return textField }
         }
         return nil
+    }
+
+    /// Closes every open panel because a window it opened is coming forward.
+    func dismissPanels() {
+        for instance in instances where instance.model.expansion == .full {
+            instance.model.dismiss()
+        }
     }
 
     /// Closes the composer everywhere and hands the keyboard back to the app that had it.
@@ -732,16 +749,14 @@ struct NotchHUDView: View {
 
     private var expansion: NotchHUDExpansion { model.expansion }
     private var notchHeight: CGFloat { model.geometry.notchHeight }
-    /// The hardware notch's own bottom radius when collapsed (16 pt with the docked strip under
-    /// it), 18 pt for the busy strip, the sheet's 22 pt island radius for cards and the panel.
+    /// The hardware notch's own bottom radius when collapsed, 18 pt for the busy strip, the sheet's 22 pt island radius for cards and the panel.
     private var bottomCornerRadius: CGFloat {
         switch expansion {
-        case .collapsed: return isShowingDockedStrip ? 16 : 11
+        case .collapsed: return 11
         case .compact: return 18
         default: return DS.HUD.islandRadius
         }
     }
-    private var isShowingDockedStrip: Bool { model.hostsDockedCursor && companionManager.isCursorDocked }
     /// How far the top corners curve outward into the menu bar (measured from HeyClicky: ~6 pt).
     private let topCornerFlare: CGFloat = 6
 
@@ -751,11 +766,10 @@ struct NotchHUDView: View {
             // without a notch nothing is drawn while collapsed (no fake notch over the menu bar): only
             // the thin handle below marks where to hover.
             if expansion != .collapsed || model.geometry.hasHardwareNotch {
-                // Collapsed, the black is the notch itself, plus the docked strip under it while
-                // the pointer lives there.
+                // Collapsed, the black is the notch itself.
                 NotchIslandShape(bottomCornerRadius: bottomCornerRadius, topCornerFlare: topCornerFlare)
                     .fill(DS.HUD.island)
-                    .frame(width: model.width + topCornerFlare * 2, height: expansion == .collapsed && !isShowingDockedStrip ? notchHeight : model.height)
+                    .frame(width: model.width + topCornerFlare * 2, height: expansion == .collapsed ? notchHeight : model.height)
                     .onTapGesture { if expansion != .connect && expansion != .permission && expansion != .composer { model.togglePinned() } }
             }
 
@@ -764,13 +778,7 @@ struct NotchHUDView: View {
             // content inside the smaller window.
             switch expansion {
             case .collapsed:
-                if isShowingDockedStrip {
-                    // The docked pointer under the notch; the whole strip releases it.
-                    NotchDockedStripView(companionManager: companionManager)
-                        .frame(width: model.width, height: model.dockedBadgeStripHeight)
-                        .padding(.top, notchHeight)
-                        .transition(.opacity)
-                } else if model.geometry.hasHardwareNotch {
+                if model.geometry.hasHardwareNotch {
                     // The island is exactly the notch: no lip, no handle. Hovering the notch opens it.
                     EmptyView()
                 } else {
@@ -956,39 +964,6 @@ struct NotchCaptionView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-    }
-}
-
-/// The 24 pt strip under the notch while the pointer is docked: the glowing pointer and
-/// "docked · click to release", which fades after 3 s so only the pointer stays. The whole strip
-/// is the button.
-struct NotchDockedStripView: View {
-    @ObservedObject var companionManager: CompanionManager
-    @State private var isLabelVisible = true
-
-    var body: some View {
-        Button(action: { companionManager.setCursorDocked(false) }) {
-            HStack(spacing: 7) {
-                NotchPointerMark(isDimmed: false)
-                if isLabelVisible {
-                    Text("docked · click to release")
-                        .font(.system(size: 11))
-                        .foregroundColor(DS.HUD.text2)
-                        .lineLimit(1)
-                        .transition(.opacity)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .pointerCursor()
-        .help("release the pointer")
-        .accessibilityLabel("release the pointer")
-        .task {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            withAnimation(.easeOut(duration: 0.4)) { isLabelVisible = false }
-        }
     }
 }
 
