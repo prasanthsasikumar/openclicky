@@ -47,6 +47,21 @@ struct SkillLibraryStoreTests {
         #expect((object["updatedAt"] as? String)?.isEmpty == false)
     }
 
+    @Test func removingDeletesTheFolderTheLinkAndTheActivation() throws {
+        let (store, _) = try makeStore()
+        try store.importSkill(markdown: markdown(name: "Pirate"))
+        try store.importSkill(markdown: markdown(name: "Keep"))
+        #expect(store.activeIds.sorted() == ["keep", "pirate"])
+
+        store.removeSkill("pirate")
+
+        #expect(store.librarySkills.map(\.id) == ["keep"])
+        #expect(store.activeIds == ["keep"])
+        #expect(!FileManager.default.fileExists(atPath: store.libraryDirectory.appendingPathComponent("pirate").path))
+        #expect(!isSymlink(store.activeDirectory.appendingPathComponent("pirate")))
+        #expect(store.lastError == nil)
+    }
+
     @Test func deactivatingRemovesTheLinkAndKeepsTheFile() throws {
         let (store, _) = try makeStore()
         try store.importSkill(markdown: markdown(name: "Pirate"))

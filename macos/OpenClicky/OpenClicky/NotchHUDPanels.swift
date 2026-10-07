@@ -62,7 +62,7 @@ struct NotchTabBar: View {
 
             Spacer()
 
-            backendStatusPill
+            DictationSourcePill(companionManager: companionManager, settings: companionManager.dictationSettings)
 
             if model.activeTab == .agents {
                 iconButton(systemImage: "arrow.clockwise", help: "Refresh agents") { threadStore.refresh() }
@@ -90,22 +90,6 @@ struct NotchTabBar: View {
         .pointerCursor()
     }
 
-    private var backendStatusPill: some View {
-        let isConfigured = OpenClickyConfiguration.isConfigured
-        return HStack(spacing: 5) {
-            Circle().fill(isConfigured ? DS.Colors.success : DS.Colors.overlayCursorColor).frame(width: 5, height: 5)
-            Text(isConfigured ? OpenClickyConfiguration.backendHostDescription : "Set up backend")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(isConfigured ? Color.white.opacity(0.7) : .white)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(isConfigured ? Color.white.opacity(0.08) : DS.Colors.overlayCursorColor.opacity(0.35)))
-        .onTapGesture { OpenClickyConfiguration.revealSettingsFile() }
-        .pointerCursor()
-    }
-
     private func iconButton(systemImage: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
@@ -116,6 +100,35 @@ struct NotchTabBar: View {
         .buttonStyle(.plain)
         .pointerCursor()
         .help(help)
+    }
+}
+
+/// The pill in the menu-bar band: where dictated words come from (local, Sarvam, OpenAI…), with a
+/// tap opening the engine settings. Until the backend is set up it says so instead, since talk,
+/// agents and the OpenAI engine all need it.
+private struct DictationSourcePill: View {
+    @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var settings: DictationSettings
+
+    var body: some View {
+        let isConfigured = OpenClickyConfiguration.isConfigured
+        let needsBackend = settings.engine == .openclicky || settings.engine == .assemblyai
+        let showsSetup = !isConfigured && needsBackend
+        return HStack(spacing: 5) {
+            Circle().fill(showsSetup ? DS.Colors.overlayCursorColor : DS.Colors.success).frame(width: 5, height: 5)
+            Text(showsSetup ? "Set up backend" : settings.engine.sourceBadge)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(showsSetup ? .white : Color.white.opacity(0.7))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(showsSetup ? DS.Colors.overlayCursorColor.opacity(0.35) : Color.white.opacity(0.08)))
+        .onTapGesture {
+            if showsSetup { OpenClickyConfiguration.revealSettingsFile() } else { companionManager.showDictationWindow(settingsPage: .engine) }
+        }
+        .pointerCursor()
+        .help(showsSetup ? "Set the backend in shell.json" : "Dictation is transcribed by \(settings.engine.displayName). Click to change.")
     }
 }
 
@@ -319,6 +332,12 @@ struct SkillTilesRow: View {
         .buttonStyle(.plain)
         .pointerCursor()
         .help("\(skill.name) — \(skill.description)\n\(isActive ? "Active for talk and agent. Click to turn off." : "Off. Click to activate.")")
+        .contextMenu {
+            Button(isActive ? "Turn off" : "Activate") { store.setActive(skill.id, !isActive) }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([store.libraryDirectory.appendingPathComponent(skill.id, isDirectory: true)]) }
+            Divider()
+            Button("Remove from library", role: .destructive) { store.removeSkill(skill.id) }
+        }
     }
 
     private var composer: some View {

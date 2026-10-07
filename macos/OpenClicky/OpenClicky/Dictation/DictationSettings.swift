@@ -34,6 +34,16 @@ enum DictationEngineChoice: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The word in the notch HUD's pill: where the dictated words come from.
+    var sourceBadge: String {
+        switch self {
+        case .offline: return "local"
+        case .sarvam: return "Sarvam"
+        case .openclicky: return "OpenAI"
+        case .assemblyai: return "AssemblyAI"
+        }
+    }
+
     var detail: String {
         switch self {
         case .offline: return "apple's recogniser, offline. your voice never leaves this mac."

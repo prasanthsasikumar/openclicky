@@ -612,6 +612,55 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    // MARK: - Pointer presence
+
+    /// When the pointer is on screen while it follows the mouse. Persisted to UserDefaults.
+    @Published private(set) var pointerPresence: PointerPresence =
+        PointerPresence(rawValue: UserDefaults.standard.string(forKey: "openClickyPointerPresence") ?? "") ?? .always
+
+    /// False while the pointer is resting away (the mouse has been still, or has not been shaken
+    /// yet). The overlays fade the following pointer with it; flights and conversations ignore it.
+    @Published private(set) var isPointerAwake: Bool = true
+
+    private var pointerPresenceTracker = PointerPresenceTracker(presence: .always)
+    private var pointerPresenceTimer: Timer?
+
+    func setPointerPresence(_ presence: PointerPresence) {
+        pointerPresence = presence
+        UserDefaults.standard.set(presence.rawValue, forKey: "openClickyPointerPresence")
+        pointerPresenceTracker = PointerPresenceTracker(presence: presence)
+        isPointerAwake = pointerPresenceTracker.isAwake
+        startPointerPresenceMonitor()
+    }
+
+    /// Show the pointer now; it rests away again as the presence setting says.
+    func wakePointer() {
+        pointerPresenceTracker.wake(at: ProcessInfo.processInfo.systemUptime)
+        if !isPointerAwake { isPointerAwake = true }
+    }
+
+    /// Samples the mouse at 30 Hz while a presence other than "always" is chosen; "always" needs
+    /// no sampling at all.
+    private func startPointerPresenceMonitor() {
+        pointerPresenceTimer?.invalidate()
+        pointerPresenceTimer = nil
+        guard pointerPresence != .always else {
+            isPointerAwake = true
+            return
+        }
+        pointerPresenceTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let awake = self.pointerPresenceTracker.update(mouse: NSEvent.mouseLocation, at: ProcessInfo.processInfo.systemUptime)
+                if awake != self.isPointerAwake { self.isPointerAwake = awake }
+                // In the shake mode a shake means "come here": a docked pointer leaves the notch too.
+                if self.pointerPresenceTracker.shookOnLastUpdate, self.isCursorDocked, self.voiceState == .idle {
+                    self.setCursorDocked(false)
+                }
+            }
+        }
+    }
+
     /// Whether the user has completed onboarding at least once. Persisted
     /// to UserDefaults so the Start button only appears on first launch.
     var hasCompletedOnboarding: Bool {
@@ -635,6 +684,9 @@ final class CompanionManager: ObservableObject {
 
     func start() {
         refreshAllPermissions()
+        pointerPresenceTracker = PointerPresenceTracker(presence: pointerPresence)
+        isPointerAwake = pointerPresenceTracker.isAwake
+        startPointerPresenceMonitor()
         print("🔑 OpenClicky start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission), onboarded: \(hasCompletedOnboarding)")
         startPermissionPolling()
         bindVoiceStateObservation()

@@ -330,7 +330,7 @@ struct BlueCursorView: View {
                 .rotationEffect(.degrees(triangleRotationDegrees))
                 .shadow(color: DS.Colors.overlayCursorColor, radius: 8 + (buddyFlightScale - 1.0) * 20, x: 0, y: 0)
                 .scaleEffect(buddyFlightScale)
-                .opacity(buddyIsVisibleOnThisScreen && (companionManager.voiceState == .idle || companionManager.voiceState == .responding) ? cursorOpacity : 0)
+                .opacity(buddyIsVisibleOnThisScreen && presenceAllowsPointer && (companionManager.voiceState == .idle || companionManager.voiceState == .responding) ? cursorOpacity : 0)
                 .position(cursorPosition)
                 .animation(
                     buddyNavigationMode == .followingCursor
@@ -339,6 +339,7 @@ struct BlueCursorView: View {
                     value: cursorPosition
                 )
                 .animation(.easeIn(duration: 0.25), value: companionManager.voiceState)
+                .animation(.easeInOut(duration: companionManager.isPointerAwake ? 0.2 : 0.6), value: companionManager.isPointerAwake)
                 .animation(
                     buddyNavigationMode == .navigatingToTarget ? nil : .easeInOut(duration: 0.3),
                     value: triangleRotationDegrees
@@ -430,6 +431,14 @@ struct BlueCursorView: View {
             guard let flightLeg, flightLeg.screenFrame == screenFrame else { return }
             performFlightLeg(flightLeg)
         }
+    }
+
+    /// The presence setting only governs plain following: a pointer that is flying, pointing at
+    /// something, or in a conversation is always shown.
+    private var presenceAllowsPointer: Bool {
+        buddyNavigationMode != .followingCursor
+            || companionManager.voiceState != .idle
+            || companionManager.isPointerAwake
     }
 
     /// Whether the buddy triangle should be visible on this screen.
@@ -819,6 +828,8 @@ struct BlueCursorView: View {
         navigationBubbleScale = 1.0
         companionManager.clearDetectedElementLocation()
         companionManager.finishCursorFlight(onScreenFrame: screenFrame)
+        // Back at the mouse: stay a moment so the landing is seen, then rest away as usual.
+        companionManager.wakePointer()
     }
 
     // MARK: - Welcome Animation
@@ -928,10 +939,47 @@ struct BlueCursorSpinnerView: View {
 class OverlayWindowManager {
     private var overlayWindows: [OverlayWindow] = []
     var hasShownOverlayBefore = false
+    /// The screen frames the overlays were built for, so a display change can be told apart from
+    /// the many notifications that change nothing.
+    private var shownScreenFrames: [CGRect] = []
+    private weak var companionManager: CompanionManager?
+    private var screenChangeObserver: NSObjectProtocol?
+
+    init() {
+        // A display plugged in, unplugged, or moved in the arrangement: the overlays were sized
+        // and placed for the old layout, so the buddy would be missing or misplaced on the new
+        // one. Rebuild them for the screens as they are now.
+        screenChangeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.rebuildIfScreensChanged() }
+        }
+    }
+
+    /// Whether the overlays built for `from` fit the screens `to`; order does not matter.
+    nonisolated static func screensChanged(from: [CGRect], to: [CGRect]) -> Bool {
+        func sorted(_ frames: [CGRect]) -> [CGRect] {
+            frames.sorted { ($0.minX, $0.minY, $0.width, $0.height) < ($1.minX, $1.minY, $1.width, $1.height) }
+        }
+        return sorted(from) != sorted(to)
+    }
+
+    private func rebuildIfScreensChanged() {
+        guard !overlayWindows.isEmpty, let companionManager else { return }
+        let frames = NSScreen.screens.map(\.frame)
+        guard Self.screensChanged(from: shownScreenFrames, to: frames) else { return }
+        AppLog.append("displays changed; rebuilding the pointer overlay for \(frames.count) screen(s)")
+        hasShownOverlayBefore = true
+        showOverlay(onScreens: NSScreen.screens, companionManager: companionManager)
+    }
 
     func showOverlay(onScreens screens: [NSScreen], companionManager: CompanionManager) {
         // Hide any existing overlays
         hideOverlay()
+        self.companionManager = companionManager
+        shownScreenFrames = screens.map(\.frame)
 
         // Track if this is the first time showing overlay (welcome message)
         let isFirstAppearance = !hasShownOverlayBefore

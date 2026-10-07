@@ -124,6 +124,25 @@ final class SkillLibraryStore: ObservableObject {
         }
     }
 
+    // MARK: - Removing
+
+    /// Deletes a library skill: its activation, its `active/` link and its folder.
+    func removeSkill(_ id: String) {
+        let ids = readActivations().filter { $0 != id }
+        do {
+            try writeActivations(ids)
+            try? FileManager.default.removeItem(at: activeDirectory.appendingPathComponent(id))
+            let folder = libraryDirectory.appendingPathComponent(id, isDirectory: true)
+            if FileManager.default.fileExists(atPath: folder.path) {
+                try FileManager.default.removeItem(at: folder)
+            }
+            reload()
+        } catch {
+            lastError = "Could not remove \(id): \(error.localizedDescription)"
+            reload(clearingErrors: false)
+        }
+    }
+
     // MARK: - Creating
 
     /// Writes a SKILL.md into the library under a unique id derived from its name and activates it.

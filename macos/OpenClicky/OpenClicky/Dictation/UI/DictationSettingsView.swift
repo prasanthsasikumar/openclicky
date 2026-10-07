@@ -284,6 +284,13 @@ private struct ShortcutsSettingsPage: View {
                     PaperRow(title: "type to openclicky", detail: "a one-line composer in the notch.") { Keycap(text: "tap ⌃ twice") }
                     PaperDivider()
                     PaperRow(title: "hands-free", detail: "always-on listening with realtime voice.") { Keycap(text: "tap \(settings.dictationKey.keycapLabel) + ⌃ twice") }
+                    PaperDivider()
+                    PaperRow(title: "the pointer shows", detail: "while the mouse moves: it slips away a few seconds after the mouse rests, like the cursor over a video. after a shake: it stays out of sight until you shake the mouse.") {
+                        Picker("", selection: Binding(get: { companionManager.pointerPresence }, set: { companionManager.setPointerPresence($0) })) {
+                            ForEach(PointerPresence.allCases) { presence in Text(presence.label).tag(presence) }
+                        }
+                        .labelsHidden().frame(width: 170)
+                    }
                 }
             }
         }
