@@ -44,6 +44,17 @@ struct TakeStoreTests {
         #expect(try store.fetch(id: take.id)?.formattedText == "Hello there.")
     }
 
+    @Test func revisedTakesAreListedOnce() throws {
+        let store = try makeStore()
+        let edited = TakeRecord(rawText: "hello", formattedText: "Hello.")
+        let untouched = TakeRecord(rawText: "bye", formattedText: "Bye.")
+        try store.insert(edited)
+        try store.insert(untouched)
+        try store.revise(takeID: edited.id, newText: "Hello there.", editor: "history")
+        try store.revise(takeID: edited.id, newText: "Hello there!", editor: "history")
+        #expect(try store.revisedTakeIDs() == [edited.id])
+    }
+
     @Test func statsCountWordsTodayAndTheBusiestApp() throws {
         let store = try makeStore()
         try store.insert(TakeRecord(rawText: "", formattedText: "one two three", appBundleID: "com.google.Chrome", appName: "Google Chrome"))

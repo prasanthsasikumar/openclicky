@@ -113,8 +113,8 @@ struct PaperCard<Content: View>: View {
     var body: some View {
         content
             .padding(padding)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Paper.card))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Paper.hairline, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: Paper.Metric.cardRadius, style: .continuous).fill(Paper.card))
+            .overlay(RoundedRectangle(cornerRadius: Paper.Metric.cardRadius, style: .continuous).strokeBorder(Paper.hairline, lineWidth: 1))
     }
 }
 
@@ -126,20 +126,20 @@ struct PaperRow<Trailing: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(Paper.body(13, weight: .medium)).foregroundStyle(Paper.ink)
-                if let detail { Text(detail).font(Paper.body(11)).foregroundStyle(Paper.inkSecondary).fixedSize(horizontal: false, vertical: true) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Paper.rowTitle).foregroundStyle(Paper.ink)
+                if let detail { Text(detail).font(Paper.caption).foregroundStyle(Paper.inkSecondary).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 12)
             trailing
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 13)
+        .padding(.horizontal, Paper.Metric.rowHorizontal)
+        .padding(.vertical, Paper.Metric.rowVertical)
     }
 }
 
 struct PaperDivider: View {
-    var body: some View { Rectangle().fill(Paper.hairline).frame(height: 1).padding(.horizontal, 18) }
+    var body: some View { Rectangle().fill(Paper.lineSoft).frame(height: 1) }
 }
 
 /// The small section label above a group of rows ("appearance", "behavior").
@@ -157,23 +157,43 @@ struct PaperToggle: View {
     }
 }
 
-/// An outlined pill button ("reset", "replay", "copy").
+/// An outlined button, 28 pt high ("reset", "replay", "dock it"). `quiet` drops the outline and
+/// fill for a secondary action beside it ("what can it do?"); `compact` is the small in-row
+/// version ("copy" on a take).
 struct PaperPillButtonStyle: ButtonStyle {
     var prominent = false
     var destructive = false
+    var quiet = false
+    var compact = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(Paper.body(12, weight: .medium))
-            .foregroundStyle(destructive ? Paper.danger : (prominent ? Color.white : Paper.ink))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(prominent ? Paper.accent : Paper.cardRaised.opacity(configuration.isPressed ? 0.6 : 1)))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(destructive ? Paper.danger.opacity(0.5) : (prominent ? Color.clear : Paper.hairline)))
+        let shape = RoundedRectangle(cornerRadius: compact ? 6 : Paper.Metric.controlRadius, style: .continuous)
+        return configuration.label
+            .font(compact ? Paper.caption : Paper.body(13, weight: .medium))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, compact ? 8 : 12)
+            .frame(minHeight: compact ? 22 : Paper.Metric.buttonHeight)
+            .background(shape.fill(fill.opacity(configuration.isPressed ? 0.7 : 1)))
+            .overlay(shape.strokeBorder(stroke))
             .opacity(configuration.isPressed ? 0.8 : 1)
+            .contentShape(shape)
             .pointerCursor()
+    }
+
+    private var foreground: Color {
+        if destructive { return Paper.danger }
+        if prominent { return Color.white }
+        return quiet || compact ? Paper.inkSecondary : Paper.ink
+    }
+
+    private var fill: Color {
+        if prominent { return Paper.accentFill }
+        return quiet ? Color.clear : Paper.cardRaised
+    }
+
+    private var stroke: Color {
+        if destructive { return Paper.danger.opacity(0.5) }
+        return prominent || quiet ? Color.clear : Paper.hairline
     }
 }
 
@@ -182,12 +202,12 @@ struct Keycap: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(Paper.mono(10))
+            .font(Paper.key)
             .foregroundStyle(Paper.inkSecondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 4).fill(Paper.cardRaised))
-            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Paper.hairline))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: Paper.Metric.keyRadius).fill(Paper.cardRaised))
+            .overlay(RoundedRectangle(cornerRadius: Paper.Metric.keyRadius).strokeBorder(Paper.hairline))
     }
 }
 
@@ -205,7 +225,7 @@ struct PaperSegments<Option: Hashable>: View {
                         .foregroundStyle(selection == option ? Color.white : Paper.ink)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(selection == option ? Paper.accent : Color.clear))
+                        .background(RoundedRectangle(cornerRadius: Paper.Metric.controlRadius, style: .continuous).fill(selection == option ? Paper.accentFill : Color.clear))
                 }
                 .buttonStyle(.plain)
                 .pointerCursor()

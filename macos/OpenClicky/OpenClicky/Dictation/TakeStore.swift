@@ -218,6 +218,19 @@ final class TakeStore: @unchecked Sendable {
         }
     }
 
+    /// The takes whose text was changed after they were written (history shows them as "edited").
+    func revisedTakeIDs() throws -> Set<UUID> {
+        try queue.sync {
+            let statement = try prepare("SELECT DISTINCT take_id FROM take_revisions")
+            defer { sqlite3_finalize(statement) }
+            var ids: Set<UUID> = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let text = Self.text(statement, 0), let id = UUID(uuidString: text) { ids.insert(id) }
+            }
+            return ids
+        }
+    }
+
     /// The apps takes have gone into, most used first.
     func appsUsed() throws -> [(bundleID: String, name: String?, count: Int)] {
         try queue.sync {
