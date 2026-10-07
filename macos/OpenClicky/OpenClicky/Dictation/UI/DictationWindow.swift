@@ -2,8 +2,8 @@
 //  DictationWindow.swift
 //  OpenClicky
 //
-//  The main window: a rail on the left (record, history; your space: dictionary, shortcuts,
-//  styles; account, incognito and settings at the foot) and a page on the right. One window,
+//  The main window: a rail on the left (record, history; how it writes: dictionary, shortcuts,
+//  styles; incognito, settings and the account at the foot) and a page on the right. One window,
 //  reopened from the menu bar, the orb's menu or the Dock, remembering its frame.
 //
 
@@ -155,16 +155,19 @@ struct DictationRailView: View {
     @ObservedObject var model: DictationWindowModel
     let companionManager: CompanionManager
     @ObservedObject private var settings: DictationSettings
+    @ObservedObject private var spaceStore: DictationSpaceStore
     @ObservedObject private var authSession = OpenClickyAuthSession.shared
+    @State private var historyCount = 0
 
     init(model: DictationWindowModel, companionManager: CompanionManager) {
         self.model = model
         self.companionManager = companionManager
         self.settings = companionManager.dictationSettings
+        self.spaceStore = companionManager.dictationSpaceStore
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack {
                 OpenClickyWordmark()
                 Spacer()
@@ -174,85 +177,137 @@ struct DictationRailView: View {
                 .buttonStyle(.plain).pointerCursor().help("Toggle Sidebar")
             }
             .padding(.top, 44)
-            .padding(.horizontal, 22)
-            .padding(.bottom, 14)
-            Rectangle().fill(Paper.hairline).frame(height: 1).padding(.horizontal, 22)
-
-            VStack(alignment: .leading, spacing: 2) {
-                railButton(.record)
-                railButton(.history)
-                Text("your space")
-                    .font(Paper.mono(10)).foregroundStyle(Paper.inkTertiary)
-                    .padding(.top, 18).padding(.bottom, 8).padding(.leading, 22)
-                    .background(alignment: .bottomLeading) {
-                        RoundedRectangle(cornerRadius: 2).fill(Paper.highlighter).frame(width: 34, height: 5).padding(.leading, 22).padding(.bottom, 6)
-                    }
-                railButton(.dictionary)
-                railButton(.shortcuts)
-                railButton(.styles)
-            }
-            .padding(.top, 14)
             .padding(.horizontal, 10)
+            .padding(.bottom, 18)
+
+            railButton(.record) { Keycap(text: settings.dictationKey.keycapLabel) }
+            railButton(.history) { railCount(historyCount) }
+            Text("how it writes")
+                .font(Paper.micro).foregroundStyle(Paper.inkTertiary)
+                .padding(.top, 16).padding(.bottom, 4).padding(.leading, 10)
+                .accessibilityAddTraits(.isHeader)
+            railButton(.dictionary) { railCount(spaceStore.space.dictionary.count) }
+            railButton(.shortcuts) { railCount(spaceStore.space.shortcuts.count) }
+            railButton(.styles) { railCount(spaceStore.space.styles.count) }
 
             Spacer()
 
-            Rectangle().fill(Paper.hairline).frame(height: 1).padding(.horizontal, 22)
-            HStack(spacing: 8) {
-                Button(action: { model.section = .settings; model.settingsPage = .account }) {
-                    HStack(spacing: 8) {
-                        ZStack {
-                            Circle().fill(Paper.accentSoft)
-                            Text(accountInitial).font(Paper.body(12, weight: .semibold)).foregroundStyle(Paper.ink)
-                        }
-                        .frame(width: 30, height: 30)
-                        .overlay(Circle().strokeBorder(Paper.accent.opacity(0.4)))
-                        Text(accountName).font(Paper.body(12, weight: .medium)).foregroundStyle(Paper.ink).lineLimit(1)
-                    }
-                }
-                .buttonStyle(.plain).pointerCursor()
-                Spacer()
-                Button(action: { settings.incognito.toggle() }) {
-                    Image(systemName: settings.incognito ? "eye.slash" : "eye")
-                        .font(.system(size: 13)).foregroundStyle(settings.incognito ? Paper.accent : Paper.inkSecondary)
-                }
-                .buttonStyle(.plain).pointerCursor()
-                .help(settings.incognito ? "incognito: on — takes paste but are not saved" : "incognito: off")
-                Button(action: { model.section = .settings }) {
-                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(model.section == .settings ? Paper.accent : Paper.inkSecondary)
-                }
-                .buttonStyle(.plain).pointerCursor().help("settings")
+            Toggle(isOn: $settings.incognito) {
+                Text("incognito").font(Paper.body(13)).foregroundStyle(Paper.ink)
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 18)
+            .toggleStyle(RailSwitchStyle())
+            .help(settings.incognito ? "incognito is on — takes paste but are not saved" : "incognito is off — takes are saved to history on this mac")
+
+            // ⌘, reaches this button while the window is key: AppKit offers a key equivalent to the
+            // key window before the menu bar, whose Settings item would open the app's empty scene.
+            Button(action: { model.section = .settings }) {
+                HStack {
+                    Text("settings").font(Paper.body(13)).foregroundStyle(Paper.ink)
+                    Spacer()
+                    Text("⌘ ,").font(Paper.micro).foregroundStyle(Paper.inkTertiary)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: Paper.Metric.railItemHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).pointerCursor()
+            .keyboardShortcut(",", modifiers: .command)
+
+            Button(action: { model.section = .settings; model.settingsPage = .account }) {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle().fill(Paper.accentSoft)
+                        Text(accountInitial).font(Paper.body(13, weight: .semibold)).foregroundStyle(Paper.ink)
+                    }
+                    .frame(width: 30, height: 30)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(accountName).font(Paper.rowTitle).foregroundStyle(Paper.ink).lineLimit(1).truncationMode(.tail)
+                        Text(accountState).font(Paper.micro).foregroundStyle(Paper.inkTertiary).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(10)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).pointerCursor()
+            .help("account")
+            .overlay(alignment: .top) { Rectangle().fill(Paper.hairline).frame(height: 1) }
+            .padding(.top, 8)
         }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
         .frame(maxHeight: .infinity)
         .background(Paper.rail)
+        .onAppear(perform: reloadHistoryCount)
+        .onReceive(companionManager.dictationTakeController.$historyVersion) { _ in reloadHistoryCount() }
     }
 
+    /// "Prasanth S." — the first name and the initial of the last, or the signed-in address's name.
     private var accountName: String {
-        authSession.accountEmail.map { String($0.split(separator: "@").first ?? "") } ?? NSFullUserName()
+        if let email = authSession.accountEmail { return String(email.split(separator: "@").first ?? "") }
+        let nameParts = NSFullUserName().split(separator: " ")
+        guard let firstName = nameParts.first else { return "you" }
+        if nameParts.count > 1, let lastInitial = nameParts.last?.first { return "\(firstName) \(lastInitial)." }
+        return String(firstName)
+    }
+
+    private var accountState: String {
+        authSession.accountEmail == nil ? "personal · no account" : "signed in · openclicky account"
     }
 
     private var accountInitial: String {
         String(accountName.prefix(1)).lowercased()
     }
 
-    private func railButton(_ section: DictationSection) -> some View {
+    private func reloadHistoryCount() {
+        historyCount = (try? companionManager.dictationTakeStore?.stats().allTimeTakes) ?? 0
+    }
+
+    private func railCount(_ count: Int) -> some View {
+        Text("\(count)").font(Paper.caption).foregroundStyle(Paper.inkTertiary).monospacedDigit()
+    }
+
+    private func railButton<Trailing: View>(_ section: DictationSection, @ViewBuilder trailing: () -> Trailing) -> some View {
         let selected = model.section == section
         return Button(action: { model.section = section }) {
-            HStack(spacing: 10) {
-                Image(systemName: section.symbol).font(.system(size: 12, weight: .medium)).frame(width: 16)
-                Text(section.title).font(Paper.body(15, weight: selected ? .semibold : .regular))
+            HStack(spacing: 8) {
+                Text(section.title).font(Paper.body(13, weight: selected ? .semibold : .regular)).foregroundStyle(Paper.ink)
                 Spacer()
+                trailing()
             }
-            .foregroundStyle(selected ? Paper.ink : Paper.inkSecondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(selected ? Paper.selection : Color.clear))
+            .padding(.horizontal, 10)
+            .frame(height: Paper.Metric.railItemHeight)
+            .background(RoundedRectangle(cornerRadius: Paper.Metric.railItemRadius, style: .continuous).fill(selected ? Paper.selection : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .pointerCursor()
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A labelled rail row with a small switch on the right ("incognito").
+private struct RailSwitchStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button(action: { configuration.isOn.toggle() }) {
+            HStack {
+                configuration.label
+                Spacer()
+                Capsule()
+                    .fill(configuration.isOn ? Paper.success : Paper.hairline)
+                    .frame(width: 28, height: 16)
+                    .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                        Circle().fill(Color.white).frame(width: 12, height: 12).padding(2)
+                    }
+                    .animation(.easeOut(duration: 0.15), value: configuration.isOn)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: Paper.Metric.railItemHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .accessibilityValue(configuration.isOn ? "on" : "off")
     }
 }
 
@@ -270,10 +325,10 @@ struct PageScaffold<Content: View>: View {
                     Spacer()
                     if let trailing { trailing }
                 }
-                .padding(.top, 44)
+                .padding(.top, Paper.Metric.windowTop)
                 content
             }
-            .padding(.horizontal, 44)
+            .padding(.horizontal, Paper.Metric.windowSides)
             .padding(.bottom, 40)
             .frame(maxWidth: 900, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)

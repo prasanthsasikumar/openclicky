@@ -2,8 +2,10 @@
 //  HistoryPageView.swift
 //  OpenClicky
 //
-//  Every take, newest first, grouped by day, searchable; a row opens the take with its raw words,
-//  the written text (editable), where it went, and copy / paste / delete.
+//  Every take, newest first, grouped by day. Typing filters the takes; enter asks a model across
+//  them, and the answer names the takes it was drawn from. A row selects with a click (edit · copy),
+//  shows "edited" once its text was changed, and a take that failed offers retry · delete. Edit
+//  opens the take with its raw words, the written text, where it went, and copy / paste / delete.
 //
 
 import AppKit
@@ -20,9 +22,13 @@ struct HistoryPageView: View {
     @State private var modeFilter: TakeRecord.Mode?
     @State private var appFilter: String?
     @State private var appsUsed: [(bundleID: String, name: String?, count: Int)] = []
-    @State private var selected: TakeRecord?
+    @State private var revisedTakeIDs: Set<UUID> = []
+    @State private var selectedTakeID: UUID?
+    @State private var inspectedTake: TakeRecord?
     @State private var answer: String?
+    @State private var answerSources: [TakeRecord] = []
     @State private var isAsking = false
+    @FocusState private var isQueryFocused: Bool
 
     init(model: DictationWindowModel, companionManager: CompanionManager) {
         self.model = model
@@ -34,88 +40,46 @@ struct HistoryPageView: View {
     var body: some View {
         PageScaffold(title: "history") {
             HStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Paper.inkTertiary)
-                    TextField("search your words — try: the offsite flights", text: $query)
-                        .textFieldStyle(.plain).font(Paper.body(13)).foregroundStyle(Paper.ink)
-                        .onSubmit(ask)
-                    Text("press enter to ask").font(Paper.mono(9)).foregroundStyle(Paper.inkTertiary)
-                    if !query.isEmpty {
-                        Button(action: { query = ""; reload() }) { Image(systemName: "xmark.circle.fill").foregroundStyle(Paper.inkTertiary) }.buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Paper.cardRaised))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Paper.hairline))
-                Menu {
-                    Button("everything") { modeFilter = nil; appFilter = nil; reload() }
-                    Button("dictations") { modeFilter = .dictate; reload() }
-                    Button("hey clicky edits") { modeFilter = .edit; reload() }
-                    if settings.clipboardHistoryEnabled { Button("clipboard") { modeFilter = .clipboard; reload() } }
-                    if !appsUsed.isEmpty {
-                        Divider()
-                        Menu("by app") {
-                            Button("any app") { appFilter = nil; reload() }
-                            ForEach(appsUsed, id: \.bundleID) { app in
-                                Button(app.name ?? app.bundleID) { appFilter = app.bundleID; reload() }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "line.3.horizontal.decrease").font(.system(size: 11))
-                        Text(filterLabel).font(Paper.body(12, weight: .medium))
-                    }
-                    .foregroundStyle(Paper.ink)
-                }
-                .menuStyle(.borderlessButton).fixedSize()
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Paper.cardRaised))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Paper.hairline))
+                askField
+                filterMenu
             }
             .onChange(of: query) { _, _ in reload() }
 
-            if isAsking || answer != nil {
-                PaperCard {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "sparkles").foregroundStyle(Paper.accent).padding(.top, 2)
-                        if isAsking {
-                            Text("asking across your takes…").font(Paper.body(13)).foregroundStyle(Paper.inkSecondary)
-                        } else if let answer {
-                            Text(answer).font(Paper.body(13)).foregroundStyle(Paper.ink).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        Button(action: { self.answer = nil }) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Paper.inkTertiary) }.buttonStyle(.plain)
-                    }
-                    .padding(16)
-                }
-            }
+            if isAsking || answer != nil { answerCard }
 
             if takes.isEmpty {
                 VStack(spacing: 10) {
                     OrbMarkShape().fill(Paper.hairline).frame(width: 48, height: 48)
-                    Text(query.isEmpty ? "your dictations will land here." : "no matching history").font(Paper.body(13)).foregroundStyle(Paper.inkTertiary)
+                    Text(query.isEmpty ? "your dictations will land here." : "no matching takes — press enter to ask anyway.").font(Paper.body(13)).foregroundStyle(Paper.inkTertiary)
                 }
                 .frame(maxWidth: .infinity).padding(.top, 80)
             }
 
             ForEach(groupedByDay, id: \.title) { group in
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 10) {
-                        Text(group.title).font(Paper.body(12, weight: .medium)).foregroundStyle(Paper.ink)
-                        Rectangle().fill(Paper.success.opacity(0.5)).frame(height: 1)
-                        Text("\(group.takes.count)").font(Paper.body(11)).foregroundStyle(Paper.inkSecondary)
+                    HStack(spacing: 12) {
+                        Text(group.title).font(Paper.body(13, weight: .semibold)).foregroundStyle(Paper.ink)
+                        Rectangle().fill(Paper.hairline).frame(height: 1)
+                        Text(group.takes.count == 1 ? "1 take" : "\(group.takes.count) takes").font(Paper.caption).foregroundStyle(Paper.inkSecondary)
                     }
-                    .padding(.bottom, 6)
+                    .padding(.vertical, 6)
                     ForEach(group.takes) { take in
-                        HistoryRow(take: take, canRetry: controller.canRetry(takeID: take.id), onOpen: { selected = take }, onCopy: { copy(take) },
-                                   onRetry: { Task { await controller.retry(takeID: take.id) } })
+                        HistoryRow(
+                            take: take,
+                            isSelected: selectedTakeID == take.id,
+                            wasEdited: revisedTakeIDs.contains(take.id),
+                            canRetry: controller.canRetry(takeID: take.id),
+                            onSelect: { selectedTakeID = selectedTakeID == take.id ? nil : take.id },
+                            onOpen: { inspectedTake = take },
+                            onCopy: { copy(take) },
+                            onRetry: { Task { await controller.retry(takeID: take.id) } },
+                            onDelete: { delete(take) })
                     }
                 }
             }
         }
-        .sheet(item: $selected) { take in
-            TakeInspectorView(take: take, companionManager: companionManager, onClose: { selected = nil; reload() })
+        .sheet(item: $inspectedTake) { take in
+            TakeInspectorView(take: take, companionManager: companionManager, onClose: { inspectedTake = nil; reload() })
         }
         .onAppear {
             if let pending = model.pendingHistorySearch { query = pending; model.pendingHistorySearch = nil }
@@ -123,6 +87,138 @@ struct HistoryPageView: View {
         }
         .onReceive(controller.$historyVersion) { _ in reload() }
     }
+
+    // MARK: asking
+
+    /// One field for both: typing filters the takes below, enter asks across them.
+    private var askField: some View {
+        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        return HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Paper.inkTertiary)
+            TextField("what did i say about…?", text: $query)
+                .textFieldStyle(.plain).font(Paper.body(14)).foregroundStyle(Paper.ink)
+                .focused($isQueryFocused)
+                .onSubmit(ask)
+            if !query.isEmpty {
+                Button(action: { query = ""; answer = nil; answerSources = []; reload() }) {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Paper.inkTertiary)
+                }
+                .buttonStyle(.plain).pointerCursor().help("clear")
+            }
+            Button(action: ask) {
+                Text("↵ ask").font(Paper.body(12, weight: .semibold))
+                    .foregroundStyle(query.isEmpty ? Paper.inkTertiary : Color.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(query.isEmpty ? Paper.lineSoft : Paper.accentFill))
+            }
+            .buttonStyle(.plain).pointerCursor()
+            .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || isAsking)
+            .help("ask a model across your takes")
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .background(shape.fill(Paper.cardRaised))
+        .overlay(shape.strokeBorder(isQueryFocused ? Paper.accent : Paper.hairline, lineWidth: isQueryFocused ? 1.5 : 1))
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            Button("all apps") { appFilter = nil; reload() }
+            ForEach(appsUsed, id: \.bundleID) { app in
+                Button(appName(app)) { appFilter = app.bundleID; reload() }
+            }
+            Divider()
+            Button("every kind of take") { modeFilter = nil; reload() }
+            Button("dictations") { modeFilter = .dictate; reload() }
+            Button("hey clicky edits") { modeFilter = .edit; reload() }
+            if settings.clipboardHistoryEnabled { Button("clipboard") { modeFilter = .clipboard; reload() } }
+        } label: {
+            Text(filterLabel + " ⌄").font(Paper.body(13)).foregroundStyle(Paper.ink)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .padding(.horizontal, 14)
+        .frame(height: 38)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Paper.cardRaised))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Paper.hairline))
+        .pointerCursor()
+    }
+
+    private var answerCard: some View {
+        PaperCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(answerCaption).font(Paper.caption).foregroundStyle(Paper.inkSecondary)
+                    Spacer()
+                    Button(action: { answer = nil; answerSources = [] }) {
+                        Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Paper.inkTertiary)
+                    }
+                    .buttonStyle(.plain).pointerCursor().help("close the answer")
+                }
+                if isAsking {
+                    Text("asking across your takes…").font(Paper.body(15)).foregroundStyle(Paper.inkSecondary)
+                } else if let answer {
+                    Text(answer).font(Paper.body(15)).foregroundStyle(Paper.ink).lineSpacing(3)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 720, alignment: .leading)
+                }
+                if !answerSources.isEmpty && !isAsking {
+                    FlowLayout(spacing: 6) {
+                        ForEach(answerSources) { source in
+                            Button(action: { reveal(source) }) {
+                                Text(sourceChipLabel(source)).font(Paper.caption).foregroundStyle(Paper.ink)
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Paper.lineSoft))
+                            }
+                            .buttonStyle(.plain).pointerCursor()
+                            .help(source.displayText)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 18).padding(.vertical, 16)
+        }
+    }
+
+    private var answerCaption: String {
+        if isAsking { return "asking a model" }
+        if answerSources.isEmpty { return "answer from your latest takes" }
+        return "answer from \(answerSources.count) \(answerSources.count == 1 ? "take" : "takes") that match"
+    }
+
+    private func sourceChipLabel(_ take: TakeRecord) -> String {
+        let calendar = Calendar.current
+        let when = calendar.isDateInToday(take.createdAt) || calendar.isDateInYesterday(take.createdAt)
+            ? HistoryRow.time.string(from: take.createdAt)
+            : take.createdAt.formatted(.dateTime.day().month(.abbreviated)) + " " + HistoryRow.time.string(from: take.createdAt)
+        let app = take.appName ?? take.appBundleID.flatMap { AppIconCache.shared.name(for: $0) }
+        return ([when] + [app].compactMap { $0 }).joined(separator: " · ").lowercased()
+    }
+
+    /// A source chip selects its take in the list (clearing the filters that would hide it).
+    private func reveal(_ take: TakeRecord) {
+        if !takes.contains(where: { $0.id == take.id }) {
+            modeFilter = nil
+            appFilter = nil
+            query = ""
+            reload()
+        }
+        selectedTakeID = take.id
+    }
+
+    /// Enter in the field: a question goes to the model over the matching takes.
+    private func ask() {
+        let question = query.trimmingCharacters(in: .whitespaces)
+        guard !question.isEmpty, !isAsking else { return }
+        isAsking = true
+        answerSources = Array(controller.historyMatches(for: question).prefix(8))
+        Task {
+            let reply = await controller.askHistory(question)
+            answer = reply
+            isAsking = false
+        }
+    }
+
+    // MARK: the list
 
     private struct DayGroup { let title: String; let takes: [TakeRecord] }
 
@@ -134,7 +230,7 @@ struct HistoryPageView: View {
         var byDay: [Date: [TakeRecord]] = [:]
         for take in takes { byDay[calendar.startOfDay(for: take.createdAt), default: []].append(take) }
         for day in byDay.keys.sorted(by: >) {
-            let title = calendar.isDateInToday(day) ? "Today" : calendar.isDateInYesterday(day) ? "Yesterday" : formatter.string(from: day)
+            let title = calendar.isDateInToday(day) ? "today" : calendar.isDateInYesterday(day) ? "yesterday" : formatter.string(from: day).lowercased()
             groups.append(DayGroup(title: title, takes: byDay[day] ?? []))
         }
         return groups
@@ -142,9 +238,13 @@ struct HistoryPageView: View {
 
     private var filterLabel: String {
         var parts: [String] = []
+        if let appFilter { parts.append(appsUsed.first { $0.bundleID == appFilter }.map(appName) ?? appFilter) }
         if let modeFilter { parts.append(filterName(modeFilter)) }
-        if let appFilter { parts.append(appsUsed.first { $0.bundleID == appFilter }?.name ?? appFilter) }
-        return parts.isEmpty ? "filter" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "all apps" : parts.joined(separator: " · ")
+    }
+
+    private func appName(_ app: (bundleID: String, name: String?, count: Int)) -> String {
+        (app.name ?? AppIconCache.shared.name(for: app.bundleID) ?? app.bundleID).lowercased()
     }
 
     private func filterName(_ mode: TakeRecord.Mode) -> String {
@@ -155,21 +255,10 @@ struct HistoryPageView: View {
         }
     }
 
-    /// Enter in the search box: a question goes to the model over the matching takes.
-    private func ask() {
-        let question = query.trimmingCharacters(in: .whitespaces)
-        guard !question.isEmpty else { return }
-        isAsking = true
-        Task {
-            let reply = await companionManager.dictationTakeController.askHistory(question)
-            answer = reply
-            isAsking = false
-        }
-    }
-
     private func reload() {
         guard let store = companionManager.dictationTakeStore else { return }
         appsUsed = (try? store.appsUsed()) ?? []
+        revisedTakeIDs = (try? store.revisedTakeIDs()) ?? []
         var rows = (try? store.recent(limit: 500, query: query.isEmpty ? nil : query, mode: modeFilter, appBundleID: appFilter)) ?? []
         if !settings.clipboardHistoryEnabled, modeFilter == nil { rows = rows.filter { $0.mode != .clipboard } }
         takes = rows
@@ -179,16 +268,27 @@ struct HistoryPageView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(take.displayText, forType: .string)
     }
+
+    private func delete(_ take: TakeRecord) {
+        try? companionManager.dictationTakeStore?.delete(takeID: take.id)
+        if selectedTakeID == take.id { selectedTakeID = nil }
+        controller.historyDidChange()
+    }
 }
 
 private struct HistoryRow: View {
     let take: TakeRecord
+    var isSelected = false
+    var wasEdited = false
     var canRetry = false
+    let onSelect: () -> Void
     let onOpen: () -> Void
     let onCopy: () -> Void
     var onRetry: () -> Void = {}
+    var onDelete: () -> Void = {}
+    @State private var isHovered = false
 
-    private static let time: DateFormatter = {
+    static let time: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mm a"
         return formatter
@@ -201,26 +301,94 @@ private struct HistoryRow: View {
             } else {
                 AppIconView(bundleID: take.appBundleID, size: 18)
             }
-            Button(action: onOpen) {
-                Text(take.displayText.replacingOccurrences(of: "\n", with: " "))
-                    .font(Paper.body(14)).foregroundStyle(Paper.ink).lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            Text(take.displayText.replacingOccurrences(of: "\n", with: " "))
+                .font(Paper.body(13)).foregroundStyle(Paper.ink).lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if take.pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Paper.accent).help("pinned") }
+            if take.mode == .edit { Text("hey clicky").font(Paper.caption).foregroundStyle(Paper.inkTertiary) }
+            if take.status == .failed {
+                Text(failureLine).font(Paper.caption).foregroundStyle(Paper.danger).lineLimit(1)
+                if canRetry {
+                    Button("retry", action: onRetry).buttonStyle(.plain).font(Paper.caption).foregroundStyle(Paper.inkSecondary).pointerCursor()
+                        .help("hear the saved recording again")
+                    Text("·").font(Paper.caption).foregroundStyle(Paper.inkSecondary).accessibilityHidden(true)
+                }
+                Button("delete", action: onDelete).buttonStyle(.plain).font(Paper.caption).foregroundStyle(Paper.inkSecondary).pointerCursor()
+                    .help("delete this take")
+            } else if isSelected {
+                Button("edit", action: onOpen).buttonStyle(.plain).font(Paper.caption).foregroundStyle(Paper.inkSecondary).pointerCursor()
+                    .help("open the take to edit, pin, paste again or delete it")
+                Text("·").font(Paper.caption).foregroundStyle(Paper.inkSecondary).accessibilityHidden(true)
+                Button("copy", action: onCopy).buttonStyle(.plain).font(Paper.caption).foregroundStyle(Paper.inkSecondary).pointerCursor()
+                    .help("copy take")
+            } else if wasEdited {
+                Text("edited").font(Paper.caption).foregroundStyle(Paper.inkSecondary)
             }
-            .buttonStyle(.plain).pointerCursor()
-            .help("open \(take.mode == .edit ? "hey clicky edit" : "dictation") from \(take.appName ?? "unknown app")")
-            if take.pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Paper.accent) }
-            if take.status == .failed { Text("couldn't finish").font(Paper.mono(10)).foregroundStyle(Paper.danger) }
-            if take.status == .failed, canRetry {
-                Button("retry", action: onRetry).buttonStyle(PaperPillButtonStyle()).help("hear the saved recording again")
-            }
-            if take.mode == .edit { Text("edit").font(Paper.mono(10)).foregroundStyle(Paper.inkTertiary) }
-            Text(Self.time.string(from: take.createdAt).lowercased()).font(Paper.body(11)).foregroundStyle(Paper.inkSecondary)
-            Button(action: onCopy) { Image(systemName: "doc.on.doc").font(.system(size: 11)).foregroundStyle(Paper.inkTertiary) }
-                .buttonStyle(.plain).pointerCursor().help("copy take")
+            Text(Self.time.string(from: take.createdAt).lowercased())
+                .font(Paper.caption).foregroundStyle(Paper.inkTertiary)
+                .frame(width: 56, alignment: .trailing)
         }
-        .padding(.vertical, 12)
-        .paperRowRule()
+        .padding(.horizontal, 10)
+        .frame(height: 40)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isSelected ? Paper.lineSoft : (isHovered ? Paper.lineSoft.opacity(0.5) : Color.clear)))
+        .overlay(alignment: .bottom) { Rectangle().fill(Paper.hairline).frame(height: 1).opacity(isSelected ? 0 : 1) }
+        .padding(.horizontal, -10)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: onOpen)
+        .onTapGesture(perform: onSelect)
+        .onHover { isHovered = $0 }
+        .pointerCursor()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(take.displayText.isEmpty ? failureLine : take.displayText)
+        .accessibilityHint("\(take.appName ?? "unknown app"), \(Self.time.string(from: take.createdAt))")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .help("\(take.mode == .edit ? "hey clicky edit" : "dictation") into \(take.appName ?? "unknown app") — double-click to open")
+    }
+
+    private var failureLine: String {
+        guard let reason = take.failureReason?.trimmingCharacters(in: .whitespacesAndNewlines), !reason.isEmpty else { return "couldn't finish" }
+        return "couldn't finish · \(reason.lowercased())"
+    }
+}
+
+/// Lays chips out in rows, wrapping to the next row when one does not fit.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maximumWidth = proposal.width ?? .infinity
+        var rowWidth: CGFloat = 0, rowHeight: CGFloat = 0, totalHeight: CGFloat = 0, widestRow: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if rowWidth > 0 && rowWidth + spacing + size.width > maximumWidth {
+                totalHeight += rowHeight + spacing
+                widestRow = max(widestRow, rowWidth)
+                rowWidth = 0
+                rowHeight = 0
+            }
+            rowWidth += (rowWidth > 0 ? spacing : 0) + size.width
+            rowHeight = max(rowHeight, size.height)
+        }
+        widestRow = max(widestRow, rowWidth)
+        return CGSize(width: widestRow, height: totalHeight + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var origin = bounds.origin
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if origin.x > bounds.minX && origin.x + size.width > bounds.maxX {
+                origin.x = bounds.minX
+                origin.y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: origin, proposal: ProposedViewSize(size))
+            origin.x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }
 

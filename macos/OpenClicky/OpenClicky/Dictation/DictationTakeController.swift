@@ -643,13 +643,20 @@ final class DictationTakeController: ObservableObject {
 
     // MARK: asking history
 
+    /// The takes a history question is answered from: those containing every longer word of it
+    /// (empty when none do, and the model is then given the latest takes instead).
+    func historyMatches(for question: String) -> [TakeRecord] {
+        let words = question.split(whereSeparator: { $0.isWhitespace }).map(String.init).filter { $0.count > 3 }
+        guard !words.isEmpty else { return [] }
+        return (try? takeStore?.recent(limit: 60, query: words.joined(separator: " "))) ?? []
+    }
+
     /// Asks the configured model a question over the takes that match it (history → "press enter to ask").
     func askHistory(_ question: String) async -> String {
         guard let polisher = host.makePolisher() else {
             return "asking needs a model: add a sarvam key or sign in under settings."
         }
-        let words = question.split(whereSeparator: { $0.isWhitespace }).map(String.init).filter { $0.count > 3 }
-        var candidates = (try? takeStore?.recent(limit: 60, query: words.joined(separator: " "))) ?? []
+        var candidates = historyMatches(for: question)
         if candidates.isEmpty { candidates = (try? takeStore?.recent(limit: 60)) ?? [] }
         guard !candidates.isEmpty else { return "nothing in history to ask about yet." }
         let formatter = DateFormatter()
