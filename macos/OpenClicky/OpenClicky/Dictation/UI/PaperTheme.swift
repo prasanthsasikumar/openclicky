@@ -12,22 +12,63 @@ import Combine
 import SwiftUI
 
 enum Paper {
-    // Colours adapt to the window's appearance through NSColor's dynamic providers.
-    static let background = Color(nsColor: dynamic(light: NSColor(red: 0.965, green: 0.953, blue: 0.918, alpha: 1), dark: NSColor(red: 0.11, green: 0.11, blue: 0.10, alpha: 1)))
-    static let rail = Color(nsColor: dynamic(light: NSColor(red: 0.945, green: 0.933, blue: 0.898, alpha: 1), dark: NSColor(red: 0.085, green: 0.085, blue: 0.08, alpha: 1)))
-    static let card = Color(nsColor: dynamic(light: NSColor(red: 0.985, green: 0.978, blue: 0.955, alpha: 1), dark: NSColor(red: 0.15, green: 0.15, blue: 0.14, alpha: 1)))
-    static let cardRaised = Color(nsColor: dynamic(light: NSColor.white, dark: NSColor(red: 0.19, green: 0.19, blue: 0.18, alpha: 1)))
-    static let hairline = Color(nsColor: dynamic(light: NSColor(red: 0.85, green: 0.83, blue: 0.78, alpha: 1), dark: NSColor(white: 0.24, alpha: 1)))
-    static let ink = Color(nsColor: dynamic(light: NSColor(red: 0.12, green: 0.13, blue: 0.11, alpha: 1), dark: NSColor(red: 0.93, green: 0.92, blue: 0.89, alpha: 1)))
-    static let inkSecondary = Color(nsColor: dynamic(light: NSColor(red: 0.40, green: 0.41, blue: 0.37, alpha: 1), dark: NSColor(white: 0.66, alpha: 1)))
-    static let inkTertiary = Color(nsColor: dynamic(light: NSColor(red: 0.58, green: 0.59, blue: 0.54, alpha: 1), dark: NSColor(white: 0.48, alpha: 1)))
-    /// The accent: OpenClicky's coral, the buddy's colour.
-    static let accent = Color(nsColor: dynamic(light: NSColor(red: 0.86, green: 0.33, blue: 0.21, alpha: 1), dark: NSColor(red: 0.96, green: 0.45, blue: 0.33, alpha: 1)))
+    // Colours adapt to the window's appearance through NSColor's dynamic providers. Names in comments are the
+    // design's token names (docs: OpenClicky Refinement, section D).
+    /// paper
+    static let background = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.957, green: 0.945, blue: 0.918, alpha: 1), dark: NSColor(srgbRed: 0.106, green: 0.102, blue: 0.094, alpha: 1)))
+    /// rail
+    static let rail = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.933, green: 0.918, blue: 0.882, alpha: 1), dark: NSColor(srgbRed: 0.133, green: 0.125, blue: 0.114, alpha: 1)))
+    /// card
+    static let card = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.984, green: 0.976, blue: 0.957, alpha: 1), dark: NSColor(srgbRed: 0.157, green: 0.149, blue: 0.137, alpha: 1)))
+    /// line
+    static let hairline = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.886, green: 0.863, blue: 0.812, alpha: 1), dark: NSColor(srgbRed: 0.227, green: 0.216, blue: 0.200, alpha: 1)))
+    /// lineSoft — row dividers inside a card
+    static let lineSoft = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.925, green: 0.902, blue: 0.855, alpha: 1), dark: NSColor(srgbRed: 0.200, green: 0.188, blue: 0.169, alpha: 1)))
+    /// ink
+    static let ink = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.133, green: 0.125, blue: 0.110, alpha: 1), dark: NSColor(srgbRed: 0.929, green: 0.914, blue: 0.882, alpha: 1)))
+    /// ink2
+    static let inkSecondary = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.369, green: 0.353, blue: 0.322, alpha: 1), dark: NSColor(srgbRed: 0.690, green: 0.667, blue: 0.624, alpha: 1)))
+    /// ink3 — the smallest text still meets 4.5:1
+    static let inkTertiary = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.451, green: 0.431, blue: 0.392, alpha: 1), dark: NSColor(srgbRed: 0.604, green: 0.580, blue: 0.541, alpha: 1)))
+    /// accent — the pointer's coral, for marks and highlights
+    static let accent = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.851, green: 0.318, blue: 0.173, alpha: 1), dark: NSColor(srgbRed: 0.941, green: 0.439, blue: 0.310, alpha: 1)))
+    /// accentFill — filled buttons, white text on it meets 4.5:1
+    static let accentFill = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.769, green: 0.275, blue: 0.165, alpha: 1), dark: NSColor(srgbRed: 0.878, green: 0.376, blue: 0.247, alpha: 1)))
+    /// selection — the chosen rail row
+    static let selection = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.953, green: 0.863, blue: 0.788, alpha: 1), dark: NSColor(srgbRed: 0.271, green: 0.161, blue: 0.122, alpha: 1)))
+    /// ok
+    static let success = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.239, green: 0.478, blue: 0.306, alpha: 1), dark: NSColor(srgbRed: 0.424, green: 0.761, blue: 0.541, alpha: 1)))
+    /// danger
+    static let danger = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.698, green: 0.227, blue: 0.133, alpha: 1), dark: NSColor(srgbRed: 0.941, green: 0.541, blue: 0.439, alpha: 1)))
+    static let cardRaised = Color(nsColor: dynamic(light: NSColor.white, dark: NSColor(srgbRed: 0.196, green: 0.188, blue: 0.173, alpha: 1)))
     static let accentSoft = Color(nsColor: dynamic(light: NSColor(red: 0.97, green: 0.80, blue: 0.72, alpha: 1), dark: NSColor(red: 0.45, green: 0.22, blue: 0.16, alpha: 1)))
     static let highlighter = Color(nsColor: dynamic(light: NSColor(red: 0.99, green: 0.84, blue: 0.70, alpha: 1), dark: NSColor(red: 0.42, green: 0.25, blue: 0.16, alpha: 1)))
-    static let success = Color(nsColor: dynamic(light: NSColor(red: 0.25, green: 0.50, blue: 0.30, alpha: 1), dark: NSColor(red: 0.45, green: 0.72, blue: 0.50, alpha: 1)))
-    static let danger = Color(nsColor: dynamic(light: NSColor(red: 0.70, green: 0.25, blue: 0.20, alpha: 1), dark: NSColor(red: 0.95, green: 0.45, blue: 0.40, alpha: 1)))
-    static let selection = Color(nsColor: dynamic(light: NSColor(red: 0.95, green: 0.88, blue: 0.80, alpha: 1), dark: NSColor(white: 0.2, alpha: 1)))
+
+    // Type scale. Serif sizes are the design's Newsreader sizes, set in the system serif.
+    static let display = heading(36)
+    static let pageTitle = heading(30)
+    static let cardTitle = heading(21)
+    static let rowTitle = body(13, weight: .semibold)
+    static let caption = body(12)
+    static let micro = body(11)
+    static let key = mono(11)
+
+    // Metrics, in points.
+    enum Metric {
+        static let windowTop: CGFloat = 36
+        static let windowSides: CGFloat = 40
+        static let rowVertical: CGFloat = 12
+        static let rowHorizontal: CGFloat = 16
+        static let mainRail: CGFloat = 220
+        static let settingsRail: CGFloat = 240
+        static let railItemHeight: CGFloat = 32
+        static let keyRadius: CGFloat = 5
+        static let controlRadius: CGFloat = 7
+        static let railItemRadius: CGFloat = 8
+        static let cardRadius: CGFloat = 12
+        static let buttonHeight: CGFloat = 28
+        static let fieldHeight: CGFloat = 30
+    }
 
     static func heading(_ size: CGFloat = 30) -> Font { .system(size: size, weight: .regular, design: .serif) }
     static func title(_ size: CGFloat = 20) -> Font { .system(size: size, weight: .medium, design: .serif) }

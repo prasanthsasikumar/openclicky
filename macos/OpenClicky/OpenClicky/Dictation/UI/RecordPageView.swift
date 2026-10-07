@@ -139,7 +139,7 @@ struct RecordPageView: View {
                 : "mode is active — \(settings.engine.detail)"))
                 .font(Paper.body(12)).foregroundStyle(reason == nil ? Paper.inkSecondary : Paper.danger).lineLimit(1)
             Spacer()
-            Button("change") { model.section = .settings; model.settingsPage = .engine }.buttonStyle(.plain).font(Paper.body(11)).foregroundStyle(Paper.inkTertiary).pointerCursor()
+            Button("change") { model.section = .settings; model.settingsPage = .voice }.buttonStyle(.plain).font(Paper.body(11)).foregroundStyle(Paper.inkTertiary).pointerCursor()
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Paper.card))

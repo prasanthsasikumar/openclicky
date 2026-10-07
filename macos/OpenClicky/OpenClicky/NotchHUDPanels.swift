@@ -125,7 +125,7 @@ private struct DictationSourcePill: View {
         .padding(.vertical, 4)
         .background(Capsule().fill(showsSetup ? DS.Colors.overlayCursorColor.opacity(0.35) : Color.white.opacity(0.08)))
         .onTapGesture {
-            if showsSetup { OpenClickyConfiguration.revealSettingsFile() } else { companionManager.showDictationWindow(settingsPage: .engine) }
+            if showsSetup { OpenClickyConfiguration.revealSettingsFile() } else { companionManager.showDictationWindow(settingsPage: .voice) }
         }
         .pointerCursor()
         .help(showsSetup ? "Set the backend in shell.json" : "Dictation is transcribed by \(settings.engine.displayName). Click to change.")

@@ -34,13 +34,9 @@ struct DictationSettingsView: View {
                 case .general: GeneralSettingsPage(settings: settings, companionManager: companionManager)
                 case .shortcuts: ShortcutsSettingsPage(settings: settings, companionManager: companionManager)
                 case .orb: OrbSettingsPage(settings: settings)
-                case .microphone: MicrophoneSettingsPage(settings: settings)
-                case .permissions: PermissionsSettingsPage(settings: settings, companionManager: companionManager)
-                case .engine: EngineSettingsPage(settings: settings, companionManager: companionManager)
+                case .voice: EngineSettingsPage(settings: settings, companionManager: companionManager)
                 case .privacy: PrivacySettingsPage(settings: settings, companionManager: companionManager)
-                case .plan: PlanSettingsPage()
                 case .account: AccountSettingsPage(model: model)
-                case .about: AboutSettingsPage()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -75,11 +71,7 @@ struct DictationSettingsView: View {
             }
             .padding(.horizontal, 14).padding(.top, 14)
 
-            Text("openclicky").font(Paper.mono(10)).foregroundStyle(Paper.inkTertiary).padding(.leading, 14).padding(.top, 18).padding(.bottom, 4)
-            ForEach(pages(DictationSettingsPage.appPages)) { page in railButton(page) }
-            Text("you").font(Paper.mono(10)).foregroundStyle(Paper.inkTertiary).padding(.leading, 14).padding(.top, 14).padding(.bottom, 4)
-            ForEach(pages(DictationSettingsPage.youPages)) { page in railButton(page) }
-            if pages([.about]).isEmpty == false { railButton(.about).padding(.top, 10) }
+            ForEach(pages(DictationSettingsPage.allCases)) { page in railButton(page) }.padding(.top, 14)
             Spacer()
             Rectangle().fill(Paper.hairline).frame(height: 1).padding(.horizontal, 12)
             Text("openclicky \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""))")

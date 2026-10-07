@@ -29,15 +29,15 @@ enum DictationSection: String, CaseIterable, Identifiable {
     }
 }
 
+/// Six pages, each answering one question. `voice` was engine + microphone; `privacy` took in
+/// permissions; `account` took in plan & usage; `general` took in about.
 enum DictationSettingsPage: String, CaseIterable, Identifiable {
-    case general, shortcuts, orb, microphone, permissions, engine, privacy, plan, account, about
+    case general, shortcuts, orb, voice, privacy, account
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .orb: return "the orb"
-        case .privacy: return "privacy & data"
-        case .plan: return "plan & usage"
         default: return rawValue
         }
     }
@@ -47,19 +47,11 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .shortcuts: return "keyboard"
         case .orb: return "circle"
-        case .microphone: return "mic"
-        case .permissions: return "checkmark.shield"
-        case .engine: return "waveform"
+        case .voice: return "waveform"
         case .privacy: return "lock"
-        case .plan: return "creditcard"
         case .account: return "person.circle"
-        case .about: return "info.circle"
         }
     }
-
-    /// "openclicky" pages, then "you" pages, then about.
-    static let appPages: [DictationSettingsPage] = [.general, .shortcuts, .orb, .microphone, .permissions, .engine]
-    static let youPages: [DictationSettingsPage] = [.privacy, .plan, .account]
 }
 
 @MainActor
@@ -137,9 +129,9 @@ struct DictationRootView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if !model.isRailCollapsed {
+            if !model.isRailCollapsed && model.section != .settings {
                 DictationRailView(model: model, companionManager: companionManager)
-                    .frame(width: 250)
+                    .frame(width: Paper.Metric.mainRail)
                 Rectangle().fill(Paper.hairline).frame(width: 1)
             }
             Group {
