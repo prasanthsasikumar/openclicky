@@ -2,14 +2,14 @@
 //  AppConnectPrompt.swift
 //  OpenClicky
 //
-//  HeyClicky's "Connect Reddit to HeyClicky — Use HeyClicky to: …" card. When an app or site that
-//  has an app-teaching skill comes to the front for the first time, the notch island opens with the
-//  two app icons, No / Not now / Yes, and a marquee of example prompts taken from the skill.
-//    Yes      remembers the app as connected and, when Composio is configured, asks the agent to
-//             connect the account (the Composio toolkit named by the skill's `integration`); without
-//             Composio the card explains what to set up instead of pretending
-//    No       remembers the app as declined: its skill is left out of the voice prompts
-//    Not now  hides the card until the app next launches
+//  The "connect <app> to openclicky?" card. When an app or site that has an app-teaching skill
+//  comes to the front for the first time, the notch island opens with the app's icon, example
+//  prompts taken from the skill, and never for <app> / not now / connect.
+//    connect        remembers the app as connected and, when Composio is configured, asks the agent
+//                   to connect the account (the Composio toolkit named by the skill's `integration`);
+//                   without Composio the card explains what to set up instead of pretending
+//    never for <app> remembers the app as declined: its skill is left out of the voice prompts
+//    not now        hides the card until the app next launches
 //  Only app skills with an `integration` (an account behind the app) get the card: Terminal, Finder
 //  or Xcode have nothing to connect.
 //
@@ -274,71 +274,103 @@ final class AppConnectPromptController: ObservableObject {
 
 // MARK: - View
 
-/// The card itself, drawn inside the notch island (596 × 103 pt including the menu-bar band).
+/// The card itself, drawn inside the notch island (512 pt wide, sized by `NotchHUDModel.connectHeight`).
 struct AppConnectPromptView: View {
     let prompt: AppConnectPrompt
     @ObservedObject var controller: AppConnectPromptController
-    /// On a hardware-notch screen the row sits under the notch band; elsewhere the island covers
-    /// the menu bar and the row uses that height too.
+    /// On a hardware-notch screen the content starts under the notch band; elsewhere the island
+    /// covers the menu bar and the content uses that height too.
     var topInset: CGFloat = 0
 
     var body: some View {
-        // Measured from HeyClicky: the 32 pt icons sit right under the menu-bar band, the 25 pt
-        // buttons are centered on them, and the 19 pt chips run along the bottom above a 12 pt gap.
-        VStack(alignment: .leading, spacing: 0) {
+        // The refinement sheet's card: 40 pt app icon with the question and one line of what it
+        // means, the example prompts as chips, then "never for <app>" on the left and
+        // not now / connect on the right. 12 / 16 pt padding under the band.
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                appIcons
+                frontAppIcon
+                    .frame(width: DS.HUD.tileSize, height: DS.HUD.tileSize)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(prompt.stage == .ask ? "Connect \(prompt.appName) to OpenClicky" : "\(prompt.appName) skill is on")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
+                    Text(headline)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(DS.HUD.text)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Text(prompt.stage == .ask ? "Use OpenClicky to:" : "Account actions need Composio: set COMPOSIO_MCP_URL in shell.json")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Color.white.opacity(0.6))
+                    Text(detail)
+                        .font(.system(size: 12))
+                        .foregroundColor(DS.HUD.text2)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
-                Spacer(minLength: 12)
-                HStack(spacing: 9) {
-                    switch prompt.stage {
-                    case .ask:
-                        answerButton(title: "No", systemImage: "xmark", isPrimary: false) { controller.answer(.no) }
-                        answerButton(title: "Not now", systemImage: "clock", isPrimary: false) { controller.answer(.notNow) }
-                        answerButton(title: "Yes", systemImage: "link", isPrimary: true) { controller.answer(.yes) }
-                    case .composioMissing:
-                        answerButton(title: "OK", systemImage: "checkmark", isPrimary: false) { controller.answer(.dismissNotice) }
-                        answerButton(title: "Open settings", systemImage: "gearshape", isPrimary: true) { controller.answer(.openSettings) }
-                    }
-                }
-                // The buttons keep their labels; a long app name truncates instead.
-                .fixedSize()
+                Spacer(minLength: 0)
             }
-            .frame(height: 34)
-            .padding(.leading, 21)
-            .padding(.trailing, 17)
-
-            Spacer(minLength: 6)
 
             if !prompt.examplePrompts.isEmpty {
-                MarqueeChipsView(items: prompt.examplePrompts)
-                    .frame(height: 19)
-                    .padding(.bottom, 12)
+                exampleChips
+            }
+
+            HStack(spacing: 8) {
+                switch prompt.stage {
+                case .ask:
+                    Button(action: { controller.answer(.no) }) {
+                        Text("never for \(prompt.appName.lowercased())")
+                            .font(.system(size: 13))
+                            .foregroundColor(DS.HUD.text2)
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .frame(height: 30)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .pointerCursor()
+                    .help("don't ask again; \(prompt.appName)'s skill is left out of what clicky knows")
+                    Spacer(minLength: 8)
+                    answerButton(title: "not now", isPrimary: false) { controller.answer(.notNow) }
+                    answerButton(title: "connect", isPrimary: true) { controller.answer(.yes) }
+                case .composioMissing:
+                    Spacer(minLength: 8)
+                    answerButton(title: "ok", isPrimary: false) { controller.answer(.dismissNotice) }
+                    answerButton(title: "open shell.json", isPrimary: true) { controller.answer(.openSettings) }
+                }
             }
         }
-        .padding(.top, topInset)
+        .padding(.top, topInset + 12)
+        .padding(.horizontal, DS.HUD.bodySidePadding)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private var appIcons: some View {
-        HStack(spacing: 10) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 32, height: 32)
-            frontAppIcon
-                .frame(width: 32, height: 32)
+    private var headline: String {
+        switch prompt.stage {
+        case .ask: return "connect \(prompt.appName.lowercased()) to openclicky?"
+        case .composioMissing: return "\(prompt.appName.lowercased()) skill is on"
         }
+    }
+
+    private var detail: String {
+        switch prompt.stage {
+        case .ask: return "clicky could act in your \(prompt.appName.lowercased()) account when you ask."
+        case .composioMissing: return "account actions need composio: set COMPOSIO_MCP_URL in shell.json."
+        }
+    }
+
+    /// The skill's example prompts, as many as fit on one line.
+    private var exampleChips: some View {
+        HStack(spacing: 6) {
+            ForEach(Array(prompt.examplePrompts.prefix(4).enumerated()), id: \.offset) { _, examplePrompt in
+                Text("“\(examplePrompt)”")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(hex: "#D4D4D4"))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(DS.HUD.bandControl))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 26)
+        .clipped()
     }
 
     @ViewBuilder
@@ -351,86 +383,23 @@ struct AppConnectPromptView: View {
                 .aspectRatio(contentMode: .fit)
         } else {
             Image(systemName: "globe")
-                .font(.system(size: 20, weight: .medium))
-                .foregroundColor(.white)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundColor(DS.HUD.text2)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: DS.HUD.tileRadius, style: .continuous).fill(DS.HUD.surfaceRaisedSoft))
         }
     }
 
-    private func answerButton(title: String, systemImage: String, isPrimary: Bool, action: @escaping () -> Void) -> some View {
+    private func answerButton(title: String, isPrimary: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage).font(.system(size: 11, weight: .bold))
-                Text(title).font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundColor(.white)
-            .padding(.horizontal, 16)
-            .frame(height: 25)
-            .background(Capsule().fill(isPrimary ? DS.Colors.blue500 : Color.white.opacity(0.14)))
+            Text(title)
+                .font(.system(size: 13, weight: isPrimary ? .semibold : .regular))
+                .foregroundColor(isPrimary ? .black : DS.HUD.text)
+                .padding(.horizontal, 14)
+                .frame(height: 30)
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isPrimary ? DS.HUD.text : DS.HUD.surfaceRaised))
         }
         .buttonStyle(.plain)
         .pointerCursor()
     }
-}
-
-/// Example prompts as gray pills drifting left, looping seamlessly (the row is drawn twice).
-struct MarqueeChipsView: View {
-    let items: [String]
-    /// Points per second.
-    var speed: CGFloat = 28
-
-    @State private var rowWidth: CGFloat = 0
-
-    var body: some View {
-        // The moving row is an overlay on an empty, full-width strip so its (much wider) content
-        // never counts toward the card's layout width; the strip clips it at the island's edge.
-        Color.clear
-            .frame(maxWidth: .infinity)
-            .overlay(alignment: .leading) {
-                TimelineView(.animation) { timeline in
-                    let elapsed = timeline.date.timeIntervalSinceReferenceDate
-                    let offset = rowWidth > 0 ? CGFloat(elapsed * Double(speed)).truncatingRemainder(dividingBy: rowWidth) : 0
-                    HStack(spacing: 0) {
-                        chipRow
-                            .background(GeometryReader { proxy in
-                                Color.clear.preference(key: MarqueeRowWidthKey.self, value: proxy.size.width)
-                            })
-                        chipRow
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                    .offset(x: -offset)
-                }
-            }
-            .clipped()
-            // The chips fade in at the island's left edge instead of being cut off.
-            .mask(
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: 36)
-                    Color.black
-                }
-            )
-            .onPreferenceChange(MarqueeRowWidthKey.self) { rowWidth = $0 }
-            .allowsHitTesting(false)
-    }
-
-    private var chipRow: some View {
-        HStack(spacing: 10) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                Text(item)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(Color.white.opacity(0.92))
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .frame(height: 19)
-                    .background(Capsule().fill(Color.white.opacity(0.16)))
-            }
-        }
-        .padding(.leading, 21)
-    }
-}
-
-private struct MarqueeRowWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

@@ -236,6 +236,47 @@ enum DS {
         /// Dragged: strongest overlay (rarely used).
         static let dragged: Double = 0.16
     }
+
+    // MARK: - HUD (the notch island, always dark)
+
+    /// The refinement sheet's "HUD · always dark" palette and control sizes. The island follows
+    /// neither the system appearance nor the paper theme: it is part of the notch.
+    enum HUD {
+        static let island = Color(hex: "#000000")
+        static let surface = Color(hex: "#161616")
+        /// Pills and the gear in the band, a step lighter than the island.
+        static let bandControl = Color(hex: "#1A1A1A")
+        static let surfaceRaised = Color(hex: "#262626")
+        /// The (i) button and other secondary squares on a surface.
+        static let surfaceRaisedSoft = Color(hex: "#2A2A2A")
+        static let line = Color(hex: "#222222")
+        static let dashedLine = Color(hex: "#3A3A3A")
+        static let text = Color(hex: "#FFFFFF")
+        static let text2 = Color(hex: "#A3A3A3")
+        static let text3 = Color(hex: "#8A8A8A")
+        /// A switched-off skill's lettering.
+        static let textOff = Color(hex: "#6A6A6A")
+        static let pointer = Color(hex: "#FF5A3C")
+        /// The "!" disc behind a permission card's mark.
+        static let pointerTint = Color(hex: "#2A1A14")
+        static let live = Color(hex: "#34C77B")
+        static let waiting = Color(hex: "#F5B83D")
+        static let composio = Color(hex: "#7C5CFF")
+        static let computerUse = Color(hex: "#2FB8E8")
+
+        static let tabHeight: CGFloat = 24
+        static let pillHeight: CGFloat = 24
+        static let primaryButtonHeight: CGFloat = 36
+        static let tileSize: CGFloat = 40
+        static let minimumHitSize: CGFloat = 22
+        static let tileRadius: CGFloat = 10
+        static let cardRadius: CGFloat = 14
+        static let islandRadius: CGFloat = 22
+        static let bodyTopPadding: CGFloat = 12
+        static let bodySidePadding: CGFloat = 16
+        static let stripWidth: CGFloat = 380
+        static let stripHeight: CGFloat = 37
+    }
 }
 
 // MARK: - Button Styles

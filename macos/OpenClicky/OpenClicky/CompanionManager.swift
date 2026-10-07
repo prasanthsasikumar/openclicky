@@ -449,13 +449,15 @@ final class CompanionManager: ObservableObject {
 
     /// Text entry point into the agent lane (result-card follow-ups, future text mode). Captures the
     /// screen like the voice path does, resumes `threadId` when given, and speaks the result.
-    func submitTextToAgent(_ text: String, threadId: String? = nil) {
+    /// `startsNewThread` (the Agents tab's composer with no thread selected) forgets the thread the
+    /// last turn ran on, so the request opens a fresh one instead of continuing it.
+    func submitTextToAgent(_ text: String, threadId: String? = nil, startsNewThread: Bool = false) {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty, OpenClickyConfiguration.isConfigured else { return }
         currentResponseTask?.cancel()
         openClickyAgentClient.cancel()
         elevenLabsTTSClient.stopPlayback()
-        if let threadId { lastAgentThreadId = threadId }
+        if let threadId { lastAgentThreadId = threadId } else if startsNewThread { lastAgentThreadId = nil }
         lastTranscript = trimmedText
         currentResponseTask = Task {
             voiceState = .processing

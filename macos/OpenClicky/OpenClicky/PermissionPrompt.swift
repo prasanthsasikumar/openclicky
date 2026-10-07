@@ -3,7 +3,7 @@
 //  OpenClicky
 //
 //  HeyClicky's permission cards, drawn in the notch island: one permission at a time, a row
-//  of dots for progress, a line of copy, and a single blue button. The menu bar panel used to
+//  of dashes for progress, a line of copy, grant and later. The menu bar panel used to
 //  carry a list of four rows with Grant buttons; the island asks for them instead, in order:
 //    Microphone → Accessibility → Screen Recording → Screen Content
 //  Tapping the button once takes the macOS route for that permission (the system prompt, then
@@ -36,50 +36,45 @@ enum PermissionStep: String, CaseIterable, Identifiable {
         }
     }
 
+    /// What the permission is for, in the card's own words (lowercase, one sentence).
     var headline: String {
         switch self {
-        case .microphone: return "I need microphone permissions."
-        case .accessibility: return "I need accessibility permissions."
-        case .screenRecording: return "I need screen recording permissions."
-        case .screenContent: return "I need to see your screen."
+        case .microphone: return "i need the microphone to hear you"
+        case .accessibility: return "i need accessibility to paste and point"
+        case .screenRecording: return "i need screen recording to see what you mean"
+        case .screenContent: return "i need to see your screen"
         }
     }
 
-    /// The line under the headline before the user has tapped the button.
+    /// The line under the headline before the user has tapped the button: the consequence of
+    /// granting (or not), not the mechanism.
     var detail: String {
         switch self {
-        case .microphone: return "This lets me hear you when you hold the hotkey."
-        case .accessibility: return "This lets me work in any app."
-        case .screenRecording: return "I only capture while you hold the hotkey."
-        case .screenContent: return "Pick a display in the panel macOS shows."
+        case .microphone: return "only while you hold a shortcut or go hands-free."
+        case .accessibility: return "macOS asks once. until then, dictated words wait on the clipboard."
+        case .screenRecording: return "i only look while you talk to me."
+        case .screenContent: return "pick a display in the panel macOS shows."
         }
     }
 
     /// The line once the request is out and we're waiting on the user in System Settings.
     var waitingDetail: String {
         switch self {
-        case .microphone: return "Switch OpenClicky on in the Microphone list."
-        case .accessibility: return "Drag me into the Accessibility list."
-        case .screenRecording: return "Quit and reopen after granting."
-        case .screenContent: return "Waiting for the capture panel…"
+        case .microphone: return "switch openclicky on in the microphone list."
+        case .accessibility: return "drag me into the accessibility list."
+        case .screenRecording: return "quit and reopen after granting."
+        case .screenContent: return "waiting for the capture panel…"
         }
     }
 
-    var buttonTitle: String {
-        switch self {
-        case .microphone: return "Grant Microphone"
-        case .accessibility: return "Grant Accessibility"
-        case .screenRecording: return "Grant Screen Recording"
-        case .screenContent: return "Grant Screen Content"
-        }
-    }
+    var buttonTitle: String { "grant" }
 
     var waitingButtonTitle: String {
         switch self {
-        case .microphone: return "Open"
-        case .accessibility: return "Open"
-        case .screenRecording: return "Quit & Reopen"
-        case .screenContent: return "Try again"
+        case .microphone: return "open"
+        case .accessibility: return "open"
+        case .screenRecording: return "quit & reopen"
+        case .screenContent: return "try again"
         }
     }
 }
@@ -267,8 +262,10 @@ final class PermissionPromptController: ObservableObject {
 
 // MARK: - View
 
-/// The card inside the island: progress dots, headline, one line of copy, one blue button.
-/// Sized from HeyClicky's (424 × 168 pt including the menu-bar band).
+/// The card inside the island: the orange "!" disc, the headline and one line of copy with the
+/// progress dashes under them, and grant / later on the right. "later" hides the cards until
+/// relaunch; the small gear opens the menu bar panel. 512 pt wide, sized by
+/// `NotchHUDModel.permissionHeight`.
 struct PermissionPromptView: View {
     let prompt: PermissionPrompt
     @ObservedObject var controller: PermissionPromptController
@@ -276,69 +273,98 @@ struct PermissionPromptView: View {
     var topInset: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                progressDots
-                HStack(spacing: 10) {
-                    Spacer()
-                    cornerButton(systemImage: "gearshape.fill") { controller.openPanel() }
-                    cornerButton(systemImage: "xmark") { controller.dismiss() }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 14) {
+                Text("!")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(DS.HUD.pointer)
+                    .frame(width: DS.HUD.tileSize, height: DS.HUD.tileSize)
+                    .background(Circle().fill(DS.HUD.pointerTint))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(prompt.headline)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(DS.HUD.text)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Text(prompt.detail)
+                        .font(.system(size: 12))
+                        .foregroundColor(DS.HUD.text2)
+                        .lineSpacing(2)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    progressDashes
+                        .padding(.top, 6)
                 }
-                .padding(.trailing, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(spacing: 6) {
+                    Button(action: { controller.grant() }) {
+                        Text(prompt.buttonTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 14)
+                            .frame(minWidth: 72)
+                            .frame(height: 30)
+                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(DS.HUD.pointer))
+                    }
+                    .buttonStyle(.plain)
+                    .pointerCursor()
+
+                    Button(action: { controller.dismiss() }) {
+                        Text("later")
+                            .font(.system(size: 12))
+                            .foregroundColor(DS.HUD.text2)
+                            .frame(minWidth: 72)
+                            .frame(height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .pointerCursor()
+                    .help("hide these cards until openclicky next opens")
+                }
+                .fixedSize()
             }
-            .frame(height: 20)
-
-            Spacer(minLength: 10)
-
-            Text(prompt.headline)
-                .font(.system(size: 15, weight: .bold))
-                .foregroundColor(.white)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .padding(.horizontal, 24)
-
-            Text(prompt.detail)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Color.white.opacity(0.6))
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .padding(.top, 4)
-                .padding(.horizontal, 24)
-
-            Button(action: { controller.grant() }) {
-                Text(prompt.buttonTitle)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 18)
-                    .frame(height: 28)
-                    .background(Capsule().fill(DS.Colors.blue500))
-            }
-            .buttonStyle(.plain)
-            .pointerCursor()
-            .padding(.top, 14)
 
             if prompt.offersAccessibilityTrustReset {
                 Button(action: { controller.resetAccessibilityTrust() }) {
-                    Text("Already switched on? Reset it and try again")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color.white.opacity(0.45))
+                    Text("already switched on? reset it and try again")
+                        .font(.system(size: 11))
+                        .foregroundColor(DS.HUD.text3)
                         .underline()
                 }
                 .buttonStyle(.plain)
                 .pointerCursor()
-                .help("Removes OpenClicky from the Accessibility list and relaunches, so it can be granted again")
-                .padding(.top, 8)
+                .help("removes openclicky from the accessibility list and relaunches, so it can be granted again")
+                .padding(.leading, DS.HUD.tileSize + 14)
             }
-
-            Spacer(minLength: 14)
         }
-        .padding(.top, topInset)
+        .padding(.top, topInset + 12)
+        .padding(.horizontal, DS.HUD.bodySidePadding)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay(alignment: .topTrailing) {
+            // The menu bar panel, for settings and quit, while nothing else on the island works.
+            Button(action: { controller.openPanel() }) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(DS.HUD.text3)
+                    .frame(width: DS.HUD.minimumHitSize, height: DS.HUD.minimumHitSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointerCursor()
+            .help("settings")
+            .accessibilityLabel("settings")
+            .padding(.top, topInset + 2)
+            .padding(.trailing, 10)
+        }
     }
 
     /// One dash per permission: filled for the ones already granted, half-lit for the one being
     /// asked for, dim for the rest.
-    private var progressDots: some View {
+    private var progressDashes: some View {
         HStack(spacing: 5) {
             ForEach(PermissionStep.allCases) { step in
                 Capsule()
@@ -346,23 +372,13 @@ struct PermissionPromptView: View {
                     .frame(width: 16, height: 3)
             }
         }
+        .accessibilityElement()
+        .accessibilityLabel("step \((PermissionStep.allCases.firstIndex(of: prompt.step) ?? 0) + 1) of \(PermissionStep.allCases.count)")
     }
 
     private func dashColor(for step: PermissionStep) -> Color {
-        if prompt.status.isGranted(step) { return DS.Colors.blue500 }
-        if step == prompt.step { return DS.Colors.blue500.opacity(0.55) }
-        return Color.white.opacity(0.18)
-    }
-
-    private func cornerButton(systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(Color.white.opacity(0.5))
-                .frame(width: 18, height: 18)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .pointerCursor()
+        if prompt.status.isGranted(step) { return DS.HUD.live }
+        if step == prompt.step { return DS.HUD.pointer }
+        return DS.HUD.surfaceRaised
     }
 }

@@ -142,13 +142,13 @@ struct PermissionPromptTests {
         let controller = makeController(spy)
 
         controller.update(with: PermissionStatus(microphone: true))
-        #expect(controller.currentPrompt?.headline == "I need accessibility permissions.")
-        #expect(controller.currentPrompt?.detail == "This lets me work in any app.")
-        #expect(controller.currentPrompt?.buttonTitle == "Grant Accessibility")
+        #expect(controller.currentPrompt?.headline == "i need accessibility to paste and point")
+        #expect(controller.currentPrompt?.detail == "macOS asks once. until then, dictated words wait on the clipboard.")
+        #expect(controller.currentPrompt?.buttonTitle == "grant")
 
         controller.grant()
-        #expect(controller.currentPrompt?.detail == "Drag me into the Accessibility list.")
-        #expect(controller.currentPrompt?.buttonTitle == "Open")
+        #expect(controller.currentPrompt?.detail == "drag me into the accessibility list.")
+        #expect(controller.currentPrompt?.buttonTitle == "open")
     }
 
     @Test func closingTheCardHidesItUntilTheNextLaunch() {
