@@ -13,11 +13,13 @@ Success looks like:
 
 - A new user goes from download to a working polished take and a pointed-at answer in under three
   minutes, with no settings page visited.
-- The grant cannot be overspent: at most **$2 per person per month** and **$50 across everyone per
-  month** (the grant lasts ~20 months at the ceiling).
+- The grant cannot be overspent: at most **$2 per person per day**, **$10 per person per month**,
+  **100 accounts**, and **$1,000 across everyone per month** — the whole grant is meant to be used
+  in about a month (100 × $10 = the grant). Past 100 users we revisit.
 - When a limit is reached, nothing breaks: dictation keeps working offline, and the app says
   plainly what happened and when it resets.
-- Bring-your-own-key users and invite accounts keep working exactly as today.
+- Bring-your-own-key users keep working exactly as today. Invite-only accounts are retired: anyone
+  can sign up.
 
 ## 2. What an account includes (v1)
 
@@ -25,12 +27,14 @@ Success looks like:
 |---|---|---|---|
 | Dictation (hold fn) | Apple on-device recogniser | — | free, on the Mac |
 | Dictation polish, Hey Clicky edits | — | **cheap model chosen by the server** (Claude Haiku 4.5 today) | grant |
-| Ask about my screen + pointing (hold ⌃⌥, or ⌃×2 typed) | Apple recogniser hears; **the Mac's own voice** speaks | **Claude Sonnet 5.5** (pointing needs it) | grant |
+| Ask about my screen + pointing (hold ⌃⌥, or ⌃×2 typed) | Apple recogniser hears; **ElevenLabs** speaks (the Mac's own voice when ElevenLabs' allowance is used up) | **Claude Sonnet 5.5** (pointing needs it) | Anthropic grant (thinking) + ElevenLabs grant (voice) |
+| Quick actions — open an app or a site, make a folder, show in Finder, volume, play/pause | — | Claude picks the action as a tool call in the ask lane; the Mac performs it (`MacActions`) | Anthropic grant |
 | Agent chores (folders via agent, email) | — | Codex | **not included** — own key only |
 | Realtime hands-free voice | OpenAI realtime | — | **not included** — own key only |
 
-Quick local actions (open app, make folder, volume) need the realtime lane today, so on an account
-they are **not available in v1** unless we route them through the ask lane (see §10, open question 3).
+Quick actions run on the realtime lane today; on an account they move into the ask lane as Claude
+tools (§5.3a), with the same typed, closed set of actions — Claude can name an action, it can never
+run a command.
 
 ## 3. The user's journey
 
@@ -50,8 +54,12 @@ they are **not available in v1** unless we route them through the ask lane (see 
    - *Personal:* polish is skipped (takes paste with local cleanup only), ⌃⌥ answers "you've used
      this month's free questions — they come back on 1 Nov. Dictation still works." The account page
      offers "use your own key".
-   - *Everyone's ($50):* same behaviour, wording "OpenClicky's free allowance is used up for this
-     month — it comes back on 1 Nov."
+   - *Daily ($2):* same behaviour, wording "you've used today's free allowance — it comes back
+     tomorrow."
+   - *Everyone's ($1,000, i.e. the grant is spent):* same behaviour, wording "OpenClicky's free
+     allowance is used up for now — you can keep going with your own key."
+   - *Full (100 accounts):* the create-account sheet says "OpenClicky's free accounts are full right
+     now" and offers "use your own key" instead.
 7. **Never a dead end:** offline dictation, history, styles, dictionary and shortcuts never depend on
    the account.
 
@@ -107,14 +115,44 @@ Unchanged contract (Anthropic Messages body, streamed). For grant requests the b
 `ASK_MODEL`, caps `max_tokens` at 1,024, allows at most 2 images per request each ≤ 1,568 px on the
 long edge (the app already downsizes), and adds `cache_control` to the system prompt.
 
+### 5.3a Quick actions as Claude tools
+
+The ask lane gains the six `MacActions` verbs as Anthropic tool definitions (`open_app`, `open_url`,
+`create_folder`, `reveal_in_finder`, `set_volume`, `media_control`) with the same argument schemas
+`MacAction.parse` already enforces (`strict: true`; `location` a closed enum; http(s) URLs only).
+`point_at` stays a `[POINT:x,y:label]` tag in the text so pointing is unchanged. Flow:
+
+1. App sends the question + screenshot + tools to `/chat` (streamed).
+2. If Claude returns a `tool_use`, the app runs it locally through `MacAction.parse` → perform,
+   which already returns one sentence ("Created Launch Ideas on your Desktop.").
+3. That sentence is spoken (and sent back as the `tool_result` only if Claude needs to continue,
+   e.g. "open Safari and point at the address bar" — at most 2 tool rounds per question).
+
+Anything outside the six verbs is answered in words ("I can't do that on an account yet — it needs
+the agent, which uses your own key"). The tool list is in the cached system prefix, so it costs
+almost nothing per question.
+
+### 5.3b Answer voice: ElevenLabs with a fallback
+
+`/tts` is allowed for accounts and metered in **characters** against a separate ElevenLabs pool:
+
+| Limit | Default | Env var |
+|---|---|---|
+| Per person per month | 20,000 characters (~100 spoken answers) | `ACCOUNT_MONTHLY_TTS_CHARS` |
+| Everyone per month | the ElevenLabs plan's allowance, read live from `GET /v1/user/subscription` (cached 10 min), minus a 5% margin | `TTS_GLOBAL_MARGIN` |
+
+Answers are trimmed for speech before sending (the app already strips `[POINT]` tags; long answers
+are spoken as the first ~400 characters and shown in full). When either pool is used up, or
+ElevenLabs errors, `/tts` answers `402 { error: "tts_budget" }` and the app speaks the answer with
+`AVSpeechSynthesizer` instead — no silence, no message to the user. Voice: `ELEVENLABS_VOICE_ID`
+(one warm voice for everyone in v1), model `eleven_flash_v2_5`.
+
 ### 5.4 Plan gate
 
-| Route | BYOK | Invite account | Free account |
-|---|---|---|---|
-| `/v1/polish`, `/chat`, `/v1/messages`, `/billing/me` | ✓ | ✓ | ✓ |
-| `/agent/transcribe`, `/tts`, `/agent/realtime/session`, `/v1/chat/completions`, `/v1/responses`, `/transcribe-token`, `/skills/create` | ✓ | ✓ (as today) | **402 `not_on_plan`** |
-
-Invite accounts keep today's behaviour (they were promised it) but are metered in dollars too.
+| Route | BYOK | Account |
+|---|---|---|
+| `/v1/polish`, `/chat`, `/v1/messages`, `/tts`, `/billing/me` | ✓ | ✓ |
+| `/agent/transcribe`, `/agent/realtime/session`, `/v1/chat/completions`, `/v1/responses`, `/transcribe-token`, `/skills/create` | ✓ | **402 `not_on_plan`** |
 
 ### 5.5 Metering in dollars
 
@@ -152,19 +190,21 @@ never lets a request through that the settle would push over.
 
 | Limit | Default | Where set |
 |---|---|---|
-| Personal monthly | $2.00 | `FREE_MONTHLY_USD`; per-user override via admin script |
-| Personal daily | $0.40 | `FREE_DAILY_USD` — stops one person spending the month in an afternoon and keeps the global pool fair |
-| Global monthly | $50.00 | `GLOBAL_MONTHLY_BUDGET_USD` |
+| Personal monthly | $10.00 | `ACCOUNT_MONTHLY_USD`; per-user override via admin script (e.g. your own account) |
+| Personal daily | $2.00 | `ACCOUNT_DAILY_USD` — no one can spend their month in an afternoon |
+| Global monthly | $1,000.00 | `GLOBAL_MONTHLY_BUDGET_USD` — the whole grant; a backstop, since 100 × $10 already equals it |
+| Accounts | 100 | `MAX_ACCOUNTS` — sign-up refuses with `accounts_full` past this; raise it when we revisit |
 | Requests per minute per user | 20 | in-memory token bucket (single container) |
 | Sign-ups | Supabase's built-in rate limit (per IP per hour) | Supabase Auth settings |
 | Email must be confirmed | required before any grant spend | Supabase refuses to sign in an unconfirmed email (confirmations on), so no token exists until the link is tapped |
 
-Invite accounts are not counted against the $50 global pool (they are your own people); their
-personal allowance is their override.
+Sign-up itself goes through Supabase, so the 100-account cap is enforced by a database trigger on
+`auth.users` insert (counts confirmed-or-pending accounts; refuses past `MAX_ACCOUNTS`), and the
+app shows `accounts_full` from `/auth/config`'s `accountsOpen: false` before anyone types an email.
 
 ### 5.8 Errors the app can rely on
 
-`402 { error: "personal_limit" | "daily_limit" | "monthly_budget" | "not_on_plan" | "email_unconfirmed", resets_at? }`,
+`402 { error: "personal_limit" | "daily_limit" | "monthly_budget" | "not_on_plan" | "accounts_full", resets_at? }`,
 `429 { error: "slow_down" }`. No upstream error text ever reaches the client (existing behaviour).
 
 ### 5.9 Schema changes (`backend/supabase/schema.sql`, idempotent)
@@ -172,16 +212,21 @@ personal allowance is their override.
 - `oc_usage_events` + `cost_micro_usd bigint not null default 0`, `reservation_id uuid`.
 - `oc_reservations (id uuid pk, user_id, created_at, estimate_micro_usd, settled boolean)`.
 - `oc_budget (month date pk, limit_micro_usd bigint, spent_micro_usd bigint, held_micro_usd bigint)`.
-- `oc_accounts (user_id pk, kind text check in ('free','invite'), monthly_limit_micro_usd bigint null, daily_limit_micro_usd bigint null, created_at)`
-  — replaces `oc_subscriptions.monthly_credits_override` for new code; invite rows are migrated
-  (credits → dollars at a stated rate, e.g. 1,000 credits = $2).
+- `oc_accounts (user_id pk, monthly_limit_micro_usd bigint null, daily_limit_micro_usd bigint null, blocked boolean default false, created_at)`
+  — null limits mean the defaults; a row is created on first use. The invite plan,
+  `monthly_credits_override` and the credit columns stop being read (left in place, unused, so old
+  rows stay readable); existing invite users simply become accounts with the defaults.
+- A trigger on `auth.users` insert enforcing `MAX_ACCOUNTS` (value kept in a one-row `oc_settings`
+  table so the admin script can change it).
 - The two functions above. RLS stays on with no policies (service key only).
 
 ### 5.10 Admin script additions (`npm run admin -w backend -- …`)
 
-`budget` (this month: spent / held / limit, top 10 users), `limit <email> --usd 5`,
-`daily <email> --usd 1`, `block <email>` / `unblock`, existing `invite` / `revoke` / `remove` keep
-working. A warning line is printed to the container log at 50%, 80% and 100% of the global budget.
+`budget` (this month: spent / held / limit, accounts used of 100, top 10 users),
+`limit <email> --usd 20` and `daily <email> --usd 5` (per-person overrides, e.g. your own account),
+`block <email>` / `unblock`, `remove <email>`, `max-accounts 150`. The `invite` command is removed:
+anyone signs up in the app. A warning line is printed to the container log at 50%, 80% and 100% of
+the global budget.
 
 ## 6. Mac app
 
@@ -200,7 +245,8 @@ working. A warning line is printed to the container log at 50%, 80% and 100% of 
 | Polish | `BackendTakePolisher` → `/v1/chat/completions`, `gpt-4o-mini` | → `/v1/polish`, no model sent |
 | "Also polish takes heard on this mac" | off by default | **on by default** for account users, with the existing "sends text out" tag; can be turned off |
 | Hearing a ⌃⌥ question | backend OpenAI transcription | `AppleSpeechTranscriptionProvider` (on-device) |
-| Answer voice | ElevenLabs via `/tts` | `AVSpeechSynthesizer` with the best installed system voice for the reply language |
+| Answer voice | ElevenLabs via `/tts` | ElevenLabs via `/tts`; on `402 tts_budget` or any error, `AVSpeechSynthesizer` with the best installed system voice for the reply language |
+| Quick actions | realtime tools | Claude tools in the ask lane (§5.3a), performed by `MacActions` |
 | Realtime voice / hands-free | on | off; the settings row explains "needs your own OpenAI key" |
 | Agent mode | Codex via backend | off; row explains "needs your own key" |
 | Claude model picker | user-chosen | hidden (server chooses) |
@@ -240,21 +286,25 @@ limits and models; only §6 is per-platform.
 
 ## 9. Rollout
 
-1. Backend + schema behind `ACCOUNTS_OPEN=false` (only invites work); deploy; run the e2e test.
+1. Backend + schema behind `ACCOUNTS_OPEN=false` (sign-up closed, existing accounts work); deploy;
+   run the e2e test.
 2. App 0.8.0 with sign-up hidden behind the same flag from `/auth/config`.
 3. Flip `ACCOUNTS_OPEN=true`; watch `admin budget` daily for the first two weeks.
 
 ## 10. Open questions for review
 
-1. **Daily cap** of $0.40 — keep, change, or drop?
-2. **Invite accounts** outside the $50 pool — agreed?
-3. **Quick local actions** (open app, make folder) on accounts: route them through the ask lane as
-   Claude tools in v1 (more work, nicer for grandma), or leave them for v2?
-4. **Answer voice:** the Mac's free built-in voice, or spend a little of the grant on ElevenLabs for
-   a nicer voice (~$0.002 per answer)?
-5. **Grant terms:** confirm the Anthropic grant allows serving end users' requests.
+Decided 2026-10-08: $2/day and $10/month per person, 100 accounts, $1,000 global (the grant, used
+in about a month), invites removed — anyone signs up.
+
+Also decided 2026-10-08: quick actions are in v1 (as Claude tools); answers use ElevenLabs (FlowsXR
+has an ElevenLabs grant) with the Mac's voice as the fallback.
+
+1. **ElevenLabs allowance:** the key provided reports the *free* tier (10,000 characters/month,
+   ~50 answers) — confirm where the grant's characters are; the fallback keeps things working
+   either way.
+2. **Grant terms:** confirm the Anthropic grant allows serving end users' requests.
 
 ## Out of scope (v1)
 
-Payments (parked for UPI), agent chores on the grant, realtime voice on the grant, Sarvam on the
-grant, a web dashboard.
+Payments (parked for UPI), agent chores on the grant (email, file sorting — anything beyond the six
+quick actions), realtime voice on the grant, Sarvam on the grant, a web dashboard.
