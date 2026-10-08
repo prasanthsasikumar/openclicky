@@ -9,6 +9,8 @@ at the answer, and hand real work to a Codex agent. MIT licensed.
 [**Download OpenClicky for macOS**](https://github.com/prasanthsasikumar/openclicky/releases/latest)
 (Apple Silicon, macOS 14.2+, notarized) · [How it works](docs/architecture.md) · [Contributing](CONTRIBUTING.md)
 
+<p align="center"><img src="docs/media/demo.gif" width="720" alt="Asking out loud where battery health is: the pointer flies to Battery in System Settings. Then holding fn and talking: the sentence is typed into TextEdit."></p>
+
 ### Try it in three steps
 
 1. Open the dmg and click **Move to Applications** when OpenClicky offers (or drag it there). Grant
