@@ -45,6 +45,12 @@ export class SupabaseRest {
     return ((await res.json()) as T[])[0];
   }
 
+  /** PATCH every row matching `query` (a PostgREST filter, e.g. `user_id=eq.abc`). */
+  async update(table: string, query: string, fields: Record<string, unknown>): Promise<void> {
+    const res = await this.fetchImpl(`${this.base}/${table}?${query}`, { method: "PATCH", headers: this.headers({ prefer: "return=minimal" }), body: JSON.stringify(fields) });
+    await this.check(res, `update ${table}`);
+  }
+
   /** Call a Postgres function through PostgREST (`/rpc/<fn>`); returns its JSON result. */
   async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
     const res = await this.fetchImpl(`${this.base}/rpc/${fn}`, { method: "POST", headers: this.headers(), body: JSON.stringify(args) });
