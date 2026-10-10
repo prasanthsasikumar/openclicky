@@ -178,13 +178,13 @@ private struct PlanSummary: View {
             if let summary = billing.summary {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("openclicky").font(Paper.cardTitle).foregroundStyle(Paper.ink)
-                    SettingsTag(text: summary.byok ? "your keys" : summary.plan)
+                    SettingsTag(text: summary.byok ? "your keys" : "free")
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(summary.used)").font(.system(size: 30, weight: .regular, design: .serif)).foregroundStyle(Paper.ink)
-                    Text("/ \(summary.limit) credits this period").font(Paper.caption).foregroundStyle(Paper.inkSecondary)
+                    Text("\(Int((summary.fractionUsed * 100).rounded()))%").font(.system(size: 30, weight: .regular, design: .serif)).foregroundStyle(Paper.ink)
+                    Text("of this month's allowance used").font(Paper.caption).foregroundStyle(Paper.inkSecondary)
                 }
-                Text("renews \(summary.periodEnd)").font(Paper.micro).foregroundStyle(Paper.inkTertiary)
+                Text("renews \(summary.monthEnd)").font(Paper.micro).foregroundStyle(Paper.inkTertiary)
             } else if OpenClickyConfiguration.usesOwnKeys {
                 Text("your own keys").font(Paper.cardTitle).foregroundStyle(Paper.ink)
                 Text("openclicky meters nothing: every request runs on the keys in shell.json.").font(Paper.caption).foregroundStyle(Paper.inkSecondary)

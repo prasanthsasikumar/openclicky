@@ -13,11 +13,16 @@ import SwiftUI
 
 struct BillingSummary: Decodable, Equatable {
     let byok: Bool
-    let plan: String
-    let status: String
-    let used: Int
-    let limit: Int
-    let periodEnd: String
+    let spentMonthUsd: Double
+    let monthlyLimitUsd: Double
+    let spentTodayUsd: Double
+    let dailyLimitUsd: Double
+    let ttsCharsMonth: Int
+    let ttsCharsLimit: Int
+    let monthEnd: String
+    let dayEnd: String
+    let budgetExhausted: Bool
+    let blocked: Bool
 }
 
 @MainActor
@@ -152,11 +157,7 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
             row("person.crop.circle", "Account", "token from shell.json")
         }
         if let summary = model.summary {
-            let planLabel = summary.status == "unmetered" ? "not metered on this backend" : summary.plan.capitalized + (summary.status == "active" || summary.status == "free" ? "" : " · \(summary.status)")
-            row("creditcard", "Plan", planLabel)
-            if summary.limit > 0 || summary.status != "unmetered" {
-                row("gauge", "Credits", "\(summary.used) / \(summary.limit) this month · resets \(Self.shortDate(summary.periodEnd))")
-            }
+            row("gauge", "Allowance", "\(Self.levelLabel(summary)) this month · resets \(Self.shortDate(summary.monthEnd))")
         } else if let errorText = model.errorText {
             row("exclamationmark.triangle", "Plan", errorText)
         } else {
@@ -166,6 +167,14 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
             action("rectangle.portrait.and.arrow.right", "Sign out", nil) { authSession.signOut() }
         }
         action("key", "Use my own API key instead", "Add openaiApiKey to shell.json") { OpenClickyConfiguration.revealSettingsFile() }
+    }
+
+    private static func levelLabel(_ summary: BillingSummary) -> String {
+        switch summary.level {
+        case .plenty: return "plenty left"
+        case .runningLow: return "running low"
+        case .usedUp: return summary.blocked ? "paused" : "used up"
+        }
     }
 
     private static func shortDate(_ iso: String) -> String {
