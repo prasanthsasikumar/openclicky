@@ -18,13 +18,19 @@ final class OpenClickyAuthSession: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastErrorText: String?
 
+    enum SignUpState: Equatable { case idle, sending, awaitingConfirmation(email: String), signedIn, failed(String), full }
+    @Published private(set) var signUpState: SignUpState = .idle
+
     private var refreshTimer: Timer?
     /// Refresh this long before the access token expires (Supabase tokens last an hour).
     private let refreshLeadSeconds: TimeInterval = 10 * 60
 
-    private struct AuthConfig: Decodable {
+    struct AuthConfig: Decodable {
         let supabaseUrl: String
         let publishableKey: String
+        /// Older backends omit both of these.
+        let accountsOpen: Bool?
+        let confirmRedirectUrl: String?
     }
 
     private struct TokenResponse: Decodable {
@@ -61,6 +67,76 @@ final class OpenClickyAuthSession: ObservableObject {
             print("🔐 Sign-in failed: \(lastErrorText ?? "")")
             return false
         }
+    }
+
+    nonisolated static func signUpRequest(backendBaseURL: String, email: String, password: String) -> URLRequest? {
+        guard let url = URL(string: "\(backendBaseURL)/auth/signup") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email, "password": password])
+        return request
+    }
+
+    /// Creates the account through the backend (it owns the account cap); Supabase then emails a
+    /// confirmation link. Polls a password sign-in until the link has been tapped, so the person
+    /// never has to come back and type.
+    func signUp(email: String, password: String) async {
+        signUpState = .sending
+        do {
+            let config = try await authConfig()
+            guard config.accountsOpen != false else { signUpState = .full; return }
+            guard let request = Self.signUpRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, email: email, password: password) else {
+                signUpState = .failed("sign-up isn't available right now.")
+                return
+            }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(status) else {
+                let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+                let error = json["error"] as? String ?? ""
+                if error == "accounts_full" {
+                    signUpState = .full
+                } else if status == 404 {
+                    signUpState = .failed("this backend doesn't take sign-ups.")
+                } else {
+                    signUpState = .failed(error.isEmpty ? "couldn't create the account (\(status))." : error)
+                }
+                return
+            }
+            signUpState = .awaitingConfirmation(email: email)
+            if await waitForConfirmation(email: email, password: password) {
+                signUpState = .signedIn
+            } else if !Task.isCancelled {
+                signUpState = .failed("the confirmation link wasn't opened in time — sign in once you have confirmed.")
+            }
+        } catch {
+            signUpState = .failed(Self.describe(error))
+        }
+    }
+
+    /// Polls a password sign-in until the confirmation link has been tapped. Returns false on
+    /// timeout or cancellation. The "Email not confirmed" failures along the way are expected, so
+    /// they are not left in `lastErrorText`.
+    func waitForConfirmation(email: String, password: String, pollEvery seconds: Double = 5, timeout: Double = 15 * 60) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline, !Task.isCancelled {
+            if await signIn(email: email, password: password) { return true }
+            lastErrorText = nil
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        }
+        return false
+    }
+
+    func recover(email: String) async -> Bool {
+        guard let config = try? await authConfig(), let url = URL(string: "\(config.supabaseUrl)/auth/v1/recover") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email])
+        let status = ((try? await URLSession.shared.data(for: request))?.1 as? HTTPURLResponse)?.statusCode ?? 0
+        return (200..<300).contains(status)
     }
 
     func signOut() {
