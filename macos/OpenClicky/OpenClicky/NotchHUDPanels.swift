@@ -494,10 +494,12 @@ struct NotchSkillsAndIntegrationsRow: View {
             }
 
             HStack(spacing: 8) {
-                integrationTile(
-                    letters: "C", tint: DS.HUD.composio, letterColor: DS.HUD.text, title: "composio",
-                    isConfigured: OpenClickyConfiguration.settings.composioMcpUrl != nil, settingName: "COMPOSIO_MCP_URL"
-                )
+                if OpenClickyConfiguration.connectorsEnabled {
+                    integrationTile(
+                        letters: "C", tint: DS.HUD.composio, letterColor: DS.HUD.text, title: "composio",
+                        isConfigured: OpenClickyConfiguration.activeComposioMcpUrl != nil, settingName: "COMPOSIO_MCP_URL"
+                    )
+                }
                 integrationTile(
                     letters: "CU", tint: DS.HUD.computerUse, letterColor: .black, title: "computer use",
                     isConfigured: OpenClickyConfiguration.resolvedCuaDriverBin != nil, settingName: "CUA_DRIVER_BIN"

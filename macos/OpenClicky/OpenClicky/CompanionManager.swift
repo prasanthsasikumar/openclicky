@@ -756,11 +756,13 @@ final class CompanionManager: ObservableObject {
         notchHUDManager.show(companionManager: self)
         startDictation()
         startPermissionPrompts()
-        appConnectPromptController.start(
-            skillLibraryStore: skillLibraryStore,
-            notchHUDManager: notchHUDManager,
-            submitToAgent: { [weak self] task in self?.connectIntegrationThenRun(task) }
-        )
+        if OpenClickyConfiguration.connectorsEnabled {
+            appConnectPromptController.start(
+                skillLibraryStore: skillLibraryStore,
+                notchHUDManager: notchHUDManager,
+                submitToAgent: { [weak self] task in self?.connectIntegrationThenRun(task) }
+            )
+        }
 
         // OpenClicky: keep the Realtime voice session warm so talking is instant.
         if hasCompletedOnboarding && allPermissionsGranted {

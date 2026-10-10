@@ -59,6 +59,15 @@ struct OpenClickyShellSettings: Codable {
 enum OpenClickyConfiguration {
     /// Where the app talks to unless shell.json says otherwise.
     static let hostedBackendURL = "https://api.openclicky.flowsxr.com"
+    /// Connectors (Composio app connections): the "connect <app> to openclicky?" card, the composio
+    /// tile in the HUD, and the Composio tools handed to the agent. Off for 0.8.0; a later release
+    /// turns them back on by flipping this.
+    static let connectorsEnabled = false
+    /// The Composio MCP URL from shell.json, or nil while connectors are off.
+    static var activeComposioMcpUrl: String? {
+        guard connectorsEnabled, let url = settings.composioMcpUrl, !url.isEmpty else { return nil }
+        return url
+    }
     static let settingsFileURL = URL(fileURLWithPath: NSString(string: "~/.openclicky/shell.json").expandingTildeInPath)
 
     private(set) static var settings: OpenClickyShellSettings = load()
@@ -321,8 +330,8 @@ enum OpenClickyConfiguration {
         if let model = cleaned(settings.model) { environment["OPENCLICKY_MODEL"] = model }
         environment["OPENCLICKY_WORKSPACE"] = NSString(string: settings.workspace).expandingTildeInPath
         if let writableRoots = settings.writableRoots { environment["OPENCLICKY_WRITABLE_ROOTS"] = writableRoots.joined(separator: ",") }
-        if let composioMcpUrl = settings.composioMcpUrl, !composioMcpUrl.isEmpty { environment["COMPOSIO_MCP_URL"] = composioMcpUrl }
-        if let composioApiKey = settings.composioApiKey, !composioApiKey.isEmpty { environment["COMPOSIO_API_KEY"] = composioApiKey }
+        if connectorsEnabled, let composioMcpUrl = settings.composioMcpUrl, !composioMcpUrl.isEmpty { environment["COMPOSIO_MCP_URL"] = composioMcpUrl }
+        if connectorsEnabled, let composioApiKey = settings.composioApiKey, !composioApiKey.isEmpty { environment["COMPOSIO_API_KEY"] = composioApiKey }
         if let cuaDriverBin = settings.cuaDriverBin, !cuaDriverBin.isEmpty { environment["CUA_DRIVER_BIN"] = cuaDriverBin }
         if let openaiApiKey = cleaned(settings.openaiApiKey) { environment["OPENCLICKY_OPENAI_KEY"] = openaiApiKey }
         if let anthropicApiKey = cleaned(settings.anthropicApiKey) { environment["OPENCLICKY_ANTHROPIC_KEY"] = anthropicApiKey }

@@ -189,7 +189,7 @@ final class SkillLibraryStore: ObservableObject {
         defer { isCreating = false }
 
         var capabilities: [String] = []
-        if let composio = OpenClickyConfiguration.settings.composioMcpUrl, !composio.isEmpty { capabilities.append("composio") }
+        if OpenClickyConfiguration.activeComposioMcpUrl != nil { capabilities.append("composio") }
         if OpenClickyConfiguration.resolvedCuaDriverBin != nil { capabilities.append("computer-use") }
 
         var urlRequest = URLRequest(url: endpoint)
