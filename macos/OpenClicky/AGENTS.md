@@ -139,6 +139,8 @@ scripts/release.sh --no-notarize   # fast local install over /Applications, Deve
 scripts/release.sh                 # the same, notarized (needed only for other Macs)
 ```
 
+Release builds are universal (arm64 + x86_64) so Intel Macs run them; `release.sh` fails if the binary lacks either slice.
+
 `scripts/measure-actions.sh` reports p50/p95 per verb from `~/Library/Logs/OpenClicky/app.log`
 (`mac action:` and `agent task finished in` lines). The fast lane's acceptance number is p95 under
 2 s for `open_app` and `create_folder`.
