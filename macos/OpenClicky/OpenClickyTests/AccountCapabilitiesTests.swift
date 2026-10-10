@@ -37,4 +37,20 @@ struct AccountCapabilitiesTests {
         #expect(error?.message == "you've used today's free allowance — it comes back tomorrow. dictation still works.")
         #expect(AccountLimitError.from(status: 500, body: body) == nil)
     }
+
+    @MainActor @Test func toolOutcomesAreSpokenAfterTheAnswer() {
+        #expect(CompanionManager.spokenReply(text: "", toolOutcomes: ["Created Launch Ideas on your Desktop."]) == "Created Launch Ideas on your Desktop.")
+        #expect(CompanionManager.spokenReply(text: "Sure.", toolOutcomes: ["Opened Safari."]) == "Sure. Opened Safari.")
+        #expect(CompanionManager.spokenReply(text: "It's in the sidebar.", toolOutcomes: []) == "It's in the sidebar.")
+    }
+
+    @MainActor @Test func aClaude402IsSpokenAsThePlainLimitSentence() {
+        func claudeError(_ code: Int, _ body: String) -> NSError {
+            NSError(domain: "ClaudeAPI", code: code, userInfo: [NSLocalizedDescriptionKey: "API Error (\(code)): \(body)"])
+        }
+        #expect(CompanionManager.limitSentence(for: claudeError(402, #"{"error":"daily_limit"}"#)) == AccountLimitError.dailyLimit.message)
+        #expect(CompanionManager.limitSentence(for: claudeError(402, "not json")) == AccountLimitError.personalLimit.message)
+        #expect(CompanionManager.limitSentence(for: claudeError(500, #"{"error":"daily_limit"}"#)) == nil)
+        #expect(CompanionManager.limitSentence(for: NSError(domain: "ElevenLabsTTS", code: 402)) == nil)
+    }
 }

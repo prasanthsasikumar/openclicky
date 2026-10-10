@@ -14,6 +14,14 @@ enum AccountPolishError: Error, Equatable {
     case unavailable(Int)
 }
 
+extension AccountPolishError: LocalizedError {
+    /// A plain sentence for the orb and Hey Clicky edits, never "error 0".
+    var errorDescription: String? {
+        if case .limit(let limit) = self, !limit.message.isEmpty { return limit.message }
+        return "couldn't reach openclicky right now."
+    }
+}
+
 struct AccountTakePolisher: TakePolisher {
     var purpose: String = "polish"
     var send: (URLRequest) async throws -> (Data, URLResponse) = { try await URLSession.shared.data(for: $0) }

@@ -152,7 +152,7 @@ final class CompanionManager: ObservableObject {
     private var didGreetRealtime = false
     private var didConfigureRealtimeCallbacks = false
 
-    private var usesRealtimeVoice: Bool { isRealtimeVoiceEnabled && OpenClickyConfiguration.isConfigured }
+    private var usesRealtimeVoice: Bool { isRealtimeVoiceEnabled && OpenClickyConfiguration.isConfigured && AccountCapabilities.current().usesRealtime }
 
     func setRealtimeVoiceEnabled(_ enabled: Bool) {
         isRealtimeVoiceEnabled = enabled
@@ -684,6 +684,15 @@ final class CompanionManager: ObservableObject {
         // user in PostHog. Neither happens here — the email stays on this machine.
     }
 
+    /// An account hears on the Mac (Apple speech); own keys keep the configured provider.
+    private func applyHearingForAccount() {
+        buddyDictationManager.replaceTranscriptionProvider(
+            AccountCapabilities.current().hearsOnDevice
+                ? AppleSpeechTranscriptionProvider()
+                : BuddyTranscriptionProviderFactory.makeDefaultProvider()
+        )
+    }
+
     func start() {
         refreshAllPermissions()
         pointerPresenceTracker = PointerPresenceTracker(presence: pointerPresence)
@@ -694,6 +703,7 @@ final class CompanionManager: ObservableObject {
         bindVoiceStateObservation()
         bindAudioPowerLevel()
         bindShortcutTransitions()
+        applyHearingForAccount()
         // A key or token changed in shell.json: the open Realtime session was minted with the old
         // one, so replace it rather than keep using it until the next relaunch.
         OpenClickyConfiguration.startWatchingSettingsFile()
@@ -703,6 +713,7 @@ final class CompanionManager: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 AppLog.append("shell.json credentials changed; reconnecting realtime")
+                self.applyHearingForAccount()
                 if self.usesRealtimeVoice { self.warmUpRealtimeVoice() }
             }
         }
@@ -1282,7 +1293,7 @@ final class CompanionManager: ObservableObject {
 
                 // OpenClicky two-tier routing: the gate decides whether this is a quick question
                 // (teacher lane below: Claude + pointing) or real work (agent lane: Codex thread).
-                if isAgentModeEnabled && OpenClickyConfiguration.isConfigured {
+                if isAgentModeEnabled && OpenClickyConfiguration.isConfigured && AccountCapabilities.current().usesAgent {
                     agentActivityText = "deciding…"
                     let lane = await openClickyAgentClient.classifyLane(for: transcript)
                     guard !Task.isCancelled else { return }
@@ -1311,24 +1322,35 @@ final class CompanionManager: ObservableObject {
                     (userPlaceholder: entry.userTranscript, assistantResponse: entry.assistantResponse)
                 }
 
+                // An account cannot run the agent, so it offers the quick actions to Claude instead.
+                let tools = AccountCapabilities.current().kind == .account ? RealtimeVoiceClient.anthropicToolDefinitions() : []
+                let toolsLine = tools.isEmpty ? "" : "\n\n" + Self.accountToolsInstruction
                 let (fullResponseText, toolCalls, _) = try await claudeAPI.analyzeImageStreaming(
                     images: labeledImages,
-                    systemPrompt: Self.composeTalkInstructions(base: Self.withReplyLanguage(Self.companionVoiceResponseSystemPrompt), skillsBlock: talkSkillsBlock()),
+                    systemPrompt: Self.composeTalkInstructions(base: Self.withReplyLanguage(Self.companionVoiceResponseSystemPrompt) + toolsLine, skillsBlock: talkSkillsBlock()),
                     conversationHistory: historyForAPI,
                     userPrompt: SelectedTextReader.currentSelection().map {
                         transcript + "\n\n[" + SelectedTextReader.contextLine(for: $0) + "]"
                     } ?? transcript,
+                    tools: tools,
                     onTextChunk: { _ in
                         // No streaming text display — spinner stays until TTS plays
                     }
                 )
-                _ = toolCalls // acted on once accounts turn tools on
+                var toolOutcomes: [String] = []
+                for call in toolCalls.prefix(2) {
+                    switch MacAction.parse(toolName: call.name, arguments: call.arguments) {
+                    case .action(let action): toolOutcomes.append((await macActionRunner.perform(action)).spokenSentence)
+                    case .badArguments(let outcome): toolOutcomes.append(outcome.spokenSentence)
+                    case .notAFastAction: toolOutcomes.append(AccountLimitError.notOnPlan.message)
+                    }
+                }
 
                 guard !Task.isCancelled else { return }
 
                 // Parse the [POINT:...] tag from Claude's response
                 let parseResult = Self.parsePointingCoordinates(from: fullResponseText)
-                let spokenText = parseResult.spokenText
+                let spokenText = Self.spokenReply(text: parseResult.spokenText, toolOutcomes: toolOutcomes)
 
                 // Pick the screen capture matching Claude's screen number,
                 // falling back to the cursor screen if not specified.
@@ -1370,13 +1392,18 @@ final class CompanionManager: ObservableObject {
                         // speakText returns after player.play() — audio is now playing
                         voiceState = .responding
                     } catch {
-                        ClickyAnalytics.trackTTSError(error: error.localizedDescription)
+                        // 402 is the account's voice allowance (tts_budget): the system voice is the plan, not a failure.
+                        if (error as NSError).code != 402 {
+                            ClickyAnalytics.trackTTSError(error: error.localizedDescription)
+                        }
                         print("⚠️ TTS via backend failed (\(error.localizedDescription)); using the system voice")
                         speakWithSystemVoice(spokenText)
                     }
                 }
             } catch is CancellationError {
                 // User spoke again — response was interrupted
+            } catch let error as NSError where Self.limitSentence(for: error) != nil {
+                speakWithSystemVoice(Self.limitSentence(for: error) ?? "")
             } catch {
                 ClickyAnalytics.trackResponseError(error: error.localizedDescription)
                 print("⚠️ Companion response error: \(error)")
@@ -1563,6 +1590,24 @@ final class CompanionManager: ObservableObject {
     /// Speaks a hardcoded error message using macOS system TTS when API
     /// credits run out. Uses NSSpeechSynthesizer so it works even when
     /// ElevenLabs is down.
+    static let accountToolsInstruction = "When the user asks you to open an app or a website, make or show a folder, change the volume or control playback, call the matching tool instead of describing the steps. For anything else you can only explain and point."
+
+    /// What the companion says: the answer, then what each quick action did.
+    static func spokenReply(text: String, toolOutcomes: [String]) -> String {
+        let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ([answer] + toolOutcomes).filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    /// The plain sentence for an account limit, when the ask lane's Claude call answered 402.
+    /// `ClaudeAPI` puts the response body after `API Error (402): `, so the JSON starts at the first `{`.
+    static func limitSentence(for error: Error) -> String? {
+        let error = error as NSError
+        guard error.domain == "ClaudeAPI", error.code == 402 else { return nil }
+        let body = Data(((error.userInfo[NSLocalizedDescriptionKey] as? String) ?? "").drop { $0 != "{" }.utf8)
+        let message = AccountLimitError.from(status: 402, body: body)?.message ?? ""
+        return message.isEmpty ? AccountLimitError.personalLimit.message : message
+    }
+
     private func speakCreditsErrorFallback() {
         let utterance = "Something went wrong talking to the OpenClicky backend. Check the backend and your token in the settings file."
         let synthesizer = NSSpeechSynthesizer()

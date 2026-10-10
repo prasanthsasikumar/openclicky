@@ -30,4 +30,10 @@ struct AccountTakePolisherTests {
             try await polisher.polish(system: "s", user: "words")
         }
     }
+
+    @Test func polishErrorsReadAsPlainSentences() {
+        #expect(AccountPolishError.limit(.dailyLimit).localizedDescription == AccountLimitError.dailyLimit.message)
+        #expect(AccountPolishError.unavailable(0).localizedDescription == "couldn't reach openclicky right now.")
+        #expect(AccountPolishError.unavailable(503).localizedDescription == "couldn't reach openclicky right now.")
+    }
 }
