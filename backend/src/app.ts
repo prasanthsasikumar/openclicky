@@ -91,7 +91,7 @@ export function createApp(options: AppOptions = {}) {
 
   app.get("/health", (c) => c.json({ ok: true }));
 
-  // What a client needs to sign in with email + password (Supabase Auth): public by design, so an
+  // What a client needs to sign in with an email and a code (Supabase Auth): public by design, so an
   // installed app only has to know the backend URL. 404 when the backend has no Supabase configured.
   app.get("/auth/config", async (c) => {
     const env = getEnv(c);

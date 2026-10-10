@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { SignJWT } from "jose";
+import { issueSessionToken } from "../src/auth.js";
 import { createApp } from "../src/app.js";
 import { normalizeEmail, isDeviceHash, allow } from "../src/accountAuth.js";
 
@@ -144,6 +145,14 @@ describe("POST /auth/start", () => {
     expect((await start({ email: "a@b.co", device }, "4.4.4.4")).status).toBe(502);
     expect(bad.users["u-new"]).toBeUndefined();
   });
+  it("an attach failure leaves a live guest on the Mac untouched", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const s = supabase({ rows: [{ user_id: "u-guest", email: "old@example.com", device_hash: device, confirmed_at: null, replaced_at: null }], users: { "u-guest": { is_anonymous: true } }, attach: () => new Response('{"msg":"boom"}', { status: 500 }) });
+    const res = await start({ email: "gran@example.com", device });
+    expect(res.status).toBe(502);
+    expect(s.rows.find((r) => r.user_id === "u-guest")!.replaced_at).toBeNull();
+    expect(s.users["u-guest"]).toBeDefined();
+  });
   it("rejects a bad email or device before any call", async () => {
     const s = supabase();
     expect(await (await start({ email: "nope", device })).json()).toEqual({ error: "bad_email" });
@@ -175,11 +184,39 @@ describe("POST /auth/code", () => {
     expect(await res.json()).toEqual({ status: "signed_in", session: { access_token: "acc", refresh_token: "ref", expires_in: 3600 }, confirmed: true });
     expect(s.rows[0].confirmed_at).not.toBeNull();
   });
-  it("creates the row for a confirmed auth user that has none", async () => {
+  it("creates the row for a confirmed auth user that has none, when accounts are open", async () => {
     const s = supabase();
-    await code({ email: "gran@example.com", code: "123456" });
+    const res = await code({ email: "gran@example.com", code: "123456" });
+    expect((await res.json()).status).toBe("signed_in");
     expect(s.rows).toContainEqual(expect.objectContaining({ user_id: "u-old", email: "gran@example.com" }));
     expect(s.rows[0].confirmed_at).not.toBeNull();
+  });
+  it("402 accounts_full, no row and no session, when a row-less user arrives and accounts are closed", async () => {
+    const s = supabase({ open: false });
+    const res = await code({ email: "gran@example.com", code: "123456" });
+    expect(res.status).toBe(402);
+    expect(await res.json()).toEqual({ error: "accounts_full" });
+    expect(s.rows).toHaveLength(0);
+    const s2 = supabase();
+    const res2 = await createApp({ log: null }).request("/auth/code", post({ email: "gran@example.com", code: "123456" }, "6.6.6.6"), { ...env, ACCOUNTS_OPEN: "false" });
+    expect(res2.status).toBe(402);
+    expect(JSON.stringify(await res2.json())).not.toContain("access_token");
+    expect(s2.rows).toHaveLength(0);
+  });
+  it("a row-less user whose insert fails gets 502 and no session", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    supabase({ insertFails: 1 });
+    const res = await code({ email: "gran@example.com", code: "123456" });
+    expect(res.status).toBe(502);
+    expect(JSON.stringify(await res.json())).not.toContain("access_token");
+  });
+  it("429 slow_down on the 11th call from one IP in an hour", async () => {
+    supabase({ rows: [{ user_id: "u-old", email: "gran@example.com", device_hash: device, confirmed_at: "2026-10-01T00:00:00Z", replaced_at: null }] });
+    const app = createApp({ log: null });
+    for (let i = 0; i < 10; i++) expect((await app.request("/auth/code", post({ email: "gran@example.com", code: "123456" }, "7.7.7.7"), env)).status).toBe(200);
+    const res = await app.request("/auth/code", post({ email: "gran@example.com", code: "123456" }, "7.7.7.7"), env);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "slow_down" });
   });
   it("a wrong or expired code is 401 bad_code; a malformed one is 400", async () => {
     supabase({ verify: () => new Response('{"error_code":"otp_expired"}', { status: 403 }) });
@@ -210,5 +247,23 @@ describe("POST /auth/resend", () => {
     const s = supabase({ rows: [guestRow], users: { "u-guest": { is_anonymous: false } } });
     expect(await (await resend()).json()).toEqual({ status: "already_confirmed" });
     expect(s.calls.some((c) => c.url.includes("/auth/v1/user"))).toBe(false);
+  });
+  it("429 on the 4th resend for one user", async () => {
+    supabase({ rows: [guestRow], users: { "u-guest": { is_anonymous: true } } });
+    const jwt = await token();
+    const app = createApp({ log: null });
+    const go = () => app.request("/auth/resend", { method: "POST", headers: { authorization: `Bearer ${jwt}` } }, env);
+    for (let i = 0; i < 3; i++) expect((await go()).status).toBe(200);
+    const res = await go();
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "slow_down" });
+  });
+  it("a backend session token gets 400 bad_request without calling GoTrue", async () => {
+    const s = supabase();
+    const { token: st } = await issueSessionToken({ sub: "u-guest" }, { ...env, SESSION_TOKEN_SECRET: "s".repeat(40) });
+    const res = await createApp({ log: null }).request("/auth/resend", { method: "POST", headers: { authorization: `Bearer ${st}` } }, { ...env, SESSION_TOKEN_SECRET: "s".repeat(40) });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "bad_request" });
+    expect(s.calls).toHaveLength(0);
   });
 });

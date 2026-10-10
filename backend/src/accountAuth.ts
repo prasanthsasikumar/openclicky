@@ -88,11 +88,6 @@ export function registerAccountAuth(app: Hono<any>) {
       }
       if (confirmed.some((r) => r.email === email)) return await sendCode();
       if (confirmed.filter((r) => r.email !== email).length >= perDevice) return c.json({ error: "device_limit" }, 402);
-      for (const guest of guests) {
-        await db.update("oc_accounts", `user_id=eq.${enc(guest.user_id)}`, { replaced_at: nowIso() });
-        await gt.deleteUser(guest.user_id).catch((e) => console.error(`auth/start: delete replaced guest: ${(e as Error).message}`));
-      }
-
       const session = await gt.signUpAnonymously();
       const discard = () => gt.deleteUser(session.user.id).catch((e) => console.error(`auth/start: delete new guest: ${(e as Error).message}`));
       try {
@@ -110,6 +105,11 @@ export function registerAccountAuth(app: Hono<any>) {
         });
       }
       if (!recorded) { await discard(); return c.json({ error: "auth_unavailable" }, 502); }
+      // Only now that the new guest exists is the old one replaced, so a failure above leaves it untouched.
+      for (const guest of guests) {
+        await db.update("oc_accounts", `user_id=eq.${enc(guest.user_id)}`, { replaced_at: nowIso() }).catch((e) => console.error(`auth/start: mark replaced guest: ${(e as Error).message}`));
+        await gt.deleteUser(guest.user_id).catch((e) => console.error(`auth/start: delete replaced guest: ${(e as Error).message}`));
+      }
       return c.json({ status: "signed_in", session: clientSession(session), confirmed: false });
     } catch (e) {
       return failed(c, "auth/start", e);
@@ -124,20 +124,32 @@ export function registerAccountAuth(app: Hono<any>) {
     const code = typeof req.code === "string" ? req.code.trim() : "";
     if (!email || !/^\d{6}$/.test(code)) return c.json({ error: "bad_code" }, 400);
     if (!allow(codeHits, ipOf(c), 10)) return c.json({ error: "slow_down" }, 429);
-    const { db, gt } = k;
+    const { env, db, gt } = k;
     let session: GoTrueSession;
     try { session = await gt.verifyCode(email, code); }
     catch (e) {
       if (e instanceof GoTrueError && e.status >= 400 && e.status < 500 && e.status !== 429) return c.json({ error: "bad_code" }, 401);
       return failed(c, "auth/code", e);
     }
-    try {
-      const id = session.user.id;
-      const rows = await db.select<Row>("oc_accounts", `user_id=eq.${enc(id)}&select=user_id,confirmed_at`);
-      if (!rows.length) await db.insert("oc_accounts", { user_id: id, email, confirmed_at: nowIso() });
-      else if (!rows[0].confirmed_at) await db.update("oc_accounts", `user_id=eq.${enc(id)}`, { confirmed_at: nowIso() });
-    } catch (e) {
-      console.error(`auth/code: account row: ${(e as Error).message}`); // signed in anyway; oc_confirmed stamps it on first use
+    const id = session.user.id;
+    let rows: Row[] | null = null;
+    try { rows = await db.select<Row>("oc_accounts", `user_id=eq.${enc(id)}&select=user_id,confirmed_at`); }
+    catch (e) { console.error(`auth/code: account row read: ${(e as Error).message}`); }
+    if (rows?.length) {
+      if (!rows[0].confirmed_at) {
+        await db.update("oc_accounts", `user_id=eq.${enc(id)}`, { confirmed_at: nowIso() })
+          .catch((e) => console.error(`auth/code: account row: ${(e as Error).message}`)); // signed in anyway; oc_confirmed stamps it on first use
+      }
+    } else {
+      // No row: this would be a new confirmed account, so it passes the same cap as /auth/start.
+      try {
+        const open = env.ACCOUNTS_OPEN === "true" && (await db.rpc<boolean>("oc_accounts_open", { p_guest_days: Number(env.GUEST_DAYS) || 14 }));
+        if (!open) return c.json({ error: "accounts_full" }, 402);
+        if (rows === null) throw new Error("account row unreadable");
+        await db.insert("oc_accounts", { user_id: id, email, confirmed_at: nowIso() });
+      } catch (e) {
+        return failed(c, "auth/code", e);
+      }
     }
     return c.json({ status: "signed_in", session: clientSession(session), confirmed: true });
   });
@@ -147,6 +159,7 @@ export function registerAccountAuth(app: Hono<any>) {
     if (!k) return notConfigured(c);
     const principal = c.get("principal" as never) as Principal;
     if (!allow(resendHits, principal.sub, 3)) return c.json({ error: "slow_down" }, 429);
+    if (principal.via !== "supabase") return c.json({ error: "bad_request" }, 400); // a backend session token can't re-attach an email
     const token = bearerFrom(c.req.header("authorization"))!;
     const { db, gt, redirect } = k;
     try {

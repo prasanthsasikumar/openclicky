@@ -594,7 +594,8 @@ describe("sign-up support", () => {
     expect(await res.text()).toContain("your openclicky account is confirmed");
   });
   it("the password routes are gone", async () => {
-    expect((await createApp({ log: null }).request("/auth/signup", { method: "POST" })).status).toBe(404);
-    expect((await createApp({ log: null }).request("/auth/reset")).status).toBe(404);
+    const env = { ...base, SUPABASE_SERVICE_KEY: "sk", ACCOUNTS_OPEN: "true", SUPABASE_JWT_SECRET: "x".repeat(32) };
+    expect((await createApp({ log: null }).request("/auth/signup", { method: "POST" }, env)).status).toBe(404);
+    expect((await createApp({ log: null }).request("/auth/reset", {}, env)).status).toBe(404);
   });
 });
