@@ -18,6 +18,7 @@ extension AccountPolishError: LocalizedError {
     /// A plain sentence for the orb and Hey Clicky edits, never "error 0".
     var errorDescription: String? {
         if case .limit(let limit) = self, !limit.message.isEmpty { return limit.message }
+        if case .unavailable(503) = self { return AccountLimitError.serviceTroubleMessage }
         return "couldn't reach openclicky right now."
     }
 }

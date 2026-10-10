@@ -170,7 +170,7 @@ struct StylesPageView: View {
                         Text("your audio stays here; only the words go to the model for cleanup.").font(Paper.caption).foregroundStyle(Paper.inkSecondary)
                     }
                     Spacer(minLength: 12)
-                    PaperToggle(isOn: $settings.polishOfflineTakes)
+                    PaperToggle(isOn: Binding(get: { settings.polishOfflineTakes }, set: { settings.choosePolishOfflineTakes($0) }))
                 }
                 .padding(.horizontal, Paper.Metric.rowHorizontal)
                 .padding(.vertical, Paper.Metric.rowVertical)

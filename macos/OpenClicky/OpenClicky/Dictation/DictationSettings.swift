@@ -125,7 +125,11 @@ struct DictationLanguage: Identifiable, Equatable {
 
 @MainActor
 final class DictationSettings: ObservableObject {
-    static let shared = DictationSettings()
+    static let shared: DictationSettings = {
+        let settings = DictationSettings()
+        settings.followAccountProfile()
+        return settings
+    }()
 
     private let defaults: UserDefaults
 
@@ -136,8 +140,9 @@ final class DictationSettings: ObservableObject {
         script = DictationScript(rawValue: defaults.string(forKey: Keys.script) ?? "") ?? .native
         polishWithModel = defaults.object(forKey: Keys.polishWithModel) == nil ? true : defaults.bool(forKey: Keys.polishWithModel)
         polishOfflineTakes = defaults.bool(forKey: Keys.polishOfflineTakes)
-        if defaults.object(forKey: Keys.polishOfflineTakes) == nil, AccountCapabilities.current().kind == .account {
-            polishOfflineTakes = true
+        // Before the explicit flag existed, a stored value could only have come from the toggle.
+        if defaults.object(forKey: Keys.polishOfflineTakes) != nil, defaults.object(forKey: Keys.polishOfflineTakesChosen) == nil {
+            defaults.set(true, forKey: Keys.polishOfflineTakesChosen)
         }
         dictationKey = DictationHotkey(rawValue: defaults.string(forKey: Keys.dictationKey) ?? "") ?? .fn
         orbVisible = defaults.object(forKey: Keys.orbVisible) == nil ? true : defaults.bool(forKey: Keys.orbVisible)
@@ -176,6 +181,8 @@ final class DictationSettings: ObservableObject {
         static let script = "dictation.script"
         static let polishWithModel = "dictation.polishWithModel"
         static let polishOfflineTakes = "dictation.polishOfflineTakes"
+        /// Set once the person flips "also polish takes heard on this mac" themselves.
+        static let polishOfflineTakesChosen = "dictation.polishOfflineTakesChosen"
         static let dictationKey = "dictation.key"
         static let orbVisible = "dictation.orb.visible"
         static let orbLook = "dictation.orb.look"
@@ -211,7 +218,39 @@ final class DictationSettings: ObservableObject {
     @Published var polishWithModel: Bool { didSet { defaults.set(polishWithModel, forKey: Keys.polishWithModel) } }
     /// The offline engine's promise is that nothing leaves the Mac; sending its words to a model
     /// for polish is off until asked for by name.
-    @Published var polishOfflineTakes: Bool { didSet { defaults.set(polishOfflineTakes, forKey: Keys.polishOfflineTakes) } }
+    @Published var polishOfflineTakes: Bool {
+        didSet { if !isApplyingAccountDefault { defaults.set(polishOfflineTakes, forKey: Keys.polishOfflineTakes) } }
+    }
+    private var isApplyingAccountDefault = false
+    private var accountObservers: [NSObjectProtocol] = []
+
+    /// The settings toggle: the person's own choice, which the account default never overrides.
+    func choosePolishOfflineTakes(_ isOn: Bool) {
+        defaults.set(true, forKey: Keys.polishOfflineTakesChosen)
+        polishOfflineTakes = isOn
+    }
+
+    /// A free account's takes go to its model anyway, so until the person chooses, polish of takes
+    /// heard on this Mac is on for accounts and off otherwise. The default is not stored, so it
+    /// follows the account as it changes.
+    func applyAccountPolishDefault(kind: AccountKind) {
+        guard !defaults.bool(forKey: Keys.polishOfflineTakesChosen) else { return }
+        let wanted = kind == .account
+        guard polishOfflineTakes != wanted else { return }
+        isApplyingAccountDefault = true
+        polishOfflineTakes = wanted
+        isApplyingAccountDefault = false
+    }
+
+    /// Re-applies the default whenever credentials change or the backend's answer changes the account.
+    private func followAccountProfile() {
+        applyAccountPolishDefault(kind: AccountCapabilities.current().kind)
+        for name in [OpenClickyConfiguration.credentialsChangedNotification, AccountProfileStore.profileChangedNotification] {
+            accountObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                Task { @MainActor in DictationSettings.shared.applyAccountPolishDefault(kind: AccountCapabilities.current().kind) }
+            })
+        }
+    }
 
     var language: DictationLanguage { DictationLanguage.named(languageCode) }
 

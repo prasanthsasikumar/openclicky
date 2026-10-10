@@ -123,9 +123,11 @@ private struct SignedInAccountRows: View {
     }
 }
 
-/// Signed out: the two ways in, each opening the account sheet.
+/// Signed out: the two ways in, each opening the account sheet. "create" is hidden while the
+/// backend takes no new accounts.
 private struct AccountStartRow: View {
     @State private var sheetMode: AccountSheet.Mode?
+    @ObservedObject private var authSession = OpenClickyAuthSession.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -134,8 +136,10 @@ private struct AccountStartRow: View {
                 .font(Paper.caption).foregroundStyle(Paper.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                Button("create a free account") { sheetMode = .create }
-                    .buttonStyle(PaperPillButtonStyle(prominent: true))
+                if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
+                    Button("create a free account") { sheetMode = .create }
+                        .buttonStyle(PaperPillButtonStyle(prominent: true))
+                }
                 Button("sign in") { sheetMode = .signIn }
                     .buttonStyle(PaperPillButtonStyle())
             }
@@ -143,6 +147,7 @@ private struct AccountStartRow: View {
         .padding(.horizontal, Paper.Metric.rowHorizontal)
         .padding(.vertical, Paper.Metric.rowVertical + 4)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .task { await authSession.refreshAccountsOpen() }
         .sheet(item: $sheetMode) { mode in
             // The own-key field is on this page, behind the sheet: closing it is the way there.
             AccountSheet(startIn: mode, onDone: { sheetMode = nil }, onUseOwnKey: { sheetMode = nil })
@@ -164,10 +169,16 @@ private struct PlanSummary: View {
             if let summary = billing.summary {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("openclicky").font(Paper.cardTitle).foregroundStyle(Paper.ink)
-                    SettingsTag(text: summary.byok ? "your keys" : "free account")
+                    SettingsTag(text: summary.byok ? "your keys" : summary.isMetered ? "free account" : "not metered")
                 }
                 if summary.byok {
                     Text("openclicky meters nothing: every request runs on your own key.").font(Paper.caption).foregroundStyle(Paper.inkSecondary)
+                } else if !summary.isMetered {
+                    Text("this backend meters nothing: every request runs without an allowance.").font(Paper.caption).foregroundStyle(Paper.inkSecondary)
+                } else if summary.isSwitchedOff {
+                    Text(BillingSummary.switchedOffMessage)
+                        .font(Paper.caption).foregroundStyle(Paper.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     AccountUsageBar(summary: summary)
                     DisclosureGroup(isExpanded: $showsDetails) {

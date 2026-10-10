@@ -24,6 +24,10 @@ struct BillingSummary: Decodable, Equatable {
     let dayEnd: String
     let budgetExhausted: Bool
     let blocked: Bool
+    /// "grant", "byok" or "unmetered"; older backends send neither of these two.
+    var plan: String? = nil
+    /// For a grant login: whether it has an OpenClicky account (and is not paused).
+    var onPlan: Bool? = nil
 }
 
 /// Where the free allowance stands, most pressing first: each case has its own sentence because
@@ -86,24 +90,39 @@ final class BillingStatusModel: ObservableObject {
         }
         Task {
             do {
-                // backendBaseURL is user-configurable (shell.json or an environment override), not
-                // a compile-time literal, so a malformed value must throw instead of crashing the app.
-                guard let billingURL = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/billing/me") else {
-                    throw NSError(domain: "OpenClickyBilling", code: -1, userInfo: [NSLocalizedDescriptionKey: "backend URL is invalid"])
-                }
-                var request = URLRequest(url: billingURL)
-                OpenClickyConfiguration.authorize(&request)
-                let (data, response) = try await URLSession.shared.data(for: request)
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                guard statusCode == 200 else {
-                    throw NSError(domain: "OpenClickyBilling", code: statusCode, userInfo: [NSLocalizedDescriptionKey: statusCode == 401 ? "session expired, sign in again" : "backend answered \(statusCode)"])
-                }
-                summary = try JSONDecoder().decode(BillingSummary.self, from: data)
+                let fetched = try await Self.fetchSummary()
+                summary = fetched
                 errorText = nil
+                AccountProfileStore.shared.absorb(fetched)
             } catch {
-                errorText = (error as NSError).code == 401 ? "your sign-in ran out — sign in again." : "couldn't load your allowance right now."
+                errorText = Self.errorSentence(for: error)
                 print("💳 Billing status failed: \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// GET /billing/me. Errors carry the HTTP status as their code (503 means the free service's ledger is down).
+    static func fetchSummary() async throws -> BillingSummary {
+        // backendBaseURL is user-configurable (shell.json or an environment override), not
+        // a compile-time literal, so a malformed value must throw instead of crashing the app.
+        guard let billingURL = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/billing/me") else {
+            throw NSError(domain: "OpenClickyBilling", code: -1, userInfo: [NSLocalizedDescriptionKey: "backend URL is invalid"])
+        }
+        var request = URLRequest(url: billingURL)
+        OpenClickyConfiguration.authorize(&request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard statusCode == 200 else {
+            throw NSError(domain: "OpenClickyBilling", code: statusCode, userInfo: [NSLocalizedDescriptionKey: statusCode == 401 ? "session expired, sign in again" : "backend answered \(statusCode)"])
+        }
+        return try JSONDecoder().decode(BillingSummary.self, from: data)
+    }
+
+    static func errorSentence(for error: Error) -> String {
+        switch (error as NSError).code {
+        case 401: return "your sign-in ran out — sign in again."
+        case 503: return AccountLimitError.serviceTroubleMessage
+        default: return "couldn't load your allowance right now."
         }
     }
 }
@@ -165,14 +184,17 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
                 .pointerCursor()
                 .disabled(isSigningIn || email.isEmpty || password.isEmpty)
             }
-            Button(action: openAccountPage) {
-                Text("no account yet? create a free one in settings.")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color.white.opacity(0.55))
+            if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
+                Button(action: openAccountPage) {
+                    Text("no account yet? create a free one in settings.")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color.white.opacity(0.55))
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
             }
-            .buttonStyle(.plain)
-            .pointerCursor()
         }
+        .task { await authSession.refreshAccountsOpen() }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
     }
@@ -211,7 +233,11 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
         } else {
             row("person.crop.circle", "account", "token from shell.json")
         }
-        if let summary = model.summary {
+        if let summary = model.summary, summary.isSwitchedOff {
+            row("exclamationmark.circle", "allowance", BillingSummary.switchedOffMessage)
+        } else if let summary = model.summary, !summary.isMetered {
+            row("gauge", "allowance", "not metered")
+        } else if let summary = model.summary {
             row("gauge", "allowance", summary.allowanceSentence(resetDay: summary.monthResetDay()))
         } else if let errorText = model.errorText {
             row("exclamationmark.triangle", "allowance", errorText)

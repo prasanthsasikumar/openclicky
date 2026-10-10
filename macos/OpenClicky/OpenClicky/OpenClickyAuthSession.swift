@@ -20,6 +20,8 @@ final class OpenClickyAuthSession: ObservableObject {
 
     enum SignUpState: Equatable { case idle, sending, awaitingConfirmation(email: String), signedIn, failed(String), full }
     @Published private(set) var signUpState: SignUpState = .idle
+    /// Whether the backend takes new accounts (GET /auth/config); nil until it has answered.
+    @Published private(set) var accountsOpen: Bool?
 
     private var refreshTimer: Timer?
     /// Refresh this long before the access token expires (Supabase tokens last an hour).
@@ -28,9 +30,11 @@ final class OpenClickyAuthSession: ObservableObject {
     struct AuthConfig: Decodable {
         let supabaseUrl: String
         let publishableKey: String
-        /// Older backends omit both of these.
+        /// Older backends omit these.
         let accountsOpen: Bool?
         let confirmRedirectUrl: String?
+        /// The backend's /auth/reset page, where a password-reset link lands.
+        var resetRedirectUrl: String? = nil
     }
 
     private struct TokenResponse: Decodable {
@@ -63,6 +67,7 @@ final class OpenClickyAuthSession: ObservableObject {
             let session = try await requestToken(config: config, grant: "password", body: ["email": email, "password": password])
             store(session, config: config, email: session.user?.email ?? email)
             print("🔐 Signed in as \(session.user?.email ?? email)")
+            AccountProfileStore.shared.refresh()
             return true
         } catch {
             lastErrorText = Self.describe(error)
@@ -77,6 +82,31 @@ final class OpenClickyAuthSession: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email, "password": password])
+        return request
+    }
+
+    /// "create a free account" is offered unless the backend has said sign-up is closed; an
+    /// unknown answer keeps it (the sheet then says when accounts are full).
+    nonisolated static func offersCreateAccount(accountsOpen: Bool?) -> Bool { accountsOpen != false }
+
+    /// Asks the backend whether it takes new accounts; a failure leaves the last answer.
+    func refreshAccountsOpen() async {
+        guard let config = try? await authConfig() else { return }
+        accountsOpen = config.accountsOpen
+    }
+
+    /// Supabase's recover call, with the link sent to the backend's reset page when it names one.
+    nonisolated static func recoverRequest(config: AuthConfig, email: String) -> URLRequest? {
+        guard var components = URLComponents(string: "\(config.supabaseUrl)/auth/v1/recover") else { return nil }
+        if let redirect = config.resetRedirectUrl, !redirect.isEmpty {
+            components.queryItems = [URLQueryItem(name: "redirect_to", value: redirect)]
+        }
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email])
         return request
     }
 
@@ -106,6 +136,7 @@ final class OpenClickyAuthSession: ObservableObject {
         signUpState = .sending
         do {
             let config = try await authConfig()
+            accountsOpen = config.accountsOpen
             guard config.accountsOpen != false else { signUpState = .full; return }
             guard let request = Self.signUpRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, email: email, password: password) else {
                 signUpState = .failed("creating an account isn't available right now.")
@@ -165,12 +196,7 @@ final class OpenClickyAuthSession: ObservableObject {
     }
 
     func recover(email: String) async -> Bool {
-        guard let config = try? await authConfig(), let url = URL(string: "\(config.supabaseUrl)/auth/v1/recover") else { return false }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email])
+        guard let config = try? await authConfig(), let request = Self.recoverRequest(config: config, email: email) else { return false }
         let status = ((try? await URLSession.shared.data(for: request))?.1 as? HTTPURLResponse)?.statusCode ?? 0
         return (200..<300).contains(status)
     }
@@ -184,6 +210,7 @@ final class OpenClickyAuthSession: ObservableObject {
         }
         lastErrorText = nil
         print("🔐 Signed out")
+        AccountProfileStore.shared.refresh()
     }
 
     /// Refreshes when the stored access token is within `refreshLeadSeconds` of expiring.

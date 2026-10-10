@@ -262,7 +262,10 @@ struct OnboardingView: View {
                 .foregroundStyle(Paper.success)
                 .padding(.top, 6)
             } else {
-                accountChoice("person.crop.circle.badge.plus", "create a free account", "polished dictation and spoken answers, on us.", isProminent: true) { accountSheetMode = .create }
+                // Hidden while the backend takes no new accounts (/auth/config accountsOpen == false).
+                if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
+                    accountChoice("person.crop.circle.badge.plus", "create a free account", "polished dictation and spoken answers, on us.", isProminent: true) { accountSheetMode = .create }
+                }
                 accountChoice("person.crop.circle", "sign in", "you already have an openclicky account.") { accountSheetMode = .signIn }
                 accountChoice("key", "use my own key", "if you already have an openai key.") { companionManager.showDictationWindow(settingsPage: .account) }
                 Button("skip — keep everything on this mac") { finish() }
@@ -270,6 +273,7 @@ struct OnboardingView: View {
                     .padding(.top, 2)
             }
         }
+        .task { await authSession.refreshAccountsOpen() }
     }
 
     private func accountChoice(_ symbol: String, _ title: String, _ detail: String, isProminent: Bool = false, action: @escaping () -> Void) -> some View {

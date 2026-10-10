@@ -553,6 +553,9 @@ final class CompanionManager: ObservableObject {
     /// Conversation history so Claude remembers prior exchanges within a session.
     /// Each entry is the user's transcript and Claude's response.
     private var conversationHistory: [(userTranscript: String, assistantResponse: String)] = []
+    /// Account notices (a limit, the free service's trouble) already spoken this session: each is
+    /// said once, then the lane falls back silently.
+    private var spokenAccountNotices: Set<String> = []
 
     /// The currently running AI response task, if any. Cancelled when the user
     /// speaks again so a new response can begin immediately.
@@ -722,6 +725,14 @@ final class CompanionManager: ObservableObject {
                 if self.usesRealtimeVoice { self.warmUpRealtimeVoice() }
             }
         }
+        // The backend's /billing/me answer decides the account profile; it can arrive after launch.
+        NotificationCenter.default.addObserver(
+            forName: AccountProfileStore.profileChangedNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.applyHearingForAccount() }
+        }
+        AccountProfileStore.shared.showNotice = { [weak self] notice in self?.showQuietNotice(notice) }
+        AccountProfileStore.shared.start()
         // Eagerly touch the Claude API so its TLS warmup handshake completes
         // well before the onboarding demo fires at ~40s into the video.
         _ = claudeAPI
@@ -1291,8 +1302,10 @@ final class CompanionManager: ObservableObject {
             voiceState = .processing
 
             do {
-                // Capture all connected screens so the AI has full context
-                let screenCaptures = try await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()
+                // Capture all connected screens so the AI has full context (an account sends at most two)
+                let screenCaptures = Self.screensForAsk(
+                    try await CompanionScreenCaptureUtility.captureAllScreensAsJPEG(),
+                    capabilities: AccountCapabilities.current())
 
                 guard !Task.isCancelled else { return }
 
@@ -1386,6 +1399,8 @@ final class CompanionManager: ObservableObject {
                 }
 
                 print("🧠 Conversation history: \(conversationHistory.count) exchanges")
+                // An answer spent some of the allowance: the profile store notices crossing 80%.
+                if AccountCapabilities.current().kind == .account { AccountProfileStore.shared.refresh() }
 
                 ClickyAnalytics.trackAIResponseReceived(characterCount: spokenText.count)
 
@@ -1409,8 +1424,10 @@ final class CompanionManager: ObservableObject {
             } catch is CancellationError {
                 // User spoke again — response was interrupted
             } catch {
-                if let limitSentence = Self.limitSentence(for: error) {
-                    speakWithSystemVoice(limitSentence)
+                if Self.isAccountNotice(error) {
+                    if let notice = Self.accountNoticeToSpeak(for: error, alreadySpoken: &spokenAccountNotices) {
+                        speakWithSystemVoice(notice)
+                    }
                 } else {
                     ClickyAnalytics.trackResponseError(error: error.localizedDescription)
                     print("⚠️ Companion response error: \(error)")
@@ -1611,6 +1628,46 @@ final class CompanionManager: ObservableObject {
         let body = Data(((error.userInfo[NSLocalizedDescriptionKey] as? String) ?? "").drop { $0 != "{" }.utf8)
         let message = AccountLimitError.from(status: 402, body: body)?.message ?? ""
         return message.isEmpty ? AccountLimitError.personalLimit.message : message
+    }
+
+    /// The account's answer to a failed ask: a 402 limit, or the free service's 503 trouble.
+    static func isAccountNotice(_ error: Error) -> Bool {
+        let error = error as NSError
+        guard error.domain == "ClaudeAPI" else { return false }
+        return error.code == 402 || (error.code == 503 && serviceTrouble(in: error))
+    }
+
+    /// The sentence for an account notice the first time this session; nil afterwards (and for any
+    /// other error), so a lane that keeps hitting the same limit falls back silently.
+    static func accountNoticeToSpeak(for error: Error, alreadySpoken: inout Set<String>) -> String? {
+        let nsError = error as NSError
+        let sentence: String?
+        if nsError.domain == "ClaudeAPI", nsError.code == 503, serviceTrouble(in: nsError) {
+            sentence = AccountLimitError.serviceTroubleMessage
+        } else {
+            sentence = limitSentence(for: error)
+        }
+        guard let sentence, alreadySpoken.insert(sentence).inserted else { return nil }
+        return sentence
+    }
+
+    private static func serviceTrouble(in error: NSError) -> Bool {
+        let body = Data(((error.userInfo[NSLocalizedDescriptionKey] as? String) ?? "").drop { $0 != "{" }.utf8)
+        return AccountLimitError.isServiceTrouble(status: error.code, body: body)
+    }
+
+    /// The screens a question carries: the cursor's screen first, and for an account at most one
+    /// other (the grant takes two images).
+    static func screensForAsk(_ captures: [CompanionScreenCapture], capabilities: AccountCapabilities) -> [CompanionScreenCapture] {
+        let cursorFirst = captures.filter(\.isCursorScreen) + captures.filter { !$0.isCursorScreen }
+        guard let limit = capabilities.maxAskScreens else { return cursorFirst }
+        return Array(cursorFirst.prefix(limit))
+    }
+
+    /// One quiet caption (the running-low notice), typed out the way the Home tab's (i) is.
+    func showQuietNotice(_ message: String) {
+        showCaptionBesideMouseWhileDocked(message, holdSeconds: 8)
+        if !isCursorDocked { scheduleTransientHideIfNeeded() }
     }
 
     /// Speaks a hardcoded error message using macOS system TTS when API

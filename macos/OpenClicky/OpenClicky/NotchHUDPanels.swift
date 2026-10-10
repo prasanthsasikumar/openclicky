@@ -701,6 +701,11 @@ struct NotchSkillsAndIntegrationsRow: View {
     }
 
     private func startComposing() {
+        // A free account cannot teach skills yet: say so up front instead of failing after typing.
+        if let hint = AccountCapabilities.current().skillTeachingUnavailableHint {
+            store.lastError = hint
+            return
+        }
         isComposing = true
         isRequestFieldFocused = true
     }
@@ -1095,11 +1100,13 @@ struct NotchSettingsView: View {
 
     /// "account · 45% used" once the allowance has loaded, "account" until then.
     static func planDescription(kind: AccountKind, summary: BillingSummary?) -> String {
+        if let summary, summary.isSwitchedOff { return BillingSummary.switchedOffMessage }
+        if summary?.plan == "unmetered", kind != .signedOut { return "not metered" }
         switch kind {
         case .ownKeys: return "your own key"
         case .signedOut: return "not signed in"
         case .account:
-            guard let summary, !summary.byok else { return "account" }
+            guard let summary, summary.isMetered else { return "account" }
             return "account · \(Int((summary.fractionUsed * 100).rounded()))% used"
         }
     }
