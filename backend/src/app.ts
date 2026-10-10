@@ -7,7 +7,9 @@ import { createSkill } from "./skillsCreate.js";
 import { requestLogger, type LogSink } from "./log.js";
 import { SupabaseBillingStore, type BillingStore, type BillingContext } from "./billing.js";
 import { SupabaseRest } from "./db.js";
-import { requireAccount, accountSummary } from "./account.js";
+import { requireAccount, accountSummary, type AccountContext } from "./account.js";
+import { proxyAnthropicOnGrant } from "./anthropicGrant.js";
+import type { Purpose } from "./modelPolicy.js";
 import { SupabaseSpendLedger, type SpendLedger } from "./ledger.js";
 import { handleStripeWebhook, createCheckoutSession, createPortalSession } from "./stripe.js";
 
@@ -71,6 +73,12 @@ export function createApp(options: AppOptions = {}) {
     const store = storeFor(c);
     return store ? handler(c, store) : c.json({ error: "billing store not configured" }, 503);
   };
+  /** BYOK and unmetered backends keep the plain proxy; grant requests go through the ledger. */
+  const grantOr = (c: Context, purpose: Purpose, plain: () => Promise<Response>) => {
+    const ledger = ledgerFor(c);
+    const account = c.get("account" as never) as AccountContext | undefined;
+    return ledger && account && !account.byok ? proxyAnthropicOnGrant(c, ledger, purpose) : plain();
+  };
 
   app.get("/health", (c) => c.json({ ok: true }));
 
@@ -117,13 +125,13 @@ export function createApp(options: AppOptions = {}) {
   app.use("/transcribe-token", gate);
 
   // Native shell (macos/OpenClicky, forked from the original open-source Clicky app) speaks its original Worker contract.
-  app.post("/chat", (c) => proxyAnthropic(c, storeFor(c))); // Claude vision + [POINT] pointing, streamed
+  app.post("/chat", (c) => grantOr(c, "ask", () => proxyAnthropic(c, storeFor(c)))); // Claude vision + [POINT] pointing, streamed
   app.post("/tts", (c) => synthesizeSpeech(c, storeFor(c))); // ElevenLabs or OpenAI speech → audio/mpeg
   app.post("/transcribe-token", (c) => assemblyAiToken(c)); // AssemblyAI streaming token (optional)
 
   app.post("/v1/chat/completions", (c) => proxyOpenAI(c, "/chat/completions", storeFor(c))); // `ask` lane
   app.post("/v1/responses", (c) => proxyOpenAI(c, "/responses", storeFor(c))); // Codex agent lane (Codex >= 0.15x is Responses-only)
-  app.post("/v1/messages", (c) => proxyAnthropic(c, storeFor(c))); // Anthropic gate lane
+  app.post("/v1/messages", (c) => grantOr(c, "gate", () => proxyAnthropic(c, storeFor(c)))); // Anthropic gate lane
 
   // Voice groundwork: ephemeral Realtime client secrets + server-side speech-to-text.
   app.post("/agent/realtime/session", (c) => createRealtimeSession(c, storeFor(c)));
