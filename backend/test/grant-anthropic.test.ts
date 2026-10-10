@@ -88,7 +88,7 @@ const SSE =
   'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}\n\n' +
   'data: {"type":"message_delta","usage":{"output_tokens":100}}\n\n';
 
-const LIMITS = { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 };
+const LIMITS = { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000, guestTotalMicro: 1_000_000, guestDays: 14, guestTtsChars: 2_000 };
 const post = (app: Hono, ledgerEnv = { ANTHROPIC_API_KEY: "sk-grant" }) =>
   app.request("/chat", { method: "POST", body: JSON.stringify({ max_tokens: 500, messages: [{ role: "user", content: "hi" }] }) }, ledgerEnv);
 
@@ -193,7 +193,7 @@ describe("proxyAnthropicOnGrant", () => {
     const res = await appWith(ledger, SSE).request("/chat", { method: "POST", body: JSON.stringify({ max_tokens: 500, messages: [{ role: "user", content: "hi" }] }) }, { ANTHROPIC_API_KEY: "sk-grant" });
     await res.text();
     await new Promise((r) => setTimeout(r, 10));
-    const s = await ledger.summary("u1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 });
+    const s = await ledger.summary("u1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000, guestTotalMicro: 1_000_000, guestDays: 14, guestTtsChars: 2_000 });
     expect(s.spentTodayMicro).toBe(1000 * 2 + 100 * 10); // Sonnet 5.5: 3000 micro-dollars
   });
 
@@ -202,7 +202,7 @@ describe("proxyAnthropicOnGrant", () => {
     const res = await appWith(ledger, SSE).request("/chat", { method: "POST", body: JSON.stringify({ max_tokens: 500, messages: [{ role: "user", content: "hi" }] }) }, { ANTHROPIC_API_KEY: "sk-grant" });
     await res.body?.cancel();
     await new Promise((r) => setTimeout(r, 10));
-    const s = await ledger.summary("u1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 });
+    const s = await ledger.summary("u1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000, guestTotalMicro: 1_000_000, guestDays: 14, guestTtsChars: 2_000 });
     expect(s.spentTodayMicro).toBeGreaterThan(0);
   });
 });

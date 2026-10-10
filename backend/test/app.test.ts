@@ -433,7 +433,7 @@ describe("app", () => {
       expect(seen).toHaveLength(1);
       expect(seen[0].model).toBe("claude-haiku-4-5");
       expect(seen[0].max_tokens).toBe(1024);
-      const s = await ledger.summary("user-1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 });
+      const s = await ledger.summary("user-1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000, guestTotalMicro: 1_000_000, guestDays: 14, guestTtsChars: 2_000 });
       expect(s.spentTodayMicro).toBeGreaterThan(0);
     });
 
