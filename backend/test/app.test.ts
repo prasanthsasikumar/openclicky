@@ -622,7 +622,10 @@ describe("sign-up support", () => {
   it("auth/confirmed is a page that tells people they can close the tab", async () => {
     const res = await createApp({ log: null }).request("/auth/confirmed");
     expect(res.headers.get("content-type")).toContain("text/html");
-    expect(await res.text()).toContain("your openclicky account is confirmed");
+    const page = await res.text();
+    expect(page).toContain("your openclicky account is confirmed — you can close this tab.");
+    expect(page).toContain("this link has expired — open openclicky and press resend link in settings.");
+    expect(page).toContain(`history.replaceState(null, "", location.pathname)`);
   });
   it("the password routes are gone", async () => {
     const env = { ...base, SUPABASE_SERVICE_KEY: "sk", ACCOUNTS_OPEN: "true", SUPABASE_JWT_SECRET: "x".repeat(32) };

@@ -110,11 +110,21 @@ export function createApp(options: AppOptions = {}) {
     });
   });
 
-  // Where the confirmation email's link lands: nothing to do here but go back to the app.
+  // Where the confirmation email's link lands: nothing to do here but go back to the app. GoTrue
+  // puts the session (or, for a stale link, `error=…&error_code=otp_expired`) in the fragment; the
+  // script tells the expired case apart and wipes the fragment so no token stays in history.
   app.get("/auth/confirmed", (c) =>
     c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>You're confirmed</title><body style="font:16px -apple-system,sans-serif;background:#F4F1EA;color:#22201C;display:grid;place-items:center;height:100vh;margin:0">
-<div style="text-align:center"><h1 style="font-family:Georgia,serif;font-weight:400">you're confirmed.</h1><p>your openclicky account is confirmed — you can close this tab.</p></div></body>`),
+<div style="text-align:center"><h1 id="head" style="font-family:Georgia,serif;font-weight:400">you're confirmed.</h1><p id="note">your openclicky account is confirmed — you can close this tab.</p></div>
+<script>
+if (location.hash.indexOf("error") !== -1) {
+  document.title = "Link expired";
+  document.getElementById("head").textContent = "that link has expired.";
+  document.getElementById("note").textContent = "this link has expired — open openclicky and press resend link in settings.";
+}
+history.replaceState(null, "", location.pathname);
+</script></body>`),
   );
   registerAccountAuth(app);
 
