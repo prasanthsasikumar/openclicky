@@ -195,6 +195,9 @@ final class OpenClickyAuthSession: ObservableObject {
         return false
     }
 
+    /// "Use a different email": drops even a pending code step (`forgetSettledFlow` keeps that one).
+    func resetFlow() { emailFlow = .idle; lastErrorText = nil }
+
     /// A fresh form starts empty: a finished or failed attempt is forgotten, one in flight is kept.
     func forgetSettledFlow() {
         switch emailFlow {

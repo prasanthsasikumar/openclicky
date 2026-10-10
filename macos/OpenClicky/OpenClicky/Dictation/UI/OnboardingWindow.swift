@@ -3,7 +3,7 @@
 //  OpenClicky
 //
 //  The first run, in six short chapters: welcome, the two permissions, the key, the engine, a
-//  first take that lands in the window itself, and the offer of a free account (or your own key,
+//  first take that lands in the window itself, and the one email field that makes a free account (or your own key,
 //  or neither). Every chapter can be skipped; the whole thing can be replayed from Settings → general.
 //
 
@@ -87,7 +87,6 @@ struct OnboardingView: View {
     let finish: () -> Void
     @ObservedObject private var settings: DictationSettings
     @ObservedObject private var authSession = OpenClickyAuthSession.shared
-    @State private var accountSheetMode: AccountSheet.Mode?
 
     init(model: OnboardingModel, companionManager: CompanionManager, finish: @escaping () -> Void) {
         self.model = model
@@ -133,12 +132,6 @@ struct OnboardingView: View {
             .padding(36)
         }
         .background(Paper.background)
-        .sheet(item: $accountSheetMode) { mode in
-            AccountSheet(startIn: mode, onDone: { accountSheetMode = nil }, onUseOwnKey: {
-                accountSheetMode = nil
-                companionManager.showDictationWindow(settingsPage: .account)
-            })
-        }
         .onAppear {
             companionManager.dictationTakeController.onTakeFinished = { take in
                 model.firstTakeText = take.displayText
@@ -252,25 +245,23 @@ struct OnboardingView: View {
 
     private var account: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("a free account lets openclicky tidy your words and answer out loud — dictation works without one.")
+            Text("your email gets you a free openclicky account — polished dictation and spoken answers, nothing to set up.")
                 .font(Paper.body(14)).foregroundStyle(Paper.inkSecondary).fixedSize(horizontal: false, vertical: true)
             if let accountEmail = authSession.accountEmail {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
-                    Text("you're signed in as \(accountEmail).").font(Paper.body(14, weight: .medium))
+                    Text("you're set, \(accountEmail). check your inbox to unlock the full free allowance.").font(Paper.body(14, weight: .medium))
                 }
-                .foregroundStyle(Paper.success)
-                .padding(.top, 6)
+                .foregroundStyle(Paper.success).padding(.top, 6)
+            } else if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
+                EmailAccountForm(onSignedIn: {}, onUseOwnKey: { companionManager.showDictationWindow(settingsPage: .account) })
             } else {
-                // Hidden while the backend takes no new accounts (/auth/config accountsOpen == false).
-                if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
-                    accountChoice("person.crop.circle.badge.plus", "create a free account", "polished dictation and spoken answers, on us.", isProminent: true) { accountSheetMode = .create }
-                }
-                accountChoice("person.crop.circle", "sign in", "you already have an openclicky account.") { accountSheetMode = .signIn }
+                Text(AccountLimitError.accountsFull.message).font(Paper.body(13)).foregroundStyle(Paper.ink)
                 accountChoice("key", "use my own key", "if you already have an openai key.") { companionManager.showDictationWindow(settingsPage: .account) }
+            }
+            if authSession.accountEmail == nil {
                 Button("skip — keep everything on this mac") { finish() }
-                    .buttonStyle(.plain).font(Paper.body(12)).foregroundStyle(Paper.inkTertiary).pointerCursor()
-                    .padding(.top, 2)
+                    .buttonStyle(.plain).font(Paper.body(12)).foregroundStyle(Paper.inkTertiary).pointerCursor().padding(.top, 2)
             }
         }
         .task { await authSession.refreshAccountsOpen() }
