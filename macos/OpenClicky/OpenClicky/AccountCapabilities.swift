@@ -50,6 +50,7 @@ struct AccountCapabilities: Equatable {
 enum AccountLimitError: String, Equatable {
     case personalLimit = "personal_limit", dailyLimit = "daily_limit", monthlyBudget = "monthly_budget"
     case notOnPlan = "not_on_plan", accountsFull = "accounts_full", blocked = "blocked", ttsBudget = "tts_budget"
+    case confirmEmail = "confirm_email", deviceLimit = "device_limit"
 
     static func from(status: Int, body: Data) -> AccountLimitError? {
         guard status == 402,
@@ -67,6 +68,8 @@ enum AccountLimitError: String, Equatable {
         case .accountsFull: return "openclicky's free accounts are full right now — you can use your own key instead."
         case .blocked: return "this account is paused. dictation still works."
         case .ttsBudget: return ""
+        case .confirmEmail: return "confirm your email to keep going — we sent you a link."
+        case .deviceLimit: return "this mac already has two openclicky accounts — sign in with one of them."
         }
     }
 

@@ -80,6 +80,21 @@ struct AccountSheetTests {
     @Test func theFullAccountsSentenceIsNeverEmpty() {
         #expect(!AccountLimitError.accountsFull.message.isEmpty)
     }
+
+    @Test func anUnconfirmedAccountSaysCheckYourInbox() {
+        var guest = summary(spentMonth: 0.25)
+        guest.confirmed = false; guest.guestSpentUsd = 0.25; guest.guestLimitUsd = 1
+        #expect(guest.allowanceStanding == .unconfirmed)
+        #expect(guest.allowanceSentence(resetDay: "nov 1") == "confirm your email to unlock the full free allowance · 25% of the starter used")
+        guest.guestSpentUsd = 1
+        #expect(guest.allowanceSentence(resetDay: "nov 1") == "the starter allowance is used — confirm your email to keep going")
+    }
+
+    @Test func confirmEmailAndDeviceLimitHaveSentences() {
+        #expect(AccountLimitError.confirmEmail.message == "confirm your email to keep going — we sent you a link.")
+        #expect(AccountLimitError.deviceLimit.message == "this mac already has two openclicky accounts — sign in with one of them.")
+        #expect(AccountLimitError.from(status: 402, body: Data(#"{"error":"confirm_email"}"#.utf8)) == .confirmEmail)
+    }
 }
 
 @MainActor

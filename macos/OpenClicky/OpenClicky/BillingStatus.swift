@@ -28,15 +28,25 @@ struct BillingSummary: Decodable, Equatable {
     var plan: String? = nil
     /// For a grant login: whether it has an OpenClicky account (and is not paused).
     var onPlan: Bool? = nil
+    /// Email-first accounts: false until the confirmation link is clicked; older backends omit it.
+    var confirmed: Bool? = nil
+    /// The Mac's starter allowance (spend before confirming) and its cap.
+    var guestSpentUsd: Double? = nil
+    var guestLimitUsd: Double? = nil
+    /// Masked, e.g. "p•••@flowsxr.com".
+    var email: String? = nil
+
+    var isUnconfirmed: Bool { confirmed == false }
 }
 
 /// Where the free allowance stands, most pressing first: each case has its own sentence because
 /// "used up this month" is wrong when only today's share or the shared budget ran out.
-enum AllowanceStanding: Equatable { case plenty, runningLow, usedUpThisMonth, usedUpToday, sharedBudgetUsedUp, paused }
+enum AllowanceStanding: Equatable { case plenty, runningLow, usedUpThisMonth, usedUpToday, sharedBudgetUsedUp, paused, unconfirmed }
 
 extension BillingSummary {
     var allowanceStanding: AllowanceStanding {
         if blocked { return .paused }
+        if confirmed == false { return .unconfirmed }
         if fractionUsed >= 1 { return .usedUpThisMonth }
         if budgetExhausted { return .sharedBudgetUsedUp }
         if dailyLimitUsd > 0 && spentTodayUsd >= dailyLimitUsd { return .usedUpToday }
@@ -54,6 +64,11 @@ extension BillingSummary {
         case .usedUpToday: return "today's free allowance is used — it comes back tomorrow"
         case .sharedBudgetUsedUp: return "the free allowance is used up for now"
         case .paused: return "this account is paused — dictation still works"
+        case .unconfirmed:
+            let limit = guestLimitUsd ?? 0, spent = guestSpentUsd ?? 0
+            if limit > 0 && spent >= limit { return "the starter allowance is used — confirm your email to keep going" }
+            let percent = limit > 0 ? Int((spent / limit * 100).rounded()) : 0
+            return "confirm your email to unlock the full free allowance · \(percent)% of the starter used"
         }
     }
 
