@@ -79,7 +79,7 @@ alter table public.oc_reservations enable row level security;
 alter table public.oc_settings enable row level security;
 
 create or replace function public.oc_reserve(p_user text, p_estimate bigint, p_monthly bigint, p_daily bigint, p_global bigint)
-returns json language plpgsql security definer set search_path = public as $$
+returns json language plpgsql security definer set search_path = public, timezone = 'UTC' as $$
 declare
   v_month timestamptz := date_trunc('month', now() at time zone 'utc') at time zone 'utc';
   v_day timestamptz := date_trunc('day', now() at time zone 'utc') at time zone 'utc';
@@ -90,7 +90,10 @@ begin
   perform pg_advisory_xact_lock(hashtext('oc_reserve'));
   delete from oc_reservations where created_at < now() - interval '10 minutes';
   select * into v_acct from oc_accounts where user_id = p_user;
-  if found and v_acct.blocked then
+  if not found then
+    return json_build_object('ok', false, 'error', 'not_on_plan', 'resetsAt', v_month + interval '1 month');
+  end if;
+  if v_acct.blocked then
     return json_build_object('ok', false, 'error', 'blocked', 'resetsAt', v_month + interval '1 month');
   end if;
   select coalesce(sum(cost_micro_usd), 0) into v_today from oc_usage_events where user_id = p_user and ts >= v_day;
@@ -114,9 +117,10 @@ end $$;
 
 create or replace function public.oc_settle(p_reservation uuid, p_actual bigint, p_route text, p_model text,
   p_input integer, p_output integer, p_cache_write integer, p_cache_read integer, p_chars integer)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, timezone = 'UTC' as $$
 declare v_user text;
 begin
+  perform pg_advisory_xact_lock(hashtext('oc_reserve'));
   delete from oc_reservations where id = p_reservation returning user_id into v_user;
   -- Swept after 10 minutes: a reply that slow is not billed; its hold has already expired.
   if v_user is null then return; end if;
@@ -125,12 +129,15 @@ begin
 end $$;
 
 create or replace function public.oc_reserve_chars(p_user text, p_chars integer, p_limit integer, p_global_remaining integer)
-returns json language plpgsql security definer set search_path = public as $$
+returns json language plpgsql security definer set search_path = public, timezone = 'UTC' as $$
 declare
   v_month timestamptz := date_trunc('month', now() at time zone 'utc') at time zone 'utc';
   v_used integer;
 begin
   perform pg_advisory_xact_lock(hashtext('oc_reserve_chars'));
+  if not exists (select 1 from oc_accounts where user_id = p_user) then
+    return json_build_object('ok', false, 'error', 'not_on_plan', 'resetsAt', v_month + interval '1 month');
+  end if;
   if exists (select 1 from oc_accounts where user_id = p_user and blocked) then
     return json_build_object('ok', false, 'error', 'blocked', 'resetsAt', v_month + interval '1 month');
   end if;
@@ -146,7 +153,7 @@ begin
 end $$;
 
 create or replace function public.oc_spend_summary(p_user text, p_monthly bigint, p_daily bigint, p_global bigint, p_tts integer)
-returns json language sql security definer set search_path = public as $$
+returns json language sql security definer set search_path = public, timezone = 'UTC' as $$
   with b as (
     select date_trunc('month', now() at time zone 'utc') at time zone 'utc' as m,
            date_trunc('day', now() at time zone 'utc') at time zone 'utc' as d
@@ -165,18 +172,9 @@ returns json language sql security definer set search_path = public as $$
     'blocked', coalesce((select blocked from a), false));
 $$;
 
--- At most oc_settings.max_accounts sign-ups. Runs as the auth schema's insert; refusing raises, so GoTrue answers sign-up with an error.
-create or replace function public.oc_enforce_max_accounts() returns trigger language plpgsql security definer set search_path = public as $$
-begin
-  if (select count(*) from auth.users) >= (select max_accounts from oc_settings) then
-    raise exception 'accounts_full';
-  end if;
-  return new;
-end $$;
-drop trigger if exists oc_max_accounts on auth.users;
-create trigger oc_max_accounts before insert on auth.users for each row execute function public.oc_enforce_max_accounts();
-
-create or replace function public.oc_accounts_open() returns boolean language sql security definer set search_path = public as $$
-  select (select count(*) from auth.users) < (select max_accounts from oc_settings);
+create or replace function public.oc_accounts_open() returns boolean language sql security definer set search_path = public, timezone = 'UTC' as $$
+  select (select count(*) from oc_accounts) < (select max_accounts from oc_settings);
 $$;
+drop trigger if exists oc_max_accounts on auth.users;
+drop function if exists public.oc_enforce_max_accounts();
 revoke all on function public.oc_reserve, public.oc_settle, public.oc_reserve_chars, public.oc_spend_summary, public.oc_accounts_open from public, anon, authenticated;

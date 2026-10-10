@@ -5,7 +5,7 @@ import type { SupabaseRest } from "./db.js";
  * Grant spending, reserved before a request and settled from its real usage, so overlapping
  * requests can never spend past a limit. All money is integer micro-dollars; months and days are UTC.
  */
-export type LimitError = "personal_limit" | "daily_limit" | "monthly_budget" | "blocked";
+export type LimitError = "personal_limit" | "daily_limit" | "monthly_budget" | "blocked" | "not_on_plan";
 export type ReserveResult = { ok: true; reservationId: string } | { ok: false; error: LimitError; resetsAt: string };
 export interface SpendEvent { route: string; model?: string; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number; characters: number }
 export interface SpendSummary {
@@ -22,12 +22,13 @@ export interface SpendLedger {
 }
 
 const usd = (value: string | undefined, fallback: number) => Math.round((Number.isFinite(Number(value)) && value ? Number(value) : fallback) * 1_000_000);
+const integer = (value: string | undefined, fallback: number) => (Number.isFinite(Number(value)) && value ? Number(value) : fallback);
 export function limitsFromEnv(env: Env): Limits {
   return {
     monthlyMicro: usd(env.ACCOUNT_MONTHLY_USD, 10),
     dailyMicro: usd(env.ACCOUNT_DAILY_USD, 2),
     globalMonthlyMicro: usd(env.GLOBAL_MONTHLY_BUDGET_USD, 1000),
-    ttsCharsMonthly: Number(env.ACCOUNT_MONTHLY_TTS_CHARS ?? 20_000),
+    ttsCharsMonthly: integer(env.ACCOUNT_MONTHLY_TTS_CHARS, 20_000),
   };
 }
 
@@ -45,6 +46,11 @@ export class MemorySpendLedger implements SpendLedger {
   private entries: Entry[] = [];
   private accounts = new Map<string, Account>();
   private nextId = 1;
+  private requireAccountRow: boolean;
+
+  constructor(options?: { requireAccountRow?: boolean }) {
+    this.requireAccountRow = options?.requireAccountRow ?? false;
+  }
 
   setAccount(userId: string, account: Account) { this.accounts.set(userId, { ...this.accounts.get(userId), ...account }); }
 
@@ -61,6 +67,7 @@ export class MemorySpendLedger implements SpendLedger {
 
   async reserve(userId: string, estimateMicro: number, limits: Limits, now = new Date()): Promise<ReserveResult> {
     this.sweep(now);
+    if (this.requireAccountRow && !this.accounts.has(userId)) return { ok: false, error: "not_on_plan", resetsAt: monthEnd(now).toISOString() };
     const mine = this.personal(userId, limits);
     if (mine.blocked) return { ok: false, error: "blocked", resetsAt: monthEnd(now).toISOString() };
     const month = monthStart(now).getTime(), day = dayStart(now).getTime();
@@ -85,6 +92,7 @@ export class MemorySpendLedger implements SpendLedger {
 
   async reserveCharacters(userId: string, characters: number, limits: Limits, globalCharsRemaining: number, now = new Date()): Promise<ReserveResult> {
     this.sweep(now);
+    if (this.requireAccountRow && !this.accounts.has(userId)) return { ok: false, error: "not_on_plan", resetsAt: monthEnd(now).toISOString() };
     if (this.personal(userId, limits).blocked) return { ok: false, error: "blocked", resetsAt: monthEnd(now).toISOString() };
     const month = monthStart(now).getTime();
     const mine = this.sum((e) => e.userId === userId && e.at >= month, "chars");

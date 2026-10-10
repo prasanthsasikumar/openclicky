@@ -10,6 +10,10 @@ describe("limitsFromEnv", () => {
     expect(limitsFromEnv({})).toEqual(limits);
     expect(limitsFromEnv({ ACCOUNT_DAILY_USD: "5" }).dailyMicro).toBe(5_000_000);
   });
+  it("falls back to 20000 for invalid ACCOUNT_MONTHLY_TTS_CHARS", () => {
+    expect(limitsFromEnv({ ACCOUNT_MONTHLY_TTS_CHARS: "abc" }).ttsCharsMonthly).toBe(20_000);
+    expect(limitsFromEnv({ ACCOUNT_MONTHLY_TTS_CHARS: "" }).ttsCharsMonthly).toBe(20_000);
+  });
 });
 
 describe("MemorySpendLedger", () => {
@@ -77,5 +81,13 @@ describe("MemorySpendLedger", () => {
     expect((await ledger.reserveCharacters("u", 19_000, limits, 1_000_000, now)).ok).toBe(true);
     expect(await ledger.reserveCharacters("u", 2_000, limits, 1_000_000, now)).toMatchObject({ ok: false, error: "personal_limit" });
     expect(await ledger.reserveCharacters("v", 500, limits, 100, now)).toMatchObject({ ok: false, error: "monthly_budget" });
+  });
+
+  it("requireAccountRow enforces account existence", async () => {
+    const ledger = new MemorySpendLedger({ requireAccountRow: true });
+    expect(await ledger.reserve("unknown", 100, limits, now)).toMatchObject({ ok: false, error: "not_on_plan" });
+    expect(await ledger.reserveCharacters("unknown", 100, limits, 1000, now)).toMatchObject({ ok: false, error: "not_on_plan" });
+    ledger.setAccount("known", {});
+    expect((await ledger.reserve("known", 100, limits, now)).ok).toBe(true);
   });
 });
