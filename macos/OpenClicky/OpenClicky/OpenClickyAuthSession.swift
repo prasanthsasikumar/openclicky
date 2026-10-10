@@ -2,10 +2,12 @@
 //  OpenClickyAuthSession.swift
 //  OpenClicky
 //
-//  Sign in with an email and password (Supabase Auth, whose details the backend publishes at
-//  GET /auth/config) and keep the session alive: the access token goes into shell.json as `token`
-//  (what every backend request sends) together with the refresh token, and it is refreshed before
-//  it expires. Nobody has to touch shell.json by hand.
+//  Email-first accounts. The one question is the email (POST /auth/start): a new email is signed in
+//  at once, unconfirmed, with a link mailed to it; an email that already has an account is mailed a
+//  6-digit code (POST /auth/code). No passwords. The session is kept alive (Supabase Auth, whose
+//  details the backend publishes at GET /auth/config): the access token goes into shell.json as
+//  `token` (what every backend request sends) together with the refresh token, and it is refreshed
+//  before it expires. Nobody has to touch shell.json by hand.
 //
 
 import Combine
@@ -18,8 +20,8 @@ final class OpenClickyAuthSession: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastErrorText: String?
 
-    enum SignUpState: Equatable { case idle, sending, awaitingConfirmation(email: String), signedIn, failed(String), full }
-    @Published private(set) var signUpState: SignUpState = .idle
+    nonisolated enum EmailFlowState: Equatable { case idle, sending, needsCode(email: String), signedIn(confirmed: Bool), failed(String) }
+    @Published private(set) var emailFlow: EmailFlowState = .idle
     /// Whether the backend takes new accounts (GET /auth/config); nil until it has answered.
     @Published private(set) var accountsOpen: Bool?
 
@@ -33,8 +35,6 @@ final class OpenClickyAuthSession: ObservableObject {
         /// Older backends omit these.
         let accountsOpen: Bool?
         let confirmRedirectUrl: String?
-        /// The backend's /auth/reset page, where a password-reset link lands.
-        var resetRedirectUrl: String? = nil
     }
 
     private struct TokenResponse: Decodable {
@@ -56,33 +56,61 @@ final class OpenClickyAuthSession: ObservableObject {
             Task { @MainActor in await self?.refreshIfNeeded() }
         }
         Task { await refreshIfNeeded() }
+        Task { if (try? await BillingStatusModel.fetchSummary())?.confirmed == false { watchConfirmation() } }
     }
 
-    /// `logsFailure` is false while waiting for a confirmation link, where "Email not confirmed"
-    /// every five seconds is expected and would only fill the log.
-    func signIn(email: String, password: String, logsFailure: Bool = true) async -> Bool {
-        lastErrorText = nil
-        do {
-            let config = try await authConfig()
-            let session = try await requestToken(config: config, grant: "password", body: ["email": email, "password": password])
-            store(session, config: config, email: session.user?.email ?? email)
-            print("🔐 Signed in as \(session.user?.email ?? email)")
-            AccountProfileStore.shared.refresh()
-            return true
-        } catch {
-            lastErrorText = Self.describe(error)
-            if logsFailure { print("🔐 Sign-in failed: \(lastErrorText ?? "")") }
-            return false
-        }
-    }
+    nonisolated static let unreachableMessage = "couldn't reach openclicky right now — try again in a minute."
 
-    nonisolated static func signUpRequest(backendBaseURL: String, email: String, password: String) -> URLRequest? {
-        guard let url = URL(string: "\(backendBaseURL)/auth/signup") else { return nil }
+    nonisolated struct Session: Decodable, Equatable { let access_token: String; let refresh_token: String; let expires_in: Double }
+    nonisolated enum StartOutcome: Equatable { case signedIn(Session, confirmed: Bool), codeSent, failed(String) }
+
+    private nonisolated static func post(_ backendBaseURL: String, _ path: String, _ body: [String: String]?, token: String? = nil) -> URLRequest? {
+        guard let url = URL(string: "\(backendBaseURL)\(path)") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email, "password": password])
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let body { request.httpBody = try? JSONSerialization.data(withJSONObject: body) }
         return request
+    }
+    nonisolated static func startRequest(backendBaseURL: String, email: String, device: String) -> URLRequest? {
+        post(backendBaseURL, "/auth/start", ["email": email, "device": device])
+    }
+    nonisolated static func codeRequest(backendBaseURL: String, email: String, code: String) -> URLRequest? {
+        post(backendBaseURL, "/auth/code", ["email": email, "code": code])
+    }
+    nonisolated static func resendRequest(backendBaseURL: String, token: String) -> URLRequest? {
+        post(backendBaseURL, "/auth/resend", nil, token: token)
+    }
+
+    /// The backend's answer to /auth/start or /auth/code, as one thing the form can show.
+    nonisolated static func outcome(status: Int, body: Data, email: String) -> StartOutcome {
+        struct Reply: Decodable { let status: String?; let session: Session?; let confirmed: Bool?; let error: String? }
+        let reply = try? JSONDecoder().decode(Reply.self, from: body)
+        if (200..<300).contains(status) {
+            if reply?.status == "code_sent" { return .codeSent }
+            if let session = reply?.session { return .signedIn(session, confirmed: reply?.confirmed ?? false) }
+            return .failed(unreachableMessage)
+        }
+        switch reply?.error {
+        case "accounts_full": return .failed(AccountLimitError.accountsFull.message)
+        case "device_limit": return .failed(AccountLimitError.deviceLimit.message)
+        case "bad_email": return .failed("that doesn't look like an email address.")
+        case "bad_code": return .failed("that code didn't work — check it, or ask for a new one.")
+        case "slow_down": return .failed("too many tries — wait a few minutes and try again.")
+        default: return .failed(unreachableMessage)
+        }
+    }
+
+    nonisolated static func canStart(from state: EmailFlowState) -> Bool { state != .sending }
+
+    /// A closed form cancels its task: a send in flight goes back to the form, anything else stays.
+    nonisolated static func stateAfterCancellation(_ state: EmailFlowState) -> EmailFlowState { state == .sending ? .idle : state }
+
+    nonisolated static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
     }
 
     /// "create a free account" is offered unless the backend has said sign-up is closed; an
@@ -95,110 +123,87 @@ final class OpenClickyAuthSession: ObservableObject {
         accountsOpen = config.accountsOpen
     }
 
-    /// Supabase's recover call, with the link sent to the backend's reset page when it names one.
-    nonisolated static func recoverRequest(config: AuthConfig, email: String) -> URLRequest? {
-        guard var components = URLComponents(string: "\(config.supabaseUrl)/auth/v1/recover") else { return nil }
-        if let redirect = config.resetRedirectUrl, !redirect.isEmpty {
-            components.queryItems = [URLQueryItem(name: "redirect_to", value: redirect)]
+    /// Setup's one question: the email. A new email is signed in at once (unconfirmed); an email
+    /// that already has an account gets a 6-digit code (`needsCode`).
+    func start(email: String) async {
+        guard Self.canStart(from: emailFlow) else { return }
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let device = DeviceIdentity.current,
+              let request = Self.startRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, email: trimmed, device: device) else {
+            emailFlow = .failed(Self.unreachableMessage); return
         }
-        guard let url = components.url else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email])
-        return request
+        await run(request, email: trimmed)
     }
 
-    /// A second tap while a sign-up is being sent or waiting for its link must not start a second
-    /// request and a second poll.
-    nonisolated static func canStartSignUp(from state: SignUpState) -> Bool {
-        switch state {
-        case .sending, .awaitingConfirmation: return false
-        case .idle, .signedIn, .failed, .full: return true
-        }
+    func submitCode(_ code: String) async {
+        guard case .needsCode(let email) = emailFlow,
+              let request = Self.codeRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, email: email, code: code.filter(\.isNumber)) else { return }
+        await run(request, email: email, keepsCodeOnFailure: true)
     }
 
-    /// A sign-up stopped because its task was cancelled (the sheet closed), not because it failed.
-    nonisolated static func isCancellation(_ error: Error) -> Bool {
-        if error is CancellationError { return true }
-        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
-        return false
-    }
-
-    /// Creates the account through the backend (it owns the account cap); Supabase then emails a
-    /// confirmation link. Polls a password sign-in until the link has been tapped, so the person
-    /// never has to come back and type. Run it from a task the caller cancels when the person
-    /// walks away: a cancelled sign-up goes back to `.idle`.
-    func signUp(email: String, password: String) async {
-        // Checked and flipped before the first await, so two calls on the main actor can never both pass.
-        guard Self.canStartSignUp(from: signUpState) else { return }
-        signUpState = .sending
+    private func run(_ request: URLRequest, email: String, keepsCodeOnFailure: Bool = false) async {
+        lastErrorText = nil
+        let before = emailFlow
+        emailFlow = .sending
         do {
-            let config = try await authConfig()
-            accountsOpen = config.accountsOpen
-            guard config.accountsOpen != false else { signUpState = .full; return }
-            guard let request = Self.signUpRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, email: email, password: password) else {
-                signUpState = .failed("creating an account isn't available right now.")
-                return
-            }
             let (data, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            guard (200..<300).contains(status) else {
-                let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
-                let error = json["error"] as? String ?? ""
-                if error == "accounts_full" {
-                    signUpState = .full
-                } else if status == 404 {
-                    signUpState = .failed("creating an account isn't available right now.")
-                } else {
-                    signUpState = .failed(error.isEmpty ? "couldn't create the account right now — try again in a minute." : error)
-                }
-                return
-            }
-            signUpState = .awaitingConfirmation(email: email)
-            if await waitForConfirmation(email: email, password: password) {
-                signUpState = .signedIn
-            } else if Task.isCancelled {
-                signUpState = .idle
-            } else {
-                signUpState = .failed("the link wasn't opened in time — sign in once you have tapped it.")
+            switch Self.outcome(status: (response as? HTTPURLResponse)?.statusCode ?? 0, body: data, email: email) {
+            case .signedIn(let session, let confirmed):
+                store(session, email: email)
+                emailFlow = .signedIn(confirmed: confirmed)
+                AccountProfileStore.shared.refresh()
+                ShellSettingsRevision.shared.noteChanged()
+                if !confirmed { watchConfirmation() }
+            case .codeSent:
+                emailFlow = .needsCode(email: email)
+            case .failed(let message):
+                // A wrong code leaves the code field up, with the sentence under it.
+                lastErrorText = message
+                emailFlow = keepsCodeOnFailure ? before : .failed(message)
             }
         } catch {
             if Self.isCancellation(error) || Task.isCancelled {
-                signUpState = .idle
+                // Back to whatever the form showed before this send (the email step, or the code step).
+                emailFlow = Self.stateAfterCancellation(before)
             } else {
-                // The underlying error ("The Internet connection appears to be offline.", a JSON
-                // decoding failure) is for the log, not for the person signing up.
-                print("🔐 Sign-up failed: \(Self.describe(error))")
-                signUpState = .failed("couldn't reach openclicky right now — try again in a minute.")
+                print("🔐 Account request failed: \(Self.describe(error))")
+                emailFlow = .failed(Self.unreachableMessage)
             }
         }
     }
 
-    /// A fresh sheet starts from the form: a finished, failed or full attempt from before is
-    /// forgotten, one still in flight is left alone.
-    func forgetSettledSignUp() {
-        if Self.canStartSignUp(from: signUpState) { signUpState = .idle }
-    }
-
-    /// Polls a password sign-in until the confirmation link has been tapped. Returns false on
-    /// timeout or cancellation. The "Email not confirmed" failures along the way are expected, so
-    /// they are not left in `lastErrorText`.
-    func waitForConfirmation(email: String, password: String, pollEvery seconds: Double = 5, timeout: Double = 15 * 60) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline, !Task.isCancelled {
-            if await signIn(email: email, password: password, logsFailure: false) { return true }
-            lastErrorText = nil
-            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-        }
+    /// Mails the confirmation link again.
+    func resendLink() async -> Bool {
+        let token = OpenClickyConfiguration.settings.token
+        guard !token.isEmpty, let request = Self.resendRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, token: token) else { return false }
+        let status = ((try? await URLSession.shared.data(for: request))?.1 as? HTTPURLResponse)?.statusCode ?? 0
+        if (200..<300).contains(status) { watchConfirmation(); return true }
         return false
     }
 
-    func recover(email: String) async -> Bool {
-        guard let config = try? await authConfig(), let request = Self.recoverRequest(config: config, email: email) else { return false }
-        let status = ((try? await URLSession.shared.data(for: request))?.1 as? HTTPURLResponse)?.statusCode ?? 0
-        return (200..<300).contains(status)
+    /// A fresh form starts empty: a finished or failed attempt is forgotten, one in flight is kept.
+    func forgetSettledFlow() {
+        switch emailFlow {
+        case .sending, .needsCode: return
+        default: emailFlow = .idle; lastErrorText = nil
+        }
+    }
+
+    private var confirmationWatch: Task<Void, Never>?
+    /// While the email is unconfirmed, asks /billing/me once a minute for 15 minutes, so the
+    /// "check your inbox" note disappears soon after the link is clicked.
+    func watchConfirmation() {
+        confirmationWatch?.cancel()
+        confirmationWatch = Task { @MainActor in
+            for _ in 0..<15 {
+                try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                if let summary = try? await BillingStatusModel.fetchSummary() {
+                    AccountProfileStore.shared.absorb(summary)
+                    if summary.confirmed != false { objectWillChange.send(); return }
+                }
+            }
+        }
     }
 
     func signOut() {
@@ -208,6 +213,8 @@ final class OpenClickyAuthSession: ObservableObject {
             settings.tokenExpiresAt = nil
             settings.accountEmail = nil
         }
+        confirmationWatch?.cancel()
+        emailFlow = .idle
         lastErrorText = nil
         print("🔐 Signed out")
         AccountProfileStore.shared.refresh()
@@ -224,7 +231,8 @@ final class OpenClickyAuthSession: ObservableObject {
         do {
             let config = try await authConfig()
             let session = try await requestToken(config: config, grant: "refresh_token", body: ["refresh_token": refreshToken])
-            store(session, config: config, email: session.user?.email ?? settings.accountEmail ?? "")
+            store(Session(access_token: session.access_token, refresh_token: session.refresh_token, expires_in: session.expires_in),
+                  email: session.user?.email ?? settings.accountEmail ?? "")
             print("🔐 Session refreshed")
         } catch {
             lastErrorText = Self.describe(error)
@@ -267,7 +275,7 @@ final class OpenClickyAuthSession: ObservableObject {
         return try JSONDecoder().decode(TokenResponse.self, from: data)
     }
 
-    private func store(_ session: TokenResponse, config: AuthConfig, email: String) {
+    private func store(_ session: Session, email: String) {
         OpenClickyConfiguration.update { settings in
             settings.token = session.access_token
             settings.refreshToken = session.refresh_token

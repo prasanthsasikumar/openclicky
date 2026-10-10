@@ -149,7 +149,6 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
     @StateObject private var model = BillingStatusModel()
     @ObservedObject private var authSession = OpenClickyAuthSession.shared
     @State private var email = ""
-    @State private var password = ""
     @State private var isSigningIn = false
     @State private var signInFailureText: String?
 
@@ -174,11 +173,10 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
 
     private var signInForm: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("sign in to your openclicky account.")
+            Text("enter your email to start.")
                 .font(.system(size: 11))
                 .foregroundColor(Color.white.opacity(0.6))
             credentialField(systemImage: "envelope", text: $email, placeholder: "email", isSecure: false)
-            credentialField(systemImage: "lock", text: $password, placeholder: "password", isSecure: true)
             HStack {
                 if let signInFailureText {
                     Text(signInFailureText)
@@ -188,7 +186,7 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
                 }
                 Spacer()
                 Button(action: signIn) {
-                    Text(isSigningIn ? "signing in…" : "sign in")
+                    Text(isSigningIn ? "sending…" : "continue")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 14)
@@ -197,7 +195,7 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
                 }
                 .buttonStyle(.plain)
                 .pointerCursor()
-                .disabled(isSigningIn || email.isEmpty || password.isEmpty)
+                .disabled(isSigningIn || email.isEmpty)
             }
             if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
                 Button(action: openAccountPage) {
@@ -226,17 +224,17 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
 
     private func signIn() {
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedEmail.isEmpty, !password.isEmpty, !isSigningIn else { return }
+        guard !trimmedEmail.isEmpty, !isSigningIn else { return }
         isSigningIn = true
         signInFailureText = nil
         Task {
-            let succeeded = await authSession.signIn(email: trimmedEmail, password: password)
+            await authSession.start(email: trimmedEmail)
             isSigningIn = false
-            if succeeded {
-                password = ""
-                model.refresh()
-            } else {
-                signInFailureText = AccountSheet.friendlySignInMessage(authSession.lastErrorText)
+            switch authSession.emailFlow {
+            case .signedIn: model.refresh()
+            case .needsCode: openAccountPage()   // the account sheet has room for the code
+            case .failed(let message): signInFailureText = message
+            default: break
             }
         }
     }

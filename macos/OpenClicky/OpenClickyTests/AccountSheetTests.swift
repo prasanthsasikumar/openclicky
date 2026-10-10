@@ -49,32 +49,10 @@ struct AccountSheetTests {
         #expect(NotchSettingsView.planDescription(kind: .signedOut, summary: nil) == "not signed in")
     }
 
-    @Test func aSecondSignUpWaitsForTheFirst() {
-        #expect(!OpenClickyAuthSession.canStartSignUp(from: .sending))
-        #expect(!OpenClickyAuthSession.canStartSignUp(from: .awaitingConfirmation(email: "gran@example.com")))
-        #expect(OpenClickyAuthSession.canStartSignUp(from: .idle))
-        #expect(OpenClickyAuthSession.canStartSignUp(from: .failed("no")))
-        #expect(OpenClickyAuthSession.canStartSignUp(from: .full))
-    }
-
     @Test func aClosedSheetIsACancellationNotAFailure() {
         #expect(OpenClickyAuthSession.isCancellation(CancellationError()))
         #expect(OpenClickyAuthSession.isCancellation(URLError(.cancelled)))
         #expect(!OpenClickyAuthSession.isCancellation(URLError(.notConnectedToInternet)))
-    }
-
-    @Test func createNeedsEightCharactersAndSignInAnyPassword() {
-        #expect(!AccountSheet.canSubmit(mode: .create, email: "gran@example.com", password: "1234567"))
-        #expect(AccountSheet.canSubmit(mode: .create, email: "gran@example.com", password: "12345678"))
-        #expect(AccountSheet.canSubmit(mode: .signIn, email: "gran@example.com", password: "123"))
-        #expect(!AccountSheet.canSubmit(mode: .signIn, email: "gran", password: "12345678"))
-    }
-
-    @Test func signInFailuresReadAsOnePlainSentence() {
-        #expect(AccountSheet.friendlySignInMessage("Invalid login credentials") == "that email and password don't match — try again, or reset the password.")
-        #expect(AccountSheet.friendlySignInMessage("Email not confirmed") == "this email isn't confirmed yet — tap the link we sent you first.")
-        #expect(AccountSheet.friendlySignInMessage("The Internet connection appears to be offline.") == "couldn't sign in right now — try again in a minute.")
-        #expect(AccountSheet.friendlySignInMessage(nil) == "couldn't sign in right now — try again in a minute.")
     }
 
     @Test func theFullAccountsSentenceIsNeverEmpty() {
