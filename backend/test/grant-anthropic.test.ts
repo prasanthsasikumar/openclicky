@@ -7,6 +7,26 @@ import { MemorySpendLedger } from "../src/ledger.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("prepareGrantBody", () => {
+  const msgs = [{ role: "user", content: "hi" }];
+  it("keeps only custom tools and drops hosted tools, mcp_servers and container", () => {
+    const custom = { name: "t", input_schema: { type: "object" } };
+    const explicit = { type: "custom", name: "u", input_schema: { type: "object" } };
+    const out = prepareGrantBody({ tools: [custom, { type: "web_search_20250305", name: "web_search" }, explicit, { type: "code_execution_20250522", name: "code_execution" }], mcp_servers: [{ url: "x" }], container: "c", messages: msgs }, "claude-sonnet-5-5") as Record<string, unknown>;
+    expect(out.tools).toEqual([custom, explicit]);
+    expect("mcp_servers" in out).toBe(false);
+    expect("container" in out).toBe(false);
+  });
+  it("drops tools and tool_choice when only hosted tools were sent", () => {
+    const out = prepareGrantBody({ tools: [{ type: "web_search_20250305", name: "web_search" }], tool_choice: { type: "tool", name: "web_search" }, messages: msgs }, "claude-sonnet-5-5") as Record<string, unknown>;
+    expect("tools" in out).toBe(false);
+    expect("tool_choice" in out).toBe(false);
+  });
+  it("clamps a non-numeric or non-positive max_tokens to the cap", () => {
+    for (const bad of ["abc", 0, -5, null, NaN]) {
+      expect((prepareGrantBody({ max_tokens: bad, messages: msgs }, "m") as Record<string, unknown>).max_tokens).toBe(1024);
+    }
+    expect((prepareGrantBody({ max_tokens: 300.7, messages: msgs }, "m") as Record<string, unknown>).max_tokens).toBe(300);
+  });
   it("forces the model, caps max_tokens and caches the system prompt", () => {
     const out = prepareGrantBody({ model: "claude-opus-5-5", max_tokens: 9000, system: "be brief", messages: [{ role: "user", content: "hi" }] }, "claude-sonnet-5-5") as Record<string, unknown>;
     expect(out.model).toBe("claude-sonnet-5-5");
@@ -40,7 +60,58 @@ const SSE =
   'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}\n\n' +
   'data: {"type":"message_delta","usage":{"output_tokens":100}}\n\n';
 
+const LIMITS = { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 };
+const post = (app: Hono, ledgerEnv = { ANTHROPIC_API_KEY: "sk-grant" }) =>
+  app.request("/chat", { method: "POST", body: JSON.stringify({ max_tokens: 500, messages: [{ role: "user", content: "hi" }] }) }, ledgerEnv);
+
 describe("proxyAnthropicOnGrant", () => {
+  it("releases the hold and returns a generic 502 when the upstream fetch throws", async () => {
+    const ledger = new MemorySpendLedger();
+    const app = appWith(ledger, "");
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("socket hang up"); }));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await post(app);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "the assistant is unavailable" });
+    const open = await ledger.reserve("u1", LIMITS.dailyMicro, LIMITS); // the whole daily limit is still free
+    expect(open.ok).toBe(true);
+    vi.restoreAllMocks();
+  });
+
+  it("settles a non-ok upstream at zero and keeps the upstream text out of the 502", async () => {
+    const ledger = new MemorySpendLedger();
+    const app = appWith(ledger, "");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("secret upstream detail", { status: 529 })));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await post(app);
+    expect(res.status).toBe(502);
+    const text = await res.text();
+    expect(text).toBe(JSON.stringify({ error: "the assistant is unavailable (529)" }));
+    expect(text).not.toContain("secret");
+    expect((await ledger.summary("u1", LIMITS)).spentTodayMicro).toBe(0);
+    vi.restoreAllMocks();
+  });
+
+  it("still returns the 502 when releasing the hold fails", async () => {
+    const ledger = new MemorySpendLedger();
+    const app = appWith(ledger, "");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("x", { status: 500 })));
+    vi.spyOn(ledger, "settle").mockRejectedValue(new Error("db down"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await post(app);
+    expect(res.status).toBe(502);
+    vi.restoreAllMocks();
+  });
+
+  it("charges the full estimate when the reply reports no usage", async () => {
+    const ledger = new MemorySpendLedger();
+    const res = await post(appWith(ledger, 'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}\n\n'));
+    await res.text();
+    await new Promise((r) => setTimeout(r, 10));
+    const s = await ledger.summary("u1", LIMITS);
+    expect(s.spentTodayMicro).toBeGreaterThan(3000);
+  });
+
   it("settles to the real cost once the stream has gone by", async () => {
     const ledger = new MemorySpendLedger();
     const res = await appWith(ledger, SSE).request("/chat", { method: "POST", body: JSON.stringify({ max_tokens: 500, messages: [{ role: "user", content: "hi" }] }) }, { ANTHROPIC_API_KEY: "sk-grant" });

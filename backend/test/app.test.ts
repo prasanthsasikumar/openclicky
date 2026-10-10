@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import http from "node:http";
 import { SignJWT } from "jose";
 import { createApp } from "../src/app.js";
@@ -410,6 +410,30 @@ describe("app", () => {
       const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, env);
       expect(me.status).toBe(200);
       expect(await me.json()).toMatchObject({ byok: false, spentMonthUsd: 0, monthlyLimitUsd: 10, spentTodayUsd: 0, dailyLimitUsd: 2, budgetExhausted: false, blocked: false });
+    });
+
+    it("sends /v1/messages on the grant through the ledger with the gate model", async () => {
+      const ledger = new MemorySpendLedger();
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: ledger });
+      const seen: any[] = [];
+      const realFetch = globalThis.fetch;
+      vi.stubGlobal("fetch", vi.fn(async (url: any, init?: any) => {
+        if (String(url).includes("/v1/messages") && String(url).startsWith("http://anthropic.test")) {
+          seen.push(JSON.parse(init.body));
+          return new Response('data: {"type":"message_start","message":{"usage":{"input_tokens":1000,"output_tokens":1}}}\n\ndata: {"type":"message_delta","usage":{"output_tokens":100}}\n\n', { headers: { "content-type": "text/event-stream" } });
+        }
+        return realFetch(url, init);
+      }));
+      try {
+        const res = await billed.request("/v1/messages", json({ model: "claude-opus-5-5", max_tokens: 9000, messages: [{ role: "user", content: "hi" }] }, await jwt()), { ...env, ANTHROPIC_BASE_URL: "http://anthropic.test" });
+        await res.text();
+        await new Promise((r) => setTimeout(r, 10));
+      } finally { vi.unstubAllGlobals(); }
+      expect(seen).toHaveLength(1);
+      expect(seen[0].model).toBe("claude-haiku-4-5");
+      expect(seen[0].max_tokens).toBe(1024);
+      const s = await ledger.summary("user-1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 });
+      expect(s.spentTodayMicro).toBeGreaterThan(0);
     });
 
     it("refuses realtime sessions and transcription on the grant", async () => {
