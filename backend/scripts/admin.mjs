@@ -97,6 +97,15 @@ const needEmail = (usage) => {
   return positional[0];
 };
 const monthStart = () => new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+/** Every row of a table query; PostgREST caps one response at 1000 rows, so page by id until a short page. */
+async function fetchAll(table, query) {
+  const rows = [];
+  for (let offset = 0; ; offset += 1000) {
+    const page = await api("GET", rest(table, `${query}&order=id&limit=1000&offset=${offset}`));
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+  }
+}
 const upsertAccount = (userId, fields) =>
   api("POST", rest("oc_accounts", "on_conflict=user_id"), { user_id: userId, ...fields }, { prefer: "resolution=merge-duplicates" });
 const maxAccounts = async () => (await api("GET", rest("oc_settings", "select=max_accounts")))?.[0]?.max_accounts ?? 100;
@@ -104,7 +113,7 @@ const maxAccounts = async () => (await api("GET", rest("oc_settings", "select=ma
 const commands = {
   async budget() {
     const [events, accounts, users, cap] = await Promise.all([
-      api("GET", rest("oc_usage_events", `ts=gte.${encodeURIComponent(monthStart())}&select=user_id,cost_micro_usd,route,characters`)),
+      fetchAll("oc_usage_events", `ts=gte.${encodeURIComponent(monthStart())}&select=user_id,cost_micro_usd,route,characters`),
       api("GET", rest("oc_accounts", "select=user_id")),
       listUsers(),
       maxAccounts(),
@@ -134,6 +143,7 @@ const commands = {
     const user = await requireUser(email);
     await upsertAccount(user.id, {});
     console.log(`${email}: account added (default limits)`);
+    console.log("note: this login may belong to another FlowsXR product; the account now counts toward the max-accounts cap.");
   },
 
   async limit() {
@@ -176,15 +186,19 @@ const commands = {
         return;
       }
     }
-    const res = await fetch(rest("oc_accounts", `user_id=eq.${encodeURIComponent(user.id)}`), { method: "DELETE", headers });
-    if (!res.ok) throw new Error(`could not delete the account row (${res.status})`);
+    const deleted = await api("DELETE", rest("oc_accounts", `user_id=eq.${encodeURIComponent(user.id)}`), undefined, { prefer: "return=representation" });
+    if (!deleted?.length) {
+      console.log(`${email} had no OpenClicky account row — nothing removed`);
+      return;
+    }
     console.log(`${email}: OpenClicky account row deleted. The auth login was NOT deleted (it is shared with other FlowsXR products) and usage history is kept.`);
   },
 
   async "max-accounts"() {
     const n = Number(args[1]);
     if (!Number.isInteger(n) || n < 1) throw new Error("max-accounts needs a whole number");
-    await api("PATCH", rest("oc_settings", "id=eq.true"), { max_accounts: n });
+    const updated = await api("PATCH", rest("oc_settings", "id=eq.true"), { max_accounts: n }, { prefer: "return=representation" });
+    if (!updated?.length) throw new Error("oc_settings has no row; apply backend/supabase/schema.sql first");
     console.log(`max accounts: ${n}`);
   },
 
@@ -196,7 +210,7 @@ const commands = {
     const [users, accounts, events] = await Promise.all([
       listUsers(),
       api("GET", rest("oc_accounts", "select=*")),
-      api("GET", rest("oc_usage_events", `ts=gte.${encodeURIComponent(monthStart())}&select=user_id,cost_micro_usd`)),
+      fetchAll("oc_usage_events", `ts=gte.${encodeURIComponent(monthStart())}&select=user_id,cost_micro_usd`),
     ]);
     const byId = new Map(users.map((u) => [u.id, u]));
     const spent = new Map();
