@@ -115,8 +115,9 @@ class ClaudeAPI {
         systemPrompt: String,
         conversationHistory: [(userPlaceholder: String, assistantResponse: String)] = [],
         userPrompt: String,
+        tools: [[String: Any]] = [],
         onTextChunk: @MainActor @Sendable (String) -> Void
-    ) async throws -> (text: String, duration: TimeInterval) {
+    ) async throws -> (text: String, toolCalls: [ClaudeToolCall], duration: TimeInterval) {
         let startTime = Date()
 
         var request = makeAPIRequest()
@@ -151,13 +152,14 @@ class ClaudeAPI {
         ])
         messages.append(["role": "user", "content": contentBlocks])
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model,
             "max_tokens": 1024,
             "stream": true,
             "system": systemPrompt,
             "messages": messages
         ]
+        if !tools.isEmpty { body["tools"] = tools }
 
         let bodyData = try JSONSerialization.data(withJSONObject: body)
         request.httpBody = bodyData
@@ -191,8 +193,10 @@ class ClaudeAPI {
 
         // Parse SSE stream — each event is "data: {json}\n\n"
         var accumulatedResponseText = ""
+        var sseLines: [String] = []
 
         for try await line in byteStream.lines {
+            sseLines.append(line)
             // SSE lines look like: "data: {...}"
             guard line.hasPrefix("data: ") else { continue }
             let jsonString = String(line.dropFirst(6)) // Drop "data: " prefix
@@ -220,7 +224,7 @@ class ClaudeAPI {
         }
 
         let duration = Date().timeIntervalSince(startTime)
-        return (text: accumulatedResponseText, duration: duration)
+        return (text: accumulatedResponseText, toolCalls: Self.parseToolCalls(fromSSELines: sseLines), duration: duration)
     }
 
     /// Non-streaming fallback for validation requests where we don't need progressive display.
@@ -299,5 +303,50 @@ class ClaudeAPI {
 
         let duration = Date().timeIntervalSince(startTime)
         return (text: text, duration: duration)
+    }
+}
+
+struct ClaudeToolCall: Equatable {
+    let id: String
+    let name: String
+    let arguments: [String: String]
+}
+
+extension ClaudeAPI {
+    /// Tool calls from an Anthropic SSE stream: `content_block_start` names the tool, `input_json_delta`
+    /// pieces build its input, `content_block_stop` closes it. Input that is not valid JSON is dropped.
+    static func parseToolCalls(fromSSELines lines: [String]) -> [ClaudeToolCall] {
+        var open: [Int: (id: String, name: String, json: String)] = [:]
+        var calls: [ClaudeToolCall] = []
+        for line in lines where line.hasPrefix("data: ") {
+            guard let data = line.dropFirst(6).data(using: .utf8),
+                  let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = event["type"] as? String,
+                  let index = event["index"] as? Int else { continue }
+            switch type {
+            case "content_block_start":
+                if let block = event["content_block"] as? [String: Any], block["type"] as? String == "tool_use" {
+                    open[index] = (block["id"] as? String ?? "", block["name"] as? String ?? "", "")
+                }
+            case "content_block_delta":
+                if let delta = event["delta"] as? [String: Any], delta["type"] as? String == "input_json_delta",
+                   let piece = delta["partial_json"] as? String, open[index] != nil {
+                    open[index]!.json += piece
+                }
+            case "content_block_stop":
+                guard let tool = open.removeValue(forKey: index) else { continue }
+                let raw = tool.json.isEmpty ? "{}" : tool.json
+                guard let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { continue }
+                var arguments: [String: String] = [:]
+                for (key, value) in object {
+                    if let string = value as? String { arguments[key] = string }
+                    else if let number = value as? NSNumber { arguments[key] = number.stringValue }
+                }
+                calls.append(ClaudeToolCall(id: tool.id, name: tool.name, arguments: arguments))
+            default:
+                continue
+            }
+        }
+        return calls
     }
 }
