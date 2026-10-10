@@ -44,4 +44,11 @@ export class SupabaseRest {
     await this.check(res, `upsert ${table}`);
     return ((await res.json()) as T[])[0];
   }
+
+  /** Call a Postgres function through PostgREST (`/rpc/<fn>`); returns its JSON result. */
+  async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+    const res = await this.fetchImpl(`${this.base}/rpc/${fn}`, { method: "POST", headers: this.headers(), body: JSON.stringify(args) });
+    await this.check(res, `rpc ${fn}`);
+    return (await res.json()) as T;
+  }
 }
