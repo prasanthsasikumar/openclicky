@@ -2,9 +2,10 @@
 //  BillingStatus.swift
 //  OpenClicky
 //
-//  The Settings "Account" section. Signed out: email + password fields (invite-only accounts,
-//  created with `npm run admin -w backend -- invite`). Signed in: the plan and how many credits
-//  are left this month (GET /billing/me). With an own key in shell.json: "not metered".
+//  What the account has used (GET /billing/me) and the sentences that say it: the free
+//  allowance this month and today, the shared budget, the spoken characters. Also the island's
+//  account rows in Settings → more: sign in, or the allowance and sign out; with an own key in
+//  shell.json, "not metered".
 //
 
 import AppKit
@@ -23,6 +24,54 @@ struct BillingSummary: Decodable, Equatable {
     let dayEnd: String
     let budgetExhausted: Bool
     let blocked: Bool
+}
+
+/// Where the free allowance stands, most pressing first: each case has its own sentence because
+/// "used up this month" is wrong when only today's share or the shared budget ran out.
+enum AllowanceStanding: Equatable { case plenty, runningLow, usedUpThisMonth, usedUpToday, sharedBudgetUsedUp, paused }
+
+extension BillingSummary {
+    var allowanceStanding: AllowanceStanding {
+        if blocked { return .paused }
+        if fractionUsed >= 1 { return .usedUpThisMonth }
+        if budgetExhausted { return .sharedBudgetUsedUp }
+        if dailyLimitUsd > 0 && spentTodayUsd >= dailyLimitUsd { return .usedUpToday }
+        return level == .runningLow ? .runningLow : .plenty
+    }
+
+    /// One calm line under the usage bar and in the island ("plenty left this month · resets on
+    /// nov 1"). `resetDay` is `monthResetDay(...)`; nil when the date could not be read.
+    func allowanceSentence(resetDay: String?) -> String {
+        let onResetDay = resetDay.map { "on \($0)" } ?? "on the 1st"
+        switch allowanceStanding {
+        case .plenty: return "plenty left this month · resets \(onResetDay)"
+        case .runningLow: return "running low this month · resets \(onResetDay)"
+        case .usedUpThisMonth: return "this month's free allowance is used — it comes back \(onResetDay)"
+        case .usedUpToday: return "today's free allowance is used — it comes back tomorrow"
+        case .sharedBudgetUsedUp: return "the free allowance is used up for now"
+        case .paused: return "this account is paused — dictation still works"
+        }
+    }
+
+    /// The day the month's allowance comes back, as "nov 1". Months are UTC calendar months, so
+    /// the date is read in UTC: midnight on the 1st is still the 31st in the Americas otherwise.
+    func monthResetDay(locale: Locale = .current) -> String? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = fractional.date(from: monthEnd) ?? ISO8601DateFormatter().date(from: monthEnd),
+              let utc = TimeZone(identifier: "UTC") else { return nil }
+        let style = Date.FormatStyle(locale: locale, timeZone: utc).day().month(.abbreviated)
+        return date.formatted(style).lowercased()
+    }
+
+    /// The "details" line: "$4.50 of $10 this month · $0.20 of $2 today · 300 spoken characters of 20,000".
+    func usageDetails(locale: Locale = .current) -> String {
+        func dollars(_ amount: Double) -> String {
+            amount == amount.rounded() ? "$\(Int(amount))" : String(format: "$%.2f", amount)
+        }
+        func count(_ number: Int) -> String { number.formatted(.number.locale(locale)) }
+        return "\(dollars(spentMonthUsd)) of \(dollars(monthlyLimitUsd)) this month · \(dollars(spentTodayUsd)) of \(dollars(dailyLimitUsd)) today · \(count(ttsCharsMonth)) spoken characters of \(count(ttsCharsLimit))"
+    }
 }
 
 @MainActor
@@ -52,14 +101,16 @@ final class BillingStatusModel: ObservableObject {
                 summary = try JSONDecoder().decode(BillingSummary.self, from: data)
                 errorText = nil
             } catch {
-                errorText = "couldn't load your plan (\(error.localizedDescription))"
+                errorText = (error as NSError).code == 401 ? "your sign-in ran out — sign in again." : "couldn't load your allowance right now."
+                print("💳 Billing status failed: \(error.localizedDescription)")
             }
         }
     }
 }
 
 /// Rows for the Settings tab. The row builders are passed in so this section uses the same row
-/// styles as the rest of Settings (they are private to NotchHUDPanels.swift).
+/// styles as the rest of Settings (they are private to NotchHUDPanels.swift). Creating an account
+/// happens in the window (`openAccountPage`), where the account sheet has room.
 struct NotchAccountSection<Row: View, ActionRow: View>: View {
     @StateObject private var model = BillingStatusModel()
     @ObservedObject private var authSession = OpenClickyAuthSession.shared
@@ -70,12 +121,13 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
 
     let row: (_ systemImage: String, _ title: String, _ value: String) -> Row
     let action: (_ systemImage: String, _ title: String, _ detail: String?, _ action: @escaping () -> Void) -> ActionRow
+    let openAccountPage: () -> Void
 
     var body: some View {
         Group {
             if OpenClickyConfiguration.usesOwnKeys {
-                row("key.fill", "Keys", "your own (not metered)")
-                action("doc.text", "Change keys", "openaiApiKey / anthropicApiKey in shell.json") { OpenClickyConfiguration.revealSettingsFile() }
+                row("key.fill", "keys", "your own (not metered)")
+                action("doc.text", "change keys", "openaiApiKey / anthropicApiKey in shell.json") { OpenClickyConfiguration.revealSettingsFile() }
             } else if !OpenClickyConfiguration.isConfigured {
                 signInForm
             } else {
@@ -88,7 +140,7 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
 
     private var signInForm: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Sign in with the account you were invited with.")
+            Text("sign in to your openclicky account.")
                 .font(.system(size: 11))
                 .foregroundColor(Color.white.opacity(0.6))
             credentialField(systemImage: "envelope", text: $email, placeholder: "email", isSecure: false)
@@ -102,7 +154,7 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
                 }
                 Spacer()
                 Button(action: signIn) {
-                    Text(isSigningIn ? "Signing in…" : "Sign in")
+                    Text(isSigningIn ? "signing in…" : "sign in")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 14)
@@ -113,10 +165,13 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
                 .pointerCursor()
                 .disabled(isSigningIn || email.isEmpty || password.isEmpty)
             }
-            Text("No account? Use your own OpenAI key instead: add openaiApiKey to shell.json.")
-                .font(.system(size: 10))
-                .foregroundColor(Color.white.opacity(0.45))
-                .onTapGesture { OpenClickyConfiguration.revealSettingsFile() }
+            Button(action: openAccountPage) {
+                Text("no account yet? create a free one in settings.")
+                    .font(.system(size: 10))
+                    .foregroundColor(Color.white.opacity(0.55))
+            }
+            .buttonStyle(.plain)
+            .pointerCursor()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -144,7 +199,7 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
                 password = ""
                 model.refresh()
             } else {
-                signInFailureText = authSession.lastErrorText ?? "sign-in failed"
+                signInFailureText = AccountSheet.friendlySignInMessage(authSession.lastErrorText)
             }
         }
     }
@@ -152,36 +207,20 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
     @ViewBuilder
     private var signedInRows: some View {
         if let accountEmail = authSession.accountEmail {
-            row("person.crop.circle", "Account", accountEmail)
+            row("person.crop.circle", "account", accountEmail)
         } else {
-            row("person.crop.circle", "Account", "token from shell.json")
+            row("person.crop.circle", "account", "token from shell.json")
         }
         if let summary = model.summary {
-            row("gauge", "Allowance", "\(Self.levelLabel(summary)) this month · resets \(Self.shortDate(summary.monthEnd))")
+            row("gauge", "allowance", summary.allowanceSentence(resetDay: summary.monthResetDay()))
         } else if let errorText = model.errorText {
-            row("exclamationmark.triangle", "Plan", errorText)
+            row("exclamationmark.triangle", "allowance", errorText)
         } else {
-            row("creditcard", "Plan", "loading…")
+            row("gauge", "allowance", "loading…")
         }
         if authSession.accountEmail != nil {
-            action("rectangle.portrait.and.arrow.right", "Sign out", nil) { authSession.signOut() }
+            action("rectangle.portrait.and.arrow.right", "sign out", nil) { authSession.signOut() }
         }
-        action("key", "Use my own API key instead", "Add openaiApiKey to shell.json") { OpenClickyConfiguration.revealSettingsFile() }
-    }
-
-    private static func levelLabel(_ summary: BillingSummary) -> String {
-        switch summary.level {
-        case .plenty: return "plenty left"
-        case .runningLow: return "running low"
-        case .usedUp: return summary.blocked ? "paused" : "used up"
-        }
-    }
-
-    private static func shortDate(_ iso: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        guard let date else { return iso }
-        return date.formatted(date: .abbreviated, time: .omitted)
+        action("key", "use my own key instead", "in settings → account", openAccountPage)
     }
 }

@@ -1017,6 +1017,8 @@ struct NotchSettingsView: View {
     @ObservedObject var settings: DictationSettings
     /// Mirrors `language` in shell.json; written back on change. See ReplyLanguage.swift.
     @State private var replyLanguageCode = ReplyLanguage.currentCode
+    /// The account's allowance, for the plan row; refreshed whenever the tab appears.
+    @StateObject private var billing = BillingStatusModel()
 
     private let summaryColumns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
 
@@ -1043,7 +1045,7 @@ struct NotchSettingsView: View {
                     summaryCard(title: "BACKEND & ACCOUNT", rows: [
                         ("host", OpenClickyConfiguration.backendHostDescription),
                         ("token", OpenClickyConfiguration.isConfigured ? "configured" : "missing"),
-                        ("plan", planDescription),
+                        ("plan", Self.planDescription(kind: AccountCapabilities.current().kind, summary: billing.summary)),
                     ]) { companionManager.showDictationWindow(settingsPage: .account) }
                     summaryCard(title: "AGENT", rows: [
                         ("workspace", OpenClickyConfiguration.workspacePath.replacingOccurrences(of: NSHomeDirectory(), with: "~")),
@@ -1079,6 +1081,7 @@ struct NotchSettingsView: View {
             .padding(.horizontal, DS.HUD.bodySidePadding)
             .padding(.bottom, 16)
         }
+        .onAppear { billing.refresh() }
     }
 
     /// The model that polishes takes (`DictationEngineResolver.makePolisher`), or why none does.
@@ -1090,10 +1093,15 @@ struct NotchSettingsView: View {
         return "none yet"
     }
 
-    private var planDescription: String {
-        if OpenClickyConfiguration.usesOwnKeys { return "your own key" }
-        if OpenClickyConfiguration.isConfigured { return "invite" }
-        return "not signed in"
+    /// "account · 45% used" once the allowance has loaded, "account" until then.
+    static func planDescription(kind: AccountKind, summary: BillingSummary?) -> String {
+        switch kind {
+        case .ownKeys: return "your own key"
+        case .signedOut: return "not signed in"
+        case .account:
+            guard let summary, !summary.byok else { return "account" }
+            return "account · \(Int((summary.fractionUsed * 100).rounded()))% used"
+        }
     }
 
     private func liveToggle(title: String, detail: String, isOn: Binding<Bool>) -> some View {
@@ -1188,7 +1196,8 @@ struct NotchSettingsView: View {
             VStack(spacing: 0) {
                 NotchAccountSection(
                     row: { moreValueRow(systemImage: $0, title: $1, value: $2) },
-                    action: { moreActionRow(systemImage: $0, title: $1, detail: $2, action: $3) }
+                    action: { moreActionRow(systemImage: $0, title: $1, detail: $2, action: $3) },
+                    openAccountPage: { companionManager.showDictationWindow(settingsPage: .account) }
                 )
             }
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(DS.HUD.surface))

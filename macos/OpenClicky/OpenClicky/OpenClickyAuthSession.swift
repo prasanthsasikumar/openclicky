@@ -5,7 +5,7 @@
 //  Sign in with an email and password (Supabase Auth, whose details the backend publishes at
 //  GET /auth/config) and keep the session alive: the access token goes into shell.json as `token`
 //  (what every backend request sends) together with the refresh token, and it is refreshed before
-//  it expires. Invitees never touch shell.json by hand.
+//  it expires. Nobody has to touch shell.json by hand.
 //
 
 import Combine
@@ -54,7 +54,9 @@ final class OpenClickyAuthSession: ObservableObject {
         Task { await refreshIfNeeded() }
     }
 
-    func signIn(email: String, password: String) async -> Bool {
+    /// `logsFailure` is false while waiting for a confirmation link, where "Email not confirmed"
+    /// every five seconds is expected and would only fill the log.
+    func signIn(email: String, password: String, logsFailure: Bool = true) async -> Bool {
         lastErrorText = nil
         do {
             let config = try await authConfig()
@@ -64,7 +66,7 @@ final class OpenClickyAuthSession: ObservableObject {
             return true
         } catch {
             lastErrorText = Self.describe(error)
-            print("🔐 Sign-in failed: \(lastErrorText ?? "")")
+            if logsFailure { print("🔐 Sign-in failed: \(lastErrorText ?? "")") }
             return false
         }
     }
@@ -78,16 +80,34 @@ final class OpenClickyAuthSession: ObservableObject {
         return request
     }
 
+    /// A second tap while a sign-up is being sent or waiting for its link must not start a second
+    /// request and a second poll.
+    nonisolated static func canStartSignUp(from state: SignUpState) -> Bool {
+        switch state {
+        case .sending, .awaitingConfirmation: return false
+        case .idle, .signedIn, .failed, .full: return true
+        }
+    }
+
+    /// A sign-up stopped because its task was cancelled (the sheet closed), not because it failed.
+    nonisolated static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
+    }
+
     /// Creates the account through the backend (it owns the account cap); Supabase then emails a
     /// confirmation link. Polls a password sign-in until the link has been tapped, so the person
-    /// never has to come back and type.
+    /// never has to come back and type. Run it from a task the caller cancels when the person
+    /// walks away: a cancelled sign-up goes back to `.idle`.
     func signUp(email: String, password: String) async {
+        guard Self.canStartSignUp(from: signUpState) else { return }
         signUpState = .sending
         do {
             let config = try await authConfig()
             guard config.accountsOpen != false else { signUpState = .full; return }
             guard let request = Self.signUpRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, email: email, password: password) else {
-                signUpState = .failed("sign-up isn't available right now.")
+                signUpState = .failed("creating an account isn't available right now.")
                 return
             }
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -98,21 +118,36 @@ final class OpenClickyAuthSession: ObservableObject {
                 if error == "accounts_full" {
                     signUpState = .full
                 } else if status == 404 {
-                    signUpState = .failed("this backend doesn't take sign-ups.")
+                    signUpState = .failed("creating an account isn't available right now.")
                 } else {
-                    signUpState = .failed(error.isEmpty ? "couldn't create the account (\(status))." : error)
+                    signUpState = .failed(error.isEmpty ? "couldn't create the account right now — try again in a minute." : error)
                 }
                 return
             }
             signUpState = .awaitingConfirmation(email: email)
             if await waitForConfirmation(email: email, password: password) {
                 signUpState = .signedIn
-            } else if !Task.isCancelled {
-                signUpState = .failed("the confirmation link wasn't opened in time — sign in once you have confirmed.")
+            } else if Task.isCancelled {
+                signUpState = .idle
+            } else {
+                signUpState = .failed("the link wasn't opened in time — sign in once you have tapped it.")
             }
         } catch {
-            signUpState = .failed(Self.describe(error))
+            if Self.isCancellation(error) || Task.isCancelled {
+                signUpState = .idle
+            } else {
+                // The underlying error ("The Internet connection appears to be offline.", a JSON
+                // decoding failure) is for the log, not for the person signing up.
+                print("🔐 Sign-up failed: \(Self.describe(error))")
+                signUpState = .failed("couldn't reach openclicky right now — try again in a minute.")
+            }
         }
+    }
+
+    /// A fresh sheet starts from the form: a finished, failed or full attempt from before is
+    /// forgotten, one still in flight is left alone.
+    func forgetSettledSignUp() {
+        if Self.canStartSignUp(from: signUpState) { signUpState = .idle }
     }
 
     /// Polls a password sign-in until the confirmation link has been tapped. Returns false on
@@ -121,7 +156,7 @@ final class OpenClickyAuthSession: ObservableObject {
     func waitForConfirmation(email: String, password: String, pollEvery seconds: Double = 5, timeout: Double = 15 * 60) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline, !Task.isCancelled {
-            if await signIn(email: email, password: password) { return true }
+            if await signIn(email: email, password: password, logsFailure: false) { return true }
             lastErrorText = nil
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
         }
