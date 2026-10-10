@@ -78,5 +78,6 @@ describe("email-first fields", () => {
     expect(maskEmail("prasanth@flowsxr.com")).toBe("p•••@flowsxr.com");
     expect(maskEmail("a@b.co")).toBe("a•••@b.co");
     expect(maskEmail(null)).toBeNull();
+    expect(maskEmail("nodomain")).toBeNull();
   });
 });

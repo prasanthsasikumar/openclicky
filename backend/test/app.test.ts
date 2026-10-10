@@ -5,7 +5,7 @@ import { createApp } from "../src/app.js";
 import type { Env } from "../src/env.js";
 import { parseSkillMarkdown } from "../src/skillMarkdown.js";
 import { MemoryBillingStore } from "../src/billing.js";
-import { MemorySpendLedger } from "../src/ledger.js";
+import { MemorySpendLedger, limitsFromEnv } from "../src/ledger.js";
 
 type Seen = { url: string; auth?: string; apiKey?: string; contentType?: string; raw: string; body: Record<string, unknown> };
 const MOCK_SKILL = "```markdown\n---\nname: Reply In My Voice\ndescription: Draft email replies in the user's own voice.\nsurfaces: [talk, agent]\n---\n# Reply In My Voice\n\n## Use When\nThe user asks for a reply.\n```";
@@ -505,7 +505,21 @@ describe("app", () => {
       expect(await me.json()).toMatchObject({ confirmed: false, guestSpentUsd: 0, guestLimitUsd: 1, email: "g•••@example.com" });
     });
 
-    it("a guest over its cap gets 402 confirm_email with no resets_at", async () => {
+    it("a guest whose Mac pool is spent past the cap gets 402 confirm_email with no resets_at", async () => {
+      const ledger = new MemorySpendLedger({ requireAccountRow: true });
+      ledger.setAccount("user-1", { confirmed: false, deviceHash: "a".repeat(64), createdAt: Date.now(), email: "gran@example.com" });
+      const billed = createApp({ log: null, spendLedger: ledger });
+      const token = await jwt();
+      const limits = limitsFromEnv(grantEnv);
+      const held = await ledger.reserve("user-1", limits.guestTotalMicro - 1, limits);
+      if (!held.ok) throw new Error("setup reserve should fit under the cap");
+      await ledger.settle(held.reservationId, "user-1", limits.guestTotalMicro - 1, { route: "/chat", inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, characters: 0 });
+      const r = await billed.request("/v1/polish", json({ purpose: "polish", text: "hi" }, token), grantEnv);
+      expect(r.status).toBe(402);
+      expect(await r.json()).toEqual({ error: "confirm_email" });
+    });
+
+    it("a replaced guest also gets 402 confirm_email with no resets_at", async () => {
       const ledger = new MemorySpendLedger({ requireAccountRow: true });
       ledger.setAccount("user-1", { confirmed: false, deviceHash: "a".repeat(64), createdAt: Date.now(), replaced: true, email: "gran@example.com" });
       const billed = createApp({ log: null, spendLedger: ledger });
