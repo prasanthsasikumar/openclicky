@@ -18,7 +18,7 @@ Credentials (all git-ignored, mode 600, only in the main checkout):
 
 - `backend/.supabase-cloud.secrets`: `SUPABASE_PROJECT_REF`, `SUPABASE_URL`, keys, `SUPABASE_DB_URL`,
   and `SUPABASE_ACCESS_TOKEN` (a personal Management API token, needed only for §4; revoke it after
-  rollout, §9).
+  rollout, §7 step 7).
 - `backend/.hosted.vars`: the hosted backend's env (§2).
 
 Load either with `set -a; . <file>; set +a` in the same command that uses it; never echo them.
@@ -71,8 +71,8 @@ GUEST_TTS_CHARS=2000         # spoken characters per Mac before confirming
 MAX_ACCOUNTS_PER_DEVICE=2    # confirmed accounts one Mac may create
 ```
 
-`ACCOUNT_RESET_REDIRECT_URL` and `FREE_MONTHLY_CREDITS` are no longer read; delete them from the
-file. `/auth/config` no longer returns a `resetRedirectUrl`.
+`ACCOUNT_RESET_REDIRECT_URL` is no longer read and `FREE_MONTHLY_CREDITS` is unused in grant mode (only
+the legacy Stripe path reads it); delete them from the file. `/auth/config` no longer returns a `resetRedirectUrl`.
 
 | Setting | Effect |
 |---|---|
@@ -117,6 +117,11 @@ Set through the Management API (`SUPABASE_ACCESS_TOKEN` from the secrets file):
 curl -s -X PATCH "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/auth" \
   -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'content-type: application/json' \
   --data @auth-settings.json | jq -c '{external_anonymous_users_enabled, mailer_otp_length}'
+
+# read back all nine fields
+curl -s "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/auth" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  | jq '{external_anonymous_users_enabled, rate_limit_anonymous_users, mailer_otp_length, mailer_otp_exp, mailer_subjects_email_change, mailer_templates_email_change_content, mailer_subjects_magic_link, mailer_templates_magic_link_content, mailer_secure_email_change_enabled}'
 ```
 
 with `auth-settings.json`:
@@ -126,20 +131,22 @@ with `auth-settings.json`:
   "external_anonymous_users_enabled": true,
   "rate_limit_anonymous_users": 300,
   "mailer_otp_length": 6,
-  "mailer_otp_exp": 900,
+  "mailer_otp_exp": 3600,
   "mailer_subjects_email_change": "Confirm your OpenClicky email",
   "mailer_templates_email_change_content": "<p>Hi! Confirm this email for your free OpenClicky account:</p><p><a href=\"{{ .ConfirmationURL }}\">Confirm my email</a></p><p>If you didn't ask for this, ignore this email.</p>",
   "mailer_subjects_magic_link": "Your OpenClicky code",
-  "mailer_templates_magic_link_content": "<p>Your OpenClicky sign-in code is</p><h2>{{ .Token }}</h2><p>It works for 15 minutes. If you didn't ask for it, ignore this email.</p>",
+  "mailer_templates_magic_link_content": "<p>Your OpenClicky sign-in code is</p><h2>{{ .Token }}</h2><p>It works for an hour. If you didn't ask for it, ignore this email.</p>",
   "mailer_secure_email_change_enabled": false
 }
 ```
 
 Why: guests are anonymous users (anonymous sign-ins on, 300 per hour per IP); the confirmation
 link is the email-change mail, and secure email change is off because an anonymous user has no
-old address to confirm from; existing accounts sign in with a 6-digit code valid for 15 minutes.
+old address to confirm from; existing accounts sign in with a 6-digit code.
+`mailer_otp_exp` is 3600 (1 hour): GoTrue uses one expiry for both the codes and the confirmation
+links, so 15 minutes would also kill a link opened later that hour.
 
-`GET` the same URL afterwards and check the fields read back. Already in place and unchanged:
+Check the fields read back. Already in place and unchanged:
 `mailer_autoconfirm=false`, `site_url=https://api.openclicky.flowsxr.com`, the `uri_allow_list`
 containing `https://api.openclicky.flowsxr.com/auth/confirmed`, SMTP through Resend from
 hello@flowsxr.com, `rate_limit_email_sent=30` per hour (raise it before opening sign-up widely: every
