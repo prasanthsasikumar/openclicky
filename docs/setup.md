@@ -79,12 +79,11 @@ curl localhost:8787/health        # → {"ok":true}
 (method, path, status, ms, user id — never bodies or tokens). Deploy: `cd backend && npx wrangler deploy`,
 then `wrangler secret put` each secret.
 
-### Paying for model calls: your own keys, or an invite
+### Paying for model calls: your own keys, or a free account
 
 Every model call goes through the backend, and there are two ways to pay for it. The hosted backend
-(`https://api.openclicky.flowsxr.com`, the app's default) is invite-only: its `FREE_MONTHLY_CREDITS=0`,
-so a signed-in user without an allowance gets `402 credits_exhausted`, while bring-your-own-key works
-for anyone.
+(`https://api.openclicky.flowsxr.com`, the app's default) runs on a research grant (`GRANT_ACCOUNTS=true`)
+and gives free accounts; bring-your-own-key works for anyone.
 
 - **Bring your own key.** Put `"openaiApiKey": "sk-…"` (and optionally `"anthropicApiKey"` for the
   Claude lanes) in `~/.openclicky/shell.json`, or set `OPENCLICKY_OPENAI_KEY` / `OPENCLICKY_ANTHROPIC_KEY`
@@ -93,28 +92,22 @@ for anyone.
   them, and meters nothing. Codex forwards them too (`env_http_headers` in `config/codex-config.toml`).
   Without an Anthropic key the Claude lanes answer `402 byok_missing_anthropic_key` (the CLI gate falls
   back to its heuristic; the app's teacher lane only matters with Realtime off).
-- **An invite on OpenClicky's keys.** Accounts are Supabase Auth users with a monthly credit allowance
-  (`oc_subscriptions.monthly_credits_override`, plan `invite`, resets on calendar months). Create and
-  manage them with the admin script, which talks to Supabase directly with the service key:
-
-  ```bash
-  npm run admin -w backend -- invite someone@example.com --credits 1000   # creates the user, prints the password once
-  npm run admin -w backend -- limit someone@example.com --credits 3000
-  npm run admin -w backend -- usage                                       # credits per user this month
-  npm run admin -w backend -- revoke|restore|remove someone@example.com
-  npm run admin -w backend -- list
-  ```
-
-  The invitee installs the app, opens Settings → Account and signs in; the app keeps the session fresh.
-  Costs: 1 credit per 1k input tokens + 4 per 1k output tokens (parsed from the upstream reply), 30 per
-  Realtime session mint, 1 per started 15 s of transcription, 1 per 500 characters of speech, 2 per skill
-  draft. Out of credits → `402 credits_exhausted`; a revoked account → `402 subscription_inactive`.
+- **A free account on the grant.** Setup asks only for an email. The backend (`POST /auth/start`)
+  makes a Supabase anonymous user with that email attached and mails a confirmation link; the account
+  works at once, capped at $1 per Mac until the link is clicked, then $2 a day and $10 a month. An
+  email that already has an account gets a 6-digit code instead (`POST /auth/code`). There are no
+  passwords. Spend is reserved and settled in micro-dollars in Postgres (`oc_reserve` / `oc_settle`),
+  with a global monthly cap. Past a limit the backend answers `402` with `confirm_email`,
+  `daily_limit`, `personal_limit` or `monthly_budget`. Operators manage accounts with the admin
+  script (`add`, `list`, `budget`, `limit`, `daily`, `block`, `prune`, …) against the Supabase project
+  directly; [docs/accounts-runbook.md](accounts-runbook.md) has the env, the Supabase settings and the
+  rollout.
   (Stripe Checkout / portal / webhook routes exist in `backend/src/stripe.ts` for a paid plan later; with
   no `STRIPE_*` env they answer 503 and nothing in the app points at them.)
 
 Backend env for this: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (the billing store; without them nothing
 is metered, which is what a self-hosted backend wants), `SUPABASE_PUBLISHABLE_KEY` (published by
-`GET /auth/config` so clients can sign in), `FREE_MONTHLY_CREDITS` (0 = invite-only), and for tests
+`GET /auth/config`), `GRANT_ACCOUNTS=true` plus the grant limits (see the runbook), and for tests
 `BYOK_OPENAI_BASE_URL` / `BYOK_ANTHROPIC_BASE_URL` / `BYOK_ANTHROPIC_MODEL`. Load the tables once with
 `backend/supabase/schema.sql` (see the shared Supabase runbook).
 
@@ -123,7 +116,8 @@ is metered, which is what a self-hosted backend wants), `SUPABASE_PUBLISHABLE_KE
 `npm run deploy:backend` rsyncs the repo to the VPS, builds `backend/Dockerfile` there, starts the
 container from `backend/deploy/docker-compose.yml` (bound to 127.0.0.1:8787, 256 MB cap) and adds the
 Caddy site block for `api.openclicky.flowsxr.com` once. `--env` also uploads `backend/.dev.vars` as
-`/opt/openclicky/backend.env` (append `FREE_MONTHLY_CREDITS=0` there for invite-only). DNS: an A record
+`/opt/openclicky/backend.env`; the hosted deploy uses `DEPLOY_ENV_FILE=backend/.hosted.vars` (see the
+accounts runbook — never deploy it without `GRANT_ACCOUNTS=true`). DNS: an A record
 for the hostname pointing at the server.
 
 ## Run the agent
@@ -166,6 +160,10 @@ auto-accepted by default (the sandbox is `workspace-write`); `--approve` switche
 `computer-use` MCP servers into the config.
 
 ### Composio (account integrations: Gmail, YouTube, GitHub, Slack, …)
+
+Connectors are switched off in 0.8.0: the app shows no connect card or composio tile and does not hand
+Composio to the agent, whatever `shell.json` says. A later release turns them back on
+(`OpenClickyConfiguration.connectorsEnabled`). The steps below apply once it does.
 
 Composio hosts one MCP server, Composio Connect, that reaches 1000+ apps through a handful of meta-tools
 (`COMPOSIO_SEARCH_TOOLS`, `COMPOSIO_MANAGE_CONNECTIONS`, `COMPOSIO_MULTI_EXECUTE_TOOL`, …). The agent asks it to

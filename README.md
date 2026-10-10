@@ -15,6 +15,8 @@ at the answer, and hand real work to a Codex agent. MIT licensed.
 
 1. Open the dmg and click **Move to Applications** when OpenClicky offers (or drag it there). Grant
    Microphone and Accessibility when the walkthrough asks: the first hears you, the second pastes.
+   Type your email when it offers a free account (no password, no key) and polished dictation and
+   spoken answers work straight away; or skip it and keep everything on your Mac.
 2. Hold **fn** in any text box, say a sentence, let go. It is typed where your cursor is; the orb at
    the bottom of the screen shows every step. Tap fn to start a take and tap again to finish; two quick
    taps or esc discard it.
@@ -23,8 +25,8 @@ at the answer, and hand real work to a Codex agent. MIT licensed.
 
 Nothing leaves your Mac until you choose an engine that needs the network (Settings → engine):
 **Sarvam** with your own key (Saaras hears Hindi, Tamil, Telugu, Malayalam, Kannada, Bengali, Marathi,
-Gujarati, Punjabi, Odia and English, with the words appearing while you speak), or the **OpenClicky** backend with an
-invite or your OpenAI key. The same key or account polishes takes with a model (punctuation, "three
+Gujarati, Punjabi, Odia and English, with the words appearing while you speak), or the **OpenClicky** backend with a
+free account or your OpenAI key. The same key or account polishes takes with a model (punctuation, "three
 p.m." → "3 PM", your style's rules) and powers **Hey Clicky**: hold fn + ⌃, say "make it formal", and
 the selected text is rewritten.
 
@@ -90,9 +92,16 @@ Modeled on the HeyClicky idea, built as a **headless agent core plus a native sh
 
 Keys never leave the backend: the agent strips `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` from Codex's
 environment and only ever presents the user's token, and the app does the same for the CLI. Pay for
-model calls with [your own key or an invite](docs/setup.md#paying-for-model-calls-your-own-keys-or-an-invite).
+model calls with [your own key or a free account](docs/setup.md#paying-for-model-calls-your-own-keys-or-a-free-account).
 
-Not there yet: active-document reading, Composio/cua-driver themselves (only the wiring), HeyClicky's
+**Free accounts.** OpenClicky's hosted backend runs on a research grant, so anyone can use it for
+free while the grant lasts: type your email during setup and it works at once, with a $1 starter
+allowance per Mac; click the link in the email and it becomes $10 of use a month ($2 a day). There are
+no passwords: on another Mac you sign in with your email and a 6-digit code. Places are limited (100
+confirmed accounts); when they are full, bring your own key instead.
+
+Not there yet: active-document reading, connectors (Composio app connections are switched off in
+0.8.0 and return in a later release), cua-driver itself (only the wiring), HeyClicky's
 skill approval queue and team-shared skills, drawing/circling annotations on screen, a paywall, crash
 reporting; on the dictation side, history sync between Macs, teams and a leaderboard, rich paste for
 Notion / Sheets / Slack, and Wispr Flow import.
@@ -102,7 +111,7 @@ Notion / Sheets / Slack, and Wispr Flow import.
 | Document | What |
 |---|---|
 | [How it works](docs/architecture.md) | the request flow end to end, repository layout, the three skill layers, following upstream HeyClicky |
-| [Setup and running from source](docs/setup.md) | prerequisites, backend, CLI, macOS app, provider choices, keys vs invites, auth flow, releases and the update feed |
+| [Setup and running from source](docs/setup.md) | prerequisites, backend, CLI, macOS app, provider choices, own keys vs free accounts, auth flow, releases and the update feed |
 | [Dictation design](docs/superpowers/specs/2026-10-06-dictation-kivi-port-design.md) | the take loop, engines, formatting, the space, the orb, installation — what was built and why |
 | [Kivi, reverse-engineered](docs/research/2026-10-06-kivi-reverse-engineering.md) | the report the dictation product shape was taken from |
 | [Dictation hand test](docs/dictation-hand-test.md) | what to try by hand after a build, step by step |
@@ -126,5 +135,5 @@ Notion / Sheets / Slack, and Wispr Flow import.
 
 MIT, see `LICENSE` (the Mac app is derived from Farza's MIT-licensed Clicky; HeyClicky is a separate
 product). Everything here runs on your own machine with your own keys; the hosted backend is only a
-convenience for invited users. `CONTRIBUTING.md` has the setup, the test commands, and where help is
+convenience, free while the grant lasts. `CONTRIBUTING.md` has the setup, the test commands, and where help is
 welcome. Pull requests run the TypeScript and Swift test suites in CI.
