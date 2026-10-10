@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Accounts and budget for OpenClicky's hosted backend. Talks to Supabase directly (Auth admin API +
 // the oc_* tables) with the service key from backend/.dev.vars; nothing here goes through the backend.
-// People sign up in the app, which creates their oc_accounts row; the Supabase auth is shared with
-// other FlowsXR products, so the only auth users this script deletes are anonymous guest logins (prune).
+// People sign up in the app, which creates their oc_accounts row. The Supabase project is dedicated to
+// OpenClicky, but the only auth users this script deletes are anonymous guest logins (prune), each
+// re-checked just before it goes.
 //
 //   npm run admin -w backend -- list                          everyone with an oc_accounts row
 //   npm run admin -w backend -- budget                        this month's spend, characters, account count, top 10
@@ -127,7 +128,7 @@ const commands = {
       if (r.route === "/tts") chars += Number(r.characters);
       perUser.set(r.user_id, (perUser.get(r.user_id) ?? 0) + Number(r.cost_micro_usd));
     }
-    // The auth is shared with other products: only OpenClicky accounts count, and only confirmed ones fill the cap.
+    // Only users with an oc_accounts row count, and only confirmed (non-anonymous) ones fill the cap.
     const accountIds = new Set(accounts.map((a) => a.user_id));
     const byId = new Map(users.map((u) => [u.id, u]));
     const confirmed = [...accountIds].filter((id) => byId.has(id) && !byId.get(id).is_anonymous).length;
@@ -146,11 +147,15 @@ const commands = {
     if (!user) user = await api("POST", `${SUPABASE_URL}/auth/v1/admin/users`, { email, email_confirm: true });
     await upsertAccount(user.id, { email, confirmed_at: new Date().toISOString() });
     console.log(`${email}: confirmed account ready (default limits) — sign in on the Mac with this email and the emailed code`);
-    console.log("note: this login may be shared with another FlowsXR product; the account now counts toward the max-accounts cap.");
+    console.log("note: the account now counts toward the max-accounts cap.");
   },
 
   async prune() {
     const days = Number(process.env.GUEST_DAYS ?? 14);
+    if (!Number.isFinite(days) || days < 1) {
+      console.error(`GUEST_DAYS must be 1 or more (got ${process.env.GUEST_DAYS}); nothing was changed`);
+      process.exit(1);
+    }
     const cutoff = Date.now() - days * 86_400_000;
     const rows = await api("GET", rest("oc_accounts", "confirmed_at=is.null&select=user_id,email,created_at,replaced_at"));
     const users = new Map((await listUsers()).map((u) => [u.id, u]));
@@ -165,11 +170,20 @@ const commands = {
         return;
       }
     }
+    let deleted = 0;
     for (const r of doomed) {
+      // Re-read the login right before deleting: one that confirmed its email since the list was
+      // fetched is no longer anonymous and must be left alone.
+      const fresh = await api("GET", `${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(r.user_id)}`).catch(() => null);
+      if (fresh?.is_anonymous !== true) {
+        console.log(`skipped ${r.user_id}: no longer an anonymous guest`);
+        continue;
+      }
       if (!r.replaced_at) await api("PATCH", rest("oc_accounts", `user_id=eq.${encodeURIComponent(r.user_id)}`), { replaced_at: new Date().toISOString() });
       await api("DELETE", `${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(r.user_id)}`);
+      deleted++;
     }
-    console.log("done");
+    console.log(`done: ${deleted} deleted`);
   },
 
   async limit() {
@@ -217,7 +231,7 @@ const commands = {
       console.log(`${email} had no OpenClicky account row — nothing removed`);
       return;
     }
-    console.log(`${email}: OpenClicky account row deleted. The auth login was NOT deleted (it is shared with other FlowsXR products) and usage history is kept.`);
+    console.log(`${email}: OpenClicky account row deleted. The auth login was NOT deleted (this command only removes the row) and usage history is kept.`);
   },
 
   async "max-accounts"() {
