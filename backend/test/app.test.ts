@@ -5,6 +5,7 @@ import { createApp } from "../src/app.js";
 import type { Env } from "../src/env.js";
 import { parseSkillMarkdown } from "../src/skillMarkdown.js";
 import { MemoryBillingStore } from "../src/billing.js";
+import { MemorySpendLedger } from "../src/ledger.js";
 
 type Seen = { url: string; auth?: string; apiKey?: string; contentType?: string; raw: string; body: Record<string, unknown> };
 const MOCK_SKILL = "```markdown\n---\nname: Reply In My Voice\ndescription: Draft email replies in the user's own voice.\nsurfaces: [talk, agent]\n---\n# Reply In My Voice\n\n## Use When\nThe user asks for a reply.\n```";
@@ -398,44 +399,34 @@ describe("app", () => {
   });
 
   describe("billing", () => {
-    const settle = () => new Promise((res) => setTimeout(res, 20));
 
-    it("meters a Codex turn and reports it on /billing/me", async () => {
-      const store = new MemoryBillingStore();
-      const billed = createApp({ log: null, billingStore: store });
+    it("keeps OpenAI routes off the grant and reports spend in dollars on /billing/me", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
       const token = await jwt();
       const r = await billed.request("/v1/responses", json({ model: "default", input: "hi", stream: true }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
-      expect(r.status).toBe(200);
-      await r.text();
-      await settle();
-      expect(store.events).toHaveLength(1);
-      // The fake upstream reports no usage → the flat fallback.
-      expect(store.events[0]).toMatchObject({ user_id: "user-1", route: "/v1/responses", credits: 2 });
+      expect(r.status).toBe(402);
+      expect(await r.json()).toEqual({ error: "not_on_plan" });
 
       const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, env);
       expect(me.status).toBe(200);
-      expect(await me.json()).toMatchObject({ byok: false, plan: "free", used: 2, limit: 200 });
+      expect(await me.json()).toMatchObject({ byok: false, spentMonthUsd: 0, monthlyLimitUsd: 10, spentTodayUsd: 0, dailyLimitUsd: 2, budgetExhausted: false, blocked: false });
     });
 
-    it("charges a Realtime session mint a flat rate and transcription by audio length", async () => {
-      const store = new MemoryBillingStore();
-      const billed = createApp({ log: null, billingStore: store });
+    it("refuses realtime sessions and transcription on the grant", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
       const token = await jwt();
-      await billed.request("/agent/realtime/session", json({}, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
-      const wav = Buffer.alloc(44 + 16000 * 2 * 20).toString("base64"); // 20 s of 16 kHz mono PCM16
-      await billed.request("/agent/transcribe", json({ audio: wav, mime: "audio/wav" }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
-      await settle();
-      expect(store.events.map((e) => [e.route, e.credits])).toEqual([
-        ["/agent/realtime/session", 30],
-        ["/agent/transcribe", 2],
-      ]);
-      expect(store.events[1].audio_seconds).toBeCloseTo(20, 0);
+      const session = await billed.request("/agent/realtime/session", json({}, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      expect(session.status).toBe(402);
+      expect(await session.json()).toEqual({ error: "not_on_plan" });
+      const wav = Buffer.alloc(44 + 16000 * 2 * 20).toString("base64");
+      const transcribe = await billed.request("/agent/transcribe", json({ audio: wav, mime: "audio/wav" }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      expect(transcribe.status).toBe(402);
+      expect(await transcribe.json()).toEqual({ error: "not_on_plan" });
     });
 
-    it("blocks a metered user at 402 but lets a BYOK request through", async () => {
+    it("refuses a grant request at 402 but lets a BYOK request through", async () => {
       const store = new MemoryBillingStore();
-      store.events.push({ user_id: "user-1", route: "x", input_tokens: 0, output_tokens: 0, audio_seconds: 0, characters: 0, credits: 200 });
-      const billed = createApp({ log: null, billingStore: store });
+      const billed = createApp({ log: null, billingStore: store, spendLedger: new MemorySpendLedger() });
       const token = await jwt();
       const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
       expect(blocked.status).toBe(402);
@@ -446,23 +437,21 @@ describe("app", () => {
       );
       expect(byok.status).toBe(200);
       await byok.text();
-      expect(store.events).toHaveLength(1);
+      expect(store.events).toHaveLength(0);
     });
 
-    it("FREE_MONTHLY_CREDITS=0 makes the backend invite-only for users on OpenClicky's keys", async () => {
-      const billed = createApp({ log: null, billingStore: new MemoryBillingStore() });
+    it("a user with no account row is not on the plan", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger({ requireAccountRow: true }) });
       const token = await jwt();
-      const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1", FREE_MONTHLY_CREDITS: "0" });
+      const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
       expect(blocked.status).toBe(402);
-      expect(await blocked.json()).toMatchObject({ error: "credits_exhausted", plan: "free", limit: 0 });
-      const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, { ...env, FREE_MONTHLY_CREDITS: "0" });
-      expect(await me.json()).toMatchObject({ plan: "free", limit: 0 });
+      expect(await blocked.json()).toEqual({ error: "not_on_plan" });
     });
 
     it("/billing/me reports byok for a request with its own key", async () => {
-      const billed = createApp({ log: null, billingStore: new MemoryBillingStore() });
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
       const me = await billed.request("/billing/me", { headers: byokHeaders(await jwt()) }, env);
-      expect(await me.json()).toMatchObject({ byok: true, plan: "byok" });
+      expect(await me.json()).toMatchObject({ byok: true });
     });
 
     it("streamed chat completions ask the upstream to include usage for metered users only", async () => {

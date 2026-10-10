@@ -5,8 +5,10 @@ import { proxyOpenAI, proxyAnthropic, createRealtimeSession, transcribeAudio, sy
 import { SKILLS_MANIFEST } from "./skillsManifest.js";
 import { createSkill } from "./skillsCreate.js";
 import { requestLogger, type LogSink } from "./log.js";
-import { requireCredits, billingSummary, SupabaseBillingStore, type BillingStore, type BillingContext } from "./billing.js";
+import { SupabaseBillingStore, type BillingStore, type BillingContext } from "./billing.js";
 import { SupabaseRest } from "./db.js";
+import { requireAccount, accountSummary } from "./account.js";
+import { SupabaseSpendLedger, type SpendLedger } from "./ledger.js";
 import { handleStripeWebhook, createCheckoutSession, createPortalSession } from "./stripe.js";
 
 export interface AppOptions {
@@ -14,6 +16,8 @@ export interface AppOptions {
   log?: LogSink | null;
   /** Billing store (tests pass MemoryBillingStore). Default: Supabase when SUPABASE_URL + SUPABASE_SERVICE_KEY are set, else none. */
   billingStore?: BillingStore;
+  /** Spend ledger (tests pass MemorySpendLedger). Default: Supabase when SUPABASE_URL + SUPABASE_SERVICE_KEY are set, else none. */
+  spendLedger?: SpendLedger;
 }
 
 type Variables = { principal: Principal; billing: BillingContext };
@@ -39,6 +43,13 @@ export function createApp(options: AppOptions = {}) {
     if (!resolvedStore) console.warn("billing: no SUPABASE_SERVICE_KEY; requests are not metered");
     return resolvedStore;
   };
+  let resolvedLedger: SpendLedger | undefined | null = options.spendLedger ?? null;
+  const ledgerFor = (c: Context): SpendLedger | undefined => {
+    if (resolvedLedger !== null) return resolvedLedger;
+    const env = getEnv(c);
+    resolvedLedger = env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY ? new SupabaseSpendLedger(new SupabaseRest(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY)) : undefined;
+    return resolvedLedger;
+  };
   /**
    * A backend with no Supabase at all is a deliberate self-hosted setup and runs unmetered. A
    * backend that names a Supabase project but has no service key is misconfigured, and treating
@@ -54,7 +65,7 @@ export function createApp(options: AppOptions = {}) {
       console.error("billing: SUPABASE_URL is set but SUPABASE_SERVICE_KEY is missing; refusing metered requests");
       return c.json({ error: "billing is not configured on this backend" }, 503);
     }
-    return requireCredits(storeFor(c))(c, next);
+    return requireAccount(ledgerFor)(c, next);
   };
   const withStore = (handler: (c: Context, store: BillingStore) => Promise<Response>) => (c: Context) => {
     const store = storeFor(c);
@@ -129,7 +140,11 @@ export function createApp(options: AppOptions = {}) {
   const authenticate = requireAuth as unknown as MiddlewareHandler<{ Variables: Variables }>;
   app.use("/billing/*", async (c, next) => (c.req.path === "/billing/webhook" ? next() : authenticate(c, next)));
   app.use("/billing/me", gate);
-  app.get("/billing/me", (c) => c.json(billingSummary(c)));
+  app.get("/billing/me", async (c) => {
+    const ledger = ledgerFor(c);
+    if (!ledger) return c.json({ byok: true, spentMonthUsd: 0, monthlyLimitUsd: 0, spentTodayUsd: 0, dailyLimitUsd: 0, ttsCharsMonth: 0, ttsCharsLimit: 0, monthEnd: "", dayEnd: "", budgetExhausted: false, blocked: false });
+    return c.json(await accountSummary(c, ledger));
+  });
   app.post("/billing/checkout", withStore(createCheckoutSession));
   app.post("/billing/portal", withStore(createPortalSession));
 
