@@ -55,4 +55,11 @@ describe("GoTrue", () => {
     expect(err).toMatchObject({ status: 422, code: "email_exists" });
     expect(String(err.message)).not.toContain("secret detail");
   });
+  it("a 2xx body that is not JSON throws bad_response without quoting the body", async () => {
+    const { gt } = fake(() => new Response("<html>secret page</html>", { status: 200 }));
+    const err = await gt.signUpAnonymously().catch((e) => e);
+    expect(err).toBeInstanceOf(GoTrueError);
+    expect(err).toMatchObject({ status: 200, code: "bad_response" });
+    expect(String(err.message)).not.toContain("secret");
+  });
 });

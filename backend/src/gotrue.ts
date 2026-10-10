@@ -31,7 +31,8 @@ export class GoTrue {
       try { const j = JSON.parse(text) as { error_code?: string }; if (j.error_code) code = j.error_code; } catch { /* keep http_<status> */ }
       throw new GoTrueError(res.status, code);
     }
-    return text ? JSON.parse(text) : undefined;
+    if (!text) return undefined;
+    try { return JSON.parse(text); } catch { throw new GoTrueError(res.status, "bad_response"); }
   }
 
   signUpAnonymously(): Promise<GoTrueSession> {
