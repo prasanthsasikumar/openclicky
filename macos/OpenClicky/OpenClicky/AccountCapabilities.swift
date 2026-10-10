@@ -24,6 +24,8 @@ struct AccountCapabilities: Equatable {
     var usesAgent: Bool { kind == .ownKeys }
     var hearsOnDevice: Bool { kind != .ownKeys }
     var polishPath: String { kind == .ownKeys ? "/v1/chat/completions" : "/v1/polish" }
+    /// The Agents tab's line under a disabled composer; signed out has nothing to explain.
+    var agentUnavailableHint: String? { kind == .account ? "agent tasks need your own key for now." : nil }
 }
 
 enum AccountLimitError: String, Equatable {

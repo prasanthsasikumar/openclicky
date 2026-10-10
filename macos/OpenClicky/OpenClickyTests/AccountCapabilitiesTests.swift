@@ -52,5 +52,12 @@ struct AccountCapabilitiesTests {
         #expect(CompanionManager.limitSentence(for: claudeError(402, "not json")) == AccountLimitError.personalLimit.message)
         #expect(CompanionManager.limitSentence(for: claudeError(500, #"{"error":"daily_limit"}"#)) == nil)
         #expect(CompanionManager.limitSentence(for: NSError(domain: "ElevenLabsTTS", code: 402)) == nil)
+        #expect(CompanionManager.limitSentence(for: claudeError(402, #"{"error":"tts_budget"}"#)) == AccountLimitError.personalLimit.message)
+    }
+
+    @Test func onlyAnAccountIsToldTheAgentNeedsItsOwnKey() {
+        #expect(AccountCapabilities(kind: .account).agentUnavailableHint == "agent tasks need your own key for now.")
+        #expect(AccountCapabilities(kind: .ownKeys).agentUnavailableHint == nil)
+        #expect(AccountCapabilities(kind: .signedOut).agentUnavailableHint == nil)
     }
 }

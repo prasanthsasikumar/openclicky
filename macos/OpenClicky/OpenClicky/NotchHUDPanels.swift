@@ -873,6 +873,9 @@ struct NotchAgentsView: View {
             }
 
             composer
+            if let hint = AccountCapabilities.current().agentUnavailableHint {
+                Text(hint).font(.system(size: 12)).foregroundColor(DS.HUD.text3)
+            }
         }
         .padding(.horizontal, DS.HUD.bodySidePadding)
         .padding(.bottom, 16)
@@ -885,7 +888,7 @@ struct NotchAgentsView: View {
     }
 
     private var isComposerEnabled: Bool {
-        OpenClickyConfiguration.isConfigured && companionManager.voiceState == .idle
+        OpenClickyConfiguration.isConfigured && AccountCapabilities.current().usesAgent && companionManager.voiceState == .idle
     }
 
     private var composer: some View {

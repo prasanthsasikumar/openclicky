@@ -454,6 +454,11 @@ final class CompanionManager: ObservableObject {
     func submitTextToAgent(_ text: String, threadId: String? = nil, startsNewThread: Bool = false) {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty, OpenClickyConfiguration.isConfigured else { return }
+        // An account has no agent: the backend would refuse it with not_on_plan, so say that plainly.
+        guard AccountCapabilities.current().usesAgent else {
+            speakWithSystemVoice(AccountLimitError.notOnPlan.message)
+            return
+        }
         currentResponseTask?.cancel()
         openClickyAgentClient.cancel()
         elevenLabsTTSClient.stopPlayback()
@@ -1393,7 +1398,8 @@ final class CompanionManager: ObservableObject {
                         voiceState = .responding
                     } catch {
                         // 402 is the account's voice allowance (tts_budget): the system voice is the plan, not a failure.
-                        if (error as NSError).code != 402 {
+                        let nsError = error as NSError
+                        if !(nsError.domain == "ElevenLabsTTS" && nsError.code == 402) {
                             ClickyAnalytics.trackTTSError(error: error.localizedDescription)
                         }
                         print("⚠️ TTS via backend failed (\(error.localizedDescription)); using the system voice")
@@ -1402,12 +1408,14 @@ final class CompanionManager: ObservableObject {
                 }
             } catch is CancellationError {
                 // User spoke again — response was interrupted
-            } catch let error as NSError where Self.limitSentence(for: error) != nil {
-                speakWithSystemVoice(Self.limitSentence(for: error) ?? "")
             } catch {
-                ClickyAnalytics.trackResponseError(error: error.localizedDescription)
-                print("⚠️ Companion response error: \(error)")
-                speakCreditsErrorFallback()
+                if let limitSentence = Self.limitSentence(for: error) {
+                    speakWithSystemVoice(limitSentence)
+                } else {
+                    ClickyAnalytics.trackResponseError(error: error.localizedDescription)
+                    print("⚠️ Companion response error: \(error)")
+                    speakCreditsErrorFallback()
+                }
             }
 
             if !Task.isCancelled {
@@ -1587,9 +1595,6 @@ final class CompanionManager: ObservableObject {
         voiceState = .responding
     }
 
-    /// Speaks a hardcoded error message using macOS system TTS when API
-    /// credits run out. Uses NSSpeechSynthesizer so it works even when
-    /// ElevenLabs is down.
     static let accountToolsInstruction = "When the user asks you to open an app or a website, make or show a folder, change the volume or control playback, call the matching tool instead of describing the steps. For anything else you can only explain and point."
 
     /// What the companion says: the answer, then what each quick action did.
@@ -1608,6 +1613,9 @@ final class CompanionManager: ObservableObject {
         return message.isEmpty ? AccountLimitError.personalLimit.message : message
     }
 
+    /// Speaks a hardcoded error message using macOS system TTS when API
+    /// credits run out. Uses NSSpeechSynthesizer so it works even when
+    /// ElevenLabs is down.
     private func speakCreditsErrorFallback() {
         let utterance = "Something went wrong talking to the OpenClicky backend. Check the backend and your token in the settings file."
         let synthesizer = NSSpeechSynthesizer()
