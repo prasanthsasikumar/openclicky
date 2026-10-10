@@ -105,9 +105,12 @@ xcodebuild \
   -project "$APP_DIR/OpenClicky.xcodeproj" \
   -scheme "$SCHEME" \
   -configuration Release \
+  -destination 'generic/platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \
   -allowProvisioningUpdates \
   build \
+  ARCHS="arm64 x86_64" \
+  ONLY_ACTIVE_ARCH=NO \
   MARKETING_VERSION="$VERSION" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
@@ -120,6 +123,19 @@ xcodebuild \
   -quiet
 APP_PATH="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
 [[ -d "$APP_PATH" ]] || { echo "build product missing: $APP_PATH" >&2; exit 1; }
+
+# Release builds are universal so Intel Macs can run the app. Fail before signing if the app is not;
+# a nested helper without an Intel slice is only a warning (the app still launches, Sparkle updates break).
+APP_ARCHS="$(lipo -archs "$APP_PATH/Contents/MacOS/$APP_NAME")"
+if [[ " $APP_ARCHS " != *" arm64 "* || " $APP_ARCHS " != *" x86_64 "* ]]; then
+  echo "build is not universal: $APP_ARCHS" >&2
+  exit 1
+fi
+while IFS= read -r macho; do
+  if [[ " $(lipo -archs "$macho" 2>/dev/null) " != *" x86_64 "* ]]; then
+    echo "warning: no x86_64 slice in ${macho#"$APP_PATH"/}" >&2
+  fi
+done < <(find "$APP_PATH/Contents/Frameworks" -type f -perm -u+x -exec sh -c 'file "$1" | grep -q Mach-O && echo "$1"' _ {} \;)
 
 # Notarization checks every nested binary. Xcode leaves Sparkle's helpers (Updater.app, Autoupdate,
 # the XPC services) with Sparkle's own signature, which Apple rejects as "not signed with a valid

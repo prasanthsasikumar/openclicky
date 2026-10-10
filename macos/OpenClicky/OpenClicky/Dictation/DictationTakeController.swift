@@ -35,14 +35,22 @@ enum DictationEngineResolver {
 
     /// Nil when the engine can be used; otherwise one line saying what is missing.
     static func unavailableReason(for choice: DictationEngineChoice) -> String? {
+        unavailableReason(for: choice, kind: AccountCapabilities.current().kind, isConfigured: OpenClickyConfiguration.isConfigured,
+                          sarvamKey: OpenClickyConfiguration.settings.sarvamKey)
+    }
+
+    /// The backend engines hear through OpenAI (/agent/transcribe) and AssemblyAI (/transcribe-token),
+    /// neither of which a free account's grant covers.
+    static func unavailableReason(for choice: DictationEngineChoice, kind: AccountKind, isConfigured: Bool, sarvamKey: String?) -> String? {
         switch choice {
         case .offline:
             return nil
         case .sarvam:
-            let key = OpenClickyConfiguration.settings.sarvamKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let key = sarvamKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return key.isEmpty ? "needs your sarvam key" : nil
         case .openclicky, .assemblyai:
-            return OpenClickyConfiguration.isConfigured ? nil : "needs an openclicky account or your openai key"
+            guard isConfigured else { return "needs an openclicky account or your openai key" }
+            return kind == .account ? "needs your own key" : nil
         }
     }
 
@@ -51,8 +59,11 @@ enum DictationEngineResolver {
     static func makePolisher() -> (any TakePolisher)? {
         let sarvamKey = OpenClickyConfiguration.settings.sarvamKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !sarvamKey.isEmpty { return SarvamTakePolisher(client: SarvamSpeechClient(key: sarvamKey)) }
-        if OpenClickyConfiguration.isConfigured { return BackendTakePolisher() }
-        return nil
+        switch AccountCapabilities.current().kind {
+        case .account: return AccountTakePolisher()
+        case .ownKeys: return BackendTakePolisher()
+        case .signedOut: return nil
+        }
     }
 
     /// Whether a take's words may go to a model: the switch, and — for the offline engine, whose

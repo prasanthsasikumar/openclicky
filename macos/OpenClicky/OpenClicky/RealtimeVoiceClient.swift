@@ -508,6 +508,17 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         ]
     }
 
+    /// The same quick actions as Anthropic tool definitions, for the ask lane on accounts (no realtime there).
+    nonisolated static func anthropicToolDefinitions() -> [[String: Any]] {
+        fastActionToolDefinitions().map { definition in
+            [
+                "name": definition["name"] as? String ?? "",
+                "description": definition["description"] as? String ?? "",
+                "input_schema": definition["parameters"] as? [String: Any] ?? ["type": "object", "properties": [String: Any]()],
+            ]
+        }
+    }
+
     private func sessionUpdate(mode: TurnMode, instructions text: String) -> [String: Any] {
         var input: [String: Any] = [
             "format": ["type": "audio/pcm", "rate": Int(Self.sampleRate)],

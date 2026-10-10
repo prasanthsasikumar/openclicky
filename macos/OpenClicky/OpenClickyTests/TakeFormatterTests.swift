@@ -99,4 +99,15 @@ struct TakeFormatterTests {
         #expect(result.text == "The launch review is tomorrow at 3 PM.")
         #expect(!result.formattingDegraded)
     }
+
+    private struct LimitPolisher: TakePolisher {
+        var displayName: String { "limit" }
+        func polish(system: String, user: String) async throws -> String { throw AccountPolishError.limit(.dailyLimit) }
+    }
+
+    @Test func aLimitedAccountStillGetsTheLocallyFormattedTake() async {
+        let result = await TakeFormatter.format("hello there", context: context(), polisher: LimitPolisher(), wantsModel: true)
+        #expect(result.text == "Hello there")
+        #expect(result.formattingDegraded)
+    }
 }

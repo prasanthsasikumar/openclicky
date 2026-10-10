@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import http from "node:http";
 import { SignJWT } from "jose";
 import { createApp } from "../src/app.js";
 import type { Env } from "../src/env.js";
 import { parseSkillMarkdown } from "../src/skillMarkdown.js";
 import { MemoryBillingStore } from "../src/billing.js";
+import { MemorySpendLedger } from "../src/ledger.js";
 
 type Seen = { url: string; auth?: string; apiKey?: string; contentType?: string; raw: string; body: Record<string, unknown> };
 const MOCK_SKILL = "```markdown\n---\nname: Reply In My Voice\ndescription: Draft email replies in the user's own voice.\nsurfaces: [talk, agent]\n---\n# Reply In My Voice\n\n## Use When\nThe user asks for a reply.\n```";
@@ -119,7 +120,7 @@ describe("app", () => {
     expect(off.status).toBe(404);
     const on = await call("/auth/config", {}, { SUPABASE_URL: "https://db.example.com/", SUPABASE_PUBLISHABLE_KEY: "sb_publishable_x" });
     expect(on.status).toBe(200);
-    expect(await on.json()).toEqual({ supabaseUrl: "https://db.example.com", publishableKey: "sb_publishable_x" });
+    expect(await on.json()).toEqual({ supabaseUrl: "https://db.example.com", publishableKey: "sb_publishable_x", accountsOpen: false, confirmRedirectUrl: "http://localhost/auth/confirmed", resetRedirectUrl: "http://localhost/auth/reset" });
   });
 
   it("401 without auth on /v1/* and /agent/*", async () => {
@@ -398,71 +399,167 @@ describe("app", () => {
   });
 
   describe("billing", () => {
-    const settle = () => new Promise((res) => setTimeout(res, 20));
+    const grantEnv: Env = { ...env, GRANT_ACCOUNTS: "true" };
 
-    it("meters a Codex turn and reports it on /billing/me", async () => {
-      const store = new MemoryBillingStore();
-      const billed = createApp({ log: null, billingStore: store });
+    it("keeps OpenAI routes off the grant and reports spend in dollars on /billing/me", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
       const token = await jwt();
-      const r = await billed.request("/v1/responses", json({ model: "default", input: "hi", stream: true }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
-      expect(r.status).toBe(200);
-      await r.text();
-      await settle();
-      expect(store.events).toHaveLength(1);
-      // The fake upstream reports no usage → the flat fallback.
-      expect(store.events[0]).toMatchObject({ user_id: "user-1", route: "/v1/responses", credits: 2 });
+      const r = await billed.request("/v1/responses", json({ model: "default", input: "hi", stream: true }, token), { ...grantEnv, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      expect(r.status).toBe(402);
+      expect(await r.json()).toEqual({ error: "not_on_plan" });
 
-      const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, env);
+      const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, grantEnv);
       expect(me.status).toBe(200);
-      expect(await me.json()).toMatchObject({ byok: false, plan: "free", used: 2, limit: 200 });
+      expect(await me.json()).toMatchObject({ byok: false, spentMonthUsd: 0, monthlyLimitUsd: 10, spentTodayUsd: 0, dailyLimitUsd: 2, budgetExhausted: false, blocked: false });
     });
 
-    it("charges a Realtime session mint a flat rate and transcription by audio length", async () => {
-      const store = new MemoryBillingStore();
-      const billed = createApp({ log: null, billingStore: store });
-      const token = await jwt();
-      await billed.request("/agent/realtime/session", json({}, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
-      const wav = Buffer.alloc(44 + 16000 * 2 * 20).toString("base64"); // 20 s of 16 kHz mono PCM16
-      await billed.request("/agent/transcribe", json({ audio: wav, mime: "audio/wav" }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
-      await settle();
-      expect(store.events.map((e) => [e.route, e.credits])).toEqual([
-        ["/agent/realtime/session", 30],
-        ["/agent/transcribe", 2],
-      ]);
-      expect(store.events[1].audio_seconds).toBeCloseTo(20, 0);
+    it("sends /v1/messages on the grant through the ledger with the gate model", async () => {
+      const ledger = new MemorySpendLedger();
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: ledger });
+      const seen: any[] = [];
+      const realFetch = globalThis.fetch;
+      vi.stubGlobal("fetch", vi.fn(async (url: any, init?: any) => {
+        if (String(url).includes("/v1/messages") && String(url).startsWith("http://anthropic.test")) {
+          seen.push(JSON.parse(init.body));
+          return new Response('data: {"type":"message_start","message":{"usage":{"input_tokens":1000,"output_tokens":1}}}\n\ndata: {"type":"message_delta","usage":{"output_tokens":100}}\n\n', { headers: { "content-type": "text/event-stream" } });
+        }
+        return realFetch(url, init);
+      }));
+      try {
+        const res = await billed.request("/v1/messages", json({ model: "claude-opus-5-5", max_tokens: 9000, messages: [{ role: "user", content: "hi" }] }, await jwt()), { ...grantEnv, ANTHROPIC_BASE_URL: "http://anthropic.test" });
+        await res.text();
+        await new Promise((r) => setTimeout(r, 10));
+      } finally { vi.unstubAllGlobals(); }
+      expect(seen).toHaveLength(1);
+      expect(seen[0].model).toBe("claude-haiku-4-5");
+      expect(seen[0].max_tokens).toBe(1024);
+      const s = await ledger.summary("user-1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 });
+      expect(s.spentTodayMicro).toBeGreaterThan(0);
     });
 
-    it("blocks a metered user at 402 but lets a BYOK request through", async () => {
-      const store = new MemoryBillingStore();
-      store.events.push({ user_id: "user-1", route: "x", input_tokens: 0, output_tokens: 0, audio_seconds: 0, characters: 0, credits: 200 });
-      const billed = createApp({ log: null, billingStore: store });
+    it("routes /tts to ElevenLabs through the grant, and BYOK to the plain speech path", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
+      const urls: string[] = [];
+      vi.stubGlobal("fetch", vi.fn(async (url: any) => {
+        urls.push(String(url));
+        return String(url).includes("/v1/user/subscription")
+          ? new Response(JSON.stringify({ character_count: 0, character_limit: 1_000_000 }))
+          : new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } });
+      }));
+      const tenv = { ...grantEnv, ELEVENLABS_API_KEY: "xi", ELEVENLABS_BASE_URL: "http://eleven.test", OPENAI_BASE_URL: "http://openai.test/v1", BYOK_OPENAI_BASE_URL: "http://openai.test/v1" };
+      try {
+        const token = await jwt();
+        const grant = await billed.request("/tts", json({ text: "Click Battery." }, token), tenv);
+        expect(grant.status).toBe(200);
+        expect(urls.some((u) => u.includes("/v1/user/subscription"))).toBe(true);
+        expect(urls.some((u) => u.startsWith("http://eleven.test/v1/text-to-speech"))).toBe(true);
+
+        urls.length = 0;
+        const own = await billed.request("/tts", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-openclicky-openai-key": "sk-own" }, body: JSON.stringify({ text: "Click Battery." }) }, tenv);
+        expect(own.status).toBe(200);
+        expect(urls).toEqual(["http://openai.test/v1/audio/speech"]);
+      } finally { vi.unstubAllGlobals(); }
+    });
+
+    it("refuses realtime sessions and transcription on the grant", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
       const token = await jwt();
-      const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      const session = await billed.request("/agent/realtime/session", json({}, token), { ...grantEnv, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      expect(session.status).toBe(402);
+      expect(await session.json()).toEqual({ error: "not_on_plan" });
+      const wav = Buffer.alloc(44 + 16000 * 2 * 20).toString("base64");
+      const transcribe = await billed.request("/agent/transcribe", json({ audio: wav, mime: "audio/wav" }, token), { ...grantEnv, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      expect(transcribe.status).toBe(402);
+      expect(await transcribe.json()).toEqual({ error: "not_on_plan" });
+    });
+
+    it("refuses a grant request at 402 but lets a BYOK request through", async () => {
+      const store = new MemoryBillingStore();
+      const billed = createApp({ log: null, billingStore: store, spendLedger: new MemorySpendLedger() });
+      const token = await jwt();
+      const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...grantEnv, OPENAI_BASE_URL: upstreamUrl + "/v1" });
       expect(blocked.status).toBe(402);
       const byok = await billed.request(
         "/v1/chat/completions",
         { method: "POST", headers: byokHeaders(token), body: JSON.stringify({ model: "default", messages: [] }) },
-        { ...env, BYOK_OPENAI_BASE_URL: upstreamUrl + "/v1" },
+        { ...grantEnv, BYOK_OPENAI_BASE_URL: upstreamUrl + "/v1" },
       );
       expect(byok.status).toBe(200);
       await byok.text();
-      expect(store.events).toHaveLength(1);
+      expect(store.events).toHaveLength(0);
     });
 
-    it("FREE_MONTHLY_CREDITS=0 makes the backend invite-only for users on OpenClicky's keys", async () => {
-      const billed = createApp({ log: null, billingStore: new MemoryBillingStore() });
+    it("a user with no account row is not on the plan", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger({ requireAccountRow: true }) });
       const token = await jwt();
-      const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1", FREE_MONTHLY_CREDITS: "0" });
+      const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...grantEnv, OPENAI_BASE_URL: upstreamUrl + "/v1" });
       expect(blocked.status).toBe(402);
-      expect(await blocked.json()).toMatchObject({ error: "credits_exhausted", plan: "free", limit: 0 });
-      const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, { ...env, FREE_MONTHLY_CREDITS: "0" });
-      expect(await me.json()).toMatchObject({ plan: "free", limit: 0 });
+      expect(await blocked.json()).toEqual({ error: "not_on_plan" });
     });
 
     it("/billing/me reports byok for a request with its own key", async () => {
-      const billed = createApp({ log: null, billingStore: new MemoryBillingStore() });
-      const me = await billed.request("/billing/me", { headers: byokHeaders(await jwt()) }, env);
-      expect(await me.json()).toMatchObject({ byok: true, plan: "byok" });
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
+      const me = await billed.request("/billing/me", { headers: byokHeaders(await jwt()) }, grantEnv);
+      expect(await me.json()).toMatchObject({ byok: true });
+    });
+
+    it("without GRANT_ACCOUNTS the backend stays unmetered: OpenAI routes answer, /billing/me says unmetered", async () => {
+      const unmetered = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger({ requireAccountRow: true }) });
+      const token = await jwt();
+      const r = await unmetered.request("/v1/responses", json({ model: "default", input: "hi", stream: true }, token), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1" });
+      expect(r.status).toBe(200);
+      await r.text();
+      const me = await unmetered.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, env);
+      expect(await me.json()).toMatchObject({ plan: "unmetered", onPlan: true, byok: false });
+      const own = await unmetered.request("/billing/me", { headers: byokHeaders(token) }, env);
+      expect(await own.json()).toMatchObject({ plan: "byok", onPlan: true, byok: true });
+    });
+
+    it("a Supabase-configured backend without GRANT_ACCOUNTS does not meter /v1/responses", async () => {
+      const app2 = createApp({ log: null });
+      const r = await app2.request("/v1/responses", json({ model: "default", input: "hi", stream: true }, await jwt()), { ...env, OPENAI_BASE_URL: upstreamUrl + "/v1", SUPABASE_URL: "https://db.example", SUPABASE_SERVICE_KEY: "sk" });
+      expect(r.status).toBe(200);
+      await r.text();
+    });
+
+    it("grant mode with no ledger to meter it refuses instead of failing open", async () => {
+      const r = await createApp({ log: null }).request("/chat", json({ messages: [{ role: "user", content: "hi" }] }, await jwt()), { ...grantEnv });
+      expect(r.status).toBe(503);
+    });
+
+    it("/billing/me in grant mode reports the plan and whether the login is switched on", async () => {
+      const ledger = new MemorySpendLedger({ requireAccountRow: true });
+      const billed = createApp({ log: null, spendLedger: ledger });
+      const token = await jwt();
+      const off = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, grantEnv);
+      expect(await off.json()).toMatchObject({ plan: "grant", onPlan: false, byok: false });
+      ledger.setAccount("user-1", {});
+      const on = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, grantEnv);
+      expect(await on.json()).toMatchObject({ plan: "grant", onPlan: true });
+      ledger.setAccount("user-1", { blocked: true });
+      const blocked = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, grantEnv);
+      expect(await blocked.json()).toMatchObject({ plan: "grant", onPlan: false, blocked: true });
+      const own = await billed.request("/billing/me", { headers: byokHeaders(token) }, grantEnv);
+      expect(await own.json()).toMatchObject({ plan: "byok", onPlan: true });
+    });
+
+    it("a failing ledger answers 503 unavailable on grant routes, not a bare 500", async () => {
+      const ledger = new MemorySpendLedger();
+      vi.spyOn(ledger, "reserve").mockRejectedValue(new Error("rpc down"));
+      vi.spyOn(ledger, "summary").mockRejectedValue(new Error("rpc down"));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const billed = createApp({ log: null, spendLedger: ledger });
+      const token = await jwt();
+      try {
+        const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${token}` } }, grantEnv);
+        expect(me.status).toBe(503);
+        expect(await me.json()).toEqual({ error: "unavailable" });
+        for (const [path, body] of [["/chat", { messages: [{ role: "user", content: "hi" }] }], ["/v1/messages", { messages: [{ role: "user", content: "hi" }] }], ["/v1/polish", { purpose: "polish", text: "hi" }]] as const) {
+          const r = await billed.request(path, json(body, token), grantEnv);
+          expect(r.status).toBe(503);
+          expect(await r.json()).toEqual({ error: "unavailable" });
+        }
+      } finally { vi.restoreAllMocks(); }
     });
 
     it("streamed chat completions ask the upstream to include usage for metered users only", async () => {
@@ -479,5 +576,156 @@ describe("app", () => {
       await byok.text();
       expect(seen.at(-1)!.body.stream_options).toBeUndefined();
     });
+  });
+});
+
+describe("sign-up support", () => {
+  const base = { SUPABASE_URL: "https://db.example", SUPABASE_PUBLISHABLE_KEY: "pk" };
+  const open = { ...base, SUPABASE_SERVICE_KEY: "sk", ACCOUNTS_OPEN: "true" };
+  const post = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const creds = { email: "a@b.co", password: "hunter2hunter2" };
+
+  // Stubs fetch: rpc answers `isOpen`, GoTrue answers `gotrue`, the oc_accounts insert answers `insert`.
+  function stub(opts: { isOpen?: boolean; gotrue?: () => Response; insert?: () => Response }) {
+    const calls: { url: string; init?: any }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: any, init?: any) => {
+      const u = String(url);
+      calls.push({ url: u, init });
+      if (u.includes("/rpc/oc_accounts_open")) return new Response(JSON.stringify(opts.isOpen ?? true));
+      if (u.includes("/auth/v1/signup")) return opts.gotrue ? opts.gotrue() : new Response(JSON.stringify({ id: "u-new", identities: [{ id: "i" }] }));
+      if (u.includes("/rest/v1/oc_accounts")) return opts.insert ? opts.insert() : new Response("[]", { status: 201 });
+      throw new Error(`unexpected fetch ${u}`);
+    }));
+    return calls;
+  }
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("auth/config says sign-up is closed unless ACCOUNTS_OPEN is true", async () => {
+    const res = await createApp({ log: null }).request("/auth/config", {}, base);
+    expect(await res.json()).toMatchObject({ accountsOpen: false, confirmRedirectUrl: "http://localhost/auth/confirmed", resetRedirectUrl: "http://localhost/auth/reset" });
+  });
+  it("auth/confirmed is a page that sends people back to the app", async () => {
+    const res = await createApp({ log: null }).request("/auth/confirmed");
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(await res.text()).toContain("go back to OpenClicky");
+  });
+  it("signup with ACCOUNTS_OPEN unset is 402 and never reaches GoTrue", async () => {
+    const calls = stub({});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), { ...open, ACCOUNTS_OPEN: undefined });
+    expect(res.status).toBe(402);
+    expect(await res.json()).toEqual({ error: "accounts_full" });
+    expect(calls.some((c) => c.url.includes("/auth/v1/signup"))).toBe(false);
+  });
+  it("signup is 402 when the cap is reached", async () => {
+    const calls = stub({ isOpen: false });
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(402);
+    expect(calls.some((c) => c.url.includes("/auth/v1/signup"))).toBe(false);
+  });
+  it("signup forwards to GoTrue with redirect_to and apikey, then records the account", async () => {
+    const calls = stub({});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    const g = calls.find((c) => c.url.includes("/auth/v1/signup"))!;
+    expect(g.url).toContain("redirect_to=" + encodeURIComponent("http://localhost/auth/confirmed"));
+    expect(g.init.headers.apikey).toBe("pk");
+    const ins = calls.find((c) => c.url.includes("/rest/v1/oc_accounts"))!;
+    expect(JSON.parse(ins.init.body)).toMatchObject({ user_id: "u-new" });
+  });
+  it("signup maps an existing email to 409", async () => {
+    stub({ gotrue: () => new Response('{"msg":"User already registered"}', { status: 422 }) });
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "that email already has an account — sign in instead." });
+  });
+  it("signup rejects a short password or a bad email with 400", async () => {
+    const calls = stub({});
+    const app = createApp({ log: null });
+    expect((await app.request("/auth/signup", post({ email: "a@b.co", password: "short" }), open)).status).toBe(400);
+    expect((await app.request("/auth/signup", post({ email: "nope", password: "longenough1" }), open)).status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+  it("signup answers 502 with a fixed sentence when the GoTrue fetch throws", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: any) => {
+      if (String(url).includes("/rpc/")) return new Response("true");
+      throw new Error("connect ECONNREFUSED secret-host");
+    }));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "couldn't create the account right now." });
+  });
+  it("signup does not leak GoTrue's error text, and never logs the password", async () => {
+    stub({ gotrue: () => new Response('{"msg":"internal boom from gotrue"}', { status: 500 }) });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(502);
+    expect(JSON.stringify(await res.json())).not.toContain("boom");
+    expect(JSON.stringify(err.mock.calls)).not.toContain(creds.password);
+  });
+  it("signup retries the oc_accounts insert once, then answers 502 with a sentence", async () => {
+    const calls = stub({ insert: () => new Response("nope", { status: 500 }) });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "couldn't finish setting up the account — try again in a minute." });
+    expect(calls.filter((c) => c.url.includes("/rest/v1/oc_accounts"))).toHaveLength(2);
+    expect(err).toHaveBeenCalled();
+  });
+  it("signup succeeds when the second insert attempt works", async () => {
+    let tries = 0;
+    stub({ insert: () => (++tries === 1 ? new Response("nope", { status: 500 }) : new Response("[]", { status: 201 })) });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(200);
+    expect(tries).toBe(2);
+  });
+  it("auth/reset serves a page that sets the password against Supabase Auth with the publishable key only", async () => {
+    const res = await createApp({ log: null }).request("/auth/reset", {}, { ...base, SUPABASE_URL: "https://db.example/", SUPABASE_SERVICE_KEY: "service-secret-key" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain('"https://db.example/auth/v1/user"');
+    expect(html).toContain('method: "PUT"');
+    expect(html).toContain('"pk"');
+    expect(html).toContain("access_token");
+    expect(html).toContain("password changed — go back to OpenClicky and sign in.");
+    expect(html).not.toContain("service-secret-key");
+    expect((await createApp({ log: null }).request("/auth/reset")).status).toBe(404);
+  });
+  it("signup inserts no row for an existing auth user (empty identities), flat or nested", async () => {
+    for (const body of [{ id: "fake", identities: [] }, { user: { id: "fake", identities: [] } }]) {
+      const calls = stub({ gotrue: () => new Response(JSON.stringify(body)) });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+      expect(calls.some((c) => c.url.includes("/rest/v1/oc_accounts"))).toBe(false);
+    }
+  });
+  it("signup inserts the id from a nested user object with identities", async () => {
+    const calls = stub({ gotrue: () => new Response(JSON.stringify({ user: { id: "u-nested", identities: [{ id: "i" }] } })) });
+    await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(JSON.parse(calls.find((c) => c.url.includes("/rest/v1/oc_accounts"))!.init.body)).toMatchObject({ user_id: "u-nested" });
+  });
+  it("signup is limited to 5 per IP per hour, before any RPC or GoTrue call", async () => {
+    const calls = stub({});
+    const app = createApp({ log: null });
+    const from = (ip: string) => ({ ...post(creds), headers: { "content-type": "application/json", "x-forwarded-for": `${ip}, 10.0.0.1` } });
+    for (let i = 0; i < 5; i++) expect((await app.request("/auth/signup", from("1.1.1.1"), open)).status).toBe(200);
+    const n = calls.length;
+    const res = await app.request("/auth/signup", from("1.1.1.1"), open);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "too many tries — try again in an hour." });
+    expect(calls).toHaveLength(n);
+    expect((await app.request("/auth/signup", from("2.2.2.2"), open)).status).toBe(200);
+  });
+  it("signup answers 400, not 500, for a null body or non-string fields", async () => {
+    stub({});
+    const app = createApp({ log: null });
+    const raw = (body: string) => ({ method: "POST", headers: { "content-type": "application/json" }, body });
+    expect((await app.request("/auth/signup", raw("null"), open)).status).toBe(400);
+    expect((await app.request("/auth/signup", raw('{"email":1,"password":2}'), open)).status).toBe(400);
   });
 });

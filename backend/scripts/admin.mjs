@@ -1,18 +1,20 @@
 #!/usr/bin/env node
-// Invite-only accounts for OpenClicky's hosted backend. Talks to Supabase directly (Auth admin API +
-// the oc_* billing tables) with the service key from backend/.dev.vars; nothing here goes through
-// the backend.
+// Accounts and budget for OpenClicky's hosted backend. Talks to Supabase directly (Auth admin API +
+// the oc_* tables) with the service key from backend/.dev.vars; nothing here goes through the backend.
+// People sign up in the app, which creates their oc_accounts row; the Supabase auth is shared with
+// other FlowsXR products, so nothing here ever deletes an auth user.
 //
-//   npm run admin -w backend -- invite <email> [--password <pw>] [--credits 1000]   create the user (or reuse) + allowance
-//   npm run admin -w backend -- limit <email> --credits <n>                         change the monthly allowance
-//   npm run admin -w backend -- revoke <email>                                      block the account (status canceled)
-//   npm run admin -w backend -- restore <email>                                     unblock
-//   npm run admin -w backend -- list                                                everyone with a subscription row
-//   npm run admin -w backend -- usage [--month 2026-09]                             credits used per user this month
+//   npm run admin -w backend -- list                          everyone with an oc_accounts row
+//   npm run admin -w backend -- budget                        this month's spend, characters, account count, top 10
+//   npm run admin -w backend -- add <email>                   give an existing auth user an account (default limits)
+//   npm run admin -w backend -- limit <email> --usd N         monthly limit for one person
+//   npm run admin -w backend -- daily <email> --usd N         daily limit for one person
+//   npm run admin -w backend -- block <email> | unblock <email>
+//   npm run admin -w backend -- remove <email> [--yes]        delete the oc_accounts row only (auth user untouched)
+//   npm run admin -w backend -- max-accounts N                cap on confirmed accounts
 //
-// The allowance resets on calendar months (billing.ts). Passwords are printed once; send them out of band.
+// limit/daily/block/unblock create the oc_accounts row when it is missing.
 import { config as loadDotenv } from "dotenv";
-import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,8 +40,8 @@ const opt = (name, def) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : def;
 };
 
-async function api(method, url, body) {
-  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+async function api(method, url, body, extraHeaders) {
+  const res = await fetch(url, { method, headers: { ...headers, ...extraHeaders }, body: body ? JSON.stringify(body) : undefined });
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${url} → ${res.status}: ${text.slice(0, 300)}`);
   return text ? JSON.parse(text) : null;
@@ -69,46 +71,6 @@ async function requireUser(email) {
   return user;
 }
 
-function periodBounds(month) {
-  const [y, m] = month ? month.split("-").map(Number) : [new Date().getUTCFullYear(), new Date().getUTCMonth() + 1];
-  return { start: new Date(Date.UTC(y, m - 1, 1)).toISOString(), end: new Date(Date.UTC(y, m, 1)).toISOString(), label: `${y}-${String(m).padStart(2, "0")}` };
-}
-
-async function upsertSubscription(userId, fields) {
-  const now = new Date().toISOString();
-  const row = {
-    user_id: userId,
-    plan_id: "invite",
-    status: "active",
-    current_period_start: now,
-    current_period_end: new Date(Date.now() + 365 * 86400_000).toISOString(),
-    stripe_customer_id: null,
-    stripe_subscription_id: null,
-    updated_at: now,
-    ...fields,
-  };
-  await api("POST", rest("oc_subscriptions", "on_conflict=user_id"), row).catch(async (e) => {
-    // Upsert needs the merge-duplicates preference.
-    const res = await fetch(rest("oc_subscriptions", "on_conflict=user_id"), {
-      method: "POST",
-      headers: { ...headers, prefer: "resolution=merge-duplicates" },
-      body: JSON.stringify(row),
-    });
-    if (!res.ok) throw new Error(`upsert failed (${res.status}): ${(await res.text()).slice(0, 300)}\n(first attempt: ${e.message})`);
-  });
-}
-
-async function patchSubscription(userId, fields) {
-  const res = await fetch(rest("oc_subscriptions", `user_id=eq.${encodeURIComponent(userId)}`), {
-    method: "PATCH",
-    headers: { ...headers, prefer: "return=representation" },
-    body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
-  });
-  if (!res.ok) throw new Error(`update failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  const rows = await res.json();
-  if (rows.length === 0) throw new Error("no subscription row for that user (run invite first)");
-}
-
 /** One line from the terminal. Returns "" when stdin is not a TTY, so a piped run never hangs. */
 function promptLine(question) {
   if (!process.stdin.isTTY) return Promise.resolve("");
@@ -123,105 +85,147 @@ function promptLine(question) {
   });
 }
 
+const MICRO = 1_000_000;
+const usd = (micro) => `$${(Number(micro) / MICRO).toFixed(2)}`;
+const usdOpt = () => {
+  const v = Number(opt("usd"));
+  if (!opt("usd") || !Number.isFinite(v) || v < 0) throw new Error("give an amount: --usd 5");
+  return Math.round(v * MICRO);
+};
+const needEmail = (usage) => {
+  if (!positional[0]) throw new Error(`usage: ${usage}`);
+  return positional[0];
+};
+const monthStart = () => new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+/** Every row of a table query; PostgREST caps one response at 1000 rows, so page by id until a short page. */
+async function fetchAll(table, query) {
+  const rows = [];
+  for (let offset = 0; ; offset += 1000) {
+    const page = await api("GET", rest(table, `${query}&order=id&limit=1000&offset=${offset}`));
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+  }
+}
+const upsertAccount = (userId, fields) =>
+  api("POST", rest("oc_accounts", "on_conflict=user_id"), { user_id: userId, ...fields }, { prefer: "resolution=merge-duplicates" });
+const maxAccounts = async () => (await api("GET", rest("oc_settings", "select=max_accounts")))?.[0]?.max_accounts ?? 100;
+
 const commands = {
-  async invite() {
-    const email = positional[0];
-    if (!email) throw new Error("usage: invite <email> [--password <pw>] [--credits <n>]");
-    const credits = Number(opt("credits", "1000"));
-    let user = await findUser(email);
-    let password = opt("password");
-    if (!user) {
-      password ??= randomBytes(9).toString("base64url");
-      user = await api("POST", `${SUPABASE_URL}/auth/v1/admin/users`, { email, password, email_confirm: true });
-      console.log(`created ${email} (id ${user.id})`);
-      console.log(`password: ${password}`);
-    } else {
-      console.log(`${email} already exists (id ${user.id})${password ? "; password left unchanged" : ""}`);
+  async budget() {
+    const [events, accounts, users, cap] = await Promise.all([
+      fetchAll("oc_usage_events", `ts=gte.${encodeURIComponent(monthStart())}&select=user_id,cost_micro_usd,route,characters`),
+      api("GET", rest("oc_accounts", "select=user_id")),
+      listUsers(),
+      maxAccounts(),
+    ]);
+    const perUser = new Map();
+    let total = 0;
+    let chars = 0;
+    for (const r of events) {
+      total += Number(r.cost_micro_usd);
+      if (r.route === "/tts") chars += Number(r.characters);
+      perUser.set(r.user_id, (perUser.get(r.user_id) ?? 0) + Number(r.cost_micro_usd));
     }
-    await upsertSubscription(user.id, { monthly_credits_override: credits, status: "active" });
-    console.log(`allowance: ${credits} credits per calendar month`);
+    // The auth is shared with other products: only OpenClicky accounts count, and only confirmed ones fill the cap.
+    const accountIds = new Set(accounts.map((a) => a.user_id));
+    const byId = new Map(users.map((u) => [u.id, u]));
+    const confirmed = [...accountIds].filter((id) => byId.get(id)?.email_confirmed_at).length;
+    const limit = Number(process.env.GLOBAL_MONTHLY_BUDGET_USD ?? 1000);
+    console.log(`this month: ${usd(total)} of $${limit} · ${chars} spoken characters · accounts ${accountIds.size} (${confirmed} confirmed) of ${cap}`);
+    [...perUser.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .forEach(([id, micro]) => console.log(`  ${usd(micro)}  ${byId.get(id)?.email ?? id}`));
+  },
+
+  async add() {
+    const email = needEmail("add <email>");
+    const user = await requireUser(email);
+    await upsertAccount(user.id, {});
+    console.log(`${email}: account added (default limits)`);
+    console.log("note: this login may belong to another FlowsXR product; the account now counts toward the max-accounts cap.");
   },
 
   async limit() {
-    const email = positional[0];
-    const credits = Number(opt("credits"));
-    if (!email || !Number.isFinite(credits)) throw new Error("usage: limit <email> --credits <n>");
+    const email = needEmail("limit <email> --usd N");
+    const micro = usdOpt();
     const user = await requireUser(email);
-    await patchSubscription(user.id, { monthly_credits_override: credits });
-    console.log(`${email}: ${credits} credits per month`);
+    await upsertAccount(user.id, { monthly_limit_micro_usd: micro });
+    console.log(`monthly limit set for ${email}: ${usd(micro)}`);
   },
 
-  async revoke() {
-    const email = positional[0];
-    if (!email) throw new Error("usage: revoke <email>");
+  async daily() {
+    const email = needEmail("daily <email> --usd N");
+    const micro = usdOpt();
     const user = await requireUser(email);
-    await patchSubscription(user.id, { status: "canceled" });
-    console.log(`${email}: blocked (subscription_inactive)`);
+    await upsertAccount(user.id, { daily_limit_micro_usd: micro });
+    console.log(`daily limit set for ${email}: ${usd(micro)}`);
   },
 
-  async restore() {
-    const email = positional[0];
-    if (!email) throw new Error("usage: restore <email>");
+  async block() {
+    const email = needEmail("block <email>");
     const user = await requireUser(email);
-    await patchSubscription(user.id, { status: "active" });
-    console.log(`${email}: active`);
+    await upsertAccount(user.id, { blocked: true });
+    console.log(`blocked ${email}`);
+  },
+
+  async unblock() {
+    const email = needEmail("unblock <email>");
+    const user = await requireUser(email);
+    await upsertAccount(user.id, { blocked: false });
+    console.log(`unblocked ${email}`);
   },
 
   async remove() {
-    const email = positional[0];
-    if (!email) throw new Error("usage: remove <email> (add --yes to skip the confirmation)");
+    const email = needEmail("remove <email> (add --yes to skip the confirmation)");
     const user = await requireUser(email);
-    // Deleting an auth user cannot be undone, and the command sits one letter away from `revoke`,
-    // which only suspends. Make the operator type the address back unless they opted out.
     if (!flag("yes")) {
-      const typed = await promptLine(`permanently delete ${email} and its subscription row? type the email to confirm: `);
+      const typed = await promptLine(`remove the OpenClicky account row for ${email}? the login itself stays. type the email to confirm: `);
       if (typed.trim() !== email) {
-        console.log("not confirmed; nothing was deleted");
+        console.log("not confirmed; nothing was changed");
         return;
       }
     }
-    const res = await fetch(rest("oc_subscriptions", `user_id=eq.${encodeURIComponent(user.id)}`), { method: "DELETE", headers });
-    if (!res.ok) throw new Error(`could not delete the subscription row (${res.status})`);
-    await api("DELETE", `${SUPABASE_URL}/auth/v1/admin/users/${user.id}`);
-    console.log(`${email}: account deleted (usage history kept)`);
+    const deleted = await api("DELETE", rest("oc_accounts", `user_id=eq.${encodeURIComponent(user.id)}`), undefined, { prefer: "return=representation" });
+    if (!deleted?.length) {
+      console.log(`${email} had no OpenClicky account row — nothing removed`);
+      return;
+    }
+    console.log(`${email}: OpenClicky account row deleted. The auth login was NOT deleted (it is shared with other FlowsXR products) and usage history is kept.`);
+  },
+
+  async "max-accounts"() {
+    const n = Number(args[1]);
+    if (!Number.isInteger(n) || n < 1) throw new Error("max-accounts needs a whole number");
+    const updated = await api("PATCH", rest("oc_settings", "id=eq.true"), { max_accounts: n }, { prefer: "return=representation" });
+    if (!updated?.length) throw new Error("oc_settings has no row; apply backend/supabase/schema.sql first");
+    console.log(`max accounts: ${n}`);
+  },
+
+  async invite() {
+    console.log("invites are retired: people sign up in the app. Use `limit`/`daily` to give someone more, or `add` for an existing login.");
   },
 
   async list() {
-    const [users, subs] = await Promise.all([listUsers(), api("GET", rest("oc_subscriptions", "select=*"))]);
-    const byId = new Map(users.map((u) => [u.id, u]));
-    for (const s of subs) {
-      const u = byId.get(s.user_id);
-      console.log(`${(u?.email ?? s.user_id).padEnd(36)} ${s.plan_id.padEnd(8)} ${s.status.padEnd(9)} ${s.monthly_credits_override ?? "(plan)"} credits/month`);
-    }
-    if (subs.length === 0) console.log("(no subscription rows)");
-  },
-
-  async usage() {
-    const { start, end, label } = periodBounds(opt("month"));
-    const [users, events] = await Promise.all([
+    const [users, accounts, events] = await Promise.all([
       listUsers(),
-      api("GET", rest("oc_usage_events", `ts=gte.${encodeURIComponent(start)}&ts=lt.${encodeURIComponent(end)}&select=user_id,route,credits`)),
+      api("GET", rest("oc_accounts", "select=*")),
+      fetchAll("oc_usage_events", `ts=gte.${encodeURIComponent(monthStart())}&select=user_id,cost_micro_usd`),
     ]);
     const byId = new Map(users.map((u) => [u.id, u]));
-    const totals = new Map();
-    for (const e of events) {
-      const t = totals.get(e.user_id) ?? { credits: 0, calls: 0, routes: new Map() };
-      t.credits += Number(e.credits);
-      t.calls += 1;
-      t.routes.set(e.route, (t.routes.get(e.route) ?? 0) + Number(e.credits));
-      totals.set(e.user_id, t);
+    const spent = new Map();
+    for (const e of events) spent.set(e.user_id, (spent.get(e.user_id) ?? 0) + Number(e.cost_micro_usd));
+    const lim = (m) => (m == null ? "(default)" : usd(m));
+    for (const a of accounts) {
+      const email = byId.get(a.user_id)?.email ?? a.user_id;
+      console.log(`${email.padEnd(36)} ${a.blocked ? "BLOCKED" : "active "} month ${lim(a.monthly_limit_micro_usd)}  day ${lim(a.daily_limit_micro_usd)}  spent ${usd(spent.get(a.user_id) ?? 0)}`);
     }
-    console.log(`usage for ${label}`);
-    for (const [userId, t] of [...totals.entries()].sort((a, b) => b[1].credits - a[1].credits)) {
-      const routes = [...t.routes.entries()].map(([r, c]) => `${r} ${c}`).join(", ");
-      console.log(`${(byId.get(userId)?.email ?? userId).padEnd(36)} ${String(t.credits).padStart(6)} credits  ${t.calls} calls  (${routes})`);
-    }
-    if (totals.size === 0) console.log("(no usage)");
+    if (accounts.length === 0) console.log("(no accounts)");
   },
 };
 
 if (!commands[command]) {
-  console.error("commands: invite, limit, revoke, restore, remove (destructive), list, usage");
+  console.error("commands: list, budget, add <email>, limit <email> --usd N, daily <email> --usd N, block <email>, unblock <email>, remove <email>, max-accounts N");
   process.exit(2);
 }
 commands[command]().catch((e) => {

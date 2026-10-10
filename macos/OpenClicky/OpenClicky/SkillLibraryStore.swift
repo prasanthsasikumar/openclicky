@@ -179,6 +179,7 @@ final class SkillLibraryStore: ObservableObject {
     func createSkill(request: String) async throws -> SkillFile {
         let trimmed = request.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw fail(.emptyRequest) }
+        if let hint = AccountCapabilities.current().skillTeachingUnavailableHint { throw fail(.needsOwnKey(hint)) }
         guard OpenClickyConfiguration.isConfigured,
               let endpoint = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/skills/create") else {
             throw fail(.notConfigured)
@@ -282,6 +283,7 @@ enum SkillLibraryError: LocalizedError {
     case invalidMarkdown
     case emptyRequest
     case notConfigured
+    case needsOwnKey(String)
     case backend(String)
 
     var errorDescription: String? {
@@ -289,7 +291,7 @@ enum SkillLibraryError: LocalizedError {
         case .invalidMarkdown: return "The skill file needs frontmatter with a name and a description."
         case .emptyRequest: return "Describe what the skill should do."
         case .notConfigured: return "Add your OpenClicky token in shell.json first."
-        case .backend(let message): return message
+        case .needsOwnKey(let message), .backend(let message): return message
         }
     }
 }

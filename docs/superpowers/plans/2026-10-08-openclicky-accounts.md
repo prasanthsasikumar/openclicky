@@ -1437,9 +1437,13 @@ git commit -m "feat(backend): ElevenLabs answers on the grant with a per-person 
 
 **Interfaces:**
 - Consumes: `SupabaseRest.rpc` (Task 2), function `oc_accounts_open` (Task 2 schema).
-- Produces: `GET /auth/config` → `{ supabaseUrl, publishableKey, accountsOpen: boolean, confirmRedirectUrl: string }`; `GET /auth/confirmed` → small HTML page.
+- Produces: `GET /auth/config` → `{ supabaseUrl, publishableKey, accountsOpen: boolean, confirmRedirectUrl: string }`; `GET /auth/confirmed` → small HTML page; `POST /auth/signup` `{ email, password }` → `200 { ok: true }` | `402 { error: "accounts_full" }` | `400/409/429 { error: <plain sentence> }`.
+
+> **Ruling (2026-10-10, Task 2 review):** db.flowsxr.com is shared by every FlowsXR project, so sign-up goes through the backend, not straight to Supabase: `POST /auth/signup` checks `ACCOUNTS_OPEN === "true"` and `rpc("oc_accounts_open")`, forwards to GoTrue `POST {SUPABASE_URL}/auth/v1/signup?redirect_to=<confirmRedirectUrl>` with header `apikey: SUPABASE_PUBLISHABLE_KEY`, and on success inserts `{ user_id: <returned user id> }` into `oc_accounts` (`SupabaseRest.insert`). Only users with an `oc_accounts` row can spend the grant (`oc_reserve` returns `not_on_plan` otherwise).
 
 - [ ] **Step 1: Write the failing tests** (append to `backend/test/app.test.ts`)
+
+Also add tests for `POST /auth/signup` using a stubbed `fetch` (vitest `vi.stubGlobal`): (a) `ACCOUNTS_OPEN` unset → `402 {error:"accounts_full"}` and GoTrue is never called; (b) open, `oc_accounts_open` RPC returns `true`, GoTrue returns `200 {"id":"u-new", ...}` → `200 {ok:true}`, the GoTrue call carries `redirect_to` and `apikey`, and an insert into `oc_accounts` with `user_id: "u-new"` is made; (c) GoTrue answers 422 "User already registered" → `409 {error:"that email already has an account — sign in instead."}`.
 
 ```ts
 describe("sign-up support", () => {
@@ -1489,6 +1493,39 @@ Expected: FAIL — `accountsOpen` missing / 404.
   );
 ```
 
+Add the sign-up route (public — no `requireAuth`):
+
+```ts
+  app.post("/auth/signup", async (c) => {
+    const env = getEnv(c);
+    if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY || !env.SUPABASE_SERVICE_KEY) return c.json({ error: "sign-up is not configured on this backend" }, 404);
+    let req: { email?: string; password?: string } = {};
+    try { req = JSON.parse((await c.req.text()) || "{}"); } catch { return c.json({ error: "body must be JSON" }, 400); }
+    const email = (req.email ?? "").trim(), password = req.password ?? "";
+    if (!email.includes("@") || password.length < 8) return c.json({ error: "use an email address and a password of at least 8 characters." }, 400);
+    const db = new SupabaseRest(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+    const open = env.ACCOUNTS_OPEN === "true" && (await db.rpc<boolean>("oc_accounts_open", {}).catch(() => false));
+    if (!open) return c.json({ error: "accounts_full" }, 402);
+    const redirect = env.ACCOUNT_CONFIRM_REDIRECT_URL || `${new URL(c.req.url).origin}/auth/confirmed`;
+    const res = await fetch(`${env.SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/signup?redirect_to=${encodeURIComponent(redirect)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", apikey: env.SUPABASE_PUBLISHABLE_KEY },
+      body: JSON.stringify({ email, password }),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      if (text.includes("already registered")) return c.json({ error: "that email already has an account — sign in instead." }, 409);
+      if (res.status === 429) return c.json({ error: "too many tries — wait a minute and try again." }, 429);
+      console.error(`signup: GoTrue ${res.status}: ${text.slice(0, 300)}`);
+      return c.json({ error: "couldn't create the account right now." }, 502);
+    }
+    const user = JSON.parse(text) as { id?: string; user?: { id?: string } };
+    const userId = user.id ?? user.user?.id;
+    if (userId) await db.insert("oc_accounts", { user_id: userId }).catch((e) => console.error(`signup: oc_accounts insert: ${(e as Error).message}`));
+    return c.json({ ok: true });
+  });
+```
+
 - [ ] **Step 4: Run to verify pass**
 
 Run: `npm test -w backend && npm run typecheck && npm run lint`
@@ -1498,7 +1535,7 @@ Expected: PASS, lint 0 errors.
 
 ```bash
 git add backend/src/app.ts backend/test/app.test.ts
-git commit -m "feat(backend): auth/config says whether sign-up is open; a confirmation landing page"
+git commit -m "feat(backend): sign-up through the backend (OpenClicky's own account cap), auth/config openness and a confirmation page"
 ```
 
 ---
@@ -2186,7 +2223,7 @@ git commit -m "feat(mac): on an account the companion hears on the Mac, offers q
   - `func signUp(email: String, password: String) async`
   - `func waitForConfirmation(email: String, password: String, pollEvery seconds: Double = 5, timeout: Double = 15 * 60) async -> Bool`
   - `func recover(email: String) async -> Bool`
-  - `static func signUpRequest(config: AuthConfig, email: String, password: String) -> URLRequest?` (pure)
+  - `static func signUpRequest(backendBaseURL: String, email: String, password: String) -> URLRequest?` (pure; targets the backend's `POST /auth/signup` — ruling 2026-10-10: Supabase is shared across FlowsXR projects, so the backend owns sign-up and the account cap)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2199,10 +2236,10 @@ import Testing
 struct AccountAuthTests {
     let config = OpenClickyAuthSession.AuthConfig(supabaseUrl: "https://db.example", publishableKey: "pk", accountsOpen: true, confirmRedirectUrl: "https://api.example/auth/confirmed")
 
-    @Test func signUpRequestCarriesTheRedirect() throws {
-        let request = try #require(OpenClickyAuthSession.signUpRequest(config: config, email: "gran@example.com", password: "long-enough-1"))
-        #expect(request.url?.absoluteString == "https://db.example/auth/v1/signup?redirect_to=https://api.example/auth/confirmed")
-        #expect(request.value(forHTTPHeaderField: "apikey") == "pk")
+    @Test func signUpGoesThroughTheBackend() throws {
+        let request = try #require(OpenClickyAuthSession.signUpRequest(backendBaseURL: "https://api.example", email: "gran@example.com", password: "long-enough-1"))
+        #expect(request.url?.absoluteString == "https://api.example/auth/signup")
+        #expect(request.httpMethod == "POST")
         let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: String]
         #expect(body == ["email": "gran@example.com", "password": "long-enough-1"])
     }
@@ -2228,14 +2265,11 @@ Expected: FAIL — `AuthConfig` is private / `signUpRequest` missing.
     enum SignUpState: Equatable { case idle, sending, awaitingConfirmation(email: String), signedIn, failed(String), full }
     @Published private(set) var signUpState: SignUpState = .idle
 
-    static func signUpRequest(config: AuthConfig, email: String, password: String) -> URLRequest? {
-        var components = URLComponents(string: "\(config.supabaseUrl)/auth/v1/signup")
-        if let redirect = config.confirmRedirectUrl { components?.queryItems = [URLQueryItem(name: "redirect_to", value: redirect)] }
-        guard let url = components?.url else { return nil }
+    static func signUpRequest(backendBaseURL: String, email: String, password: String) -> URLRequest? {
+        guard let url = URL(string: "\(backendBaseURL)/auth/signup") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email, "password": password])
         return request
     }
@@ -2247,12 +2281,13 @@ Expected: FAIL — `AuthConfig` is private / `signUpRequest` missing.
         do {
             let config = try await authConfig()
             guard config.accountsOpen != false else { signUpState = .full; return }
-            guard let request = Self.signUpRequest(config: config, email: email, password: password) else { signUpState = .failed("sign-up isn't available right now"); return }
+            guard let request = Self.signUpRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, email: email, password: password) else { signUpState = .failed("sign-up isn't available right now"); return }
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200..<300).contains(status) else {
-                let text = String(decoding: data, as: UTF8.self)
-                signUpState = text.contains("accounts_full") ? .full : .failed(Self.signUpMessage(status: status, body: text))
+                let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+                let error = json["error"] as? String ?? ""
+                signUpState = error == "accounts_full" ? .full : .failed(error.isEmpty ? "couldn't create the account (\(status))." : error)
                 return
             }
             signUpState = .awaitingConfirmation(email: email)
@@ -2282,12 +2317,6 @@ Expected: FAIL — `AuthConfig` is private / `signUpRequest` missing.
         return (200..<300).contains(status)
     }
 
-    private static func signUpMessage(status: Int, body: String) -> String {
-        if body.contains("already registered") { return "that email already has an account — sign in instead." }
-        if body.contains("Password should be") { return "use a password of at least 8 characters." }
-        if status == 429 { return "too many tries — wait a minute and try again." }
-        return "couldn't create the account (\(status))."
-    }
 ```
 
 `signIn` already records `lastErrorText`; while waiting for confirmation it fails with "Email not confirmed" — clear `lastErrorText` on success (already done by `signIn`).
