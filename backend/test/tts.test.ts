@@ -65,7 +65,7 @@ describe("speakOnGrant", () => {
     const f = stub({ character_count: 0, character_limit: 1_000_000 });
     await say(app(new MemorySpendLedger()), "word ".repeat(200));
     const ttsCall = f.mock.calls.find(([url]) => String(url).includes("text-to-speech"))!;
-    expect(JSON.parse((ttsCall[1] as RequestInit).body as string).text.length).toBeLessThanOrEqual(400);
+    expect(JSON.parse((ttsCall as unknown as [string, RequestInit])[1].body as string).text.length).toBeLessThanOrEqual(400);
   });
 
   it("answers tts_budget, not 500, when the subscription lookup throws", async () => {

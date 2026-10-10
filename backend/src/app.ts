@@ -34,6 +34,16 @@ type Variables = { principal: Principal; billing: BillingContext };
  * provider keys (`x-openclicky-openai-key`, see keys.ts) runs on those and is never metered; any
  * other request runs on the backend's keys under the user's plan (billing.ts, Stripe in stripe.ts).
  */
+const SIGNUP_LIMIT = 5, SIGNUP_WINDOW_MS = 3_600_000;
+/** 5 sign-ups per IP per hour, in memory; empty entries are pruned so the map doesn't grow. */
+function signupAllowed(hits: Map<string, number[]>, ip: string, now = Date.now()): boolean {
+  for (const [k, v] of hits) { const live = v.filter((t) => now - t < SIGNUP_WINDOW_MS); if (live.length) hits.set(k, live); else hits.delete(k); }
+  const mine = hits.get(ip) ?? [];
+  if (mine.length >= SIGNUP_LIMIT) return false;
+  hits.set(ip, [...mine, now]);
+  return true;
+}
+
 export function createApp(options: AppOptions = {}) {
   const app = new Hono<{ Variables: Variables }>();
   if (options.log !== null) app.use("*", requestLogger(options.log));
@@ -112,12 +122,15 @@ export function createApp(options: AppOptions = {}) {
 
   // Public sign-up. The Supabase instance is shared by every FlowsXR project, so OpenClicky's own cap
   // (oc_accounts_open) is enforced here rather than by letting the app talk to GoTrue directly.
+  const signupHits = new Map<string, number[]>();
   app.post("/auth/signup", async (c) => {
     const env = getEnv(c);
     if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY || !env.SUPABASE_SERVICE_KEY) return c.json({ error: "sign-up is not configured on this backend" }, 404);
-    let req: { email?: string; password?: string } = {};
-    try { req = JSON.parse((await c.req.text()) || "{}"); } catch { return c.json({ error: "body must be JSON" }, 400); }
-    const email = (req.email ?? "").trim(), password = req.password ?? "";
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+    if (!signupAllowed(signupHits, ip)) return c.json({ error: "too many tries — wait a minute and try again." }, 429);
+    let req: { email?: unknown; password?: unknown } | null = {};
+    try { req = JSON.parse((await c.req.text()) || "{}") as typeof req; } catch { return c.json({ error: "body must be JSON" }, 400); }
+    const email = typeof req?.email === "string" ? req.email.trim() : "", password = typeof req?.password === "string" ? req.password : "";
     if (!email.includes("@") || password.length < 8) return c.json({ error: "use an email address and a password of at least 8 characters." }, 400);
     const db = new SupabaseRest(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
     const open = env.ACCOUNTS_OPEN === "true" && (await db.rpc<boolean>("oc_accounts_open", {}).catch(() => false));
@@ -141,12 +154,17 @@ export function createApp(options: AppOptions = {}) {
       console.error(`signup: GoTrue ${res.status}: ${text.slice(0, 300)}`);
       return c.json({ error: "couldn't create the account right now." }, 502);
     }
-    let userId: string | undefined;
+    // An already-registered email (another FlowsXR product's user) comes back as 200 with no identities
+    // and possibly a fake id: only genuinely new users get an OpenClicky row.
+    let userId: string | undefined, isNew = false;
     try {
-      const user = JSON.parse(text) as { id?: string; user?: { id?: string } };
-      userId = user.id ?? user.user?.id;
+      const body = JSON.parse(text) as { id?: string; identities?: unknown[]; user?: { id?: string; identities?: unknown[] } };
+      const user = body.user ?? body;
+      userId = user.id;
+      isNew = Array.isArray(user.identities) && user.identities.length > 0;
     } catch { /* GoTrue succeeded; the account row is best-effort below */ }
-    if (userId) await db.insert("oc_accounts", { user_id: userId }).catch((e) => console.error(`signup: oc_accounts insert: ${(e as Error).message}`));
+    if (!isNew) console.error("signup: existing auth user; no OpenClicky row");
+    else if (userId) await db.insert("oc_accounts", { user_id: userId }).catch((e) => console.error(`signup: oc_accounts insert: ${(e as Error).message}`));
     else console.error("signup: GoTrue answered without a user id");
     return c.json({ ok: true });
   });

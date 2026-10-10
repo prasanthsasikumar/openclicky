@@ -173,7 +173,8 @@ returns json language sql security definer set search_path = public set timezone
 $$;
 
 create or replace function public.oc_accounts_open() returns boolean language sql security definer set search_path = public set timezone = 'UTC' as $$
-  select (select count(*) from oc_accounts) < (select max_accounts from oc_settings);
+  -- only confirmed accounts count, so unconfirmed sign-up spam cannot fill the cap
+  select (select count(*) from oc_accounts a join auth.users u on u.id::text = a.user_id where u.email_confirmed_at is not null) < (select max_accounts from oc_settings);
 $$;
 drop trigger if exists oc_max_accounts on auth.users;
 drop function if exists public.oc_enforce_max_accounts();

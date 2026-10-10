@@ -532,7 +532,7 @@ describe("sign-up support", () => {
       const u = String(url);
       calls.push({ url: u, init });
       if (u.includes("/rpc/oc_accounts_open")) return new Response(JSON.stringify(opts.isOpen ?? true));
-      if (u.includes("/auth/v1/signup")) return opts.gotrue ? opts.gotrue() : new Response(JSON.stringify({ id: "u-new" }));
+      if (u.includes("/auth/v1/signup")) return opts.gotrue ? opts.gotrue() : new Response(JSON.stringify({ id: "u-new", identities: [{ id: "i" }] }));
       if (u.includes("/rest/v1/oc_accounts")) return opts.insert ? opts.insert() : new Response("[]", { status: 201 });
       throw new Error(`unexpected fetch ${u}`);
     }));
@@ -611,5 +611,39 @@ describe("sign-up support", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
     expect(err).toHaveBeenCalled();
+  });
+  it("signup inserts no row for an existing auth user (empty identities), flat or nested", async () => {
+    for (const body of [{ id: "fake", identities: [] }, { user: { id: "fake", identities: [] } }]) {
+      const calls = stub({ gotrue: () => new Response(JSON.stringify(body)) });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+      expect(calls.some((c) => c.url.includes("/rest/v1/oc_accounts"))).toBe(false);
+    }
+  });
+  it("signup inserts the id from a nested user object with identities", async () => {
+    const calls = stub({ gotrue: () => new Response(JSON.stringify({ user: { id: "u-nested", identities: [{ id: "i" }] } })) });
+    await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(JSON.parse(calls.find((c) => c.url.includes("/rest/v1/oc_accounts"))!.init.body)).toMatchObject({ user_id: "u-nested" });
+  });
+  it("signup is limited to 5 per IP per hour, before any RPC or GoTrue call", async () => {
+    const calls = stub({});
+    const app = createApp({ log: null });
+    const from = (ip: string) => ({ ...post(creds), headers: { "content-type": "application/json", "x-forwarded-for": `${ip}, 10.0.0.1` } });
+    for (let i = 0; i < 5; i++) expect((await app.request("/auth/signup", from("1.1.1.1"), open)).status).toBe(200);
+    const n = calls.length;
+    const res = await app.request("/auth/signup", from("1.1.1.1"), open);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "too many tries — wait a minute and try again." });
+    expect(calls).toHaveLength(n);
+    expect((await app.request("/auth/signup", from("2.2.2.2"), open)).status).toBe(200);
+  });
+  it("signup answers 400, not 500, for a null body or non-string fields", async () => {
+    stub({});
+    const app = createApp({ log: null });
+    const raw = (body: string) => ({ method: "POST", headers: { "content-type": "application/json" }, body });
+    expect((await app.request("/auth/signup", raw("null"), open)).status).toBe(400);
+    expect((await app.request("/auth/signup", raw('{"email":1,"password":2}'), open)).status).toBe(400);
   });
 });

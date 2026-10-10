@@ -30,7 +30,7 @@ describe("/v1/polish", () => {
     const { a, fetchMock } = app(ledger);
     const res = await post(a);
     expect(await res.json()).toEqual({ text: "See you at seven." });
-    const sent = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    const sent = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(sent.model).toBe("claude-haiku-4-5");
     expect((await ledger.summary("u1", LIMITS)).spentTodayMicro).toBe(300 * 1 + 20 * 5);
   });
