@@ -49,6 +49,8 @@ export class SupabaseRest {
   async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
     const res = await this.fetchImpl(`${this.base}/rpc/${fn}`, { method: "POST", headers: this.headers(), body: JSON.stringify(args) });
     await this.check(res, `rpc ${fn}`);
-    return (await res.json()) as T;
+    // A function that returns void (oc_settle) answers 204 / an empty body: there is no JSON to read.
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
   }
 }

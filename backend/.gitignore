@@ -1,2 +1,4 @@
 # Hosted backend env (grant key, GRANT_ACCOUNTS=true): deployed with DEPLOY_ENV_FILE=backend/.hosted.vars, never committed
 .hosted.vars
+# Supabase Cloud project for OpenClicky (2026-10): keys and the database password, never committed
+.supabase-cloud.secrets
