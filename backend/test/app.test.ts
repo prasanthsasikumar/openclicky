@@ -497,6 +497,23 @@ describe("app", () => {
       expect(await blocked.json()).toEqual({ error: "not_on_plan" });
     });
 
+    it("/billing/me reports confirmation, the guest pool and a masked email", async () => {
+      const ledger = new MemorySpendLedger({ requireAccountRow: true });
+      ledger.setAccount("user-1", { confirmed: false, deviceHash: "a".repeat(64), createdAt: Date.now(), email: "gran@example.com" });
+      const billed = createApp({ log: null, spendLedger: ledger });
+      const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${await jwt()}` } }, grantEnv);
+      expect(await me.json()).toMatchObject({ confirmed: false, guestSpentUsd: 0, guestLimitUsd: 1, email: "g•••@example.com" });
+    });
+
+    it("a guest over its cap gets 402 confirm_email with no resets_at", async () => {
+      const ledger = new MemorySpendLedger({ requireAccountRow: true });
+      ledger.setAccount("user-1", { confirmed: false, deviceHash: "a".repeat(64), createdAt: Date.now(), replaced: true, email: "gran@example.com" });
+      const billed = createApp({ log: null, spendLedger: ledger });
+      const r = await billed.request("/v1/polish", json({ purpose: "polish", text: "hi" }, await jwt()), grantEnv);
+      expect(r.status).toBe(402);
+      expect(await r.json()).toEqual({ error: "confirm_email" });
+    });
+
     it("/billing/me reports byok for a request with its own key", async () => {
       const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
       const me = await billed.request("/billing/me", { headers: byokHeaders(await jwt()) }, grantEnv);

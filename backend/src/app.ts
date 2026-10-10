@@ -184,7 +184,7 @@ export function createApp(options: AppOptions = {}) {
   app.get("/billing/me", async (c) => {
     const ledger = ledgerFor(c);
     const byok = Boolean((c.get("account" as never) as AccountContext | undefined)?.byok);
-    if (!ledger) return c.json({ plan: byok ? "byok" : "unmetered", onPlan: true, byok, spentMonthUsd: 0, monthlyLimitUsd: 0, spentTodayUsd: 0, dailyLimitUsd: 0, ttsCharsMonth: 0, ttsCharsLimit: 0, monthEnd: "", dayEnd: "", budgetExhausted: false, blocked: false });
+    if (!ledger) return c.json({ plan: byok ? "byok" : "unmetered", onPlan: true, byok, spentMonthUsd: 0, monthlyLimitUsd: 0, spentTodayUsd: 0, dailyLimitUsd: 0, ttsCharsMonth: 0, ttsCharsLimit: 0, monthEnd: "", dayEnd: "", budgetExhausted: false, blocked: false, confirmed: true, guestSpentUsd: 0, guestLimitUsd: 0, email: null });
     try { return c.json(await accountSummary(c, ledger)); }
     catch (e) { console.error(`billing/me: ${(e as Error).message}`); return ledgerUnavailable(c); }
   });
