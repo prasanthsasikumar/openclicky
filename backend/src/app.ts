@@ -9,6 +9,7 @@ import { SupabaseBillingStore, type BillingStore, type BillingContext } from "./
 import { SupabaseRest } from "./db.js";
 import { requireAccount, accountSummary, type AccountContext } from "./account.js";
 import { proxyAnthropicOnGrant } from "./anthropicGrant.js";
+import { polishTake } from "./polish.js";
 import type { Purpose } from "./modelPolicy.js";
 import { SupabaseSpendLedger, type SpendLedger } from "./ledger.js";
 import { handleStripeWebhook, createCheckoutSession, createPortalSession } from "./stripe.js";
@@ -131,6 +132,7 @@ export function createApp(options: AppOptions = {}) {
 
   app.post("/v1/chat/completions", (c) => proxyOpenAI(c, "/chat/completions", storeFor(c))); // `ask` lane
   app.post("/v1/responses", (c) => proxyOpenAI(c, "/responses", storeFor(c))); // Codex agent lane (Codex >= 0.15x is Responses-only)
+  app.post("/v1/polish", (c) => polishTake(c, ledgerFor(c))); // dictation polish and edits on the server-chosen model
   app.post("/v1/messages", (c) => grantOr(c, "gate", () => proxyAnthropic(c, storeFor(c)))); // Anthropic gate lane
 
   // Voice groundwork: ephemeral Realtime client secrets + server-side speech-to-text.
