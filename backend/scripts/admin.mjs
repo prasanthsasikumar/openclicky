@@ -2,11 +2,12 @@
 // Accounts and budget for OpenClicky's hosted backend. Talks to Supabase directly (Auth admin API +
 // the oc_* tables) with the service key from backend/.dev.vars; nothing here goes through the backend.
 // People sign up in the app, which creates their oc_accounts row; the Supabase auth is shared with
-// other FlowsXR products, so nothing here ever deletes an auth user.
+// other FlowsXR products, so the only auth users this script deletes are anonymous guest logins (prune).
 //
 //   npm run admin -w backend -- list                          everyone with an oc_accounts row
 //   npm run admin -w backend -- budget                        this month's spend, characters, account count, top 10
-//   npm run admin -w backend -- add <email>                   give an existing auth user an account (default limits)
+//   npm run admin -w backend -- add <email>                   make a confirmed account for this email (creates the login if missing)
+//   npm run admin -w backend -- prune [--yes]                 delete stale guest logins (replaced, or older than GUEST_DAYS, default 14)
 //   npm run admin -w backend -- limit <email> --usd N         monthly limit for one person
 //   npm run admin -w backend -- daily <email> --usd N         daily limit for one person
 //   npm run admin -w backend -- block <email> | unblock <email>
@@ -114,7 +115,7 @@ const commands = {
   async budget() {
     const [events, accounts, users, cap] = await Promise.all([
       fetchAll("oc_usage_events", `ts=gte.${encodeURIComponent(monthStart())}&select=user_id,cost_micro_usd,route,characters`),
-      api("GET", rest("oc_accounts", "select=user_id")),
+      api("GET", rest("oc_accounts", "select=user_id,replaced_at")),
       listUsers(),
       maxAccounts(),
     ]);
@@ -129,9 +130,10 @@ const commands = {
     // The auth is shared with other products: only OpenClicky accounts count, and only confirmed ones fill the cap.
     const accountIds = new Set(accounts.map((a) => a.user_id));
     const byId = new Map(users.map((u) => [u.id, u]));
-    const confirmed = [...accountIds].filter((id) => byId.get(id)?.email_confirmed_at).length;
+    const confirmed = [...accountIds].filter((id) => byId.has(id) && !byId.get(id).is_anonymous).length;
+    const guests = accounts.filter((a) => byId.get(a.user_id)?.is_anonymous && !a.replaced_at).length;
     const limit = Number(process.env.GLOBAL_MONTHLY_BUDGET_USD ?? 1000);
-    console.log(`this month: ${usd(total)} of $${limit} · ${chars} spoken characters · accounts ${accountIds.size} (${confirmed} confirmed) of ${cap}`);
+    console.log(`this month: ${usd(total)} of $${limit} · ${chars} spoken characters · accounts ${confirmed} confirmed of ${cap} · ${guests} live guests`);
     [...perUser.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
@@ -139,11 +141,35 @@ const commands = {
   },
 
   async add() {
-    const email = needEmail("add <email>");
-    const user = await requireUser(email);
-    await upsertAccount(user.id, {});
-    console.log(`${email}: account added (default limits)`);
-    console.log("note: this login may belong to another FlowsXR product; the account now counts toward the max-accounts cap.");
+    const email = needEmail("add <email>").toLowerCase();
+    let user = await findUser(email);
+    if (!user) user = await api("POST", `${SUPABASE_URL}/auth/v1/admin/users`, { email, email_confirm: true });
+    await upsertAccount(user.id, { email, confirmed_at: new Date().toISOString() });
+    console.log(`${email}: confirmed account ready (default limits) — sign in on the Mac with this email and the emailed code`);
+    console.log("note: this login may be shared with another FlowsXR product; the account now counts toward the max-accounts cap.");
+  },
+
+  async prune() {
+    const days = Number(process.env.GUEST_DAYS ?? 14);
+    const cutoff = Date.now() - days * 86_400_000;
+    const rows = await api("GET", rest("oc_accounts", "confirmed_at=is.null&select=user_id,email,created_at,replaced_at"));
+    const users = new Map((await listUsers()).map((u) => [u.id, u]));
+    // Only anonymous logins are ever deleted; a confirmed (non-anonymous) user is never touched.
+    const doomed = rows.filter((r) => users.get(r.user_id)?.is_anonymous === true && (r.replaced_at || Date.parse(r.created_at) < cutoff));
+    console.log(`${doomed.length} guest login(s) to delete (replaced, or unconfirmed for ${days}+ days); their usage rows stay`);
+    if (!doomed.length) return;
+    if (!flag("yes")) {
+      const typed = await promptLine("type yes to delete them: ");
+      if (typed.trim() !== "yes") {
+        console.log("not confirmed; nothing was changed");
+        return;
+      }
+    }
+    for (const r of doomed) {
+      if (!r.replaced_at) await api("PATCH", rest("oc_accounts", `user_id=eq.${encodeURIComponent(r.user_id)}`), { replaced_at: new Date().toISOString() });
+      await api("DELETE", `${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(r.user_id)}`);
+    }
+    console.log("done");
   },
 
   async limit() {
@@ -225,7 +251,7 @@ const commands = {
 };
 
 if (!commands[command]) {
-  console.error("commands: list, budget, add <email>, limit <email> --usd N, daily <email> --usd N, block <email>, unblock <email>, remove <email>, max-accounts N");
+  console.error("commands: list, budget, add <email>, limit <email> --usd N, daily <email> --usd N, block <email>, unblock <email>, remove <email>, prune [--yes], max-accounts N");
   process.exit(2);
 }
 commands[command]().catch((e) => {
