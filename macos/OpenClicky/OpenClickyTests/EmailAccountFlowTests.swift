@@ -45,6 +45,13 @@ struct EmailAccountFlowTests {
         #expect(OpenClickyAuthSession.canStart(from: .failed("no")))
     }
 
+    @Test func aLateReplyNeverUndoesAResetOrSignOut() {
+        #expect(OpenClickyAuthSession.shouldApply(current: .checkingCode(email: "g@x.co"), inFlight: .checkingCode(email: "g@x.co")))
+        #expect(OpenClickyAuthSession.shouldApply(current: .sending, inFlight: .sending))
+        #expect(!OpenClickyAuthSession.shouldApply(current: .idle, inFlight: .checkingCode(email: "g@x.co")))
+        #expect(!OpenClickyAuthSession.shouldApply(current: .idle, inFlight: .sending))
+    }
+
     @Test func aCancelledStartReturnsToIdle() {
         #expect(OpenClickyAuthSession.isCancellation(CancellationError()))
         #expect(OpenClickyAuthSession.stateAfterCancellation(.sending) == .idle)

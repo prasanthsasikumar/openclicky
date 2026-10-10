@@ -120,6 +120,10 @@ final class OpenClickyAuthSession: ObservableObject {
         }
     }
 
+    /// A reply (or cancellation) may change the form only while it still shows the state this
+    /// request put it in; a reset, sign-out or newer request has moved on and must not be undone.
+    nonisolated static func shouldApply(current: EmailFlowState, inFlight: EmailFlowState) -> Bool { current == inFlight }
+
     nonisolated static func isCancellation(_ error: Error) -> Bool {
         if error is CancellationError { return true }
         if let urlError = error as? URLError, urlError.code == .cancelled { return true }
@@ -160,6 +164,7 @@ final class OpenClickyAuthSession: ObservableObject {
         emailFlow = inFlight
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            guard Self.shouldApply(current: emailFlow, inFlight: inFlight) else { return }
             switch Self.outcome(status: (response as? HTTPURLResponse)?.statusCode ?? 0, body: data, email: email) {
             case .signedIn(let session, let confirmed):
                 store(session, email: email)
@@ -175,6 +180,7 @@ final class OpenClickyAuthSession: ObservableObject {
                 emailFlow = inFlight == .sending ? .failed(message) : .needsCode(email: email)
             }
         } catch {
+            guard Self.shouldApply(current: emailFlow, inFlight: inFlight) else { return }
             if Self.isCancellation(error) || Task.isCancelled {
                 // Back to whatever the form showed before this send (the email step, or the code step).
                 emailFlow = Self.stateAfterCancellation(inFlight)

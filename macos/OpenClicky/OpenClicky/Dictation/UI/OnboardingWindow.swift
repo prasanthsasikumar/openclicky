@@ -250,7 +250,9 @@ struct OnboardingView: View {
             if let accountEmail = authSession.accountEmail {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
-                    Text("you're set, \(accountEmail). check your inbox to unlock the full free allowance.").font(Paper.body(14, weight: .medium))
+                    Text(authSession.emailFlow == .signedIn(confirmed: false)
+                         ? "you're set, \(accountEmail). check your inbox to unlock the full free allowance."
+                         : "you're set, \(accountEmail).").font(Paper.body(14, weight: .medium))
                 }
                 .foregroundStyle(Paper.success).padding(.top, 6)
             } else if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
