@@ -51,8 +51,11 @@ enum DictationEngineResolver {
     static func makePolisher() -> (any TakePolisher)? {
         let sarvamKey = OpenClickyConfiguration.settings.sarvamKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !sarvamKey.isEmpty { return SarvamTakePolisher(client: SarvamSpeechClient(key: sarvamKey)) }
-        if OpenClickyConfiguration.isConfigured { return BackendTakePolisher() }
-        return nil
+        switch AccountCapabilities.current().kind {
+        case .account: return AccountTakePolisher()
+        case .ownKeys: return BackendTakePolisher()
+        case .signedOut: return nil
+        }
     }
 
     /// Whether a take's words may go to a model: the switch, and — for the offline engine, whose

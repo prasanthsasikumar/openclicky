@@ -136,6 +136,9 @@ final class DictationSettings: ObservableObject {
         script = DictationScript(rawValue: defaults.string(forKey: Keys.script) ?? "") ?? .native
         polishWithModel = defaults.object(forKey: Keys.polishWithModel) == nil ? true : defaults.bool(forKey: Keys.polishWithModel)
         polishOfflineTakes = defaults.bool(forKey: Keys.polishOfflineTakes)
+        if defaults.object(forKey: Keys.polishOfflineTakes) == nil, AccountCapabilities.current().kind == .account {
+            polishOfflineTakes = true
+        }
         dictationKey = DictationHotkey(rawValue: defaults.string(forKey: Keys.dictationKey) ?? "") ?? .fn
         orbVisible = defaults.object(forKey: Keys.orbVisible) == nil ? true : defaults.bool(forKey: Keys.orbVisible)
         orbLook = OrbLook(rawValue: defaults.string(forKey: Keys.orbLook) ?? "") ?? .pill
