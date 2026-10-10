@@ -144,7 +144,8 @@ private struct AccountStartRow: View {
         .padding(.vertical, Paper.Metric.rowVertical + 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .sheet(item: $sheetMode) { mode in
-            AccountSheet(startIn: mode) { sheetMode = nil }
+            // The own-key field is on this page, behind the sheet: closing it is the way there.
+            AccountSheet(startIn: mode, onDone: { sheetMode = nil }, onUseOwnKey: { sheetMode = nil })
         }
     }
 }

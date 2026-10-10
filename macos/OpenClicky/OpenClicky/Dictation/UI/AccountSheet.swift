@@ -18,6 +18,8 @@ struct AccountSheet: View {
 
     @State private var mode: Mode
     let onDone: () -> Void
+    /// Offered on the "full" screen; nil leaves the button out.
+    let onUseOwnKey: (() -> Void)?
     @ObservedObject private var auth = OpenClickyAuthSession.shared
     @State private var email = ""
     @State private var password = ""
@@ -25,11 +27,14 @@ struct AccountSheet: View {
     @State private var signInFailure: String?
     @State private var info: String?
     /// The sign-up or sign-in in flight; cancelled when the sheet closes.
-    @State private var accountTask: Task<Void, Never>?
+    @State private var accountWork = AccountWorkSlot()
+    /// The reset-link request; cancelled when the sheet closes or the mode switches.
+    @State private var resetLinkTask: Task<Void, Never>?
 
-    init(startIn mode: Mode = .create, onDone: @escaping () -> Void) {
+    init(startIn mode: Mode = .create, onDone: @escaping () -> Void, onUseOwnKey: (() -> Void)? = nil) {
         _mode = State(initialValue: mode)
         self.onDone = onDone
+        self.onUseOwnKey = onUseOwnKey
     }
 
     var body: some View {
@@ -44,10 +49,14 @@ struct AccountSheet: View {
             onSubmit: submit,
             onForgotPassword: sendResetLink,
             onSwitchMode: switchMode,
-            onClose: onDone
+            onClose: onDone,
+            onUseOwnKey: onUseOwnKey
         )
         .onAppear { auth.forgetSettledSignUp() }
-        .onDisappear { accountTask?.cancel() }
+        .onDisappear {
+            accountWork.cancel()
+            resetLinkTask?.cancel()
+        }
         .onChange(of: auth.signUpState) { _, state in
             if state == .signedIn { finishSignedIn() }
         }
@@ -56,15 +65,18 @@ struct AccountSheet: View {
     private func submit() {
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.canSubmit(mode: mode, email: trimmedEmail, password: password), !isSigningIn else { return }
+        // Return can fire both the field's onSubmit and the default button before any state has
+        // changed; the slot refuses the second start synchronously, so the task the sheet cancels
+        // on close is always the one doing the work.
+        guard !accountWork.isRunning else { return }
         info = nil
         signInFailure = nil
         switch mode {
         case .create:
-            // signUp ignores a second call while one is sending or waiting, so a double tap is harmless.
-            accountTask = Task { await auth.signUp(email: trimmedEmail, password: password) }
+            accountWork.start { await auth.signUp(email: trimmedEmail, password: password) }
         case .signIn:
             isSigningIn = true
-            accountTask = Task {
+            accountWork.start {
                 let didSignIn = await auth.signIn(email: trimmedEmail, password: password)
                 isSigningIn = false
                 if didSignIn {
@@ -84,14 +96,18 @@ struct AccountSheet: View {
         }
         signInFailure = nil
         info = "sending a reset link…"
-        Task {
-            info = await auth.recover(email: trimmedEmail)
+        resetLinkTask?.cancel()
+        resetLinkTask = Task {
+            let didSend = await auth.recover(email: trimmedEmail)
+            guard !Task.isCancelled else { return }
+            info = didSend
                 ? "we sent a reset link to \(trimmedEmail)."
                 : "couldn't send a reset link — check the email and try again."
         }
     }
 
     private func switchMode() {
+        resetLinkTask?.cancel()
         mode = mode == .create ? .signIn : .create
         signInFailure = nil
         info = nil
@@ -141,6 +157,7 @@ struct AccountSheetContent: View {
     let onForgotPassword: () -> Void
     let onSwitchMode: () -> Void
     let onClose: () -> Void
+    var onUseOwnKey: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -267,14 +284,44 @@ struct AccountSheetContent: View {
             Text("dictation on this mac works without an account.")
                 .font(Paper.caption).foregroundStyle(Paper.inkSecondary)
             HStack(spacing: 8) {
-                Button("close", action: onClose)
-                    .buttonStyle(PaperPillButtonStyle(prominent: true))
-                    .keyboardShortcut(.defaultAction)
+                if let onUseOwnKey {
+                    Button("use my own key", action: onUseOwnKey)
+                        .buttonStyle(PaperPillButtonStyle(prominent: true))
+                        .keyboardShortcut(.defaultAction)
+                    Button("close", action: onClose)
+                        .buttonStyle(PaperPillButtonStyle())
+                        .keyboardShortcut(.cancelAction)
+                } else {
+                    Button("close", action: onClose)
+                        .buttonStyle(PaperPillButtonStyle(prominent: true))
+                        .keyboardShortcut(.defaultAction)
+                }
                 Button("i already have an account", action: onSwitchMode)
                     .buttonStyle(PaperPillButtonStyle(quiet: true))
             }
         }
     }
+}
+
+/// Holds the one sign-up or sign-in a sheet runs at a time. `start` refuses while one is running
+/// and says so synchronously, before the task has had a chance to run a single line.
+@MainActor
+final class AccountWorkSlot {
+    private(set) var isRunning = false
+    private var task: Task<Void, Never>?
+
+    @discardableResult
+    func start(_ work: @escaping @MainActor () async -> Void) -> Bool {
+        guard !isRunning else { return false }
+        isRunning = true
+        task = Task { @MainActor [weak self] in
+            await work()
+            self?.isRunning = false
+        }
+        return true
+    }
+
+    func cancel() { task?.cancel() }
 }
 
 /// "plenty left this month · resets on nov 1", over a thin bar of the month used.
@@ -286,7 +333,7 @@ struct AccountUsageBar: View {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Paper.lineSoft)
-                    Capsule().fill(summary.level == .plenty ? Paper.success : Paper.accent)
+                    Capsule().fill(summary.allowanceStanding == .plenty ? Paper.success : Paper.accent)
                         .frame(width: max(4, geometry.size.width * summary.fractionUsed))
                 }
             }

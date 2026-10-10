@@ -134,7 +134,10 @@ struct OnboardingView: View {
         }
         .background(Paper.background)
         .sheet(item: $accountSheetMode) { mode in
-            AccountSheet(startIn: mode) { accountSheetMode = nil }
+            AccountSheet(startIn: mode, onDone: { accountSheetMode = nil }, onUseOwnKey: {
+                accountSheetMode = nil
+                companionManager.showDictationWindow(settingsPage: .account)
+            })
         }
         .onAppear {
             companionManager.dictationTakeController.onTakeFinished = { take in

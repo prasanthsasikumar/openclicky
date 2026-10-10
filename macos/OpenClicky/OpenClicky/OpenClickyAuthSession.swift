@@ -101,6 +101,7 @@ final class OpenClickyAuthSession: ObservableObject {
     /// never has to come back and type. Run it from a task the caller cancels when the person
     /// walks away: a cancelled sign-up goes back to `.idle`.
     func signUp(email: String, password: String) async {
+        // Checked and flipped before the first await, so two calls on the main actor can never both pass.
         guard Self.canStartSignUp(from: signUpState) else { return }
         signUpState = .sending
         do {

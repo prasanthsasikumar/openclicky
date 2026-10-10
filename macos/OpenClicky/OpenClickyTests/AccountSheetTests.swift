@@ -81,3 +81,24 @@ struct AccountSheetTests {
         #expect(!AccountLimitError.accountsFull.message.isEmpty)
     }
 }
+
+@MainActor
+struct AccountWorkSlotTests {
+    @Test func twoRapidSubmitsStartOneSignUp() async {
+        let slot = AccountWorkSlot()
+        var started = 0
+        let first = slot.start { started += 1; try? await Task.sleep(nanoseconds: 50_000_000) }
+        let second = slot.start { started += 1 }
+        #expect(first)
+        #expect(!second)
+        #expect(slot.isRunning)
+        while slot.isRunning { try? await Task.sleep(nanoseconds: 5_000_000) }
+        #expect(started == 1)
+        #expect(slot.start { started += 1 })
+    }
+
+    @Test func greenOnlyWhenNothingIsUsedUp() {
+        let todayUsedUp = BillingSummary(byok: false, spentMonthUsd: 1, monthlyLimitUsd: 10, spentTodayUsd: 2, dailyLimitUsd: 2, ttsCharsMonth: 0, ttsCharsLimit: 20000, monthEnd: "", dayEnd: "", budgetExhausted: false, blocked: false)
+        #expect(todayUsedUp.allowanceStanding != .plenty)
+    }
+}
