@@ -182,7 +182,7 @@ struct AccountProfileTests {
         #expect(!settings.polishOfflineTakes)
     }
 
-    // MARK: C8 / §9 — password reset and closed sign-up
+    // MARK: C8 / §9 — closed sign-up
 
     @Test func createAccountIsHiddenOnlyWhenTheBackendSaysClosed() {
         #expect(OpenClickyAuthSession.offersCreateAccount(accountsOpen: true))

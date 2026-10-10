@@ -113,13 +113,18 @@ struct AccountSheetContent: View {
 
     private var screen: Screen {
         switch emailFlow {
-        case .needsCode(let address): return .code(address)
+        case .needsCode(let address), .checkingCode(let address): return .code(address)
         case .failed(let message) where mode == .create && message == AccountLimitError.accountsFull.message: return .full
         default: return .form
         }
     }
 
-    private var isBusy: Bool { emailFlow == .sending }
+    private var isBusy: Bool {
+        switch emailFlow {
+        case .sending, .checkingCode: return true
+        default: return false
+        }
+    }
 
     private var form: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -150,6 +155,8 @@ struct AccountSheetContent: View {
         }
     }
 
+    private var codeError: String? { OpenClickyAuthSession.shared.lastErrorText }
+
     private func codeStep(address: String) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             PaperHeading(text: "check your email", size: 26)
@@ -158,6 +165,9 @@ struct AccountSheetContent: View {
             TextField("code", text: $code)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(onSubmitCode)
+            if let codeError {
+                Text(codeError).font(Paper.caption).foregroundStyle(Paper.danger).fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 8) {
                 Button(isBusy ? "checking…" : "sign in", action: onSubmitCode)
                     .buttonStyle(PaperPillButtonStyle(prominent: true))

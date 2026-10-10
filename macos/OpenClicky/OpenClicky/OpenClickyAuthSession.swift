@@ -20,7 +20,7 @@ final class OpenClickyAuthSession: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastErrorText: String?
 
-    nonisolated enum EmailFlowState: Equatable { case idle, sending, needsCode(email: String), signedIn(confirmed: Bool), failed(String) }
+    nonisolated enum EmailFlowState: Equatable { case idle, sending, checkingCode(email: String), needsCode(email: String), signedIn(confirmed: Bool), failed(String) }
     @Published private(set) var emailFlow: EmailFlowState = .idle
     /// Whether the backend takes new accounts (GET /auth/config); nil until it has answered.
     @Published private(set) var accountsOpen: Bool?
@@ -55,8 +55,10 @@ final class OpenClickyAuthSession: ObservableObject {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refreshIfNeeded() }
         }
-        Task { await refreshIfNeeded() }
-        Task { if (try? await BillingStatusModel.fetchSummary())?.confirmed == false { watchConfirmation() } }
+        Task {
+            await refreshIfNeeded()
+            if (try? await BillingStatusModel.fetchSummary())?.confirmed == false { watchConfirmation() }
+        }
     }
 
     nonisolated static let unreachableMessage = "couldn't reach openclicky right now — try again in a minute."
@@ -102,10 +104,21 @@ final class OpenClickyAuthSession: ObservableObject {
         }
     }
 
-    nonisolated static func canStart(from state: EmailFlowState) -> Bool { state != .sending }
+    nonisolated static func canStart(from state: EmailFlowState) -> Bool {
+        switch state {
+        case .sending, .checkingCode: return false
+        default: return true
+        }
+    }
 
     /// A closed form cancels its task: a send in flight goes back to the form, anything else stays.
-    nonisolated static func stateAfterCancellation(_ state: EmailFlowState) -> EmailFlowState { state == .sending ? .idle : state }
+    nonisolated static func stateAfterCancellation(_ state: EmailFlowState) -> EmailFlowState {
+        switch state {
+        case .sending: return .idle
+        case .checkingCode(let email): return .needsCode(email: email)
+        default: return state
+        }
+    }
 
     nonisolated static func isCancellation(_ error: Error) -> Bool {
         if error is CancellationError { return true }
@@ -130,21 +143,21 @@ final class OpenClickyAuthSession: ObservableObject {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard let device = DeviceIdentity.current,
               let request = Self.startRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, email: trimmed, device: device) else {
+            lastErrorText = Self.unreachableMessage
             emailFlow = .failed(Self.unreachableMessage); return
         }
-        await run(request, email: trimmed)
+        await run(request, email: trimmed, inFlight: .sending)
     }
 
     func submitCode(_ code: String) async {
         guard case .needsCode(let email) = emailFlow,
               let request = Self.codeRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, email: email, code: code.filter(\.isNumber)) else { return }
-        await run(request, email: email, keepsCodeOnFailure: true)
+        await run(request, email: email, inFlight: .checkingCode(email: email))
     }
 
-    private func run(_ request: URLRequest, email: String, keepsCodeOnFailure: Bool = false) async {
+    private func run(_ request: URLRequest, email: String, inFlight: EmailFlowState) async {
         lastErrorText = nil
-        let before = emailFlow
-        emailFlow = .sending
+        emailFlow = inFlight
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             switch Self.outcome(status: (response as? HTTPURLResponse)?.statusCode ?? 0, body: data, email: email) {
@@ -159,12 +172,12 @@ final class OpenClickyAuthSession: ObservableObject {
             case .failed(let message):
                 // A wrong code leaves the code field up, with the sentence under it.
                 lastErrorText = message
-                emailFlow = keepsCodeOnFailure ? before : .failed(message)
+                emailFlow = inFlight == .sending ? .failed(message) : .needsCode(email: email)
             }
         } catch {
             if Self.isCancellation(error) || Task.isCancelled {
                 // Back to whatever the form showed before this send (the email step, or the code step).
-                emailFlow = Self.stateAfterCancellation(before)
+                emailFlow = Self.stateAfterCancellation(inFlight)
             } else {
                 print("🔐 Account request failed: \(Self.describe(error))")
                 emailFlow = .failed(Self.unreachableMessage)
@@ -174,6 +187,7 @@ final class OpenClickyAuthSession: ObservableObject {
 
     /// Mails the confirmation link again.
     func resendLink() async -> Bool {
+        await refreshIfNeeded()
         let token = OpenClickyConfiguration.settings.token
         guard !token.isEmpty, let request = Self.resendRequest(backendBaseURL: OpenClickyConfiguration.backendBaseURL, token: token) else { return false }
         let status = ((try? await URLSession.shared.data(for: request))?.1 as? HTTPURLResponse)?.statusCode ?? 0
@@ -184,7 +198,7 @@ final class OpenClickyAuthSession: ObservableObject {
     /// A fresh form starts empty: a finished or failed attempt is forgotten, one in flight is kept.
     func forgetSettledFlow() {
         switch emailFlow {
-        case .sending, .needsCode: return
+        case .sending, .checkingCode, .needsCode: return
         default: emailFlow = .idle; lastErrorText = nil
         }
     }
@@ -199,6 +213,7 @@ final class OpenClickyAuthSession: ObservableObject {
                 try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
                 guard !Task.isCancelled else { return }
                 if let summary = try? await BillingStatusModel.fetchSummary() {
+                    guard !Task.isCancelled else { return }
                     AccountProfileStore.shared.absorb(summary)
                     if summary.confirmed != false { objectWillChange.send(); return }
                 }

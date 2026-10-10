@@ -39,6 +39,7 @@ struct EmailAccountFlowTests {
 
     @Test func onlyASendInFlightBlocksANewStart() {
         #expect(!OpenClickyAuthSession.canStart(from: .sending))
+        #expect(!OpenClickyAuthSession.canStart(from: .checkingCode(email: "g@x.co")))
         #expect(OpenClickyAuthSession.canStart(from: .idle))
         #expect(OpenClickyAuthSession.canStart(from: .needsCode(email: "g@x.co")))
         #expect(OpenClickyAuthSession.canStart(from: .failed("no")))
@@ -47,6 +48,7 @@ struct EmailAccountFlowTests {
     @Test func aCancelledStartReturnsToIdle() {
         #expect(OpenClickyAuthSession.isCancellation(CancellationError()))
         #expect(OpenClickyAuthSession.stateAfterCancellation(.sending) == .idle)
+        #expect(OpenClickyAuthSession.stateAfterCancellation(.checkingCode(email: "g@x.co")) == .needsCode(email: "g@x.co"))
         #expect(OpenClickyAuthSession.stateAfterCancellation(.needsCode(email: "g@x.co")) == .needsCode(email: "g@x.co"))
     }
 }
