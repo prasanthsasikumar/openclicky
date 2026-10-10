@@ -79,7 +79,7 @@ alter table public.oc_reservations enable row level security;
 alter table public.oc_settings enable row level security;
 
 create or replace function public.oc_reserve(p_user text, p_estimate bigint, p_monthly bigint, p_daily bigint, p_global bigint)
-returns json language plpgsql security definer set search_path = public, timezone = 'UTC' as $$
+returns json language plpgsql security definer set search_path = public set timezone = 'UTC' as $$
 declare
   v_month timestamptz := date_trunc('month', now() at time zone 'utc') at time zone 'utc';
   v_day timestamptz := date_trunc('day', now() at time zone 'utc') at time zone 'utc';
@@ -117,7 +117,7 @@ end $$;
 
 create or replace function public.oc_settle(p_reservation uuid, p_actual bigint, p_route text, p_model text,
   p_input integer, p_output integer, p_cache_write integer, p_cache_read integer, p_chars integer)
-returns void language plpgsql security definer set search_path = public, timezone = 'UTC' as $$
+returns void language plpgsql security definer set search_path = public set timezone = 'UTC' as $$
 declare v_user text;
 begin
   perform pg_advisory_xact_lock(hashtext('oc_reserve'));
@@ -129,7 +129,7 @@ begin
 end $$;
 
 create or replace function public.oc_reserve_chars(p_user text, p_chars integer, p_limit integer, p_global_remaining integer)
-returns json language plpgsql security definer set search_path = public, timezone = 'UTC' as $$
+returns json language plpgsql security definer set search_path = public set timezone = 'UTC' as $$
 declare
   v_month timestamptz := date_trunc('month', now() at time zone 'utc') at time zone 'utc';
   v_used integer;
@@ -153,7 +153,7 @@ begin
 end $$;
 
 create or replace function public.oc_spend_summary(p_user text, p_monthly bigint, p_daily bigint, p_global bigint, p_tts integer)
-returns json language sql security definer set search_path = public, timezone = 'UTC' as $$
+returns json language sql security definer set search_path = public set timezone = 'UTC' as $$
   with b as (
     select date_trunc('month', now() at time zone 'utc') at time zone 'utc' as m,
            date_trunc('day', now() at time zone 'utc') at time zone 'utc' as d
@@ -172,7 +172,7 @@ returns json language sql security definer set search_path = public, timezone = 
     'blocked', coalesce((select blocked from a), false));
 $$;
 
-create or replace function public.oc_accounts_open() returns boolean language sql security definer set search_path = public, timezone = 'UTC' as $$
+create or replace function public.oc_accounts_open() returns boolean language sql security definer set search_path = public set timezone = 'UTC' as $$
   select (select count(*) from oc_accounts) < (select max_accounts from oc_settings);
 $$;
 drop trigger if exists oc_max_accounts on auth.users;
