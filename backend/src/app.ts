@@ -86,10 +86,69 @@ export function createApp(options: AppOptions = {}) {
 
   // What a client needs to sign in with email + password (Supabase Auth): public by design, so an
   // installed app only has to know the backend URL. 404 when the backend has no Supabase configured.
-  app.get("/auth/config", (c) => {
+  app.get("/auth/config", async (c) => {
     const env = getEnv(c);
     if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) return c.json({ error: "sign-in is not configured on this backend" }, 404);
-    return c.json({ supabaseUrl: env.SUPABASE_URL.replace(/\/+$/, ""), publishableKey: env.SUPABASE_PUBLISHABLE_KEY });
+    let accountsOpen = env.ACCOUNTS_OPEN === "true";
+    if (accountsOpen && env.SUPABASE_SERVICE_KEY) {
+      try { accountsOpen = await new SupabaseRest(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY).rpc<boolean>("oc_accounts_open", {}); }
+      catch (e) { console.error(`auth/config: ${(e as Error).message}`); accountsOpen = false; }
+    }
+    const origin = new URL(c.req.url).origin;
+    return c.json({
+      supabaseUrl: env.SUPABASE_URL.replace(/\/+$/, ""),
+      publishableKey: env.SUPABASE_PUBLISHABLE_KEY,
+      accountsOpen,
+      confirmRedirectUrl: env.ACCOUNT_CONFIRM_REDIRECT_URL || `${origin}/auth/confirmed`,
+    });
+  });
+
+  // Where the confirmation email's link lands: nothing to do here but go back to the app.
+  app.get("/auth/confirmed", (c) =>
+    c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>You're in</title><body style="font:16px -apple-system,sans-serif;background:#F4F1EA;color:#22201C;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center"><h1 style="font-family:Georgia,serif;font-weight:400">you're in.</h1><p>go back to OpenClicky — it signs you in on its own.</p></div></body>`),
+  );
+
+  // Public sign-up. The Supabase instance is shared by every FlowsXR project, so OpenClicky's own cap
+  // (oc_accounts_open) is enforced here rather than by letting the app talk to GoTrue directly.
+  app.post("/auth/signup", async (c) => {
+    const env = getEnv(c);
+    if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY || !env.SUPABASE_SERVICE_KEY) return c.json({ error: "sign-up is not configured on this backend" }, 404);
+    let req: { email?: string; password?: string } = {};
+    try { req = JSON.parse((await c.req.text()) || "{}"); } catch { return c.json({ error: "body must be JSON" }, 400); }
+    const email = (req.email ?? "").trim(), password = req.password ?? "";
+    if (!email.includes("@") || password.length < 8) return c.json({ error: "use an email address and a password of at least 8 characters." }, 400);
+    const db = new SupabaseRest(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+    const open = env.ACCOUNTS_OPEN === "true" && (await db.rpc<boolean>("oc_accounts_open", {}).catch(() => false));
+    if (!open) return c.json({ error: "accounts_full" }, 402);
+    const redirect = env.ACCOUNT_CONFIRM_REDIRECT_URL || `${new URL(c.req.url).origin}/auth/confirmed`;
+    let res: Response, text: string;
+    try {
+      res = await fetch(`${env.SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/signup?redirect_to=${encodeURIComponent(redirect)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", apikey: env.SUPABASE_PUBLISHABLE_KEY },
+        body: JSON.stringify({ email, password }),
+      });
+      text = await res.text();
+    } catch (e) {
+      console.error(`signup: GoTrue unreachable: ${(e as Error).message}`);
+      return c.json({ error: "couldn't create the account right now." }, 502);
+    }
+    if (!res.ok) {
+      if (text.includes("already registered")) return c.json({ error: "that email already has an account — sign in instead." }, 409);
+      if (res.status === 429) return c.json({ error: "too many tries — wait a minute and try again." }, 429);
+      console.error(`signup: GoTrue ${res.status}: ${text.slice(0, 300)}`);
+      return c.json({ error: "couldn't create the account right now." }, 502);
+    }
+    let userId: string | undefined;
+    try {
+      const user = JSON.parse(text) as { id?: string; user?: { id?: string } };
+      userId = user.id ?? user.user?.id;
+    } catch { /* GoTrue succeeded; the account row is best-effort below */ }
+    if (userId) await db.insert("oc_accounts", { user_id: userId }).catch((e) => console.error(`signup: oc_accounts insert: ${(e as Error).message}`));
+    else console.error("signup: GoTrue answered without a user id");
+    return c.json({ ok: true });
   });
 
   // Exchange a Supabase JWT for a short-lived session token. Only Supabase JWTs are accepted here;

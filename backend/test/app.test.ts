@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import http from "node:http";
 import { SignJWT } from "jose";
 import { createApp } from "../src/app.js";
@@ -120,7 +120,7 @@ describe("app", () => {
     expect(off.status).toBe(404);
     const on = await call("/auth/config", {}, { SUPABASE_URL: "https://db.example.com/", SUPABASE_PUBLISHABLE_KEY: "sb_publishable_x" });
     expect(on.status).toBe(200);
-    expect(await on.json()).toEqual({ supabaseUrl: "https://db.example.com", publishableKey: "sb_publishable_x" });
+    expect(await on.json()).toEqual({ supabaseUrl: "https://db.example.com", publishableKey: "sb_publishable_x", accountsOpen: false, confirmRedirectUrl: "http://localhost/auth/confirmed" });
   });
 
   it("401 without auth on /v1/* and /agent/*", async () => {
@@ -516,5 +516,100 @@ describe("app", () => {
       await byok.text();
       expect(seen.at(-1)!.body.stream_options).toBeUndefined();
     });
+  });
+});
+
+describe("sign-up support", () => {
+  const base = { SUPABASE_URL: "https://db.example", SUPABASE_PUBLISHABLE_KEY: "pk" };
+  const open = { ...base, SUPABASE_SERVICE_KEY: "sk", ACCOUNTS_OPEN: "true" };
+  const post = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const creds = { email: "a@b.co", password: "hunter2hunter2" };
+
+  // Stubs fetch: rpc answers `isOpen`, GoTrue answers `gotrue`, the oc_accounts insert answers `insert`.
+  function stub(opts: { isOpen?: boolean; gotrue?: () => Response; insert?: () => Response }) {
+    const calls: { url: string; init?: any }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: any, init?: any) => {
+      const u = String(url);
+      calls.push({ url: u, init });
+      if (u.includes("/rpc/oc_accounts_open")) return new Response(JSON.stringify(opts.isOpen ?? true));
+      if (u.includes("/auth/v1/signup")) return opts.gotrue ? opts.gotrue() : new Response(JSON.stringify({ id: "u-new" }));
+      if (u.includes("/rest/v1/oc_accounts")) return opts.insert ? opts.insert() : new Response("[]", { status: 201 });
+      throw new Error(`unexpected fetch ${u}`);
+    }));
+    return calls;
+  }
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("auth/config says sign-up is closed unless ACCOUNTS_OPEN is true", async () => {
+    const res = await createApp({ log: null }).request("/auth/config", {}, base);
+    expect(await res.json()).toMatchObject({ accountsOpen: false, confirmRedirectUrl: "http://localhost/auth/confirmed" });
+  });
+  it("auth/confirmed is a page that sends people back to the app", async () => {
+    const res = await createApp({ log: null }).request("/auth/confirmed");
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(await res.text()).toContain("go back to OpenClicky");
+  });
+  it("signup with ACCOUNTS_OPEN unset is 402 and never reaches GoTrue", async () => {
+    const calls = stub({});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), { ...open, ACCOUNTS_OPEN: undefined });
+    expect(res.status).toBe(402);
+    expect(await res.json()).toEqual({ error: "accounts_full" });
+    expect(calls.some((c) => c.url.includes("/auth/v1/signup"))).toBe(false);
+  });
+  it("signup is 402 when the cap is reached", async () => {
+    const calls = stub({ isOpen: false });
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(402);
+    expect(calls.some((c) => c.url.includes("/auth/v1/signup"))).toBe(false);
+  });
+  it("signup forwards to GoTrue with redirect_to and apikey, then records the account", async () => {
+    const calls = stub({});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    const g = calls.find((c) => c.url.includes("/auth/v1/signup"))!;
+    expect(g.url).toContain("redirect_to=" + encodeURIComponent("http://localhost/auth/confirmed"));
+    expect(g.init.headers.apikey).toBe("pk");
+    const ins = calls.find((c) => c.url.includes("/rest/v1/oc_accounts"))!;
+    expect(JSON.parse(ins.init.body)).toMatchObject({ user_id: "u-new" });
+  });
+  it("signup maps an existing email to 409", async () => {
+    stub({ gotrue: () => new Response('{"msg":"User already registered"}', { status: 422 }) });
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "that email already has an account — sign in instead." });
+  });
+  it("signup rejects a short password or a bad email with 400", async () => {
+    const calls = stub({});
+    const app = createApp({ log: null });
+    expect((await app.request("/auth/signup", post({ email: "a@b.co", password: "short" }), open)).status).toBe(400);
+    expect((await app.request("/auth/signup", post({ email: "nope", password: "longenough1" }), open)).status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+  it("signup answers 502 with a fixed sentence when the GoTrue fetch throws", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: any) => {
+      if (String(url).includes("/rpc/")) return new Response("true");
+      throw new Error("connect ECONNREFUSED secret-host");
+    }));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "couldn't create the account right now." });
+  });
+  it("signup does not leak GoTrue's error text, and never logs the password", async () => {
+    stub({ gotrue: () => new Response('{"msg":"internal boom from gotrue"}', { status: 500 }) });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(502);
+    expect(JSON.stringify(await res.json())).not.toContain("boom");
+    expect(JSON.stringify(err.mock.calls)).not.toContain(creds.password);
+  });
+  it("signup is still 200 when the oc_accounts insert fails after GoTrue created the user", async () => {
+    stub({ insert: () => new Response("nope", { status: 500 }) });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(err).toHaveBeenCalled();
   });
 });
