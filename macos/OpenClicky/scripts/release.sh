@@ -198,7 +198,7 @@ if [[ -x "$SPARKLE_BIN/generate_appcast" ]] && { [[ -f "$SPARKLE_KEY_FILE" ]] ||
   cp "$ZIP_PATH" "$APPCAST_DIR/"
   RELEASE_NOTES="$APPCAST_DIR/$APP_NAME-$VERSION.html"
   printf '<html><body><h2>OpenClicky %s</h2><p>Build %s (%s).</p></body></html>\n' "$VERSION" "$BUILD_NUMBER" "$COMMIT" > "$RELEASE_NOTES"
-  "$SPARKLE_BIN/generate_appcast" "${SPARKLE_KEY_ARGS[@]}" \
+  "$SPARKLE_BIN/generate_appcast" ${SPARKLE_KEY_ARGS[@]+"${SPARKLE_KEY_ARGS[@]}"} \
     --download-url-prefix "https://github.com/$GITHUB_REPO/releases/download/$TAG/" \
     --embed-release-notes \
     "$APPCAST_DIR" >/dev/null
@@ -241,7 +241,7 @@ if [[ $PUBLISH -eq 1 ]]; then
       echo "Signed with Developer ID${NOTARY_PROFILE:+ and notarized}."
     fi
     echo
-    echo "Requires macOS 14.2+ (Apple Silicon). Open the dmg and click **Move to Applications** when OpenClicky offers. Dictation works offline out of the box; add a Sarvam key under Settings → engine for Indian languages, or sign in with your invite under Settings → account. The agent lane needs the \`openclicky\` CLI and Codex installed (see README). Updates arrive through the app (Sparkle, from this release's appcast)."
+    echo "Requires macOS 14.2+ (Apple Silicon or Intel). Open the dmg and click **Move to Applications** when OpenClicky offers. Dictation works offline out of the box; add a Sarvam key under Settings → engine for Indian languages, or type your email during setup for a free openclicky account (polished dictation and spoken answers, no key needed). The agent lane needs the \`openclicky\` CLI and Codex installed (see README). Updates arrive through the app (Sparkle, from this release's appcast)."
   } > "$NOTES_FILE"
   RELEASE_ASSETS=("$ZIP_PATH" "$DMG_PATH")
   [[ -n "$APPCAST_PATH" ]] && RELEASE_ASSETS+=("$APPCAST_PATH")
