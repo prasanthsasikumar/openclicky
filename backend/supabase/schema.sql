@@ -115,15 +115,17 @@ begin
   return json_build_object('ok', true, 'reservationId', v_id);
 end $$;
 
-create or replace function public.oc_settle(p_reservation uuid, p_actual bigint, p_route text, p_model text,
+-- oc_settle gained p_user (2026-10-10): the old signature would linger as an overload.
+drop function if exists public.oc_settle(uuid, bigint, text, text, integer, integer, integer, integer, integer);
+create or replace function public.oc_settle(p_reservation uuid, p_user text, p_actual bigint, p_route text, p_model text,
   p_input integer, p_output integer, p_cache_write integer, p_cache_read integer, p_chars integer)
 returns void language plpgsql security definer set search_path = public set timezone = 'UTC' as $$
 declare v_user text;
 begin
   perform pg_advisory_xact_lock(hashtext('oc_reserve'));
   delete from oc_reservations where id = p_reservation returning user_id into v_user;
-  -- Swept after 10 minutes: a reply that slow is not billed; its hold has already expired.
-  if v_user is null then return; end if;
+  -- Swept after 10 minutes: the hold has expired, but a reply that slow still cost money, so it is still billed.
+  v_user := coalesce(v_user, p_user);
   insert into oc_usage_events (user_id, route, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, characters, credits, cost_micro_usd)
   values (v_user, p_route, p_model, p_input, p_output, p_cache_write, p_cache_read, p_chars, 0, p_actual);
 end $$;
@@ -169,7 +171,8 @@ returns json language sql security definer set search_path = public set timezone
     'ttsCharsLimit', p_tts,
     'monthEnd', (select m + interval '1 month' from b),
     'dayEnd', (select d + interval '1 day' from b),
-    'blocked', coalesce((select blocked from a), false));
+    'blocked', coalesce((select blocked from a), false),
+    'onPlan', exists(select 1 from oc_accounts where user_id = p_user));
 $$;
 
 create or replace function public.oc_accounts_open() returns boolean language sql security definer set search_path = public set timezone = 'UTC' as $$

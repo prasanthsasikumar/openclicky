@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
 import { requireAccount, reserveOr402, accountSummary } from "../src/account.js";
 import { MemorySpendLedger } from "../src/ledger.js";
@@ -51,6 +51,20 @@ describe("requireAccount", () => {
     for (let i = 0; i < 21; i++) statuses.push((await app.request("/billing/me")).status);
     expect(statuses.slice(0, 20).every((s) => s === 200)).toBe(true);
     expect(statuses[20]).toBe(429);
+  });
+
+  it("refuses a zero, negative or non-finite estimate before reserving", async () => {
+    const ledger = new MemorySpendLedger();
+    const app = new Hono();
+    app.use("*", async (c, next) => { c.set("principal" as never, { sub: "u1", via: "supabase" } as never); await next(); });
+    app.use("*", requireAccount(() => ledger));
+    app.post("/chat", async (c) => {
+      const r = await reserveOr402(c, ledger, Number(c.req.query("e")));
+      return r instanceof Response ? r : c.json({ reservationId: r.reservationId });
+    });
+    const reserve = vi.spyOn(ledger, "reserve");
+    for (const e of ["0", "-5000", "NaN", "Infinity"]) expect((await app.request(`/chat?e=${e}`, { method: "POST" })).status).toBe(400);
+    expect(reserve).not.toHaveBeenCalled();
   });
 
   it("billing/me reports dollars and resets", async () => {

@@ -52,6 +52,12 @@ export type Env = {
   SUPABASE_JWT_SECRET?: string;
   SESSION_TOKEN_SECRET?: string;
   SESSION_TOKEN_TTL_SECONDS?: string;
+  /**
+   * "true" turns on free accounts on the grant: requests without the user's own key are metered by the
+   * spend ledger (Supabase) and limited to Claude and ElevenLabs. Anything else — the default, and every
+   * local or self-hosted backend — leaves requests unmetered with every capability, exactly as before.
+   */
+  GRANT_ACCOUNTS?: string;
   /** Accounts on the grant (spec 2026-10-08). Dollar amounts are plain numbers ("10"). */
   POLISH_MODEL?: string;
   EDIT_MODEL?: string;
@@ -67,6 +73,8 @@ export type Env = {
   ACCOUNTS_OPEN?: string;
   /** Where the confirmation email's link lands (default: this backend's /auth/confirmed). */
   ACCOUNT_CONFIRM_REDIRECT_URL?: string;
+  /** Where the password-reset email's link lands (default: this backend's /auth/reset). */
+  ACCOUNT_RESET_REDIRECT_URL?: string;
 };
 
 /**

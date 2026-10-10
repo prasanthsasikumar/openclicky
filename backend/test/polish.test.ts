@@ -57,6 +57,17 @@ describe("/v1/polish", () => {
     expect((await ledger.reserve("u1", LIMITS.dailyMicro, LIMITS)).ok).toBe(true);
   });
 
+  it("gives the upstream call a timeout; a timeout releases the hold and answers the generic 502", async () => {
+    const ledger = new MemorySpendLedger();
+    const { a, fetchMock } = app(ledger, async () => { throw new DOMException("The operation timed out.", "TimeoutError"); });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await post(a);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "polish unavailable" });
+    expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].signal).toBeInstanceOf(AbortSignal);
+    expect((await ledger.reserve("u1", LIMITS.dailyMicro, LIMITS)).ok).toBe(true);
+  });
+
   it("settles a 529 at zero and keeps the upstream text out of the 502", async () => {
     const ledger = new MemorySpendLedger();
     const { a } = app(ledger, async () => new Response("secret upstream detail", { status: 529 }));

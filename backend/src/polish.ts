@@ -5,6 +5,7 @@ import { modelFor, isGrantModel } from "./modelPolicy.js";
 import { estimateMicroUsd, costMicroUsd, parseAnthropicUsage } from "./prices.js";
 import { reserveOr402, type AccountContext } from "./account.js";
 import type { SpendLedger } from "./ledger.js";
+import { UPSTREAM_TIMEOUT_MS } from "./anthropicGrant.js";
 
 const MAX_TEXT = 8000;
 const MAX_SYSTEM = 6000;
@@ -42,7 +43,7 @@ export async function polishTake(c: Context, ledger: SpendLedger | undefined): P
   }
   const settle = async (micro: number, usage = NO_USAGE) => {
     if (!metered) return;
-    try { await ledger!.settle(reservationId, micro, { route: "/v1/polish", model, ...usage, characters: 0 }); }
+    try { await ledger!.settle(reservationId, account!.userId, micro, { route: "/v1/polish", model, ...usage, characters: 0 }); }
     catch (e) { console.error(`polish: settling failed: ${(e as Error).message}`); }
   };
   const unavailable = () => c.json({ error: "polish unavailable" }, 502);
@@ -54,6 +55,7 @@ export async function polishTake(c: Context, ledger: SpendLedger | undefined): P
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": keys.anthropicKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
     replyText = await upstream.text();
   } catch (e) {

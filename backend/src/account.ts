@@ -38,16 +38,26 @@ export function requireAccount(ledgerFor: (c: Context) => SpendLedger | undefine
   };
 }
 
+/** What a grant route answers when the ledger itself cannot be reached: the app says the free service is having trouble. */
+export const ledgerUnavailable = (c: Context) => c.json({ error: "unavailable" }, 503);
+
 /** Reserve before forwarding; a refusal becomes the 402 the app understands. */
 export async function reserveOr402(c: Context, ledger: SpendLedger, estimateMicro: number): Promise<{ reservationId: string } | Response> {
   const account = c.get("account" as never) as AccountContext;
-  const result = await ledger.reserve(account.userId, estimateMicro, account.limits);
+  // A zero, negative or NaN hold would let a request through that the ledger never counted.
+  if (!Number.isFinite(estimateMicro) || estimateMicro <= 0) return c.json({ error: "request could not be priced" }, 400);
+  let result: Awaited<ReturnType<SpendLedger["reserve"]>>;
+  try { result = await ledger.reserve(account.userId, estimateMicro, account.limits); }
+  catch (e) { console.error(`ledger reserve failed: ${(e as Error).message}`); return ledgerUnavailable(c); }
   if (result.ok) return { reservationId: result.reservationId };
   return c.json({ error: result.error, resets_at: result.resetsAt }, 402);
 }
 
+/** grant: metered on the backend's grant; byok: the request carries its own key; unmetered: a backend with no grant mode. */
+export type Plan = "grant" | "byok" | "unmetered";
+
 export type AccountSummaryJson = {
-  byok: boolean; spentMonthUsd: number; monthlyLimitUsd: number; spentTodayUsd: number; dailyLimitUsd: number;
+  plan: Plan; onPlan: boolean; byok: boolean; spentMonthUsd: number; monthlyLimitUsd: number; spentTodayUsd: number; dailyLimitUsd: number;
   ttsCharsMonth: number; ttsCharsLimit: number; monthEnd: string; dayEnd: string; budgetExhausted: boolean; blocked: boolean;
 };
 
@@ -57,6 +67,9 @@ export async function accountSummary(c: Context, ledger: SpendLedger): Promise<A
   const account = c.get("account" as never) as AccountContext;
   const s = await ledger.summary(account.userId, account.limits);
   return {
+    plan: account.byok ? "byok" : "grant",
+    // An older schema has no onPlan: count the user as on the plan rather than shut them out.
+    onPlan: account.byok || (s.onPlan !== false && !s.blocked),
     byok: account.byok,
     spentMonthUsd: dollars(s.spentMonthMicro), monthlyLimitUsd: dollars(s.monthlyLimitMicro),
     spentTodayUsd: dollars(s.spentTodayMicro), dailyLimitUsd: dollars(s.dailyLimitMicro),

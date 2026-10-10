@@ -12,11 +12,14 @@ export interface SpendSummary {
   spentMonthMicro: number; spentTodayMicro: number; monthlyLimitMicro: number; dailyLimitMicro: number;
   globalSpentMicro: number; globalLimitMicro: number; ttsCharsMonth: number; ttsCharsLimit: number;
   monthEnd: string; dayEnd: string; blocked: boolean;
+  /** Whether the user has an OpenClicky account row (grant spending needs one). */
+  onPlan: boolean;
 }
 export interface Limits { monthlyMicro: number; dailyMicro: number; globalMonthlyMicro: number; ttsCharsMonthly: number }
 export interface SpendLedger {
   reserve(userId: string, estimateMicro: number, limits: Limits, now?: Date): Promise<ReserveResult>;
-  settle(reservationId: string, actualMicro: number, event: SpendEvent): Promise<void>;
+  /** Records the real cost. The usage is recorded for `userId` even when the hold has already been swept. */
+  settle(reservationId: string, userId: string, actualMicro: number, event: SpendEvent, now?: Date): Promise<void>;
   reserveCharacters(userId: string, characters: number, limits: Limits, globalCharsRemaining: number, now?: Date): Promise<ReserveResult>;
   summary(userId: string, limits: Limits, now?: Date): Promise<SpendSummary>;
 }
@@ -82,9 +85,12 @@ export class MemorySpendLedger implements SpendLedger {
     return { ok: true, reservationId: id };
   }
 
-  async settle(reservationId: string, actualMicro: number, event: SpendEvent): Promise<void> {
+  async settle(reservationId: string, userId: string, actualMicro: number, event: SpendEvent, now = new Date()): Promise<void> {
     const entry = this.entries.find((e) => e.id === reservationId);
-    if (!entry) return;
+    if (!entry) { // swept: a reply that slow is still billed
+      this.entries.push({ id: reservationId, userId, at: now.getTime(), micro: actualMicro, chars: event.characters, settled: true });
+      return;
+    }
     entry.micro = actualMicro;
     entry.chars = event.characters;
     entry.settled = true;
@@ -114,6 +120,7 @@ export class MemorySpendLedger implements SpendLedger {
       globalSpentMicro: this.sum((e) => e.at >= month, "micro"), globalLimitMicro: limits.globalMonthlyMicro,
       ttsCharsMonth: this.sum((e) => e.userId === userId && e.at >= month, "chars"), ttsCharsLimit: limits.ttsCharsMonthly,
       monthEnd: monthEnd(now).toISOString(), dayEnd: dayEnd(now).toISOString(), blocked: mine.blocked,
+      onPlan: !this.requireAccountRow || this.accounts.has(userId),
     };
   }
 }
@@ -127,9 +134,9 @@ export class SupabaseSpendLedger implements SpendLedger {
       p_user: userId, p_estimate: estimateMicro, p_monthly: limits.monthlyMicro, p_daily: limits.dailyMicro, p_global: limits.globalMonthlyMicro,
     });
   }
-  async settle(reservationId: string, actualMicro: number, e: SpendEvent): Promise<void> {
+  async settle(reservationId: string, userId: string, actualMicro: number, e: SpendEvent): Promise<void> {
     await this.db.rpc("oc_settle", {
-      p_reservation: reservationId, p_actual: actualMicro, p_route: e.route, p_model: e.model ?? null,
+      p_reservation: reservationId, p_user: userId, p_actual: actualMicro, p_route: e.route, p_model: e.model ?? null,
       p_input: e.inputTokens, p_output: e.outputTokens, p_cache_write: e.cacheWriteTokens, p_cache_read: e.cacheReadTokens, p_chars: e.characters,
     });
   }

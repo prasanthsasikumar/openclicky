@@ -1,0 +1,2 @@
+# Hosted backend env (grant key, GRANT_ACCOUNTS=true): deployed with DEPLOY_ENV_FILE=backend/.hosted.vars, never committed
+.hosted.vars

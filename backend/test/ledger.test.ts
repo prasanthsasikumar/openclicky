@@ -30,7 +30,7 @@ describe("MemorySpendLedger", () => {
     const ledger = new MemorySpendLedger();
     const r1 = await ledger.reserve("u", 1_900_000, limits, now);
     expect(r1.ok).toBe(true);
-    if (r1.ok) await ledger.settle(r1.reservationId, 1_900_000, event);
+    if (r1.ok) await ledger.settle(r1.reservationId, "u", 1_900_000, event);
     const r2 = await ledger.reserve("u", 200_000, limits, now);
     expect(r2).toEqual({ ok: false, error: "daily_limit", resetsAt: "2026-10-09T00:00:00.000Z" });
     const tight = { ...limits, dailyMicro: 100_000_000, monthlyMicro: 2_000_000 };
@@ -56,7 +56,7 @@ describe("MemorySpendLedger", () => {
     const ledger = new MemorySpendLedger();
     const r = await ledger.reserve("u", 50_000, limits, now);
     if (!r.ok) throw new Error("expected ok");
-    await ledger.settle(r.reservationId, 12_000, event);
+    await ledger.settle(r.reservationId, "u", 12_000, event);
     expect((await ledger.summary("u", limits, now)).spentTodayMicro).toBe(12_000);
   });
 
@@ -66,6 +66,24 @@ describe("MemorySpendLedger", () => {
     expect((await ledger.reserve("u", 10_000, edge, now)).ok).toBe(true);
     const later = new Date(now.getTime() + 11 * 60_000);
     expect((await ledger.reserve("u", 10_000, edge, later)).ok).toBe(true);
+  });
+
+  it("a reply settled after its hold was swept is still billed", async () => {
+    const ledger = new MemorySpendLedger();
+    const r = await ledger.reserve("u", 50_000, limits, now);
+    if (!r.ok) throw new Error("expected ok");
+    const later = new Date(now.getTime() + 11 * 60_000);
+    expect((await ledger.summary("u", limits, later)).spentTodayMicro).toBe(0); // the sweep dropped the hold
+    await ledger.settle(r.reservationId, "u", 30_000, event, later);
+    expect((await ledger.summary("u", limits, later)).spentTodayMicro).toBe(30_000);
+  });
+
+  it("summary says whether the user has an account row", async () => {
+    const ledger = new MemorySpendLedger({ requireAccountRow: true });
+    expect((await ledger.summary("nobody", limits, now)).onPlan).toBe(false);
+    ledger.setAccount("known", {});
+    expect((await ledger.summary("known", limits, now)).onPlan).toBe(true);
+    expect((await new MemorySpendLedger().summary("anyone", limits, now)).onPlan).toBe(true);
   });
 
   it("a per-user override and a block apply", async () => {

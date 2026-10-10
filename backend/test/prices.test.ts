@@ -22,14 +22,23 @@ describe("estimateMicroUsd", () => {
       system: "x".repeat(350),
       messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", data: "AAAA" } }, { type: "text", text: "y".repeat(700) }] }],
     };
-    // input = 100 + 1600 + 200 = 1900 tokens × $2 = 3800; output 1000 × $10 = 10000
-    expect(estimateMicroUsd("claude-sonnet-5-5", body)).toBe(13_800);
+    // input = 100 + 1600 + 200 = 1900 tokens × $2.50 (cache-write rate, the worst case) = 4750; output 1000 × $10 = 10000
+    expect(estimateMicroUsd("claude-sonnet-5-5", body)).toBe(14_750);
   });
   it("is always at least the real cost for the same body", () => {
     const body = { max_tokens: 200, messages: [{ role: "user", content: "hello there" }] };
     const estimate = estimateMicroUsd("claude-haiku-4-5", body)!;
     const real = costMicroUsd("claude-haiku-4-5", { inputTokens: 4, outputTokens: 200, cacheWriteTokens: 0, cacheReadTokens: 0 })!;
     expect(estimate).toBeGreaterThanOrEqual(real);
+  });
+});
+
+describe("estimateMicroUsd worst case", () => {
+  it("covers a reply whose whole input was written to the cache", () => {
+    const body = { max_tokens: 100, system: "s".repeat(3500), messages: [{ role: "user", content: "hi" }] };
+    const estimate = estimateMicroUsd("claude-haiku-4-5", body)!;
+    const cachedWrite = costMicroUsd("claude-haiku-4-5", { inputTokens: 0, outputTokens: 100, cacheWriteTokens: 1001, cacheReadTokens: 0 })!;
+    expect(estimate).toBeGreaterThanOrEqual(cachedWrite);
   });
 });
 

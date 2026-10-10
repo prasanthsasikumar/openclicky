@@ -5,6 +5,11 @@
 #   OPENCLICKY_SERVER=user@host scripts/deploy-backend.sh        # rsync, build the image, (re)start it
 #   OPENCLICKY_SERVER=user@host scripts/deploy-backend.sh --env   # ...and upload backend/.dev.vars too
 #
+# --env uploads $DEPLOY_ENV_FILE (default backend/.dev.vars, the file the local backend also reads).
+# The hosted backend's env (grant key, GRANT_ACCOUNTS=true) lives in the git-ignored backend/.hosted.vars:
+#
+#   DEPLOY_ENV_FILE=backend/.hosted.vars npm run deploy:backend -- --env
+#
 # First-time server setup is included: /opt/openclicky, the Caddy site block, ufw already allows 443.
 # Needs: ssh to $OPENCLICKY_SERVER working with a key, and a DNS A record for $OPENCLICKY_API_HOST
 # pointing at that server.
@@ -37,6 +42,8 @@ REMOTE_DIR=/opt/openclicky
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 UPLOAD_ENV=0
+ENV_FILE="${DEPLOY_ENV_FILE:-backend/.dev.vars}"
+[[ "$ENV_FILE" = /* ]] || ENV_FILE="$REPO_DIR/$ENV_FILE"
 for arg in "$@"; do
   case "$arg" in
     --env) UPLOAD_ENV=1 ;;
@@ -47,13 +54,14 @@ done
 echo "▸ syncing source to $SERVER:$REMOTE_DIR/src"
 ssh "$SERVER" "mkdir -p $REMOTE_DIR/src"
 rsync -az --delete \
-  --exclude node_modules --exclude dist --exclude build --exclude .git --exclude '.dev.vars' --exclude '*.profraw' \
+  --exclude node_modules --exclude dist --exclude build --exclude .git --exclude '.dev.vars' --exclude '.hosted.vars' --exclude '*.profraw' \
   --exclude macos --exclude docs --exclude reference \
   "$REPO_DIR/" "$SERVER:$REMOTE_DIR/src/"
 
 if [[ $UPLOAD_ENV -eq 1 ]]; then
-  echo "▸ uploading backend/.dev.vars as $REMOTE_DIR/backend.env"
-  scp -q "$REPO_DIR/backend/.dev.vars" "$SERVER:$REMOTE_DIR/backend.env"
+  [[ -f "$ENV_FILE" ]] || { echo "missing env file: $ENV_FILE" >&2; exit 1; }
+  echo "▸ uploading ${ENV_FILE#"$REPO_DIR"/} as $REMOTE_DIR/backend.env"
+  scp -q "$ENV_FILE" "$SERVER:$REMOTE_DIR/backend.env"
   ssh "$SERVER" "chmod 600 $REMOTE_DIR/backend.env"
 fi
 

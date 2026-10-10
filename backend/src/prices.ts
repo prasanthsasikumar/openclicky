@@ -38,15 +38,24 @@ function contentTokens(content: unknown): number {
   return tokens;
 }
 
-/** Worst-case cost of a Messages body before it is sent: every input token uncached, every output token used. */
-export function estimateMicroUsd(model: string, body: Record<string, unknown>): number | undefined {
-  const price = PRICES_USD_PER_MTOK[model];
-  if (!price) return undefined;
+/** Input tokens a Messages body can be billed for, counted generously (text, images, tool calls and tool definitions). */
+export function estimateInputTokens(body: Record<string, unknown>): number {
   let inputTokens = contentTokens(body.system);
   for (const message of (body.messages as Array<{ content: unknown }> | undefined) ?? []) inputTokens += contentTokens(message.content);
   if (Array.isArray(body.tools)) inputTokens += textTokens(JSON.stringify(body.tools));
+  return inputTokens;
+}
+
+/**
+ * Worst-case cost of a Messages body before it is sent: every input token priced as a cache write
+ * (the dearest way it can be billed, since the server marks the system prompt for caching), every
+ * output token used.
+ */
+export function estimateMicroUsd(model: string, body: Record<string, unknown>): number | undefined {
+  const price = PRICES_USD_PER_MTOK[model];
+  if (!price) return undefined;
   const outputTokens = Number(body.max_tokens ?? 0);
-  return Math.ceil(inputTokens * price.input + outputTokens * price.output);
+  return Math.ceil(estimateInputTokens(body) * Math.max(price.input, price.cacheWrite) + outputTokens * price.output);
 }
 
 /** Usage from an Anthropic reply: SSE (`message_start` + `message_delta`) or a plain JSON body. */
