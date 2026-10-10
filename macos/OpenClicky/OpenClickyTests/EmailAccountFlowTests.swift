@@ -58,4 +58,13 @@ struct EmailAccountFlowTests {
         #expect(OpenClickyAuthSession.stateAfterCancellation(.checkingCode(email: "g@x.co")) == .needsCode(email: "g@x.co"))
         #expect(OpenClickyAuthSession.stateAfterCancellation(.needsCode(email: "g@x.co")) == .needsCode(email: "g@x.co"))
     }
+
+    @Test func aRefreshWithAnEmptyEmailKeepsTheStoredOne() throws {
+        let reply = { (email: String) in try JSONDecoder().decode(OpenClickyAuthSession.TokenResponse.self, from: self.json(#"{"access_token":"a","refresh_token":"r","expires_in":3600,"user":{"email":"\#(email)","is_anonymous":true}}"#)) }
+        #expect(OpenClickyAuthSession.refreshedEmail(try reply(""), stored: "gran@example.com") == "gran@example.com")
+        #expect(OpenClickyAuthSession.refreshedEmail(try reply("  "), stored: "gran@example.com") == "gran@example.com")
+        #expect(OpenClickyAuthSession.refreshedEmail(try reply("new@example.com"), stored: "gran@example.com") == "new@example.com")
+        let noUser = try JSONDecoder().decode(OpenClickyAuthSession.TokenResponse.self, from: json(#"{"access_token":"a","refresh_token":"r","expires_in":3600}"#))
+        #expect(OpenClickyAuthSession.refreshedEmail(noUser, stored: "gran@example.com") == "gran@example.com")
+    }
 }

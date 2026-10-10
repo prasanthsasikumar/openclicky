@@ -184,9 +184,16 @@ struct AccountProfileTests {
 
     // MARK: C8 / §9 — closed sign-up
 
-    @Test func createAccountIsHiddenOnlyWhenTheBackendSaysClosed() {
-        #expect(OpenClickyAuthSession.offersCreateAccount(accountsOpen: true))
-        #expect(OpenClickyAuthSession.offersCreateAccount(accountsOpen: nil))
-        #expect(!OpenClickyAuthSession.offersCreateAccount(accountsOpen: false))
+    @MainActor @Test func closedSignUpOnlyAddsANoteUnderTheForm() {
+        #expect(OpenClickyAuthSession.signUpClosedNote(accountsOpen: true) == nil)
+        #expect(OpenClickyAuthSession.signUpClosedNote(accountsOpen: nil) == nil)
+        #expect(OpenClickyAuthSession.signUpClosedNote(accountsOpen: false) == AccountLimitError.accountsFull.message)
+    }
+
+    @Test func comingBackChecksOnlyAnUnconfirmedEmailOnce() {
+        #expect(OpenClickyAuthSession.shouldCheckOnActivate(lastConfirmed: false, checkRunning: false))
+        #expect(!OpenClickyAuthSession.shouldCheckOnActivate(lastConfirmed: false, checkRunning: true))
+        #expect(!OpenClickyAuthSession.shouldCheckOnActivate(lastConfirmed: true, checkRunning: false))
+        #expect(!OpenClickyAuthSession.shouldCheckOnActivate(lastConfirmed: nil, checkRunning: false))
     }
 }

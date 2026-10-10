@@ -68,7 +68,7 @@ enum AccountLimitError: String, Equatable {
         case .accountsFull: return "openclicky's free accounts are full right now — you can use your own key instead."
         case .blocked: return "this account is paused. dictation still works."
         case .ttsBudget: return ""
-        case .confirmEmail: return "confirm your email to keep going — we sent you a link."
+        case .confirmEmail: return "confirm your email to keep going — you can resend the link in settings."
         case .deviceLimit: return "this mac already has two openclicky accounts — sign in with one of them."
         }
     }
@@ -123,6 +123,8 @@ final class AccountProfileStore: ObservableObject {
 
     /// Whether a grant login is switched on (nil until the backend has said).
     @Published private(set) var onPlan: Bool?
+    /// Whether the account's email is confirmed, from the last /billing/me answer (nil until then).
+    private(set) var lastConfirmed: Bool?
     /// Shows the once-a-month "running low" notice (the companion's quiet caption).
     var showNotice: ((String) -> Void)?
 
@@ -148,6 +150,7 @@ final class AccountProfileStore: ObservableObject {
     func refresh() {
         guard OpenClickyConfiguration.isConfigured else {
             onPlan = nil
+            lastConfirmed = nil
             noteKind()
             return
         }
@@ -161,6 +164,7 @@ final class AccountProfileStore: ObservableObject {
     func absorb(_ summary: BillingSummary) {
         if let plan = summary.plan { defaults.set(plan, forKey: Self.planKey) }
         onPlan = summary.onPlan
+        lastConfirmed = summary.confirmed
         noteKind()
         if let month = summary.runningLowNoticeMonth(lastNoticeMonth: defaults.string(forKey: Self.runningLowNoticeKey)) {
             defaults.set(month, forKey: Self.runningLowNoticeKey)

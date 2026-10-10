@@ -255,11 +255,11 @@ struct OnboardingView: View {
                          : "you're set, \(accountEmail).").font(Paper.body(14, weight: .medium))
                 }
                 .foregroundStyle(Paper.success).padding(.top, 6)
-            } else if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
-                EmailAccountForm(onSignedIn: {}, onUseOwnKey: { companionManager.showDictationWindow(settingsPage: .account) })
             } else {
-                Text(AccountLimitError.accountsFull.message).font(Paper.body(13)).foregroundStyle(Paper.ink)
-                accountChoice("key", "use my own key", "if you already have an openai key.") { companionManager.showDictationWindow(settingsPage: .account) }
+                EmailAccountForm(onSignedIn: {}, onUseOwnKey: { companionManager.showDictationWindow(settingsPage: .account) })
+                if let note = OpenClickyAuthSession.signUpClosedNote(accountsOpen: authSession.accountsOpen) {
+                    Text(note).font(Paper.caption).foregroundStyle(Paper.inkSecondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
             if authSession.accountEmail == nil {
                 Button("skip — keep everything on this mac") { finish() }
@@ -267,25 +267,6 @@ struct OnboardingView: View {
             }
         }
         .task { await authSession.refreshAccountsOpen() }
-    }
-
-    private func accountChoice(_ symbol: String, _ title: String, _ detail: String, isProminent: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: symbol).font(.system(size: 16)).foregroundStyle(isProminent ? Paper.accent : Paper.inkSecondary).frame(width: 22)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(Paper.body(14, weight: .medium)).foregroundStyle(Paper.ink)
-                    Text(detail).font(Paper.body(12)).foregroundStyle(Paper.inkSecondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Paper.inkTertiary)
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Paper.card))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(isProminent ? Paper.accent : Paper.hairline))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).pointerCursor()
     }
 
     private func next() {

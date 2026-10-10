@@ -10,6 +10,7 @@
 //  before it expires. Nobody has to touch shell.json by hand.
 //
 
+import AppKit
 import Combine
 import Foundation
 
@@ -26,6 +27,8 @@ final class OpenClickyAuthSession: ObservableObject {
     @Published private(set) var accountsOpen: Bool?
 
     private var refreshTimer: Timer?
+    private var activationObserver: NSObjectProtocol?
+    private var isCheckingOnActivate = false
     /// Refresh this long before the access token expires (Supabase tokens last an hour).
     private let refreshLeadSeconds: TimeInterval = 10 * 60
 
@@ -37,12 +40,20 @@ final class OpenClickyAuthSession: ObservableObject {
         let confirmRedirectUrl: String?
     }
 
-    private struct TokenResponse: Decodable {
+    nonisolated struct TokenResponse: Decodable {
         let access_token: String
         let refresh_token: String
         let expires_in: Double
         let user: User?
         struct User: Decodable { let email: String? }
+    }
+
+    /// The email to keep after a refresh. A guest whose address is still unconfirmed comes back
+    /// with `"email": ""` (the address sits in the pending change), so an empty reply keeps the
+    /// stored one instead of making the app look signed out.
+    nonisolated static func refreshedEmail(_ reply: TokenResponse, stored: String?) -> String {
+        let replied = reply.user?.email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return replied.isEmpty ? (stored ?? "") : replied
     }
 
     /// Email of the signed-in account, when the session came from a sign-in (not a pasted token).
@@ -55,9 +66,18 @@ final class OpenClickyAuthSession: ObservableObject {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refreshIfNeeded() }
         }
+        if activationObserver == nil {
+            activationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { _ in
+                Task { @MainActor in OpenClickyAuthSession.shared.checkConfirmationOnActivate() }
+            }
+        }
         Task {
             await refreshIfNeeded()
-            if (try? await BillingStatusModel.fetchSummary())?.confirmed == false { watchConfirmation() }
+            guard let summary = try? await BillingStatusModel.fetchSummary() else { return }
+            AccountProfileStore.shared.absorb(summary)
+            if summary.confirmed == false { watchConfirmation() }
         }
     }
 
@@ -130,9 +150,11 @@ final class OpenClickyAuthSession: ObservableObject {
         return false
     }
 
-    /// "create a free account" is offered unless the backend has said sign-up is closed; an
-    /// unknown answer keeps it (the sheet then says when accounts are full).
-    nonisolated static func offersCreateAccount(accountsOpen: Bool?) -> Bool { accountsOpen != false }
+    /// The email form is always offered (the backend answers accounts_full when sign-up is closed);
+    /// when it is known closed, this note goes under the form. An unknown answer shows nothing.
+    static func signUpClosedNote(accountsOpen: Bool?) -> String? {
+        accountsOpen == false ? AccountLimitError.accountsFull.message : nil
+    }
 
     /// Asks the backend whether it takes new accounts; a failure leaves the last answer.
     func refreshAccountsOpen() async {
@@ -150,7 +172,9 @@ final class OpenClickyAuthSession: ObservableObject {
             lastErrorText = Self.unreachableMessage
             emailFlow = .failed(Self.unreachableMessage); return
         }
-        await run(request, email: trimmed, inFlight: .sending)
+        // "send a new code" asks again from the code step; a failure or cancellation goes back to it.
+        let resendingCode = emailFlow == .needsCode(email: trimmed)
+        await run(request, email: trimmed, inFlight: .sending, returnTo: resendingCode ? emailFlow : nil)
     }
 
     func submitCode(_ code: String) async {
@@ -159,7 +183,9 @@ final class OpenClickyAuthSession: ObservableObject {
         await run(request, email: email, inFlight: .checkingCode(email: email))
     }
 
-    private func run(_ request: URLRequest, email: String, inFlight: EmailFlowState) async {
+    /// `returnTo`, when set, is where a failed or cancelled request goes back to (instead of the
+    /// email step), with the sentence under the code field.
+    private func run(_ request: URLRequest, email: String, inFlight: EmailFlowState, returnTo: EmailFlowState? = nil) async {
         lastErrorText = nil
         emailFlow = inFlight
         do {
@@ -177,16 +203,17 @@ final class OpenClickyAuthSession: ObservableObject {
             case .failed(let message):
                 // A wrong code leaves the code field up, with the sentence under it.
                 lastErrorText = message
-                emailFlow = inFlight == .sending ? .failed(message) : .needsCode(email: email)
+                emailFlow = returnTo ?? (inFlight == .sending ? .failed(message) : .needsCode(email: email))
             }
         } catch {
             guard Self.shouldApply(current: emailFlow, inFlight: inFlight) else { return }
             if Self.isCancellation(error) || Task.isCancelled {
                 // Back to whatever the form showed before this send (the email step, or the code step).
-                emailFlow = Self.stateAfterCancellation(inFlight)
+                emailFlow = returnTo ?? Self.stateAfterCancellation(inFlight)
             } else {
                 print("🔐 Account request failed: \(Self.describe(error))")
-                emailFlow = .failed(Self.unreachableMessage)
+                if let returnTo { lastErrorText = Self.unreachableMessage; emailFlow = returnTo }
+                else { emailFlow = .failed(Self.unreachableMessage) }
             }
         }
     }
@@ -212,12 +239,17 @@ final class OpenClickyAuthSession: ObservableObject {
         }
     }
 
+    /// The running confirmation watch; nil once it has finished or been cancelled.
     private var confirmationWatch: Task<Void, Never>?
+    private var confirmationWatchID = UUID()
     /// While the email is unconfirmed, asks /billing/me once a minute for 15 minutes, so the
     /// "check your inbox" note disappears soon after the link is clicked.
     func watchConfirmation() {
         confirmationWatch?.cancel()
+        let id = UUID()
+        confirmationWatchID = id
         confirmationWatch = Task { @MainActor in
+            defer { if confirmationWatchID == id { confirmationWatch = nil } }
             for _ in 0..<15 {
                 try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
                 guard !Task.isCancelled else { return }
@@ -230,6 +262,25 @@ final class OpenClickyAuthSession: ObservableObject {
         }
     }
 
+    /// Coming back to the app (often from the browser where the link was clicked) asks
+    /// /billing/me once, unless the email is already known confirmed or a check is running.
+    nonisolated static func shouldCheckOnActivate(lastConfirmed: Bool?, checkRunning: Bool) -> Bool {
+        lastConfirmed == false && !checkRunning
+    }
+
+    func checkConfirmationOnActivate() {
+        guard Self.shouldCheckOnActivate(lastConfirmed: AccountProfileStore.shared.lastConfirmed,
+                                         checkRunning: confirmationWatch != nil || isCheckingOnActivate) else { return }
+        isCheckingOnActivate = true
+        Task { @MainActor in
+            defer { isCheckingOnActivate = false }
+            await refreshIfNeeded()
+            guard let summary = try? await BillingStatusModel.fetchSummary() else { return }
+            AccountProfileStore.shared.absorb(summary)
+            if summary.confirmed != false { objectWillChange.send() }
+        }
+    }
+
     func signOut() {
         OpenClickyConfiguration.update { settings in
             settings.token = ""
@@ -238,6 +289,7 @@ final class OpenClickyAuthSession: ObservableObject {
             settings.accountEmail = nil
         }
         confirmationWatch?.cancel()
+        confirmationWatch = nil
         emailFlow = .idle
         lastErrorText = nil
         print("🔐 Signed out")
@@ -256,7 +308,7 @@ final class OpenClickyAuthSession: ObservableObject {
             let config = try await authConfig()
             let session = try await requestToken(config: config, grant: "refresh_token", body: ["refresh_token": refreshToken])
             store(Session(access_token: session.access_token, refresh_token: session.refresh_token, expires_in: session.expires_in),
-                  email: session.user?.email ?? settings.accountEmail ?? "")
+                  email: Self.refreshedEmail(session, stored: settings.accountEmail))
             print("🔐 Session refreshed")
         } catch {
             lastErrorText = Self.describe(error)

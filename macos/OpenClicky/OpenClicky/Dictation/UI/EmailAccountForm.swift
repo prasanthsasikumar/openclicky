@@ -17,6 +17,8 @@ struct EmailAccountForm: View {
     @State private var email = ""
     @State private var code = ""
     @State private var work = AccountWorkSlot()
+    /// The address a new code is being sent to, so the code step stays up while it goes.
+    @State private var resendingCodeTo: String?
 
     static func canSubmitEmail(_ raw: String) -> Bool {
         let email = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -31,7 +33,8 @@ struct EmailAccountForm: View {
     var body: some View {
         EmailAccountFormContent(state: auth.emailFlow, codeError: auth.lastErrorText, email: $email, code: $code,
                                 onSubmitEmail: submitEmail, onSubmitCode: submitCode,
-                                onDifferentEmail: { work.cancel(); auth.resetFlow(); code = "" }, onUseOwnKey: onUseOwnKey)
+                                onDifferentEmail: { work.cancel(); auth.resetFlow(); code = "" }, onUseOwnKey: onUseOwnKey,
+                                resendingCodeTo: resendingCodeTo, onSendNewCode: sendNewCode)
             .onAppear { auth.forgetSettledFlow() }
             .onDisappear { work.cancel() }
             .onChange(of: auth.emailFlow) { _, state in
@@ -46,6 +49,16 @@ struct EmailAccountForm: View {
         guard Self.canSubmitEmail(email), !work.isRunning else { return }
         let address = email.trimmingCharacters(in: .whitespacesAndNewlines)
         work.start { await auth.start(email: address) }
+    }
+    /// Asks /auth/start again for the same address, which mails a fresh code.
+    private func sendNewCode() {
+        guard case .needsCode(let address) = auth.emailFlow, !work.isRunning else { return }
+        code = ""
+        resendingCodeTo = address
+        work.start {
+            await auth.start(email: address)
+            resendingCodeTo = nil
+        }
     }
     private func submitCode() {
         guard Self.canSubmitCode(code), !work.isRunning else { return }
@@ -65,11 +78,15 @@ struct EmailAccountFormContent: View {
     let onSubmitCode: () -> Void
     let onDifferentEmail: () -> Void
     var onUseOwnKey: (() -> Void)? = nil
+    /// Set while a new code is on its way: the code step stays up for that address.
+    var resendingCodeTo: String? = nil
+    var onSendNewCode: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             switch state {
             case .needsCode(let address), .checkingCode(let address): codeStep(address)
+            case .sending where resendingCodeTo != nil: codeStep(resendingCodeTo ?? "")
             default: emailStep
             }
         }
@@ -120,8 +137,13 @@ struct EmailAccountFormContent: View {
             if let codeError {
                 Text(codeError).font(Paper.caption).foregroundStyle(Paper.danger).fixedSize(horizontal: false, vertical: true)
             }
-            Button("use a different email", action: onDifferentEmail)
-                .buttonStyle(.plain).font(Paper.caption).foregroundStyle(Paper.accentFill).pointerCursor()
+            HStack(spacing: 14) {
+                Button(isSending ? "sending…" : "send a new code", action: onSendNewCode)
+                    .buttonStyle(.plain).font(Paper.caption).foregroundStyle(Paper.accentFill).pointerCursor()
+                    .disabled(isSending || isChecking)
+                Button("use a different email", action: onDifferentEmail)
+                    .buttonStyle(.plain).font(Paper.caption).foregroundStyle(Paper.accentFill).pointerCursor()
+            }
         }
     }
 }
