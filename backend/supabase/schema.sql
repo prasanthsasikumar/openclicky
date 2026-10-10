@@ -74,17 +74,53 @@ create table if not exists public.oc_settings (
   max_accounts integer not null default 100
 );
 insert into public.oc_settings (id) values (true) on conflict (id) do nothing;
+-- Email-first accounts (2026-10-10): a guest is an anonymous auth user with its email pending.
+alter table public.oc_accounts add column if not exists email text;
+alter table public.oc_accounts add column if not exists device_hash text;
+alter table public.oc_accounts add column if not exists confirmed_at timestamptz;
+alter table public.oc_accounts add column if not exists replaced_at timestamptz;
+create index if not exists oc_accounts_email on public.oc_accounts (email);
+create index if not exists oc_accounts_device on public.oc_accounts (device_hash);
+alter table public.oc_settings add column if not exists max_guests integer not null default 300;
+
+-- auth.users is the authority: is_anonymous flips the moment the link is clicked. The first time an
+-- account is seen confirmed, confirmed_at is stamped so its earlier spend stays pre-confirmation.
+create or replace function public.oc_confirmed(p_user text) returns boolean
+language plpgsql security definer set search_path = public set timezone = 'UTC' as $$
+declare v_confirmed boolean;
+begin
+  select not coalesce(u.is_anonymous, false) into v_confirmed from auth.users u where u.id::text = p_user;
+  v_confirmed := coalesce(v_confirmed, false);
+  if v_confirmed then update oc_accounts set confirmed_at = now() where user_id = p_user and confirmed_at is null; end if;
+  return v_confirmed;
+end $$;
+
+-- Spend (held + settled) and spoken characters before confirmation, by every account on this one's Mac.
+create or replace function public.oc_guest_usage(p_user text) returns table(micro bigint, chars bigint)
+language sql security definer set search_path = public set timezone = 'UTC' as $$
+  with me as (select user_id, device_hash from oc_accounts where user_id = p_user),
+  peers as (
+    select a.user_id, a.confirmed_at from oc_accounts a, me
+    where a.user_id = me.user_id or (me.device_hash is not null and a.device_hash = me.device_hash)
+  )
+  select
+    (coalesce((select sum(e.cost_micro_usd) from oc_usage_events e join peers p on p.user_id = e.user_id where p.confirmed_at is null or e.ts < p.confirmed_at), 0)
+     + coalesce((select sum(r.estimate_micro_usd) from oc_reservations r join peers p on p.user_id = r.user_id where p.confirmed_at is null), 0))::bigint,
+    coalesce((select sum(e.characters) from oc_usage_events e join peers p on p.user_id = e.user_id where e.route = '/tts' and (p.confirmed_at is null or e.ts < p.confirmed_at)), 0)::bigint;
+$$;
+
 alter table public.oc_accounts enable row level security;
 alter table public.oc_reservations enable row level security;
 alter table public.oc_settings enable row level security;
 
-create or replace function public.oc_reserve(p_user text, p_estimate bigint, p_monthly bigint, p_daily bigint, p_global bigint)
+drop function if exists public.oc_reserve(text, bigint, bigint, bigint, bigint);
+create or replace function public.oc_reserve(p_user text, p_estimate bigint, p_monthly bigint, p_daily bigint, p_global bigint, p_guest_total bigint, p_guest_days integer)
 returns json language plpgsql security definer set search_path = public set timezone = 'UTC' as $$
 declare
   v_month timestamptz := date_trunc('month', now() at time zone 'utc') at time zone 'utc';
   v_day timestamptz := date_trunc('day', now() at time zone 'utc') at time zone 'utc';
   v_acct oc_accounts%rowtype;
-  v_today bigint; v_month_spent bigint; v_everyone bigint; v_id uuid;
+  v_today bigint; v_month_spent bigint; v_everyone bigint; v_id uuid; v_guest bigint;
 begin
   -- One reservation at a time across all users: the global pool is shared, so per-user locks are not enough.
   perform pg_advisory_xact_lock(hashtext('oc_reserve'));
@@ -95,6 +131,15 @@ begin
   end if;
   if v_acct.blocked then
     return json_build_object('ok', false, 'error', 'blocked', 'resetsAt', v_month + interval '1 month');
+  end if;
+  if not oc_confirmed(p_user) then
+    if v_acct.replaced_at is not null or v_acct.created_at < now() - make_interval(days => p_guest_days) then
+      return json_build_object('ok', false, 'error', 'confirm_email', 'resetsAt', null);
+    end if;
+    select micro into v_guest from oc_guest_usage(p_user);
+    if v_guest + p_estimate > p_guest_total then
+      return json_build_object('ok', false, 'error', 'confirm_email', 'resetsAt', null);
+    end if;
   end if;
   select coalesce(sum(cost_micro_usd), 0) into v_today from oc_usage_events where user_id = p_user and ts >= v_day;
   select coalesce(sum(cost_micro_usd), 0) into v_month_spent from oc_usage_events where user_id = p_user and ts >= v_month;
@@ -130,18 +175,26 @@ begin
   values (v_user, p_route, p_model, p_input, p_output, p_cache_write, p_cache_read, p_chars, 0, p_actual);
 end $$;
 
-create or replace function public.oc_reserve_chars(p_user text, p_chars integer, p_limit integer, p_global_remaining integer)
+drop function if exists public.oc_reserve_chars(text, integer, integer, integer);
+create or replace function public.oc_reserve_chars(p_user text, p_chars integer, p_limit integer, p_global_remaining integer, p_guest_chars integer, p_guest_days integer)
 returns json language plpgsql security definer set search_path = public set timezone = 'UTC' as $$
 declare
   v_month timestamptz := date_trunc('month', now() at time zone 'utc') at time zone 'utc';
-  v_used integer;
+  v_used integer; v_acct oc_accounts%rowtype; v_guest bigint;
 begin
   perform pg_advisory_xact_lock(hashtext('oc_reserve_chars'));
-  if not exists (select 1 from oc_accounts where user_id = p_user) then
+  select * into v_acct from oc_accounts where user_id = p_user;
+  if not found then
     return json_build_object('ok', false, 'error', 'not_on_plan', 'resetsAt', v_month + interval '1 month');
   end if;
-  if exists (select 1 from oc_accounts where user_id = p_user and blocked) then
+  if v_acct.blocked then
     return json_build_object('ok', false, 'error', 'blocked', 'resetsAt', v_month + interval '1 month');
+  end if;
+  if not oc_confirmed(p_user) then
+    select chars into v_guest from oc_guest_usage(p_user);
+    if v_acct.replaced_at is not null or v_acct.created_at < now() - make_interval(days => p_guest_days) or v_guest + p_chars > p_guest_chars then
+      return json_build_object('ok', false, 'error', 'confirm_email', 'resetsAt', null);
+    end if;
   end if;
   select coalesce(sum(characters), 0) into v_used from oc_usage_events where user_id = p_user and route = '/tts' and ts >= v_month;
   if v_used + p_chars > p_limit then
@@ -154,8 +207,9 @@ begin
   return json_build_object('ok', true, 'reservationId', '');
 end $$;
 
-create or replace function public.oc_spend_summary(p_user text, p_monthly bigint, p_daily bigint, p_global bigint, p_tts integer)
-returns json language sql security definer set search_path = public set timezone = 'UTC' as $$
+drop function if exists public.oc_spend_summary(text, bigint, bigint, bigint, integer);
+create or replace function public.oc_spend_summary(p_user text, p_monthly bigint, p_daily bigint, p_global bigint, p_tts integer, p_guest_total bigint)
+returns json language sql volatile security definer set search_path = public set timezone = 'UTC' as $$
   with b as (
     select date_trunc('month', now() at time zone 'utc') at time zone 'utc' as m,
            date_trunc('day', now() at time zone 'utc') at time zone 'utc' as d
@@ -172,13 +226,24 @@ returns json language sql security definer set search_path = public set timezone
     'monthEnd', (select m + interval '1 month' from b),
     'dayEnd', (select d + interval '1 day' from b),
     'blocked', coalesce((select blocked from a), false),
-    'onPlan', exists(select 1 from oc_accounts where user_id = p_user));
+    'onPlan', exists(select 1 from oc_accounts where user_id = p_user),
+    'confirmed', oc_confirmed(p_user),
+    'guestSpentMicro', (select micro from oc_guest_usage(p_user)),
+    'guestLimitMicro', p_guest_total,
+    'email', (select email from a));
 $$;
 
-create or replace function public.oc_accounts_open() returns boolean language sql security definer set search_path = public set timezone = 'UTC' as $$
-  -- only confirmed accounts count, so unconfirmed sign-up spam cannot fill the cap
-  select (select count(*) from oc_accounts a join auth.users u on u.id::text = a.user_id where u.email_confirmed_at is not null) < (select max_accounts from oc_settings);
+drop function if exists public.oc_accounts_open();
+create or replace function public.oc_accounts_open(p_guest_days integer default 14) returns boolean
+language sql security definer set search_path = public set timezone = 'UTC' as $$
+  -- Confirmed accounts fill max_accounts; live guests (unconfirmed, not replaced, not expired) fill max_guests.
+  select
+    (select count(*) from oc_accounts a join auth.users u on u.id::text = a.user_id where not coalesce(u.is_anonymous, false))
+      < (select max_accounts from oc_settings)
+    and (select count(*) from oc_accounts a join auth.users u on u.id::text = a.user_id
+         where coalesce(u.is_anonymous, false) and a.replaced_at is null and a.created_at > now() - make_interval(days => p_guest_days))
+      < (select max_guests from oc_settings);
 $$;
 drop trigger if exists oc_max_accounts on auth.users;
 drop function if exists public.oc_enforce_max_accounts();
-revoke all on function public.oc_reserve, public.oc_settle, public.oc_reserve_chars, public.oc_spend_summary, public.oc_accounts_open from public, anon, authenticated;
+revoke all on function public.oc_reserve, public.oc_settle, public.oc_reserve_chars, public.oc_spend_summary, public.oc_accounts_open, public.oc_confirmed, public.oc_guest_usage from public, anon, authenticated;

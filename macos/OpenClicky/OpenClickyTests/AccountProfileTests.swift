@@ -182,21 +182,18 @@ struct AccountProfileTests {
         #expect(!settings.polishOfflineTakes)
     }
 
-    // MARK: C8 / §9 — password reset and closed sign-up
+    // MARK: C8 / §9 — closed sign-up
 
-    @Test func recoverSendsTheLinkToTheResetPage() throws {
-        let config = OpenClickyAuthSession.AuthConfig(supabaseUrl: "https://db.example", publishableKey: "pk", accountsOpen: true,
-                                                      confirmRedirectUrl: nil, resetRedirectUrl: "https://api.example/auth/reset")
-        let request = try #require(OpenClickyAuthSession.recoverRequest(config: config, email: "gran@example.com"))
-        #expect(request.url?.absoluteString == "https://db.example/auth/v1/recover?redirect_to=https://api.example/auth/reset")
-        #expect(request.value(forHTTPHeaderField: "apikey") == "pk")
-        let decoded = try JSONDecoder().decode(OpenClickyAuthSession.AuthConfig.self, from: Data(#"{"supabaseUrl":"u","publishableKey":"k","resetRedirectUrl":"r"}"#.utf8))
-        #expect(decoded.resetRedirectUrl == "r")
+    @MainActor @Test func closedSignUpOnlyAddsANoteUnderTheForm() {
+        #expect(OpenClickyAuthSession.signUpClosedNote(accountsOpen: true) == nil)
+        #expect(OpenClickyAuthSession.signUpClosedNote(accountsOpen: nil) == nil)
+        #expect(OpenClickyAuthSession.signUpClosedNote(accountsOpen: false) == AccountLimitError.accountsFull.message)
     }
 
-    @Test func createAccountIsHiddenOnlyWhenTheBackendSaysClosed() {
-        #expect(OpenClickyAuthSession.offersCreateAccount(accountsOpen: true))
-        #expect(OpenClickyAuthSession.offersCreateAccount(accountsOpen: nil))
-        #expect(!OpenClickyAuthSession.offersCreateAccount(accountsOpen: false))
+    @Test func comingBackChecksOnlyAnUnconfirmedEmailOnce() {
+        #expect(OpenClickyAuthSession.shouldCheckOnActivate(lastConfirmed: false, checkRunning: false))
+        #expect(!OpenClickyAuthSession.shouldCheckOnActivate(lastConfirmed: false, checkRunning: true))
+        #expect(!OpenClickyAuthSession.shouldCheckOnActivate(lastConfirmed: true, checkRunning: false))
+        #expect(!OpenClickyAuthSession.shouldCheckOnActivate(lastConfirmed: nil, checkRunning: false))
     }
 }

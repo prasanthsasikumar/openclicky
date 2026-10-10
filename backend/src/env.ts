@@ -73,8 +73,14 @@ export type Env = {
   ACCOUNTS_OPEN?: string;
   /** Where the confirmation email's link lands (default: this backend's /auth/confirmed). */
   ACCOUNT_CONFIRM_REDIRECT_URL?: string;
-  /** Where the password-reset email's link lands (default: this backend's /auth/reset). */
-  ACCOUNT_RESET_REDIRECT_URL?: string;
+  /** Pre-confirmation allowance per Mac, in dollars (default 1). */
+  GUEST_TOTAL_USD?: string;
+  /** Days a guest may stay unconfirmed (default 14). */
+  GUEST_DAYS?: string;
+  /** Spoken characters per Mac before confirming (default 2000). */
+  GUEST_TTS_CHARS?: string;
+  /** Confirmed accounts one Mac may create (default 2). */
+  MAX_ACCOUNTS_PER_DEVICE?: string;
 };
 
 /**

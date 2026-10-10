@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import http from "node:http";
 import { SignJWT } from "jose";
 import { createApp } from "../src/app.js";
 import type { Env } from "../src/env.js";
 import { parseSkillMarkdown } from "../src/skillMarkdown.js";
 import { MemoryBillingStore } from "../src/billing.js";
-import { MemorySpendLedger } from "../src/ledger.js";
+import { MemorySpendLedger, limitsFromEnv } from "../src/ledger.js";
 
 type Seen = { url: string; auth?: string; apiKey?: string; contentType?: string; raw: string; body: Record<string, unknown> };
 const MOCK_SKILL = "```markdown\n---\nname: Reply In My Voice\ndescription: Draft email replies in the user's own voice.\nsurfaces: [talk, agent]\n---\n# Reply In My Voice\n\n## Use When\nThe user asks for a reply.\n```";
@@ -120,7 +120,7 @@ describe("app", () => {
     expect(off.status).toBe(404);
     const on = await call("/auth/config", {}, { SUPABASE_URL: "https://db.example.com/", SUPABASE_PUBLISHABLE_KEY: "sb_publishable_x" });
     expect(on.status).toBe(200);
-    expect(await on.json()).toEqual({ supabaseUrl: "https://db.example.com", publishableKey: "sb_publishable_x", accountsOpen: false, confirmRedirectUrl: "http://localhost/auth/confirmed", resetRedirectUrl: "http://localhost/auth/reset" });
+    expect(await on.json()).toEqual({ supabaseUrl: "https://db.example.com", publishableKey: "sb_publishable_x", accountsOpen: false, confirmRedirectUrl: "http://localhost/auth/confirmed" });
   });
 
   it("401 without auth on /v1/* and /agent/*", async () => {
@@ -433,7 +433,7 @@ describe("app", () => {
       expect(seen).toHaveLength(1);
       expect(seen[0].model).toBe("claude-haiku-4-5");
       expect(seen[0].max_tokens).toBe(1024);
-      const s = await ledger.summary("user-1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 });
+      const s = await ledger.summary("user-1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000, guestTotalMicro: 1_000_000, guestDays: 14, guestTtsChars: 2_000 });
       expect(s.spentTodayMicro).toBeGreaterThan(0);
     });
 
@@ -495,6 +495,37 @@ describe("app", () => {
       const blocked = await billed.request("/v1/chat/completions", json({ model: "default", messages: [] }, token), { ...grantEnv, OPENAI_BASE_URL: upstreamUrl + "/v1" });
       expect(blocked.status).toBe(402);
       expect(await blocked.json()).toEqual({ error: "not_on_plan" });
+    });
+
+    it("/billing/me reports confirmation, the guest pool and a masked email", async () => {
+      const ledger = new MemorySpendLedger({ requireAccountRow: true });
+      ledger.setAccount("user-1", { confirmed: false, deviceHash: "a".repeat(64), createdAt: Date.now(), email: "gran@example.com" });
+      const billed = createApp({ log: null, spendLedger: ledger });
+      const me = await billed.request("/billing/me", { headers: { authorization: `Bearer ${await jwt()}` } }, grantEnv);
+      expect(await me.json()).toMatchObject({ confirmed: false, guestSpentUsd: 0, guestLimitUsd: 1, email: "g•••@example.com" });
+    });
+
+    it("a guest whose Mac pool is spent past the cap gets 402 confirm_email with no resets_at", async () => {
+      const ledger = new MemorySpendLedger({ requireAccountRow: true });
+      ledger.setAccount("user-1", { confirmed: false, deviceHash: "a".repeat(64), createdAt: Date.now(), email: "gran@example.com" });
+      const billed = createApp({ log: null, spendLedger: ledger });
+      const token = await jwt();
+      const limits = limitsFromEnv(grantEnv);
+      const held = await ledger.reserve("user-1", limits.guestTotalMicro - 1, limits);
+      if (!held.ok) throw new Error("setup reserve should fit under the cap");
+      await ledger.settle(held.reservationId, "user-1", limits.guestTotalMicro - 1, { route: "/chat", inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, characters: 0 });
+      const r = await billed.request("/v1/polish", json({ purpose: "polish", text: "hi" }, token), grantEnv);
+      expect(r.status).toBe(402);
+      expect(await r.json()).toEqual({ error: "confirm_email" });
+    });
+
+    it("a replaced guest also gets 402 confirm_email with no resets_at", async () => {
+      const ledger = new MemorySpendLedger({ requireAccountRow: true });
+      ledger.setAccount("user-1", { confirmed: false, deviceHash: "a".repeat(64), createdAt: Date.now(), replaced: true, email: "gran@example.com" });
+      const billed = createApp({ log: null, spendLedger: ledger });
+      const r = await billed.request("/v1/polish", json({ purpose: "polish", text: "hi" }, await jwt()), grantEnv);
+      expect(r.status).toBe(402);
+      expect(await r.json()).toEqual({ error: "confirm_email" });
     });
 
     it("/billing/me reports byok for a request with its own key", async () => {
@@ -581,151 +612,24 @@ describe("app", () => {
 
 describe("sign-up support", () => {
   const base = { SUPABASE_URL: "https://db.example", SUPABASE_PUBLISHABLE_KEY: "pk" };
-  const open = { ...base, SUPABASE_SERVICE_KEY: "sk", ACCOUNTS_OPEN: "true" };
-  const post = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const creds = { email: "a@b.co", password: "hunter2hunter2" };
-
-  // Stubs fetch: rpc answers `isOpen`, GoTrue answers `gotrue`, the oc_accounts insert answers `insert`.
-  function stub(opts: { isOpen?: boolean; gotrue?: () => Response; insert?: () => Response }) {
-    const calls: { url: string; init?: any }[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (url: any, init?: any) => {
-      const u = String(url);
-      calls.push({ url: u, init });
-      if (u.includes("/rpc/oc_accounts_open")) return new Response(JSON.stringify(opts.isOpen ?? true));
-      if (u.includes("/auth/v1/signup")) return opts.gotrue ? opts.gotrue() : new Response(JSON.stringify({ id: "u-new", identities: [{ id: "i" }] }));
-      if (u.includes("/rest/v1/oc_accounts")) return opts.insert ? opts.insert() : new Response("[]", { status: 201 });
-      throw new Error(`unexpected fetch ${u}`);
-    }));
-    return calls;
-  }
-  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
   it("auth/config says sign-up is closed unless ACCOUNTS_OPEN is true", async () => {
     const res = await createApp({ log: null }).request("/auth/config", {}, base);
-    expect(await res.json()).toMatchObject({ accountsOpen: false, confirmRedirectUrl: "http://localhost/auth/confirmed", resetRedirectUrl: "http://localhost/auth/reset" });
+    const body = await res.json();
+    expect(body).toMatchObject({ accountsOpen: false, confirmRedirectUrl: "http://localhost/auth/confirmed" });
+    expect(body).not.toHaveProperty("resetRedirectUrl");
   });
-  it("auth/confirmed is a page that sends people back to the app", async () => {
+  it("auth/confirmed is a page that tells people they can close the tab", async () => {
     const res = await createApp({ log: null }).request("/auth/confirmed");
     expect(res.headers.get("content-type")).toContain("text/html");
-    expect(await res.text()).toContain("go back to OpenClicky");
+    const page = await res.text();
+    expect(page).toContain("your openclicky account is confirmed — you can close this tab.");
+    expect(page).toContain("this link has expired — open openclicky and press resend link in settings.");
+    expect(page).toContain(`history.replaceState(null, "", location.pathname)`);
   });
-  it("signup with ACCOUNTS_OPEN unset is 402 and never reaches GoTrue", async () => {
-    const calls = stub({});
-    const res = await createApp({ log: null }).request("/auth/signup", post(creds), { ...open, ACCOUNTS_OPEN: undefined });
-    expect(res.status).toBe(402);
-    expect(await res.json()).toEqual({ error: "accounts_full" });
-    expect(calls.some((c) => c.url.includes("/auth/v1/signup"))).toBe(false);
-  });
-  it("signup is 402 when the cap is reached", async () => {
-    const calls = stub({ isOpen: false });
-    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
-    expect(res.status).toBe(402);
-    expect(calls.some((c) => c.url.includes("/auth/v1/signup"))).toBe(false);
-  });
-  it("signup forwards to GoTrue with redirect_to and apikey, then records the account", async () => {
-    const calls = stub({});
-    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
-    const g = calls.find((c) => c.url.includes("/auth/v1/signup"))!;
-    expect(g.url).toContain("redirect_to=" + encodeURIComponent("http://localhost/auth/confirmed"));
-    expect(g.init.headers.apikey).toBe("pk");
-    const ins = calls.find((c) => c.url.includes("/rest/v1/oc_accounts"))!;
-    expect(JSON.parse(ins.init.body)).toMatchObject({ user_id: "u-new" });
-  });
-  it("signup maps an existing email to 409", async () => {
-    stub({ gotrue: () => new Response('{"msg":"User already registered"}', { status: 422 }) });
-    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "that email already has an account — sign in instead." });
-  });
-  it("signup rejects a short password or a bad email with 400", async () => {
-    const calls = stub({});
-    const app = createApp({ log: null });
-    expect((await app.request("/auth/signup", post({ email: "a@b.co", password: "short" }), open)).status).toBe(400);
-    expect((await app.request("/auth/signup", post({ email: "nope", password: "longenough1" }), open)).status).toBe(400);
-    expect(calls).toHaveLength(0);
-  });
-  it("signup answers 502 with a fixed sentence when the GoTrue fetch throws", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (url: any) => {
-      if (String(url).includes("/rpc/")) return new Response("true");
-      throw new Error("connect ECONNREFUSED secret-host");
-    }));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
-    expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "couldn't create the account right now." });
-  });
-  it("signup does not leak GoTrue's error text, and never logs the password", async () => {
-    stub({ gotrue: () => new Response('{"msg":"internal boom from gotrue"}', { status: 500 }) });
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
-    expect(res.status).toBe(502);
-    expect(JSON.stringify(await res.json())).not.toContain("boom");
-    expect(JSON.stringify(err.mock.calls)).not.toContain(creds.password);
-  });
-  it("signup retries the oc_accounts insert once, then answers 502 with a sentence", async () => {
-    const calls = stub({ insert: () => new Response("nope", { status: 500 }) });
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
-    expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "couldn't finish setting up the account — try again in a minute." });
-    expect(calls.filter((c) => c.url.includes("/rest/v1/oc_accounts"))).toHaveLength(2);
-    expect(err).toHaveBeenCalled();
-  });
-  it("signup succeeds when the second insert attempt works", async () => {
-    let tries = 0;
-    stub({ insert: () => (++tries === 1 ? new Response("nope", { status: 500 }) : new Response("[]", { status: 201 })) });
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
-    expect(res.status).toBe(200);
-    expect(tries).toBe(2);
-  });
-  it("auth/reset serves a page that sets the password against Supabase Auth with the publishable key only", async () => {
-    const res = await createApp({ log: null }).request("/auth/reset", {}, { ...base, SUPABASE_URL: "https://db.example/", SUPABASE_SERVICE_KEY: "service-secret-key" });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/html");
-    const html = await res.text();
-    expect(html).toContain('"https://db.example/auth/v1/user"');
-    expect(html).toContain('method: "PUT"');
-    expect(html).toContain('"pk"');
-    expect(html).toContain("access_token");
-    expect(html).toContain("password changed — go back to OpenClicky and sign in.");
-    expect(html).not.toContain("service-secret-key");
-    expect((await createApp({ log: null }).request("/auth/reset")).status).toBe(404);
-  });
-  it("signup inserts no row for an existing auth user (empty identities), flat or nested", async () => {
-    for (const body of [{ id: "fake", identities: [] }, { user: { id: "fake", identities: [] } }]) {
-      const calls = stub({ gotrue: () => new Response(JSON.stringify(body)) });
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      const res = await createApp({ log: null }).request("/auth/signup", post(creds), open);
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ ok: true });
-      expect(calls.some((c) => c.url.includes("/rest/v1/oc_accounts"))).toBe(false);
-    }
-  });
-  it("signup inserts the id from a nested user object with identities", async () => {
-    const calls = stub({ gotrue: () => new Response(JSON.stringify({ user: { id: "u-nested", identities: [{ id: "i" }] } })) });
-    await createApp({ log: null }).request("/auth/signup", post(creds), open);
-    expect(JSON.parse(calls.find((c) => c.url.includes("/rest/v1/oc_accounts"))!.init.body)).toMatchObject({ user_id: "u-nested" });
-  });
-  it("signup is limited to 5 per IP per hour, before any RPC or GoTrue call", async () => {
-    const calls = stub({});
-    const app = createApp({ log: null });
-    const from = (ip: string) => ({ ...post(creds), headers: { "content-type": "application/json", "x-forwarded-for": `${ip}, 10.0.0.1` } });
-    for (let i = 0; i < 5; i++) expect((await app.request("/auth/signup", from("1.1.1.1"), open)).status).toBe(200);
-    const n = calls.length;
-    const res = await app.request("/auth/signup", from("1.1.1.1"), open);
-    expect(res.status).toBe(429);
-    expect(await res.json()).toEqual({ error: "too many tries — try again in an hour." });
-    expect(calls).toHaveLength(n);
-    expect((await app.request("/auth/signup", from("2.2.2.2"), open)).status).toBe(200);
-  });
-  it("signup answers 400, not 500, for a null body or non-string fields", async () => {
-    stub({});
-    const app = createApp({ log: null });
-    const raw = (body: string) => ({ method: "POST", headers: { "content-type": "application/json" }, body });
-    expect((await app.request("/auth/signup", raw("null"), open)).status).toBe(400);
-    expect((await app.request("/auth/signup", raw('{"email":1,"password":2}'), open)).status).toBe(400);
+  it("the password routes are gone", async () => {
+    const env = { ...base, SUPABASE_SERVICE_KEY: "sk", ACCOUNTS_OPEN: "true", SUPABASE_JWT_SECRET: "x".repeat(32) };
+    expect((await createApp({ log: null }).request("/auth/signup", { method: "POST" }, env)).status).toBe(404);
+    expect((await createApp({ log: null }).request("/auth/reset", {}, env)).status).toBe(404);
   });
 });

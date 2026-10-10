@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
-import { requireAccount, reserveOr402, accountSummary } from "../src/account.js";
+import { requireAccount, reserveOr402, accountSummary, maskEmail } from "../src/account.js";
 import { MemorySpendLedger } from "../src/ledger.js";
 import type { Principal } from "../src/auth.js";
 
@@ -70,5 +70,14 @@ describe("requireAccount", () => {
   it("billing/me reports dollars and resets", async () => {
     const body = await (await appWith(new MemorySpendLedger()).request("/billing/me")).json();
     expect(body).toMatchObject({ byok: false, spentMonthUsd: 0, monthlyLimitUsd: 10, dailyLimitUsd: 2, budgetExhausted: false, blocked: false });
+  });
+});
+
+describe("email-first fields", () => {
+  it("masks all but the first letter of the local part", () => {
+    expect(maskEmail("prasanth@flowsxr.com")).toBe("p•••@flowsxr.com");
+    expect(maskEmail("a@b.co")).toBe("a•••@b.co");
+    expect(maskEmail(null)).toBeNull();
+    expect(maskEmail("nodomain")).toBeNull();
   });
 });

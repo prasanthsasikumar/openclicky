@@ -3,7 +3,7 @@
 //  OpenClicky
 //
 //  The first run, in six short chapters: welcome, the two permissions, the key, the engine, a
-//  first take that lands in the window itself, and the offer of a free account (or your own key,
+//  first take that lands in the window itself, and the one email field that makes a free account (or your own key,
 //  or neither). Every chapter can be skipped; the whole thing can be replayed from Settings → general.
 //
 
@@ -87,7 +87,6 @@ struct OnboardingView: View {
     let finish: () -> Void
     @ObservedObject private var settings: DictationSettings
     @ObservedObject private var authSession = OpenClickyAuthSession.shared
-    @State private var accountSheetMode: AccountSheet.Mode?
 
     init(model: OnboardingModel, companionManager: CompanionManager, finish: @escaping () -> Void) {
         self.model = model
@@ -133,12 +132,6 @@ struct OnboardingView: View {
             .padding(36)
         }
         .background(Paper.background)
-        .sheet(item: $accountSheetMode) { mode in
-            AccountSheet(startIn: mode, onDone: { accountSheetMode = nil }, onUseOwnKey: {
-                accountSheetMode = nil
-                companionManager.showDictationWindow(settingsPage: .account)
-            })
-        }
         .onAppear {
             companionManager.dictationTakeController.onTakeFinished = { take in
                 model.firstTakeText = take.displayText
@@ -252,47 +245,28 @@ struct OnboardingView: View {
 
     private var account: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("a free account lets openclicky tidy your words and answer out loud — dictation works without one.")
+            Text("your email gets you a free openclicky account — polished dictation and spoken answers, nothing to set up.")
                 .font(Paper.body(14)).foregroundStyle(Paper.inkSecondary).fixedSize(horizontal: false, vertical: true)
             if let accountEmail = authSession.accountEmail {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
-                    Text("you're signed in as \(accountEmail).").font(Paper.body(14, weight: .medium))
+                    Text(authSession.emailFlow == .signedIn(confirmed: false)
+                         ? "you're set, \(accountEmail). check your inbox to unlock the full free allowance."
+                         : "you're set, \(accountEmail).").font(Paper.body(14, weight: .medium))
                 }
-                .foregroundStyle(Paper.success)
-                .padding(.top, 6)
+                .foregroundStyle(Paper.success).padding(.top, 6)
             } else {
-                // Hidden while the backend takes no new accounts (/auth/config accountsOpen == false).
-                if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
-                    accountChoice("person.crop.circle.badge.plus", "create a free account", "polished dictation and spoken answers, on us.", isProminent: true) { accountSheetMode = .create }
+                EmailAccountForm(onSignedIn: {}, onUseOwnKey: { companionManager.showDictationWindow(settingsPage: .account) })
+                if let note = OpenClickyAuthSession.signUpClosedNote(accountsOpen: authSession.accountsOpen) {
+                    Text(note).font(Paper.caption).foregroundStyle(Paper.inkSecondary).fixedSize(horizontal: false, vertical: true)
                 }
-                accountChoice("person.crop.circle", "sign in", "you already have an openclicky account.") { accountSheetMode = .signIn }
-                accountChoice("key", "use my own key", "if you already have an openai key.") { companionManager.showDictationWindow(settingsPage: .account) }
+            }
+            if authSession.accountEmail == nil {
                 Button("skip — keep everything on this mac") { finish() }
-                    .buttonStyle(.plain).font(Paper.body(12)).foregroundStyle(Paper.inkTertiary).pointerCursor()
-                    .padding(.top, 2)
+                    .buttonStyle(.plain).font(Paper.body(12)).foregroundStyle(Paper.inkTertiary).pointerCursor().padding(.top, 2)
             }
         }
         .task { await authSession.refreshAccountsOpen() }
-    }
-
-    private func accountChoice(_ symbol: String, _ title: String, _ detail: String, isProminent: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: symbol).font(.system(size: 16)).foregroundStyle(isProminent ? Paper.accent : Paper.inkSecondary).frame(width: 22)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(Paper.body(14, weight: .medium)).foregroundStyle(Paper.ink)
-                    Text(detail).font(Paper.body(12)).foregroundStyle(Paper.inkSecondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Paper.inkTertiary)
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Paper.card))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(isProminent ? Paper.accent : Paper.hairline))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).pointerCursor()
     }
 
     private func next() {

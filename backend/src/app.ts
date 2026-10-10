@@ -7,6 +7,7 @@ import { createSkill } from "./skillsCreate.js";
 import { requestLogger, type LogSink } from "./log.js";
 import { SupabaseBillingStore, type BillingStore, type BillingContext } from "./billing.js";
 import { SupabaseRest } from "./db.js";
+import { registerAccountAuth } from "./accountAuth.js";
 import { requireAccount, accountSummary, ledgerUnavailable, type AccountContext } from "./account.js";
 import { proxyAnthropicOnGrant } from "./anthropicGrant.js";
 import { polishTake } from "./polish.js";
@@ -34,45 +35,6 @@ type Variables = { principal: Principal; billing: BillingContext };
  * provider keys (`x-openclicky-openai-key`, see keys.ts) runs on those and is never metered; any
  * other request runs on the backend's keys under the user's plan (billing.ts, Stripe in stripe.ts).
  */
-const SIGNUP_LIMIT = 5, SIGNUP_WINDOW_MS = 3_600_000;
-/** 5 sign-ups per IP per hour, in memory; empty entries are pruned so the map doesn't grow. */
-function signupAllowed(hits: Map<string, number[]>, ip: string, now = Date.now()): boolean {
-  for (const [k, v] of hits) { const live = v.filter((t) => now - t < SIGNUP_WINDOW_MS); if (live.length) hits.set(k, live); else hits.delete(k); }
-  const mine = hits.get(ip) ?? [];
-  if (mine.length >= SIGNUP_LIMIT) return false;
-  hits.set(ip, [...mine, now]);
-  return true;
-}
-
-const TOO_MANY_SIGNUPS = "too many tries — try again in an hour.";
-
-/** The page a password-reset link opens: reads the recovery token from the fragment and sets the new password. */
-function resetPage(userEndpoint: string, publishableKey: string): string {
-  const js = (v: string) => JSON.stringify(v).replace(/</g, "\\u003c");
-  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>New password</title><body style="font:16px -apple-system,sans-serif;background:#F4F1EA;color:#22201C;display:grid;place-items:center;height:100vh;margin:0">
-<div style="text-align:center;max-width:22rem;padding:0 16px"><h1 style="font-family:Georgia,serif;font-weight:400">choose a new password.</h1>
-<form id="f"><input id="p" type="password" minlength="8" required autocomplete="new-password" placeholder="at least 8 characters" style="font:inherit;padding:8px 10px;width:100%;box-sizing:border-box;border:1px solid #CFC8BA;border-radius:6px">
-<button style="font:inherit;margin-top:12px;padding:8px 16px;border:0;border-radius:6px;background:#22201C;color:#F4F1EA">set password</button></form><p id="m"></p></div>
-<script>
-const endpoint = ${js(userEndpoint)}, apikey = ${js(publishableKey)};
-const hash = new URLSearchParams(location.hash.slice(1));
-const token = hash.get("access_token"), form = document.getElementById("f"), msg = document.getElementById("m");
-if (!token) { form.hidden = true; msg.textContent = hash.get("error_description") || "this link has expired — ask OpenClicky for a new one."; }
-history.replaceState(null, "", location.pathname);
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const password = document.getElementById("p").value;
-  if (password.length < 8) { msg.textContent = "use at least 8 characters."; return; }
-  try {
-    const res = await fetch(endpoint, { method: "PUT", headers: { "content-type": "application/json", apikey, Authorization: "Bearer " + token }, body: JSON.stringify({ password }) });
-    if (res.ok) { form.hidden = true; msg.textContent = "password changed — go back to OpenClicky and sign in."; }
-    else msg.textContent = "couldn't change the password — the link may have expired; ask for a new one.";
-  } catch { msg.textContent = "couldn't reach the server — try again."; }
-});
-</script></body>`;
-}
-
 export function createApp(options: AppOptions = {}) {
   const app = new Hono<{ Variables: Variables }>();
   if (options.log !== null) app.use("*", requestLogger(options.log));
@@ -129,14 +91,14 @@ export function createApp(options: AppOptions = {}) {
 
   app.get("/health", (c) => c.json({ ok: true }));
 
-  // What a client needs to sign in with email + password (Supabase Auth): public by design, so an
+  // What a client needs to sign in with an email and a code (Supabase Auth): public by design, so an
   // installed app only has to know the backend URL. 404 when the backend has no Supabase configured.
   app.get("/auth/config", async (c) => {
     const env = getEnv(c);
     if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) return c.json({ error: "sign-in is not configured on this backend" }, 404);
     let accountsOpen = env.ACCOUNTS_OPEN === "true";
     if (accountsOpen && env.SUPABASE_SERVICE_KEY) {
-      try { accountsOpen = await new SupabaseRest(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY).rpc<boolean>("oc_accounts_open", {}); }
+      try { accountsOpen = await new SupabaseRest(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY).rpc<boolean>("oc_accounts_open", { p_guest_days: Number(env.GUEST_DAYS) || 14 }); }
       catch (e) { console.error(`auth/config: ${(e as Error).message}`); accountsOpen = false; }
     }
     const origin = new URL(c.req.url).origin;
@@ -145,80 +107,26 @@ export function createApp(options: AppOptions = {}) {
       publishableKey: env.SUPABASE_PUBLISHABLE_KEY,
       accountsOpen,
       confirmRedirectUrl: env.ACCOUNT_CONFIRM_REDIRECT_URL || `${origin}/auth/confirmed`,
-      resetRedirectUrl: env.ACCOUNT_RESET_REDIRECT_URL || `${origin}/auth/reset`,
     });
   });
 
-  // Where the confirmation email's link lands: nothing to do here but go back to the app.
+  // Where the confirmation email's link lands: nothing to do here but go back to the app. GoTrue
+  // puts the session (or, for a stale link, `error=…&error_code=otp_expired`) in the fragment; the
+  // script tells the expired case apart and wipes the fragment so no token stays in history.
   app.get("/auth/confirmed", (c) =>
     c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>You're in</title><body style="font:16px -apple-system,sans-serif;background:#F4F1EA;color:#22201C;display:grid;place-items:center;height:100vh;margin:0">
-<div style="text-align:center"><h1 style="font-family:Georgia,serif;font-weight:400">you're in.</h1><p>go back to OpenClicky — it signs you in on its own.</p></div></body>`),
+<title>You're confirmed</title><body style="font:16px -apple-system,sans-serif;background:#F4F1EA;color:#22201C;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center"><h1 id="head" style="font-family:Georgia,serif;font-weight:400">you're confirmed.</h1><p id="note">your openclicky account is confirmed — you can close this tab.</p></div>
+<script>
+if (location.hash.indexOf("error") !== -1) {
+  document.title = "Link expired";
+  document.getElementById("head").textContent = "that link has expired.";
+  document.getElementById("note").textContent = "this link has expired — open openclicky and press resend link in settings.";
+}
+history.replaceState(null, "", location.pathname);
+</script></body>`),
   );
-
-  // Where the password-reset email's link lands. Supabase puts the recovery token after `#`, which
-  // never reaches a server, so the page itself sets the new password against Supabase Auth.
-  app.get("/auth/reset", (c) => {
-    const env = getEnv(c);
-    if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) return c.text("password reset is not configured on this backend", 404);
-    return c.html(resetPage(`${env.SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/user`, env.SUPABASE_PUBLISHABLE_KEY));
-  });
-
-  // Public sign-up. The Supabase instance is shared by every FlowsXR project, so OpenClicky's own cap
-  // (oc_accounts_open) is enforced here rather than by letting the app talk to GoTrue directly.
-  const signupHits = new Map<string, number[]>();
-  app.post("/auth/signup", async (c) => {
-    const env = getEnv(c);
-    if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY || !env.SUPABASE_SERVICE_KEY) return c.json({ error: "sign-up is not configured on this backend" }, 404);
-    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
-    if (!signupAllowed(signupHits, ip)) return c.json({ error: TOO_MANY_SIGNUPS }, 429);
-    let req: { email?: unknown; password?: unknown } | null = {};
-    try { req = JSON.parse((await c.req.text()) || "{}") as typeof req; } catch { return c.json({ error: "body must be JSON" }, 400); }
-    const email = typeof req?.email === "string" ? req.email.trim() : "", password = typeof req?.password === "string" ? req.password : "";
-    if (!email.includes("@") || password.length < 8) return c.json({ error: "use an email address and a password of at least 8 characters." }, 400);
-    const db = new SupabaseRest(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
-    const open = env.ACCOUNTS_OPEN === "true" && (await db.rpc<boolean>("oc_accounts_open", {}).catch(() => false));
-    if (!open) return c.json({ error: "accounts_full" }, 402);
-    const redirect = env.ACCOUNT_CONFIRM_REDIRECT_URL || `${new URL(c.req.url).origin}/auth/confirmed`;
-    let res: Response, text: string;
-    try {
-      res = await fetch(`${env.SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/signup?redirect_to=${encodeURIComponent(redirect)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json", apikey: env.SUPABASE_PUBLISHABLE_KEY },
-        body: JSON.stringify({ email, password }),
-      });
-      text = await res.text();
-    } catch (e) {
-      console.error(`signup: GoTrue unreachable: ${(e as Error).message}`);
-      return c.json({ error: "couldn't create the account right now." }, 502);
-    }
-    if (!res.ok) {
-      if (text.includes("already registered")) return c.json({ error: "that email already has an account — sign in instead." }, 409);
-      if (res.status === 429) return c.json({ error: TOO_MANY_SIGNUPS }, 429);
-      console.error(`signup: GoTrue ${res.status}: ${text.slice(0, 300)}`);
-      return c.json({ error: "couldn't create the account right now." }, 502);
-    }
-    // An already-registered email (another FlowsXR product's user) comes back as 200 with no identities
-    // and possibly a fake id: only genuinely new users get an OpenClicky row.
-    let userId: string | undefined, isNew = false;
-    try {
-      const body = JSON.parse(text) as { id?: string; identities?: unknown[]; user?: { id?: string; identities?: unknown[] } };
-      const user = body.user ?? body;
-      userId = user.id;
-      isNew = Array.isArray(user.identities) && user.identities.length > 0;
-    } catch { /* GoTrue succeeded; the account row is best-effort below */ }
-    if (!isNew) console.error("signup: existing auth user; no OpenClicky row");
-    else if (!userId) console.error("signup: GoTrue answered without a user id");
-    else {
-      // The auth user exists now; without this row the grant refuses them, so try twice and say so.
-      let recorded = false;
-      for (let attempt = 1; attempt <= 2 && !recorded; attempt++) {
-        recorded = await db.insert("oc_accounts", { user_id: userId }).then(() => true, (e) => { console.error(`signup: oc_accounts insert (try ${attempt}): ${(e as Error).message}`); return false; });
-      }
-      if (!recorded) return c.json({ error: "couldn't finish setting up the account — try again in a minute." }, 502);
-    }
-    return c.json({ ok: true });
-  });
+  registerAccountAuth(app);
 
   // Exchange a Supabase JWT for a short-lived session token. Only Supabase JWTs are accepted here;
   // an already-exchanged session token cannot be re-exchanged.
@@ -286,7 +194,7 @@ export function createApp(options: AppOptions = {}) {
   app.get("/billing/me", async (c) => {
     const ledger = ledgerFor(c);
     const byok = Boolean((c.get("account" as never) as AccountContext | undefined)?.byok);
-    if (!ledger) return c.json({ plan: byok ? "byok" : "unmetered", onPlan: true, byok, spentMonthUsd: 0, monthlyLimitUsd: 0, spentTodayUsd: 0, dailyLimitUsd: 0, ttsCharsMonth: 0, ttsCharsLimit: 0, monthEnd: "", dayEnd: "", budgetExhausted: false, blocked: false });
+    if (!ledger) return c.json({ plan: byok ? "byok" : "unmetered", onPlan: true, byok, spentMonthUsd: 0, monthlyLimitUsd: 0, spentTodayUsd: 0, dailyLimitUsd: 0, ttsCharsMonth: 0, ttsCharsLimit: 0, monthEnd: "", dayEnd: "", budgetExhausted: false, blocked: false, confirmed: true, guestSpentUsd: 0, guestLimitUsd: 0, email: null });
     try { return c.json(await accountSummary(c, ledger)); }
     catch (e) { console.error(`billing/me: ${(e as Error).message}`); return ledgerUnavailable(c); }
   });

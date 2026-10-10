@@ -2,8 +2,8 @@
 //  SettingsAccountPage.swift
 //  OpenClicky
 //
-//  Settings → account (was account + plan & usage): who you are and what it costs. Create a free
-//  account or sign in (both through AccountSheet), or sign out; how much of the free allowance is
+//  Settings → account (was account + plan & usage): who you are and what it costs. Set up a free
+//  account or sign in with just an email (AccountSheet), or sign out; how much of the free allowance is
 //  used and what each engine costs; your own openai key; and the backend host and token from
 //  shell.json, read-only.
 //
@@ -24,7 +24,7 @@ extension SettingsCatalog {
             SettingsItem(
                 id: "account.start", page: .account, section: "you",
                 title: "a free openclicky account", detail: "polished dictation and spoken answers, on us — no keys to find.",
-                keywords: ["account", "sign in", "sign up", "create", "log in", "email", "password", "free"],
+                keywords: ["account", "sign in", "sign up", "create", "log in", "email", "code", "free"],
                 isRelevant: { OpenClickyAuthSession.shared.accountEmail == nil },
                 view: AnyView(AccountStartRow())),
             SettingsItem(
@@ -96,6 +96,9 @@ struct SettingsFootnote: View {
 
 private struct SignedInAccountRows: View {
     @ObservedObject private var authSession = OpenClickyAuthSession.shared
+    @StateObject private var billing = BillingStatusModel()
+    @State private var resendNote: String?
+    @State private var resendWork = AccountWorkSlot()
 
     var body: some View {
         if let accountEmail = authSession.accountEmail {
@@ -109,6 +112,14 @@ private struct SignedInAccountRows: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(accountEmail).font(Paper.rowTitle).foregroundStyle(Paper.ink)
                     Text("signing out keeps your history on this mac.").font(Paper.caption).foregroundStyle(Paper.inkSecondary)
+                    if billing.summary?.isUnconfirmed == true {
+                        HStack(spacing: 8) {
+                            Text(resendNote ?? "unconfirmed — check your inbox for the link.")
+                                .font(Paper.caption).foregroundStyle(Paper.inkSecondary)
+                            Button("resend link", action: resend)
+                                .buttonStyle(.plain).font(Paper.caption).foregroundStyle(Paper.accentFill).pointerCursor()
+                        }
+                    }
                 }
                 Spacer()
                 Button("sign out") {
@@ -119,14 +130,22 @@ private struct SignedInAccountRows: View {
             }
             .padding(.horizontal, Paper.Metric.rowHorizontal)
             .padding(.vertical, Paper.Metric.rowVertical)
+            .onAppear { billing.refresh() }
+            .onDisappear { resendWork.cancel() }
+        }
+    }
+
+    private func resend() {
+        resendWork.start {
+            let sent = await authSession.resendLink()
+            resendNote = sent ? "sent — check your inbox." : "couldn't send it — try again in a minute."
         }
     }
 }
 
-/// Signed out: the two ways in, each opening the account sheet. "create" is hidden while the
-/// backend takes no new accounts.
+/// Signed out: one button, opening the account sheet with the email form.
 private struct AccountStartRow: View {
-    @State private var sheetMode: AccountSheet.Mode?
+    @State private var showsAccountSheet = false
     @ObservedObject private var authSession = OpenClickyAuthSession.shared
 
     var body: some View {
@@ -135,22 +154,16 @@ private struct AccountStartRow: View {
             Text("polished dictation and spoken answers, on us — no keys to find.")
                 .font(Paper.caption).foregroundStyle(Paper.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
-                    Button("create a free account") { sheetMode = .create }
-                        .buttonStyle(PaperPillButtonStyle(prominent: true))
-                }
-                Button("sign in") { sheetMode = .signIn }
-                    .buttonStyle(PaperPillButtonStyle())
-            }
+            Button("set up or sign in with your email") { showsAccountSheet = true }
+                .buttonStyle(PaperPillButtonStyle(prominent: true))
         }
         .padding(.horizontal, Paper.Metric.rowHorizontal)
         .padding(.vertical, Paper.Metric.rowVertical + 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .task { await authSession.refreshAccountsOpen() }
-        .sheet(item: $sheetMode) { mode in
+        .sheet(isPresented: $showsAccountSheet) {
             // The own-key field is on this page, behind the sheet: closing it is the way there.
-            AccountSheet(startIn: mode, onDone: { sheetMode = nil }, onUseOwnKey: { sheetMode = nil })
+            AccountSheet(onDone: { showsAccountSheet = false }, onUseOwnKey: { showsAccountSheet = false })
         }
     }
 }

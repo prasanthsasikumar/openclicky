@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MemorySpendLedger, limitsFromEnv, type SpendEvent } from "../src/ledger.js";
 
-const limits = { monthlyMicro: 10_000_000, dailyMicro: 2_000_000, globalMonthlyMicro: 1_000_000_000, ttsCharsMonthly: 20_000 };
+const limits = { monthlyMicro: 10_000_000, dailyMicro: 2_000_000, globalMonthlyMicro: 1_000_000_000, ttsCharsMonthly: 20_000, guestTotalMicro: 1_000_000, guestDays: 14, guestTtsChars: 2_000 };
 const event: SpendEvent = { route: "/chat", model: "claude-sonnet-5-5", inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, characters: 0 };
 const now = new Date("2026-10-08T10:00:00Z");
 
@@ -107,5 +107,65 @@ describe("MemorySpendLedger", () => {
     expect(await ledger.reserveCharacters("unknown", 100, limits, 1000, now)).toMatchObject({ ok: false, error: "not_on_plan" });
     ledger.setAccount("known", {});
     expect((await ledger.reserve("known", 100, limits, now)).ok).toBe(true);
+  });
+});
+
+describe("guests (unconfirmed accounts)", () => {
+  const device = "a".repeat(64);
+  it("limitsFromEnv reads the guest settings", () => {
+    expect(limitsFromEnv({ GUEST_TOTAL_USD: "0.5", GUEST_DAYS: "7", GUEST_TTS_CHARS: "100" })).toMatchObject({ guestTotalMicro: 500_000, guestDays: 7, guestTtsChars: 100 });
+  });
+  it("a guest is refused past $1 with confirm_email and no reset time", async () => {
+    const ledger = new MemorySpendLedger({ requireAccountRow: true });
+    ledger.setAccount("g", { confirmed: false, deviceHash: device, createdAt: now.getTime() });
+    const r = await ledger.reserve("g", 900_000, limits, now);
+    expect(r.ok).toBe(true);
+    if (r.ok) await ledger.settle(r.reservationId, "g", 900_000, event, now);
+    expect(await ledger.reserve("g", 200_000, limits, now)).toEqual({ ok: false, error: "confirm_email", resetsAt: null });
+  });
+  it("a replaced guest's spend still counts for the Mac", async () => {
+    const ledger = new MemorySpendLedger({ requireAccountRow: true });
+    ledger.setAccount("old", { confirmed: false, deviceHash: device, createdAt: now.getTime() });
+    const r = await ledger.reserve("old", 800_000, limits, now);
+    if (r.ok) await ledger.settle(r.reservationId, "old", 800_000, event, now);
+    ledger.setAccount("old", { replaced: true });
+    ledger.setAccount("new", { confirmed: false, deviceHash: device, createdAt: now.getTime() });
+    expect((await ledger.reserve("new", 300_000, limits, now)).ok).toBe(false);
+    expect((await ledger.reserve("new", 100_000, limits, now)).ok).toBe(true);
+    expect(await ledger.reserve("old", 1, limits, now)).toMatchObject({ ok: false, error: "confirm_email" });
+  });
+  it("a guest older than guestDays is refused", async () => {
+    const ledger = new MemorySpendLedger({ requireAccountRow: true });
+    ledger.setAccount("g", { confirmed: false, deviceHash: device, createdAt: now.getTime() - 15 * 86_400_000 });
+    expect(await ledger.reserve("g", 1, limits, now)).toMatchObject({ ok: false, error: "confirm_email" });
+  });
+  it("confirming lifts the guest cap; spend before confirming stays on the Mac's pool", async () => {
+    const ledger = new MemorySpendLedger({ requireAccountRow: true });
+    ledger.setAccount("g", { confirmed: false, deviceHash: device, createdAt: now.getTime() });
+    const r = await ledger.reserve("g", 900_000, limits, now);
+    if (r.ok) await ledger.settle(r.reservationId, "g", 900_000, event, now);
+    const later = new Date(now.getTime() + 60_000);
+    ledger.confirm("g", later);
+    expect((await ledger.reserve("g", 1_000_000, limits, later)).ok).toBe(true);
+    ledger.setAccount("g2", { confirmed: false, deviceHash: device, createdAt: later.getTime() });
+    expect((await ledger.reserve("g2", 200_000, limits, later)).ok).toBe(false); // 0.9 already used on this Mac
+  });
+  it("guest characters are pooled per Mac", async () => {
+    const ledger = new MemorySpendLedger({ requireAccountRow: true });
+    ledger.setAccount("g", { confirmed: false, deviceHash: device, createdAt: now.getTime() });
+    expect((await ledger.reserveCharacters("g", 1_500, limits, 1_000_000, now)).ok).toBe(true);
+    expect(await ledger.reserveCharacters("g", 600, limits, 1_000_000, now)).toMatchObject({ ok: false, error: "confirm_email" });
+  });
+  it("summary reports confirmation, the Mac's guest spend and the email", async () => {
+    const ledger = new MemorySpendLedger({ requireAccountRow: true });
+    ledger.setAccount("g", { confirmed: false, deviceHash: device, createdAt: now.getTime(), email: "gran@example.com" });
+    const r = await ledger.reserve("g", 250_000, limits, now);
+    if (r.ok) await ledger.settle(r.reservationId, "g", 250_000, event, now);
+    expect(await ledger.summary("g", limits, now)).toMatchObject({ confirmed: false, guestSpentMicro: 250_000, guestLimitMicro: 1_000_000, email: "gran@example.com" });
+  });
+  it("accounts without the guest fields stay confirmed (existing behaviour)", async () => {
+    const ledger = new MemorySpendLedger();
+    expect((await ledger.summary("anyone", limits, now)).confirmed).toBe(true);
+    expect((await ledger.reserve("anyone", 1_500_000, limits, now)).ok).toBe(true);
   });
 });

@@ -6,7 +6,7 @@ import { MemorySpendLedger } from "../src/ledger.js";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-const LIMITS = { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 };
+const LIMITS = { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000, guestTotalMicro: 1_000_000, guestDays: 14, guestTtsChars: 2_000 };
 const OK_REPLY = '{"content":[{"type":"text","text":"See you at seven."}],"usage":{"input_tokens":300,"output_tokens":20}}';
 const ENV = { ANTHROPIC_API_KEY: "sk" };
 const payload = { purpose: "polish", system: "fix punctuation", text: "see you at seven" };

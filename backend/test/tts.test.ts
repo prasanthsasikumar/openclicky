@@ -50,7 +50,7 @@ describe("speakOnGrant", () => {
     const ledger = new MemorySpendLedger();
     const res = await say(app(ledger));
     expect(res.headers.get("content-type")).toBe("audio/mpeg");
-    const s = await ledger.summary("u1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000 });
+    const s = await ledger.summary("u1", { monthlyMicro: 10e6, dailyMicro: 2e6, globalMonthlyMicro: 1e9, ttsCharsMonthly: 20000, guestTotalMicro: 1_000_000, guestDays: 14, guestTtsChars: 2_000 });
     expect(s.ttsCharsMonth).toBe("Click Battery.".length);
   });
 

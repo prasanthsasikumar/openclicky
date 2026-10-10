@@ -28,15 +28,25 @@ struct BillingSummary: Decodable, Equatable {
     var plan: String? = nil
     /// For a grant login: whether it has an OpenClicky account (and is not paused).
     var onPlan: Bool? = nil
+    /// Email-first accounts: false until the confirmation link is clicked; older backends omit it.
+    var confirmed: Bool? = nil
+    /// The Mac's starter allowance (spend before confirming) and its cap.
+    var guestSpentUsd: Double? = nil
+    var guestLimitUsd: Double? = nil
+    /// Masked, e.g. "p•••@flowsxr.com".
+    var email: String? = nil
+
+    var isUnconfirmed: Bool { confirmed == false }
 }
 
 /// Where the free allowance stands, most pressing first: each case has its own sentence because
 /// "used up this month" is wrong when only today's share or the shared budget ran out.
-enum AllowanceStanding: Equatable { case plenty, runningLow, usedUpThisMonth, usedUpToday, sharedBudgetUsedUp, paused }
+enum AllowanceStanding: Equatable { case plenty, runningLow, usedUpThisMonth, usedUpToday, sharedBudgetUsedUp, paused, unconfirmed }
 
 extension BillingSummary {
     var allowanceStanding: AllowanceStanding {
         if blocked { return .paused }
+        if confirmed == false { return .unconfirmed }
         if fractionUsed >= 1 { return .usedUpThisMonth }
         if budgetExhausted { return .sharedBudgetUsedUp }
         if dailyLimitUsd > 0 && spentTodayUsd >= dailyLimitUsd { return .usedUpToday }
@@ -54,6 +64,11 @@ extension BillingSummary {
         case .usedUpToday: return "today's free allowance is used — it comes back tomorrow"
         case .sharedBudgetUsedUp: return "the free allowance is used up for now"
         case .paused: return "this account is paused — dictation still works"
+        case .unconfirmed:
+            let limit = guestLimitUsd ?? 0, spent = guestSpentUsd ?? 0
+            if limit > 0 && spent >= limit { return "the starter allowance is used — confirm your email to keep going" }
+            let percent = limit > 0 ? Int((spent / limit * 100).rounded()) : 0
+            return "confirm your email to unlock the full free allowance · \(percent)% of the starter used"
         }
     }
 
@@ -133,10 +148,6 @@ final class BillingStatusModel: ObservableObject {
 struct NotchAccountSection<Row: View, ActionRow: View>: View {
     @StateObject private var model = BillingStatusModel()
     @ObservedObject private var authSession = OpenClickyAuthSession.shared
-    @State private var email = ""
-    @State private var password = ""
-    @State private var isSigningIn = false
-    @State private var signInFailureText: String?
 
     let row: (_ systemImage: String, _ title: String, _ value: String) -> Row
     let action: (_ systemImage: String, _ title: String, _ detail: String?, _ action: @escaping () -> Void) -> ActionRow
@@ -148,82 +159,13 @@ struct NotchAccountSection<Row: View, ActionRow: View>: View {
                 row("key.fill", "keys", "your own (not metered)")
                 action("doc.text", "change keys", "openaiApiKey / anthropicApiKey in shell.json") { OpenClickyConfiguration.revealSettingsFile() }
             } else if !OpenClickyConfiguration.isConfigured {
-                signInForm
+                action("person.crop.circle.badge.plus", "free account", "set it up with your email in settings", openAccountPage)
             } else {
                 signedInRows
             }
         }
         .onAppear { model.refresh() }
         .onReceive(authSession.objectWillChange) { _ in DispatchQueue.main.async { model.refresh() } }
-    }
-
-    private var signInForm: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("sign in to your openclicky account.")
-                .font(.system(size: 11))
-                .foregroundColor(Color.white.opacity(0.6))
-            credentialField(systemImage: "envelope", text: $email, placeholder: "email", isSecure: false)
-            credentialField(systemImage: "lock", text: $password, placeholder: "password", isSecure: true)
-            HStack {
-                if let signInFailureText {
-                    Text(signInFailureText)
-                        .font(.system(size: 10.5))
-                        .foregroundColor(DS.Colors.overlayCursorColor)
-                        .lineLimit(2)
-                }
-                Spacer()
-                Button(action: signIn) {
-                    Text(isSigningIn ? "signing in…" : "sign in")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(Color(hex: "#262626")))
-                }
-                .buttonStyle(.plain)
-                .pointerCursor()
-                .disabled(isSigningIn || email.isEmpty || password.isEmpty)
-            }
-            if OpenClickyAuthSession.offersCreateAccount(accountsOpen: authSession.accountsOpen) {
-                Button(action: openAccountPage) {
-                    Text("no account yet? create a free one in settings.")
-                        .font(.system(size: 10))
-                        .foregroundColor(Color.white.opacity(0.55))
-                }
-                .buttonStyle(.plain)
-                .pointerCursor()
-            }
-        }
-        .task { await authSession.refreshAccountsOpen() }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-
-    private func credentialField(systemImage: String, text: Binding<String>, placeholder: String, isSecure: Bool) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage).font(.system(size: 11)).foregroundColor(Color.white.opacity(0.6)).frame(width: 16)
-            NotchComposerTextField(text: text, placeholder: placeholder, isSecure: isSecure, onSubmit: signIn, onEscape: {})
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.06)))
-    }
-
-    private func signIn() {
-        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedEmail.isEmpty, !password.isEmpty, !isSigningIn else { return }
-        isSigningIn = true
-        signInFailureText = nil
-        Task {
-            let succeeded = await authSession.signIn(email: trimmedEmail, password: password)
-            isSigningIn = false
-            if succeeded {
-                password = ""
-                model.refresh()
-            } else {
-                signInFailureText = AccountSheet.friendlySignInMessage(authSession.lastErrorText)
-            }
-        }
     }
 
     @ViewBuilder

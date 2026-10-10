@@ -49,36 +49,29 @@ struct AccountSheetTests {
         #expect(NotchSettingsView.planDescription(kind: .signedOut, summary: nil) == "not signed in")
     }
 
-    @Test func aSecondSignUpWaitsForTheFirst() {
-        #expect(!OpenClickyAuthSession.canStartSignUp(from: .sending))
-        #expect(!OpenClickyAuthSession.canStartSignUp(from: .awaitingConfirmation(email: "gran@example.com")))
-        #expect(OpenClickyAuthSession.canStartSignUp(from: .idle))
-        #expect(OpenClickyAuthSession.canStartSignUp(from: .failed("no")))
-        #expect(OpenClickyAuthSession.canStartSignUp(from: .full))
-    }
-
     @Test func aClosedSheetIsACancellationNotAFailure() {
         #expect(OpenClickyAuthSession.isCancellation(CancellationError()))
         #expect(OpenClickyAuthSession.isCancellation(URLError(.cancelled)))
         #expect(!OpenClickyAuthSession.isCancellation(URLError(.notConnectedToInternet)))
     }
 
-    @Test func createNeedsEightCharactersAndSignInAnyPassword() {
-        #expect(!AccountSheet.canSubmit(mode: .create, email: "gran@example.com", password: "1234567"))
-        #expect(AccountSheet.canSubmit(mode: .create, email: "gran@example.com", password: "12345678"))
-        #expect(AccountSheet.canSubmit(mode: .signIn, email: "gran@example.com", password: "123"))
-        #expect(!AccountSheet.canSubmit(mode: .signIn, email: "gran", password: "12345678"))
-    }
-
-    @Test func signInFailuresReadAsOnePlainSentence() {
-        #expect(AccountSheet.friendlySignInMessage("Invalid login credentials") == "that email and password don't match — try again, or reset the password.")
-        #expect(AccountSheet.friendlySignInMessage("Email not confirmed") == "this email isn't confirmed yet — tap the link we sent you first.")
-        #expect(AccountSheet.friendlySignInMessage("The Internet connection appears to be offline.") == "couldn't sign in right now — try again in a minute.")
-        #expect(AccountSheet.friendlySignInMessage(nil) == "couldn't sign in right now — try again in a minute.")
-    }
-
     @Test func theFullAccountsSentenceIsNeverEmpty() {
         #expect(!AccountLimitError.accountsFull.message.isEmpty)
+    }
+
+    @Test func anUnconfirmedAccountSaysCheckYourInbox() {
+        var guest = summary(spentMonth: 0.25)
+        guest.confirmed = false; guest.guestSpentUsd = 0.25; guest.guestLimitUsd = 1
+        #expect(guest.allowanceStanding == .unconfirmed)
+        #expect(guest.allowanceSentence(resetDay: "nov 1") == "confirm your email to unlock the full free allowance · 25% of the starter used")
+        guest.guestSpentUsd = 1
+        #expect(guest.allowanceSentence(resetDay: "nov 1") == "the starter allowance is used — confirm your email to keep going")
+    }
+
+    @Test func confirmEmailAndDeviceLimitHaveSentences() {
+        #expect(AccountLimitError.confirmEmail.message == "confirm your email to keep going — you can resend the link in settings.")
+        #expect(AccountLimitError.deviceLimit.message == "this mac already has two openclicky accounts — sign in with one of them.")
+        #expect(AccountLimitError.from(status: 402, body: Data(#"{"error":"confirm_email"}"#.utf8)) == .confirmEmail)
     }
 }
 
@@ -100,5 +93,28 @@ struct AccountWorkSlotTests {
     @Test func greenOnlyWhenNothingIsUsedUp() {
         let todayUsedUp = BillingSummary(byok: false, spentMonthUsd: 1, monthlyLimitUsd: 10, spentTodayUsd: 2, dailyLimitUsd: 2, ttsCharsMonth: 0, ttsCharsLimit: 20000, monthEnd: "", dayEnd: "", budgetExhausted: false, blocked: false)
         #expect(todayUsedUp.allowanceStanding != .plenty)
+    }
+
+    @Test func theEmailFormNeedsAnAddressAndTheCodeSixDigits() {
+        #expect(!EmailAccountForm.canSubmitEmail("gran"))
+        #expect(EmailAccountForm.canSubmitEmail(" gran@example.com "))
+        #expect(!EmailAccountForm.canSubmitCode("12345"))
+        #expect(EmailAccountForm.canSubmitCode("123 456"))
+        #expect(!EmailAccountForm.canSubmitCode("12a456"))
+    }
+
+    /// API-key fields (Settings, onboarding's Sarvam step) legitimately use SecureField, so only the
+    /// account files are checked.
+    @Test func noPasswordFieldIsLeftInTheAccountUI() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("OpenClicky")
+        let names: Set<String> = ["AccountSheet.swift", "EmailAccountForm.swift", "BillingStatus.swift", "SettingsAccountPage.swift"]
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)!.compactMap { $0 as? URL }.filter { names.contains($0.lastPathComponent) }
+        #expect(files.count == names.count)
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            #expect(!text.contains("SecureField") || file.lastPathComponent == "SettingsAccountPage.swift", "\(file.lastPathComponent) still has a password field")
+            #expect(!text.lowercased().contains("forgot password"), "\(file.lastPathComponent) still offers a password reset")
+            #expect(!text.contains("isSecure: true"), "\(file.lastPathComponent) still has a secure credential field")
+        }
     }
 }

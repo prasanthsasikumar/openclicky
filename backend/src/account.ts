@@ -50,7 +50,7 @@ export async function reserveOr402(c: Context, ledger: SpendLedger, estimateMicr
   try { result = await ledger.reserve(account.userId, estimateMicro, account.limits); }
   catch (e) { console.error(`ledger reserve failed: ${(e as Error).message}`); return ledgerUnavailable(c); }
   if (result.ok) return { reservationId: result.reservationId };
-  return c.json({ error: result.error, resets_at: result.resetsAt }, 402);
+  return c.json(result.resetsAt ? { error: result.error, resets_at: result.resetsAt } : { error: result.error }, 402);
 }
 
 /** grant: metered on the backend's grant; byok: the request carries its own key; unmetered: a backend with no grant mode. */
@@ -59,7 +59,15 @@ export type Plan = "grant" | "byok" | "unmetered";
 export type AccountSummaryJson = {
   plan: Plan; onPlan: boolean; byok: boolean; spentMonthUsd: number; monthlyLimitUsd: number; spentTodayUsd: number; dailyLimitUsd: number;
   ttsCharsMonth: number; ttsCharsLimit: number; monthEnd: string; dayEnd: string; budgetExhausted: boolean; blocked: boolean;
+  confirmed: boolean; guestSpentUsd: number; guestLimitUsd: number; email: string | null;
 };
+
+/** "prasanth@flowsxr.com" → "p•••@flowsxr.com": enough for the person to recognise, no more. */
+export function maskEmail(email: string | null): string | null {
+  if (!email) return null;
+  const at = email.indexOf("@");
+  return at < 1 ? null : `${email[0]}•••${email.slice(at)}`;
+}
 
 const dollars = (micro: number) => Math.round(micro / 10_000) / 100;
 
@@ -76,5 +84,9 @@ export async function accountSummary(c: Context, ledger: SpendLedger): Promise<A
     ttsCharsMonth: s.ttsCharsMonth, ttsCharsLimit: s.ttsCharsLimit,
     monthEnd: s.monthEnd, dayEnd: s.dayEnd,
     budgetExhausted: s.globalSpentMicro >= s.globalLimitMicro, blocked: s.blocked,
+    // Older schemas send no confirmation: count the account as confirmed rather than shut it out.
+    confirmed: account.byok || s.confirmed !== false,
+    guestSpentUsd: dollars(s.guestSpentMicro ?? 0), guestLimitUsd: dollars(s.guestLimitMicro ?? 0),
+    email: maskEmail(s.email ?? null),
   };
 }
