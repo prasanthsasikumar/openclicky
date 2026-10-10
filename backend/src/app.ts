@@ -10,6 +10,7 @@ import { SupabaseRest } from "./db.js";
 import { requireAccount, accountSummary, type AccountContext } from "./account.js";
 import { proxyAnthropicOnGrant } from "./anthropicGrant.js";
 import { polishTake } from "./polish.js";
+import { speakOnGrant } from "./tts.js";
 import type { Purpose } from "./modelPolicy.js";
 import { SupabaseSpendLedger, type SpendLedger } from "./ledger.js";
 import { handleStripeWebhook, createCheckoutSession, createPortalSession } from "./stripe.js";
@@ -127,7 +128,11 @@ export function createApp(options: AppOptions = {}) {
 
   // Native shell (macos/OpenClicky, forked from the original open-source Clicky app) speaks its original Worker contract.
   app.post("/chat", (c) => grantOr(c, "ask", () => proxyAnthropic(c, storeFor(c)))); // Claude vision + [POINT] pointing, streamed
-  app.post("/tts", (c) => synthesizeSpeech(c, storeFor(c))); // ElevenLabs or OpenAI speech → audio/mpeg
+  app.post("/tts", (c) => { // ElevenLabs or OpenAI speech → audio/mpeg; the grant gets the metered ElevenLabs path
+    const ledger = ledgerFor(c);
+    const account = c.get("account" as never) as AccountContext | undefined;
+    return ledger && account && !account.byok ? speakOnGrant(c, ledger) : synthesizeSpeech(c, storeFor(c));
+  });
   app.post("/transcribe-token", (c) => assemblyAiToken(c)); // AssemblyAI streaming token (optional)
 
   app.post("/v1/chat/completions", (c) => proxyOpenAI(c, "/chat/completions", storeFor(c))); // `ask` lane
