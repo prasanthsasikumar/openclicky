@@ -436,6 +436,30 @@ describe("app", () => {
       expect(s.spentTodayMicro).toBeGreaterThan(0);
     });
 
+    it("routes /tts to ElevenLabs through the grant, and BYOK to the plain speech path", async () => {
+      const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
+      const urls: string[] = [];
+      vi.stubGlobal("fetch", vi.fn(async (url: any) => {
+        urls.push(String(url));
+        return String(url).includes("/v1/user/subscription")
+          ? new Response(JSON.stringify({ character_count: 0, character_limit: 1_000_000 }))
+          : new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } });
+      }));
+      const tenv = { ...env, ELEVENLABS_API_KEY: "xi", ELEVENLABS_BASE_URL: "http://eleven.test", OPENAI_BASE_URL: "http://openai.test/v1", BYOK_OPENAI_BASE_URL: "http://openai.test/v1" };
+      try {
+        const token = await jwt();
+        const grant = await billed.request("/tts", json({ text: "Click Battery." }, token), tenv);
+        expect(grant.status).toBe(200);
+        expect(urls.some((u) => u.includes("/v1/user/subscription"))).toBe(true);
+        expect(urls.some((u) => u.startsWith("http://eleven.test/v1/text-to-speech"))).toBe(true);
+
+        urls.length = 0;
+        const own = await billed.request("/tts", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-openclicky-openai-key": "sk-own" }, body: JSON.stringify({ text: "Click Battery." }) }, tenv);
+        expect(own.status).toBe(200);
+        expect(urls).toEqual(["http://openai.test/v1/audio/speech"]);
+      } finally { vi.unstubAllGlobals(); }
+    });
+
     it("refuses realtime sessions and transcription on the grant", async () => {
       const billed = createApp({ log: null, billingStore: new MemoryBillingStore(), spendLedger: new MemorySpendLedger() });
       const token = await jwt();

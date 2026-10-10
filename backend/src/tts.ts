@@ -8,6 +8,8 @@ const CACHE_MS = 10 * 60_000;
 let cached: { at: number; remaining: number } | undefined;
 export function resetElevenLabsCache() { cached = undefined; }
 const fresh = (now: number) => (cached && now - cached.at < CACHE_MS ? cached.remaining : undefined);
+/** Spend from the cached remainder so accounts together cannot overspend the plan between refreshes. */
+const spendCached = (characters: number) => { if (cached) cached = { at: cached.at, remaining: Math.max(0, cached.remaining - characters) }; };
 const remember = (at: number, remaining: number) => { cached = { at, remaining }; };
 
 const base = (env: Env) => (env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io").replace(/\/$/, "");
@@ -49,8 +51,15 @@ export async function speakOnGrant(c: Context, ledger: SpendLedger): Promise<Res
   if (!text) return c.json({ error: "body must be JSON with `text`" }, 400);
   const account = c.get("account" as never) as AccountContext;
   const remaining = await elevenLabsCharsRemaining(env);
-  const reserved = await ledger.reserveCharacters(account.userId, text.length, account.limits, remaining);
+  let reserved: Awaited<ReturnType<SpendLedger["reserveCharacters"]>>;
+  try {
+    reserved = await ledger.reserveCharacters(account.userId, text.length, account.limits, remaining);
+  } catch {
+    console.error("tts: character reservation failed");
+    return c.json({ error: "tts_budget" }, 402);
+  }
   if (!reserved.ok) return c.json({ error: "tts_budget" }, 402); // the app falls back to the Mac's voice, silently
+  spendCached(text.length);
   const voiceId = env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
   let upstream: Response;
   try {

@@ -89,4 +89,27 @@ describe("speakOnGrant", () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain("xi leaked");
     log.mockRestore();
   });
+
+  it("answers tts_budget, not 500, when the ledger reservation rejects", async () => {
+    stub({ character_count: 0, character_limit: 1_000_000 });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ledger = new MemorySpendLedger();
+    vi.spyOn(ledger, "reserveCharacters").mockRejectedValue(new Error("rpc down xi"));
+    const res = await say(app(ledger));
+    expect(res.status).toBe(402);
+    expect(await res.json()).toEqual({ error: "tts_budget" });
+    expect(JSON.stringify(log.mock.calls)).not.toContain("rpc down");
+    log.mockRestore();
+  });
+
+  it("spends the cached plan remainder so accounts together cannot overspend between refreshes", async () => {
+    stub({ character_count: 250, character_limit: 1000 });
+    const a = app(new MemorySpendLedger());
+    const text = "a".repeat(300);
+    expect((await say(a, text)).status).toBe(200);
+    expect((await say(a, text)).status).toBe(200);
+    const third = await say(a, text);
+    expect(third.status).toBe(402);
+    expect(await third.json()).toEqual({ error: "tts_budget" });
+  });
 });
