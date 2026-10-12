@@ -47,7 +47,7 @@ struct DictationPipelineTests {
     }
 
     @Test @MainActor func theStoredLanguageIsTheOneTheSettingsWrote() {
-        let defaults = UserDefaults(suiteName: "openclicky-tests-\(UUID().uuidString)")!
+        let defaults = ScratchDefaults.make()
         #expect(DictationSettings.storedLanguage(defaults: defaults) == .auto)
         let settings = DictationSettings(defaults: defaults)
         settings.languageCode = "hi-IN"

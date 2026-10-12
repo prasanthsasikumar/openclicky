@@ -6,7 +6,7 @@ import Testing
 /// The account profile comes from the backend's /billing/me answer, never from a guess.
 struct AccountProfileTests {
     private func freshDefaults() -> UserDefaults {
-        UserDefaults(suiteName: "openclicky-profile-tests-\(UUID().uuidString)")!
+        ScratchDefaults.make()
     }
 
     private func summary(plan: String?, onPlan: Bool? = true, spent: Double = 0, blocked: Bool = false, byok: Bool = false) -> BillingSummary {

@@ -117,8 +117,7 @@ private struct Harness {
     }
 
     init(polisher: (any TakePolisher)? = nil, field: FocusedFieldSnapshot? = nil) throws {
-        let suite = "openclicky-tests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = ScratchDefaults.make()
         settings = DictationSettings(defaults: defaults)
         settings.sounds = false
         settings.haptics = false
