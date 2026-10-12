@@ -16,7 +16,7 @@ import Testing
 struct CleanUpSwitchReadersTests {
 
     private func makeSettings(polishWithModel: Bool, polishOfflineTakes: Bool, engine: DictationEngineChoice) -> DictationSettings {
-        let defaults = UserDefaults(suiteName: "openclicky-cleanup-readers-\(UUID().uuidString)")!
+        let defaults = ScratchDefaults.make()
         let settings = DictationSettings(defaults: defaults)
         settings.engine = engine
         settings.polishWithModel = polishWithModel
