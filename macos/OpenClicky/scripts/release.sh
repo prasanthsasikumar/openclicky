@@ -255,9 +255,9 @@ if [[ $PUBLISH -eq 1 ]]; then
     gh release create "$TAG" "${RELEASE_ASSETS[@]}" --repo "$GITHUB_REPO" --title "OpenClicky $VERSION" --notes-file "$NOTES_FILE"
   fi
   gh release view "$TAG" --repo "$GITHUB_REPO" --json url --jq .url
-  # The Homebrew cask (prasanthsasikumar/homebrew-tap) installs and checks the new dmg, then bumps
+  # The Homebrew cask (flowsxr/homebrew-tap) installs and checks the new dmg, then bumps
   # itself; this only starts it now instead of at its next six-hourly run.
-  gh workflow run bump-openclicky.yml --repo prasanthsasikumar/homebrew-tap >/dev/null 2>&1 \
+  gh workflow run bump-openclicky.yml --repo flowsxr/homebrew-tap >/dev/null 2>&1 \
     && echo "▸ Homebrew cask update started" \
     || echo "▸ Homebrew cask update not started; it runs on its own within six hours"
 fi
