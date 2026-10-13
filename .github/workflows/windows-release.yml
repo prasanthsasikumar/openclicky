@@ -1,25 +1,26 @@
 name: windows-release
 
-# Builds OpenClicky for Windows (x64 + ARM64), signs it through SignPath Foundation's free
-# open-source program when the repository is set up for it, packs it with Velopack and uploads it to
-# this repository's GitHub Releases, where the app's updater finds it.
+# Attaches OpenClicky for Windows (x64 + ARM64) to a release, next to the dmg and zip that
+# macos/OpenClicky/scripts/release.sh uploads. Run by hand (Actions → windows-release → Run workflow)
+# with the release's tag: a Mac release never ships Windows on its own, so Windows goes out only when
+# the maintainer chooses, the same as Linux. The app is built from that tag, signed through SignPath
+# Foundation's free open-source program when the repository is set up for it, packed with Velopack
+# and uploaded to the release, where the app's updater finds it.
 #
 # Signing is skipped until the repository variable SIGNPATH_ORGANIZATION_ID exists, so the workflow
 # also produces (unsigned) releases before SignPath has approved the project. Setup:
 # windows/docs/code-signing.md.
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version (empty = windows/Directory.Build.props)'
-        required: false
+      tag:
+        description: 'Release tag to attach the Windows installers to (e.g. v0.9.0); the version is the tag without the v'
+        required: true
       publish:
-        description: 'Upload to GitHub Releases'
+        description: 'Upload to the release (off: keep the files with the run only)'
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write   # vpk upload creates and updates the release
@@ -27,6 +28,8 @@ permissions:
 
 jobs:
   windows:
+    # Forks publish their own builds by hand; only the canonical repo uploads here.
+    if: github.repository == 'prasanthsasikumar/openclicky'
     runs-on: windows-latest
     strategy:
       # Both architectures upload into the same GitHub release with --merge; one at a time.
@@ -39,11 +42,13 @@ jobs:
             channel: win-arm64
     env:
       SIGNING: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-      PUBLISH: ${{ github.ref_type == 'tag' || inputs.publish }}
+      PUBLISH: ${{ inputs.publish }}
       PUBLISH_DIR: windows/publish/${{ matrix.runtime }}
       RELEASE_DIR: windows/Releases/${{ matrix.runtime }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -53,12 +58,8 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = '${{ inputs.version }}'
-          if (-not $version -and '${{ github.ref_type }}' -eq 'tag') { $version = '${{ github.ref_name }}'.TrimStart('v') }
-          if (-not $version) {
-            [xml] $buildProps = Get-Content windows/Directory.Build.props
-            $version = ($buildProps.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ }) | Select-Object -First 1
-          }
+          $version = '${{ inputs.tag }}'.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+') { throw "tag '${{ inputs.tag }}' is not vX.Y.Z" }
           "value=$version" >> $env:GITHUB_OUTPUT
 
       - name: Test

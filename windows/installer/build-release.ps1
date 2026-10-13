@@ -25,7 +25,7 @@ param(
     [switch] $Publish,
     [switch] $PublishAsFinal,
     [string] $GitHubToken = $env:GITHUB_TOKEN,
-    [string] $RepoUrl = 'https://github.com/weijietan97/openclicky',
+    [string] $RepoUrl = 'https://github.com/prasanthsasikumar/openclicky',
     # Velopack installs into %LOCALAPPDATA%\<packId> and deletes that folder on uninstall. The app keeps
     # its own data (logs, preferences, history, downloaded models) in %LOCALAPPDATA%\OpenClicky, so the
     # package must not be called "OpenClicky" or an uninstall would wipe it.

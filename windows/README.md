@@ -51,8 +51,9 @@ The smoke flags write to the console they were started from and exit with 0 on s
 
 ## Release
 
-Releases are built, signed (SignPath Foundation) and uploaded by `.github/workflows/windows-release.yml`
-when a `vX.Y.Z` tag is pushed; setup and details in [docs/code-signing.md](docs/code-signing.md).
+Releases are built, signed (SignPath Foundation) and attached to a release by
+`.github/workflows/windows-release.yml`, run by hand with that release's `vX.Y.Z` tag: a Mac release never
+ships Windows on its own, the same as Linux. Setup and details in [docs/code-signing.md](docs/code-signing.md).
 `build-release.ps1` makes the same packages locally, unsigned:
 
 ```powershell
@@ -65,7 +66,7 @@ cd windows\installer
 The script publishes self-contained builds, packs them with Velopack (`vpk`, installed as a global dotnet tool
 when missing) into `windows\Releases\<rid>\` (`OpenClicky.Windows-<rid>-Setup.exe`, the full package and a
 portable zip; a delta too when an earlier release was fetched), and with `-Publish` uploads them to the
-releases of https://github.com/weijietan97/openclicky (`-GitHubToken` or `$env:GITHUB_TOKEN`; add
+releases of https://github.com/prasanthsasikumar/openclicky (`-GitHubToken` or `$env:GITHUB_TOKEN`; add
 `-PublishAsFinal` to publish instead of leaving a draft). x64 uses Velopack's `win` channel, ARM64 `win-arm64`.
 The installed app checks those releases at launch and daily (Settings → General → Updates), downloads in
 the background and applies the update when it quits; "Check now" applies it at once.

@@ -68,11 +68,12 @@ through unchanged.
 
 ## Releasing
 
-- Push a tag `vX.Y.Z`. The workflow runs the Core tests, builds x64 and ARM64, signs and packs each,
-  and uploads both into the GitHub release `vX.Y.Z` (Velopack channels `win` and `win-arm64`), which is
-  where the app's updater looks.
-- Or run the workflow by hand (Actions → windows-release → Run workflow) with *publish* off to get the
-  signed files as run artifacts without releasing anything.
+- After the Mac release `vX.Y.Z` is out, run the workflow by hand (Actions → windows-release → Run
+  workflow) with that tag. It checks out the tag, runs the Core tests, builds x64 and ARM64, signs and
+  packs each, and uploads both into the GitHub release `vX.Y.Z` (Velopack channels `win` and
+  `win-arm64`), which is where the app's updater looks. Pushing a tag never starts it: Windows goes
+  out only when the maintainer chooses, the same as Linux.
+- Turn *publish* off to get the signed files as run artifacts without releasing anything.
 
 With a manual-approval signing policy, each run waits in SignPath until an approver accepts it.
 
