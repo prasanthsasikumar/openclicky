@@ -41,8 +41,6 @@ struct AccountCapabilities: Equatable {
     var polishPath: String { kind == .ownKeys ? "/v1/chat/completions" : "/v1/polish" }
     /// The Agents tab's line under a disabled composer; signed out has nothing to explain.
     var agentUnavailableHint: String? { kind == .account ? "agent tasks need your own key for now." : nil }
-    /// "teach a skill" drafts the skill on OpenAI (/skills/create), which the grant does not cover.
-    var skillTeachingUnavailableHint: String? { kind == .account ? "teaching skills needs your own key for now." : nil }
     /// At most two screenshots go with an account's question (the backend refuses more).
     var maxAskScreens: Int? { kind == .account ? 2 : nil }
 }

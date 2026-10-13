@@ -1,0 +1,36 @@
+name: Request a skill
+description: Ask for OpenClicky to know an app better, so its answers and pointing fit that app. No coding needed.
+title: "Skill request: "
+labels: ["skill request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A skill is a page of notes about one app: where things are, how the common tasks are done, and the traps. OpenClicky reads it whenever that app is in front. Tell us about the app and someone will write one.
+  - type: input
+    id: app
+    attributes:
+      label: Which app or website?
+      placeholder: "DaVinci Resolve, Canva, WhatsApp, canva.com…"
+    validations:
+      required: true
+  - type: textarea
+    id: questions
+    attributes:
+      label: What do people ask about it?
+      description: The questions you'd ask OpenClicky in this app, one per line.
+      placeholder: |
+        where is export?
+        how do I speed up a clip?
+    validations:
+      required: true
+  - type: textarea
+    id: confusing
+    attributes:
+      label: What is confusing about it?
+      description: Anything that trips people up, or where OpenClicky pointed at the wrong thing.
+  - type: input
+    id: version
+    attributes:
+      label: App version (if you know it)
+      placeholder: "21.0"

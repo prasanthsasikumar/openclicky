@@ -49,7 +49,8 @@ const skills = [];
 function scan(dir, kindOf) {
   if (!fs.existsSync(dir)) return;
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (!e.isDirectory()) continue;
+    // "_template" and other "_" folders are for contributors, not a skill to serve.
+    if (!e.isDirectory() || e.name.startsWith("_")) continue;
     const skillMd = path.join(dir, e.name, "SKILL.md");
     if (!fs.existsSync(skillMd)) continue;
     const fm = frontmatter(fs.readFileSync(skillMd, "utf8"));

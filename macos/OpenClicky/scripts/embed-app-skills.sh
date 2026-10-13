@@ -19,6 +19,8 @@ mkdir -p "$destination"
 copied_skill_count=0
 for skill_folder in "$source_directory"/*/; do
   skill_id="$(basename "$skill_folder")"
+  # "_template" and other "_" folders are for contributors, not for the app.
+  [[ "$skill_id" == _* ]] && continue
   [[ -f "$skill_folder/SKILL.md" ]] || continue
   mkdir -p "$destination/$skill_id"
   cp "$skill_folder/SKILL.md" "$destination/$skill_id/SKILL.md"

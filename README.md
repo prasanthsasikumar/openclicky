@@ -121,8 +121,10 @@ Modeled on the HeyClicky idea, built as a **headless agent core plus a native sh
   model calls, mints Realtime voice secrets, transcribes audio, and serves the skill library. Runs on
   Node or Cloudflare Workers unchanged.
 - **Skills in three layers** — 15 built-in agent skills, 17 app-teaching skills matched to the app or
-  site in front of you, and your own library in `~/.openclicky/skills` (fill it from the HUD, the
-  `openclicky skills` CLI, or by hand). The active set reaches both the voice model and the agent.
+  site in front of you, and your own library in `~/.openclicky/skills` (folders dropped in by hand,
+  switched on with the `openclicky skills` CLI). The active set reaches both the voice model and the
+  agent. Missing your app? [Request a skill](https://github.com/prasanthsasikumar/openclicky/issues/new?template=request-a-skill.yml),
+  or add one by pull request ([how](CONTRIBUTING.md#add-a-skill-for-an-app)).
 - **Pointing from Realtime voice** — the voice model gets a `point_at` tool, so "where is the export
   button?" flies the buddy to it while the answer is spoken, one call per step for walkthroughs.
 

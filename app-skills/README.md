@@ -64,6 +64,11 @@ Budget: the app skill is injected with a cap of 4,000 characters, so keep the bo
 
 ## Adding one
 
+Skills arrive as pull requests (CONTRIBUTING.md, "Add a skill for an app"); start from `_template/`.
+Folders starting with `_` are never loaded or shipped. `npm run check:skills` (run by CI) checks the
+shape, the size, `surfaces: [talk]`, that no other skill claims the same app or site, and that there
+are no links, code blocks or shell commands.
+
 1. Create `app-skills/<id>/SKILL.md` with the frontmatter above. Find a bundle id with
    `osascript -e 'id of app "Name"'` or `mdls -name kMDItemCFBundleIdentifier /Applications/Name.app`.
 2. Run `npm run build` so the backend's skill manifest (`GET /skills/library`, `kind: "app"`) picks it up.

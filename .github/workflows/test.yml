@@ -22,6 +22,9 @@ jobs:
       # Errors only. The 371 warnings are the backlog the linter was added to make visible, not a
       # reason to fail the build; `--max-warnings` stays off until that list is worked down.
       - run: npm run lint
+      # Every app skill's shape, size and content (talk-only, no links or commands); a skill pull
+      # request has to pass this before anyone reads it.
+      - run: npm run check:skills
       - run: npm test
       - run: npm run build -w backend
       - run: npm run build -w agent

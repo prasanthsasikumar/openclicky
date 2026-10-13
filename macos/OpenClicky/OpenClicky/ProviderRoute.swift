@@ -28,8 +28,6 @@ nonisolated enum ProviderCapability: String, CaseIterable, Sendable {
     case transcription
     /// Realtime voice: the client secret (/agent/realtime/session). OpenAI key.
     case realtime
-    /// "teach a skill" (/skills/create). OpenAI key.
-    case skillDrafting
     /// AssemblyAI streaming (/transcribe-token): minted on OpenClicky's AssemblyAI key, account only.
     case assemblyAIStreaming
 }
@@ -169,7 +167,7 @@ nonisolated enum ProviderRouter {
             case .some(let other): return .answerProvider(other)
             case .none: return .unavailable(needsAnthropicKeySentence)
             }
-        case .openAIChat, .speech, .transcription, .realtime, .skillDrafting:
+        case .openAIChat, .speech, .transcription, .realtime:
             if credentials.openAIKey != nil { return .openAIDirect }
         case .assemblyAIStreaming:
             break
@@ -180,7 +178,7 @@ nonisolated enum ProviderRouter {
             return .unavailable(needsAnthropicKeySentence)
         case .assemblyAIStreaming:
             return .unavailable(assemblyAINeedsAccountSentence)
-        case .openAIChat, .speech, .transcription, .realtime, .skillDrafting:
+        case .openAIChat, .speech, .transcription, .realtime:
             return .unavailable(needsOpenAIKeySentence)
         }
     }
@@ -325,46 +323,5 @@ nonisolated enum DirectProviderRequests {
             "expires_after": ["anchor": "created_at", "seconds": expiresInSeconds], "session": session,
         ] as [String: Any])
         return request
-    }
-
-    /// The skill-drafting prompt the backend uses (skillsCreate.ts).
-    static let skillDraftingSystemPrompt = """
-    You write skills for OpenClicky, a Mac voice assistant. A skill is ONE Markdown file in this exact format:
-    ---
-    name: <Short Title Case name>
-    description: <one sentence: what it does and when to use it>
-    surfaces: [talk, agent]
-    ---
-    <body: ≤ 600 words. Headings: Use When, Steps/Rules, Voice or Style (if relevant), Do Not.>
-
-    surfaces: "talk" applies when the user is chatting or asking; "agent" applies when the agent does work. Use [talk] for styles and knowledge, [agent] for operational workflows, [talk, agent] when unsure. Do not add comments after the value.
-    Only rely on capabilities from this list: {{CAPS}}. Never invent tools or integrations. Output the file only, no commentary.
-    """
-
-    static func openAISkillDraft(key: String, request skillRequest: String, capabilities: [String]) throws -> URLRequest {
-        var request = openAIChatCompletions(key: key)
-        let capabilityList = capabilities.isEmpty ? "none" : capabilities.joined(separator: ", ")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "model": defaultOpenAIModel,
-            "stream": false,
-            "messages": [
-                ["role": "system", "content": skillDraftingSystemPrompt.replacingOccurrences(of: "{{CAPS}}", with: capabilityList)],
-                ["role": "user", "content": "Skill request: \(skillRequest.trimmingCharacters(in: .whitespacesAndNewlines))"],
-            ],
-        ] as [String: Any])
-        return request
-    }
-
-    /// The SKILL.md inside a chat completion, code fences stripped as the backend does. Nil when there is no text.
-    static func skillMarkdown(fromCompletion data: Data) -> String? {
-        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let message = choices.first?["message"] as? [String: Any],
-              let content = (message["content"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !content.isEmpty else { return nil }
-        var markdown = content
-        if let fence = markdown.range(of: #"^```[a-zA-Z]*\n?"#, options: .regularExpression) { markdown.removeSubrange(fence) }
-        if let fence = markdown.range(of: #"\n?```\s*$"#, options: .regularExpression) { markdown.removeSubrange(fence) }
-        return markdown.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
     }
 }

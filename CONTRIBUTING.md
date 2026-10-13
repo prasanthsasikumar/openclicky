@@ -71,6 +71,28 @@ another instance is up. CI runs the TypeScript tests on every pull request.
   `.env.example` documents every variable.
 - Commit messages: imperative mood, `feat(area): …` / `fix(area): …` / `docs: …`, explaining why.
 
+## Add a skill for an app
+
+A skill teaches OpenClicky one app: where things are, how the common tasks are done, what to point
+at. It is one Markdown file, and it ships inside the next release once merged. Skills are only added
+this way, as reviewed pull requests; the app has no skill editor.
+
+1. Copy `app-skills/_template/` to `app-skills/<app-name>/` (lowercase, hyphens: `davinci-resolve`).
+2. Fill in the frontmatter. Find the app's bundle id with `osascript -e 'id of app "App Name"'`; for a
+   website, list its host (`mail.google.com`, not the whole `google.com`). Keep `surfaces: [talk]`.
+3. Write the four sections in order (Layout, Common tasks, Pointing hints, Gotchas), spatially and
+   concretely, under 3,500 characters. `app-skills/davinci-resolve/SKILL.md` is a good example;
+   `app-skills/README.md` has the details.
+4. Run `npm run check:skills`. It fails on a missing section, a body that is too long, a skill that
+   is not talk-only, an app another skill already covers, and any link, code block or shell command:
+   a skill describes the screen, it never sends people to a page or has them run something.
+5. Try it: put the folder in `~/.openclicky/app-skills/` (or run the app from your checkout), open the
+   app, hold ⌃⌥ and ask the questions people ask. Say in the pull request what you tried, and on which
+   version of the app.
+
+Not a writer? Open a **Request a skill** issue: name the app and the questions people ask, and someone
+will write it.
+
 ## Where help is welcome
 
 - Pointing accuracy on more apps and sites (`ScreenTextLocator`, `BrowserTabLocator`, app skills).

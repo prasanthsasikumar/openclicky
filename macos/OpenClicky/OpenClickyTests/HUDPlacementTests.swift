@@ -120,7 +120,10 @@ struct HUDPlacementTests {
         #expect(island.expansion == .compact)
         island.setHovering(false)
         island.setGuideStep(nil)
-        try await Task.sleep(nanoseconds: 600_000_000)
+        // The island collapses after its 0.4 s grace period; a busy CI runner can take longer.
+        for _ in 0..<150 where island.expansion != .collapsed {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
         #expect(island.expansion == .collapsed)
     }
 

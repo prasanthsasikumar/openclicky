@@ -8,7 +8,6 @@ import { MemoryBillingStore } from "../src/billing.js";
 import { MemorySpendLedger, limitsFromEnv } from "../src/ledger.js";
 
 type Seen = { url: string; auth?: string; apiKey?: string; contentType?: string; raw: string; body: Record<string, unknown> };
-const MOCK_SKILL = "```markdown\n---\nname: Reply In My Voice\ndescription: Draft email replies in the user's own voice.\nsurfaces: [talk, agent]\n---\n# Reply In My Voice\n\n## Use When\nThe user asks for a reply.\n```";
 let upstream: http.Server;
 let upstreamUrl: string;
 const seen: Seen[] = [];
@@ -28,12 +27,6 @@ beforeAll(async () => {
         raw: b,
         body: b && isJson ? JSON.parse(b) : {},
       });
-      if (req.url!.endsWith("/chat/completions") && b.includes('"stream":false')) {
-        // Non-streaming chat: POST /skills/create asks the model for a SKILL.md.
-        const content = b.includes("BROKEN") ? "no frontmatter" : b.includes("COMMENTED") ? MOCK_SKILL.replace("surfaces: [talk, agent]", "surfaces: [talk]   # talk = applies when chatting") : MOCK_SKILL;
-        res.writeHead(200, { "content-type": "application/json" });
-        return void res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content } }] }));
-      }
       if (req.url!.endsWith("/realtime/client_secrets")) {
         res.writeHead(200, { "content-type": "application/json" });
         return void res.end(JSON.stringify({ value: "ek_test_secret", expires_at: 1234, session: JSON.parse(b).session }));
@@ -230,47 +223,9 @@ describe("app", () => {
     expect(skills.some((s) => s.id === "powerpoint")).toBe(false);
   });
 
-  it("creates a skill from a one-line request", async () => {
-    const r = await call("/skills/create", json({ request: "reply to emails in my voice", capabilities: ["gmail"] }, await jwt()));
-    expect(r.status).toBe(200);
-    const j = await r.json();
-    expect(j).toMatchObject({ id: "reply-in-my-voice", name: "Reply In My Voice", description: "Draft email replies in the user's own voice." });
-    expect(j.markdown.startsWith("---\n")).toBe(true);
-    expect(j.markdown).not.toContain("```");
-    const sent = seen.at(-1)!;
-    expect(sent.url).toBe("/v1/chat/completions");
-    expect(sent.auth).toBe("Bearer sk-upstream");
-    expect(sent.body.stream).toBe(false);
-    expect(sent.body.model).toBe("gpt-test");
-    expect(JSON.stringify(sent.body.messages)).toContain("gmail");
-    expect(JSON.stringify(sent.body.messages)).toContain("openclicky-email-assistant");
-  });
-  it("rejects bad bodies and invalid model output", async () => {
-    expect((await call("/skills/create", { method: "POST" })).status).toBe(401);
-    expect((await call("/skills/create", json({}, await jwt()))).status).toBe(400);
-    expect((await call("/skills/create", json({ request: "BROKEN" }, await jwt()))).status).toBe(502);
-    expect((await call("/skills/create", json({ request: "x" }, await jwt()), { OPENAI_API_KEY: "" })).status).toBe(503);
-    expect((await call("/skills/create", json({ request: "x" }, await jwt()), { OPENAI_MODEL: "", SKILL_CREATE_MODEL: "" })).status).toBe(503);
-  });
-  it("caps the request and capability sizes", async () => {
-    const token = await jwt();
-    expect((await call("/skills/create", json({ request: "x".repeat(2001) }, token))).status).toBe(400);
-    expect((await call("/skills/create", json({ request: "ok", capabilities: Array(21).fill("gmail") }, token))).status).toBe(400);
-    expect((await call("/skills/create", json({ request: "ok", capabilities: ["y".repeat(65)] }, token))).status).toBe(400);
-    expect((await call("/skills/create", json({ request: "ok", capabilities: "gmail" }, token))).status).toBe(400);
-    expect((await call("/skills/create", json({ request: "ok", capabilities: ["gmail"] }, token))).status).toBe(200);
-  });
-  it("tolerates a model that echoes a trailing comment on the surfaces line", async () => {
-    const r = await call("/skills/create", json({ request: "COMMENTED" }, await jwt()));
-    expect(r.status).toBe(200);
-    const { markdown } = await r.json();
-    expect(markdown).toContain("surfaces: [talk]   # talk");
+  it("tolerates a skill file with a trailing comment on the surfaces line", () => {
+    const markdown = "---\nname: Reply In My Voice\ndescription: Draft email replies.\nsurfaces: [talk]   # talk = applies when chatting\n---\nbody\n";
     expect(parseSkillMarkdown(markdown)!.surfaces).toEqual(["talk"]);
-  });
-  it("uses SKILL_CREATE_MODEL over OPENAI_MODEL when set", async () => {
-    const r = await call("/skills/create", json({ request: "x" }, await jwt()), { SKILL_CREATE_MODEL: "gpt-skills" });
-    expect(r.status).toBe(200);
-    expect(seen.at(-1)!.body.model).toBe("gpt-skills");
   });
   it("serves app skills in the library manifest", async () => {
     const r = await call("/skills/library", { headers: { authorization: `Bearer ${await jwt()}` } });

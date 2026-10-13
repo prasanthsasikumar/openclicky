@@ -19,7 +19,7 @@ struct ProviderRouteTests {
     private let openAIAndAccount = ProviderCredentials(openAIKey: "sk-user", anthropicKey: nil, accountToken: "tok")
     private let nothing = ProviderCredentials(openAIKey: " ", anthropicKey: "", accountToken: "\n")
 
-    private let openAICapabilities: [ProviderCapability] = [.openAIChat, .speech, .transcription, .realtime, .skillDrafting]
+    private let openAICapabilities: [ProviderCapability] = [.openAIChat, .speech, .transcription, .realtime]
 
     // MARK: the decision
 
@@ -183,16 +183,6 @@ struct ProviderRouteTests {
         let cut = Data(#"{"content":[{"type":"text","text":"Hi"}],"stop_reason":"max_tokens"}"#.utf8)
         #expect(DirectProviderRequests.anthropicReplyText(from: whole) == "Hi.")
         #expect(DirectProviderRequests.anthropicReplyText(from: cut) == nil)
-    }
-
-    @Test func skillDraftingUsesTheBackendsPromptAndStripsFences() throws {
-        let request = try DirectProviderRequests.openAISkillDraft(key: "sk-user", request: " reply in my voice ", capabilities: ["doc", "composio"])
-        #expect(request.url?.absoluteString == "https://api.openai.com/v1/chat/completions")
-        let messages = try #require(json(request)["messages"] as? [[String: Any]])
-        #expect((messages[0]["content"] as? String)?.contains("Only rely on capabilities from this list: doc, composio.") == true)
-        #expect(messages[1]["content"] as? String == "Skill request: reply in my voice")
-        let completion = Data(#"{"choices":[{"message":{"content":"```markdown\n---\nname: X\n---\nbody\n```"}}]}"#.utf8)
-        #expect(DirectProviderRequests.skillMarkdown(fromCompletion: completion) == "---\nname: X\n---\nbody\n")
     }
 
     @Test func theAnthropicPolisherSendsToAnthropicAndReadsTheText() async throws {

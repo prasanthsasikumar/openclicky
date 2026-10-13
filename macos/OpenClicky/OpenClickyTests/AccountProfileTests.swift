@@ -156,12 +156,6 @@ struct AccountProfileTests {
                 == "needs an openclicky account: assemblyai runs on openclicky's key")
     }
 
-    @Test func teachingSkillsNeedsYourOwnKeyOnAnAccount() {
-        #expect(AccountCapabilities(kind: .account).skillTeachingUnavailableHint == "teaching skills needs your own key for now.")
-        #expect(AccountCapabilities(kind: .ownKeys).skillTeachingUnavailableHint == nil)
-        #expect(SkillLibraryError.needsOwnKey("teaching skills needs your own key for now.").errorDescription == "teaching skills needs your own key for now.")
-    }
-
     // MARK: C5 — polish of takes heard on this Mac
 
     @MainActor @Test func accountsPolishOfflineTakesUntilThePersonChooses() {

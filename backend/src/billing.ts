@@ -52,7 +52,7 @@ export interface BillingStore {
 export const FREE_PLAN_ID = "free";
 export const DEFAULT_FREE_MONTHLY_CREDITS = 200;
 /** Per-request costs that do not depend on the response. */
-export const CREDIT_COSTS = { realtimeSession: 30, skillCreate: 2, flatTokenFallback: 2 };
+export const CREDIT_COSTS = { realtimeSession: 30, flatTokenFallback: 2 };
 
 /** 1 credit per 1k input tokens plus 4 per 1k output tokens, at least 1. */
 export const creditsForTokens = (inputTokens: number, outputTokens: number) => Math.max(1, Math.ceil((inputTokens + 4 * outputTokens) / 1000));

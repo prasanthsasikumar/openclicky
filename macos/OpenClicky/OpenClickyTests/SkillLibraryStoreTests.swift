@@ -165,6 +165,7 @@ struct SkillLibraryStoreTests {
         try writeAppSkill(in: bundled, id: "notes", name: "Notes", bundleIdentifier: "com.apple.Notes")
         try writeAppSkill(in: local, id: "figma", name: "Figma (mine)", bundleIdentifier: "com.figma.Desktop")
         try writeAppSkill(in: local, id: "canva", name: "Canva", bundleIdentifier: "com.canva.CanvaDesktop")
+        try writeAppSkill(in: local, id: "_template", name: "App Name", bundleIdentifier: "com.example.AppName")
 
         let store = SkillLibraryStore(userSkillsDirectory: root.appendingPathComponent("skills", isDirectory: true),
                                       appSkillsDirectory: local,
