@@ -388,7 +388,8 @@ public class LiveTypingDecisionTests
     [Fact]
     public void ASessionHasTypedOnceAPhraseWentOut()
     {
-        var session = new LiveTypingSession<string, string>(new StableWordCommitter(), "target", "context");
+        var session = new LiveTypingSession(new StableWordCommitter(), new OpenClicky.Core.Platform.FocusedTextTarget { ProcessId = 1, RuntimeId = "1.2", Role = "Edit" },
+            new TakeFormattingContext { Style = DictationSpace.Empty.Style(null) });
         Assert.False(session.HasTyped);
         session.TypedPhraseCount += 1;
         Assert.True(session.HasTyped);

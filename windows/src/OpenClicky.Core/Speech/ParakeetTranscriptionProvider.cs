@@ -5,6 +5,7 @@
 // the whole take; the final read is unaffected.
 
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Platform;
 
 namespace OpenClicky.Core.Speech;
@@ -15,12 +16,13 @@ public sealed class ParakeetTranscriptionProvider : IBuddyTranscriptionProvider
     private readonly Func<string?> unavailableReason;
 
     /// <param name="unavailableReason">The resolver's rule (downloaded, and a language Parakeet hears), so the
-    /// provider and the island never disagree. TODO(integration): DictationEngineResolver.ParakeetUnavailableReason(
-    /// ParakeetDictation.IsInstalled, DictationSettings.StoredLanguage().BareCode).</param>
+    /// provider and the island never disagree; by default DictationEngineResolver.ParakeetUnavailableReason
+    /// for the stored dictation language.</param>
     public ParakeetTranscriptionProvider(Func<string?>? unavailableReason = null, Func<ParakeetDictation?>? dictation = null)
     {
         this.dictation = dictation ?? (() => ParakeetDictation.Shared);
-        this.unavailableReason = unavailableReason ?? (() => ParakeetDictation.IsInstalled ? null : ParakeetException.NotInstalledMessage);
+        this.unavailableReason = unavailableReason
+            ?? (() => DictationEngineResolver.ParakeetUnavailableReason(ParakeetFacts.IsInstalled, DictationSettings.StoredLanguage().BareCode));
     }
 
     public string DisplayName => "Parakeet (on this PC)";

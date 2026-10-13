@@ -19,8 +19,7 @@ public sealed class SarvamTranscriptionProvider : IBuddyTranscriptionProvider
     private readonly Func<string?> key;
     /// <summary>The dictation language's code ("hi-IN", or "auto").</summary>
     private readonly Func<string> languageCode;
-    /// <summary>The resolver's rule, so the provider and Settings never disagree about the key.
-    /// TODO(integration): DictationEngineResolver.SarvamUnavailableReason(sarvamKey).</summary>
+    /// <summary>The resolver's rule (DictationEngineResolver.SarvamUnavailableReason), so the provider and Settings never disagree about the key.</summary>
     private readonly Func<string?, string?> unavailableReason;
     private readonly Func<ISarvamSpeechWire> wire;
     private readonly Func<ISpeechWebSocket> makeSocket;
@@ -34,7 +33,7 @@ public sealed class SarvamTranscriptionProvider : IBuddyTranscriptionProvider
     {
         this.languageCode = languageCode;
         this.key = key ?? (() => OpenClickyConfiguration.Settings.SarvamKey);
-        this.unavailableReason = unavailableReason ?? (sarvamKey => string.IsNullOrWhiteSpace(sarvamKey) ? SarvamSpeechException.NoKey().Message : null);
+        this.unavailableReason = unavailableReason ?? Dictation.DictationEngineResolver.SarvamUnavailableReason;
         this.wire = wire ?? (() => SarvamSpeechWire.Required);
         this.makeSocket = makeSocket ?? (() => new ClientSpeechWebSocket());
     }

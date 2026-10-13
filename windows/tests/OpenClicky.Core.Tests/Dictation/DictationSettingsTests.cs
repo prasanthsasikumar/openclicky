@@ -5,6 +5,7 @@
 
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
+using OpenClicky.Core.Speech;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
 
@@ -170,10 +171,28 @@ public sealed class DictationSettingsTests
     public void OnlyTheOfflineEnginesKeepTheVoiceOnThisPC()
     {
         Assert.Equal([DictationEngineChoice.Offline, DictationEngineChoice.Parakeet], DictationEngineChoices.AllCases.Where(engine => engine.IsOnDevice()));
+        // On Windows only Parakeet is private: Windows speech recognition may use Microsoft's
+        // online speech service, so it is never tagged or described as keeping the voice here.
+        Assert.Equal([DictationEngineChoice.Parakeet], DictationEngineChoices.AllCases.Where(engine => engine.KeepsVoiceOnThisPC()));
         foreach (var engine in DictationEngineChoices.AllCases)
         {
-            Assert.Equal(engine.IsOnDevice(), engine.AudioDestinationTag() == "Private · offline");
+            Assert.Equal(engine.KeepsVoiceOnThisPC(), engine.AudioDestinationTag() == "Private · offline");
+            Assert.Equal(engine.KeepsVoiceOnThisPC(), engine.AudioDestinationSentence() == "Your voice stays on this PC.");
         }
+    }
+
+    [Fact]
+    public void WindowsSpeechSaysItMayUseMicrosoftsOnlineService()
+    {
+        var offline = DictationEngineChoice.Offline;
+        Assert.Contains("Microsoft’s online speech service", offline.SettingsDetail());
+        Assert.Contains("online speech recognition", offline.SettingsDetail());
+        Assert.Contains("Microsoft’s online speech service", offline.AudioDestinationSentence());
+        Assert.DoesNotContain("Nothing leaves", offline.SettingsDetail());
+        Assert.DoesNotContain("private", offline.SearchKeywords());
+        Assert.DoesNotContain("offline", offline.SearchKeywords());
+        Assert.Contains("nothing leaves this PC", DictationEngineChoice.Parakeet.SettingsDetail());
+        Assert.True(ParakeetFacts.IsRecommendedForThisPC);
     }
 
     [Fact]
@@ -181,7 +200,8 @@ public sealed class DictationSettingsTests
     {
         Assert.Equal(["offline", "parakeet", "sarvam", "openclicky", "assemblyai"], DictationEngineChoices.AllCases.Select(engine => engine.Id()));
         Assert.Equal(DictationEngineChoice.OpenClicky, DictationEngineChoices.FromRawValue("openclicky"));
-        Assert.Equal("This PC", DictationEngineChoice.Offline.SettingsTitle());
+        Assert.Equal("Windows speech recognition", DictationEngineChoice.Offline.SettingsTitle());
+        Assert.Equal("windows", DictationEngineChoice.Offline.ListenerName());
         Assert.Equal("this pc", DictationEngineChoice.Parakeet.ListenerName());
         Assert.Contains("windows", DictationEngineChoice.Offline.SearchKeywords());
         Assert.Contains("cloud", DictationEngineChoice.OpenClicky.SearchKeywords());
@@ -233,18 +253,19 @@ public sealed class DictationSettingsTests
 
     // MARK: the language every engine hears (HearingSettingsTests, F-16)
 
-    private sealed class RecordingFactory : IDictationProviderFactory<string>
+    private sealed class RecordingFactory : IDictationProviderFactory
     {
         public string? OfflineLocale { get; private set; }
+        public Func<string?>? ParakeetLanguage { get; private set; }
         public Func<DictationLanguage>? SarvamLanguage { get; private set; }
         public Func<string?>? OpenClickyLanguage { get; private set; }
         public Func<string?>? AssemblyAILanguage { get; private set; }
 
-        public string MakeOffline(string? preferredLocale) { OfflineLocale = preferredLocale; return "offline"; }
-        public string MakeParakeet() => "parakeet";
-        public string MakeSarvam(Func<DictationLanguage> language) { SarvamLanguage = language; return "sarvam"; }
-        public string MakeOpenClicky(Func<string?> bareLanguageCode) { OpenClickyLanguage = bareLanguageCode; return "openclicky"; }
-        public string MakeAssemblyAI(Func<string?> bareLanguageCode) { AssemblyAILanguage = bareLanguageCode; return "assemblyai"; }
+        public IBuddyTranscriptionProvider MakeOffline(string? preferredLocale) { OfflineLocale = preferredLocale; return new NamedTranscriptionProvider("offline"); }
+        public IBuddyTranscriptionProvider MakeParakeet(Func<string?> bareLanguageCode) { ParakeetLanguage = bareLanguageCode; return new NamedTranscriptionProvider("parakeet"); }
+        public IBuddyTranscriptionProvider MakeSarvam(Func<DictationLanguage> language) { SarvamLanguage = language; return new NamedTranscriptionProvider("sarvam"); }
+        public IBuddyTranscriptionProvider MakeOpenClicky(Func<string?> bareLanguageCode) { OpenClickyLanguage = bareLanguageCode; return new NamedTranscriptionProvider("openclicky"); }
+        public IBuddyTranscriptionProvider MakeAssemblyAI(Func<string?> bareLanguageCode) { AssemblyAILanguage = bareLanguageCode; return new NamedTranscriptionProvider("assemblyai"); }
     }
 
     [Fact]
@@ -254,9 +275,10 @@ public sealed class DictationSettingsTests
         var factory = new RecordingFactory();
         foreach (var engine in DictationEngineChoices.AllCases)
         {
-            Assert.Equal(engine.Id(), DictationEngineResolver.MakeProvider(engine, settings, factory));
+            Assert.Equal(engine.Id(), DictationEngineResolver.MakeProvider(engine, settings, factory).DisplayName);
         }
         Assert.Equal("hi-IN", factory.OfflineLocale);
+        Assert.Equal("hi", factory.ParakeetLanguage!());
         Assert.Equal("hi", factory.OpenClickyLanguage!());
         Assert.Equal("hi", factory.AssemblyAILanguage!());
         Assert.Equal("hi-IN", factory.SarvamLanguage!().Code);
