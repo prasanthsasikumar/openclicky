@@ -424,7 +424,7 @@ public sealed class SkillLibraryStore : INotifyPropertyChanged, IDisposable
     /// "Create a skill": the drafter (backend or own key) writes the SKILL.md from a one-line request;
     /// we store and activate it.
     /// </summary>
-    // TODO(integration): the Mac decides the route here before drafting —
+    // Wired (CompanionManager.Skills.cs DraftSkillMarkdownAsync): the Mac decides the route here before drafting —
     //   `AccountCapabilities.current().skillTeachingUnavailableHint` → `.needsOwnKey(hint)`;
     //   `ProviderRouter.current(for: .skillDrafting).unavailableSentence` → `.needsOwnKey(sentence)`;
     //   capabilities: "composio" when `OpenClickyConfiguration.activeComposioMcpUrl != nil`,

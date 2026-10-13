@@ -37,7 +37,7 @@ public sealed record RealtimeToolResult(string SpokenSentence, bool WasRejected 
 /// <summary>
 /// The `point_at` resolution steps after the OCR snap (which the client does itself through
 /// IScreenTextRecognizer + ScreenTextLocator). Every point is in the capture's screenshot pixels.
-/// TODO(integration): wire LocateBrowserTab to BrowserTabLocator.Locate over IBrowserTabSource,
+/// Wired (CompanionManager.Realtime.cs / AppComposition): wire LocateBrowserTab to BrowserTabLocator.Locate over IBrowserTabSource,
 /// LocateAccessibleElement to AccessibleElementLocator.BestMatch over IFocusedElementReader's
 /// captioned controls (mapped into screenshot pixels), and GroundWithClaude to
 /// ScreenElementGrounder.LocateAsync with the Answers port's image call.
@@ -218,7 +218,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// <summary>Runs the agent for a `send_to_agent` tool call; the returned text is spoken by the model.</summary>
     public Func<string, Task<string>>? OnAgentTask { get; set; }
     /// <summary>A desktop action (open an app, make a folder…) by tool name and arguments; null when the
-    /// tool is not one of them. TODO(integration): DesktopActions (the MacActions port).</summary>
+    /// tool is not one of them. Wired (CompanionManager.Realtime.cs / AppComposition): DesktopActions (the MacActions port).</summary>
     public Func<string, JsonObject, Task<RealtimeToolResult?>>? OnDesktopAction { get; set; }
     /// <summary>The desktop actions' tool definitions, offered next to send_to_agent and point_at.</summary>
     public Func<IReadOnlyList<JsonObject>>? DesktopActionToolDefinitions { get; set; }
@@ -324,7 +324,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     }
 
     /// <summary>After sleep a socket can look open and be dead: the next press checks it first.
-    /// TODO(integration): call from SystemEvents.PowerModeChanged (Resume).</summary>
+    /// Wired (CompanionManager.Realtime.cs / AppComposition): call from SystemEvents.PowerModeChanged (Resume).</summary>
     public void NoteSystemResumed() => lastServerEventAt = DateTimeOffset.MinValue;
 
     /// <summary>Waits for every queued `point_at` to resolve and fly (the smoke harness exits after this).</summary>

@@ -1,9 +1,17 @@
-﻿<Application x:Class="OpenClicky.Windows.App"
+<Application x:Class="OpenClicky.Windows.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:OpenClicky.Windows"
-             StartupUri="MainWindow.xaml">
+             ShutdownMode="OnExplicitShutdown">
+    <!-- No main window: OpenClicky lives in the tray and the island (the Mac's LSUIElement).
+         WPF-UI's ThemesDictionary + ControlsDictionary are deliberately NOT merged here: they restyle every
+         TextBox and Button app-wide (the island composer got WPF-UI's accent underline). The main window
+         installs them on itself (MainWindowTheme in MainWindow/SettingsLook.cs), following Settings ›
+         appearance, while the island, the orb and the overlay keep their own always-dark drawing. -->
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Theme/OpenClickyTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

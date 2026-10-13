@@ -41,7 +41,7 @@ public sealed class MainWindowServices
 
     /// <summary>
     /// The window over real Core objects and this PC's services, with the stand-ins for what isn't
-    /// wired yet (Detached*). TODO(integration): the composition root builds this with the real
+    /// wired yet (Detached*). Wired (AppComposition.Window()): the composition root builds this with the real
     /// CompanionManager, DictationTakeController, Velopack updater, answers/speech services, overlay
     /// pointer and RecordedVoice narrator.
     /// </summary>

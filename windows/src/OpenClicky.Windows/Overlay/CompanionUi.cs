@@ -8,7 +8,7 @@
 //  (i) types beside the pointer). Everything else (voice, answers, pointing, permissions, the tour)
 //  is the orchestrator's: it drives the models and listens to their events.
 //
-//  TODO(integration), for the composition root / CompanionManager port:
+//  Wired (CompanionManager + AppComposition), kept as the map: for the composition root / CompanionManager port:
 //   - App startup: `--openclicky-ui-demo` → Overlay.UiDemo.Run(); merge Theme/OpenClickyTheme.xaml into
 //     App.Resources if XAML views want the tokens; set <ApplicationIcon>Assets\OpenClicky.ico</ApplicationIcon>.
 //   - Mirror CompanionManager state into the models: OverlayModel.VoiceState / CurrentAudioPowerLevel /

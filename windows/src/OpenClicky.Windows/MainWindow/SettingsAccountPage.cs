@@ -111,8 +111,8 @@ internal sealed partial class SettingsRowFactory
     {
         OpenClickyConfiguration.Update(shell => provider.Store(shell, key));
         // A changed key is a changed credential: a live realtime session reconnects with it.
-        // TODO(integration): the Mac posted credentialsChangedNotification here; the settings-file
-        // watcher raises OpenClickyConfiguration.CredentialsChanged once it sees the write.
+        // (Wired: the Mac posted credentialsChangedNotification here; the settings-file
+        // watcher raises OpenClickyConfiguration.CredentialsChanged once it sees the write, and CompanionManager reconnects.)
         ShellSettingsRevision.NoteChanged();
     }
 

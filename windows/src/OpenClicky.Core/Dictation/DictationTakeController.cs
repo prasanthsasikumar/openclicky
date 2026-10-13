@@ -123,7 +123,7 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
     /// <summary>
     /// The key went down with no text box focused: the pointer says so beside the mouse, so the
     /// person knows to click into one instead of finding out from "copied, press Ctrl+V" at the end.
-    /// TODO(integration): the companion shows it as its quiet notice, waking a resting pointer.
+    /// Wired (CompanionManager.Dictation.cs / AppComposition): the companion shows it as its quiet notice, waking a resting pointer.
     /// </summary>
     public Action<string>? OnNoTextBoxAtPress { get; set; }
     /// <summary>
@@ -133,7 +133,7 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
     public TimeSpan TimeToWaitForATextBoxAfterRelease { get; set; } = TimeSpan.FromSeconds(8);
     /// <summary>The first-run tour's practice: takes are heard and recorded but never typed or pasted.</summary>
     public bool HoldsTakesOnTheIsland { get; set; }
-    /// <summary>Hides OpenClicky's own windows before "paste the last take" (the Mac's NSApp.hide). TODO(integration): the main window.</summary>
+    /// <summary>Hides OpenClicky's own windows before "paste the last take" (the Mac's NSApp.hide). Wired (CompanionManager.Dictation.cs / AppComposition): the main window.</summary>
     public Action? HideOwnWindows { get; set; }
     /// <summary>How fast a retried recording is fed to the engine (a retry goes faster than real time).</summary>
     public TimeSpan RetryPauseBetweenSlices { get; set; } = TimeSpan.FromMilliseconds(60);

@@ -127,3 +127,65 @@ dotnet build OpenClicky.Windows.sln -c Debug
 dotnet test tests/OpenClicky.Core.Tests
 dotnet run --project src/OpenClicky.Windows
 ```
+
+## Status (2026-10-14)
+
+### Ported
+
+Every Swift file has its Windows home (tables above). The last pieces landed in the integration step:
+
+- **CompanionManager** — `Core/Companion/CompanionManager*.cs`, split by concern: state, settings bridge
+  (`ICompanionSettings`) and permissions (`CompanionManager.cs`), shortcuts / push-to-talk / hands-free /
+  typed requests (`.Voice`), the ask lane with streamed speech, `[POINT]`, guided steps, write_in_place,
+  quick actions and the notices (`.AskLane`), the agent lane and result card (`.AgentLane`), Realtime
+  wiring with the point_at chain (`.Realtime`), pointing, the demos and the Settings tour's pointer
+  (`.Pointing`), captions / pointer presence / quitting (`.Captions`), uses and model downloads
+  (`.Onboarding`), skills / connect card / skill drafting (`.Skills`), the dictation take controller
+  (`.Dictation`, plus `DictationHistoryActions`). Its OS needs are `CompanionServices` / `ICompanionHost`
+  (`CompanionPlatform.cs`).
+- **FirstRunTourController** (`Core/Companion/FirstRunTourController.cs`), the island's voice pill rules
+  (`IslandVoiceDestination`), the orb adapter for the take controller (`OrbModelDictationAdapter`), the
+  window's live services (`Core/Settings/LiveSettingsServices.cs`: Test buttons, voice picker and preview,
+  Kokoro/Parakeet download rows, the recorded tour narration).
+- **Windows glue** (`OpenClicky.Windows/Companion/`): `GlobalShortcutMonitor` (keyboard hook →
+  `CompanionShortcutRecognizer`; Start / menu-bar suppression for Ctrl+Win and Right Alt; Caps Lock swallowed
+  while it dictates), `GuidedStepInputSource` (WH_MOUSE_LL + the keyboard hook, own windows ignored),
+  `WriteInPlaceHost` and `BrowserTabSource` adapters, `VelopackAppUpdater` (GitHub Releases).
+- **App entry** — `Program.cs` (Velopack hooks → Sherpa helper flags → smoke/demo flags → single instance →
+  WPF app with no main window), `AppComposition.cs` (the composition root: tray, updater, login item,
+  low memory → `UnloadForMemoryPressure`, resume → `NoteSystemResumed`), `SmokeCommands.cs`.
+- **Installer** — `installer/build-release.ps1` (publish win-x64 + win-arm64 self-contained, `vpk pack`,
+  optional deltas, `-Publish` → `vpk upload github`).
+
+### Verified live (ARM64, one 3024×1964 monitor at 200 %, no microphone or speakers)
+
+Screenshots in `docs/screenshots/app-*.png` (taken with `--openclicky-capturable-windows`; the floating
+windows are otherwise excluded from screen captures):
+
+- Starts without exceptions (`launch: ready` in `%LOCALAPPDATA%\OpenClicky\Logs\app.log`); the island at the
+  top, the pointer overlay following the mouse, the tray icon and its menu (right click).
+- A second launch forwards to the first, which opens the window (`app-window-from-second-launch.png`).
+- Ctrl tapped twice (SendInput) opens the composer; a typed question goes down the ask lane (screenshot →
+  write-in-place probe → route) and, with no keys, the caption says what is missing (`app-ask-missing-key-caption.png`).
+- Ctrl+Win held starts the talk lane; with no microphone the caption says so (`app-talk-no-microphone.png`);
+  letting go of Win did not open Start.
+- Quit from the tray: the goodbye types into the island, then the app and its Kokoro helper exit.
+- `installer/build-release.ps1 -Runtimes win-arm64` produced `Releases\win-arm64\OpenClicky.Windows-win-arm64-Setup.exe`
+  (+ full nupkg and portable zip). Setup.exe was not run here.
+- `dotnet build` clean; `dotnet test` 1025 passing.
+
+### Known gaps
+
+- **Not exercised live** (no keys, microphone or speakers here): a real answer and its voice, pointing from an
+  answer, Realtime, the agent lane, dictation takes, the welcome tour (skipped through preferences for the run),
+  the Settings tour, an update through Velopack, installing from Setup.exe.
+- Tray **left click** from the notification-area overflow shows only the tooltip; right click opens the menu.
+- `OrbSettings` (Core/Companion/OrbModel.cs) still reads the orb's keys itself instead of binding
+  `DictationSettings` (same preference keys, so they agree).
+- The Mac's DEBUG `UITour.swift` is not ported (`--openclicky-ui-demo` and `--openclicky-window-demo --shots`
+  cover it), nor `--openclicky-smoke-talk(-file)`.
+- No speech-recognition, Accessibility, Screen Recording or Screen Content cards, no fn freeing: Windows has
+  only the microphone card.
+- Velopack installs into `%LOCALAPPDATA%\OpenClicky.Windows` (pack id `OpenClicky.Windows`) and deletes that
+  folder on uninstall, so the pack id must not be `OpenClicky`, whose folder holds the app's data and models.
+- No code signing yet (`vpk pack` warns; SmartScreen asks on first run).

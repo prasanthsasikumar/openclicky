@@ -18,7 +18,7 @@ namespace OpenClicky.Core.Settings;
 /// <summary>
 /// The companion's own settings the window shows and changes (CompanionManager's @Published values
 /// and their setters). Raises PropertyChanged with the property names below.
-/// TODO(integration): implement over the Companion port's CompanionManager.
+/// Wired (CompanionManager, DictationHistoryActions, VelopackAppUpdater, LiveSettingsServices): implement over the Companion port's CompanionManager.
 /// </summary>
 public interface ICompanionSettings : INotifyPropertyChanged
 {
@@ -67,7 +67,7 @@ public interface ICompanionSettings : INotifyPropertyChanged
 
 /// <summary>
 /// What the Your words page asks of the dictation controller (DictationTakeController).
-/// TODO(integration): implement over the Dictation port's DictationTakeController.
+/// Wired (CompanionManager, DictationHistoryActions, VelopackAppUpdater, LiveSettingsServices): implement over the Dictation port's DictationTakeController.
 /// </summary>
 public interface IDictationHistoryActions
 {
@@ -97,7 +97,7 @@ public interface IDictationHistoryActions
 }
 
 /// <summary>
-/// Software updates (Sparkle's AppUpdater on the Mac). TODO(integration): Velopack UpdateManager.
+/// Software updates (Sparkle's AppUpdater on the Mac). Wired (CompanionManager, DictationHistoryActions, VelopackAppUpdater, LiveSettingsServices): Velopack UpdateManager.
 /// </summary>
 public interface IAppUpdater : INotifyPropertyChanged
 {
@@ -141,7 +141,7 @@ public sealed record ModelDownloadState
 
 /// <summary>
 /// One downloadable model's row (Kokoro, Parakeet): its state, raised as PropertyChanged("State").
-/// TODO(integration): KokoroVoice.shared / ParakeetDictation.shared from the Speech port.
+/// Wired (CompanionManager, DictationHistoryActions, VelopackAppUpdater, LiveSettingsServices): KokoroVoice.shared / ParakeetDictation.shared from the Speech port.
 /// </summary>
 public interface IModelDownload : INotifyPropertyChanged
 {
@@ -178,7 +178,7 @@ public sealed record VoicePickerState
 
 /// <summary>
 /// The answers and voices the Settings pages test and pick.
-/// TODO(integration): implement over Core/Answers (AnswerSourceCheck, PlanCLIs) and Core/Speech
+/// Wired (CompanionManager, DictationHistoryActions, VelopackAppUpdater, LiveSettingsServices): implement over Core/Answers (AnswerSourceCheck, PlanCLIs) and Core/Speech
 /// (SpeechVoiceChoice, CloudVoiceSpeaker, KokoroVoice, ParakeetDictation).
 /// </summary>
 public interface ISettingsServices

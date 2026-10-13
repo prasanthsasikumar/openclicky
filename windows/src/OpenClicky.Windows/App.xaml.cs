@@ -1,13 +1,8 @@
-﻿using System.Configuration;
-using System.Data;
 using System.Windows;
 
 namespace OpenClicky.Windows;
 
-/// <summary>
-/// Interaction logic for App.xaml
-/// </summary>
+/// <summary>The WPF application (no main window). Program.Main creates it after the helper and smoke flags; AppComposition builds the rest.</summary>
 public partial class App : Application
 {
 }
-

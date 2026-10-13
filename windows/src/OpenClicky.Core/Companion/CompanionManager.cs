@@ -477,7 +477,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
 
         StartDictation();
         StartPermissionPrompts();
-        if (OpenClickyConfiguration.Settings.ConnectorsEnabled == true) StartAppConnectPrompts();
+        if (ConnectorsAreEnabled) StartAppConnectPrompts();
         // Keep the Realtime voice session warm so talking is instant.
         if (HasCompletedOnboarding && AllPermissionsGranted) WarmUpRealtimeVoice();
     }

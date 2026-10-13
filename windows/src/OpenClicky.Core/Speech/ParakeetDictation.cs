@@ -176,7 +176,7 @@ public sealed partial class ParakeetDictation : ObservableObject
     // MARK: Automatic setup
 
     /// <summary>
-    /// The same, read off the dictation settings. TODO(integration): the companion calls this 8 s after
+    /// The same, read off the dictation settings. Wired (CompanionManager.StartAutomaticModelDownloads): the companion calls this 8 s after
     /// launch and when the welcome tour ends (the Mac's CompanionManager.startAutomaticModelDownloads).
     /// </summary>
     public void StartAutomaticSetup(bool tourIsFinished, DictationSettings settings) =>

@@ -69,6 +69,9 @@ public static class AppLog
             if (openWriter is null) return;
             try
             {
+                // Other processes append too (a second launch, the Kokoro and Parakeet helpers): write at
+                // the end as it is now, not where this process last left off, or their lines get overwritten.
+                openWriter.BaseStream.Seek(0, SeekOrigin.End);
                 openWriter.Write(stamped);
                 openWriter.Write('\n');
                 openWriter.Flush();

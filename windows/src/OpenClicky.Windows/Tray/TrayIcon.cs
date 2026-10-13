@@ -1,7 +1,7 @@
 // Ports MenuBarPanelManager.swift: the tray icon (the Mac's NSStatusItem) and its plain menu, for
 // either click: what OpenClicky is doing and the keys to remember, agent mode, docking the pointer,
 // the window, the island, settings, the welcome tour, and quit. Each item is raised as an event the
-// composition root wires (TODO(integration): CompanionManager.setAgentModeEnabled, setCursorDocked,
+// composition root wires (Wired in AppComposition.WireTray: CompanionManager.setAgentModeEnabled, setCursorDocked,
 // showDictationWindow(section: .words), notchHUDManager.openPanel, showSettings, firstRunTour.replay,
 // quitWithFarewell). The icon is Assets\OpenClicky.ico when the app ships one, else the mark drawn here.
 

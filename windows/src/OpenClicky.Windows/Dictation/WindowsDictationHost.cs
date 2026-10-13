@@ -22,7 +22,7 @@ public static class WindowsDictationHost
     /// <summary>
     /// The take controller with everything real: a BuddyDictationManager on the platform's
     /// microphone, the engines DictationProviderFactory builds (Windows speech recognition for
-    /// `offline`), the earcons, and this host. TODO(integration): the composition root calls this
+    /// `offline`), the earcons, and this host. Wired (AppComposition): the composition root calls this
     /// and feeds Handle(...) from the CompanionShortcutRecognizer's dictation events.
     /// </summary>
     public static DictationTakeController CreateTakeController(PlatformServices platform, DictationSettings settings, DictationSpaceStore spaceStore,

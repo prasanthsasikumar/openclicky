@@ -17,7 +17,7 @@ namespace OpenClicky.Core.Settings;
 /// <summary>
 /// The overlay pointer, as the tour drives it. Rectangles are in screen DIPs of the virtual desktop
 /// (ScreenGeometry's convention: origin top-left of the primary monitor, y down).
-/// TODO(integration): CompanionManager.beginSettingsTourPointing / pointForSettingsTour(at:bubble:) /
+/// Wired (CompanionManager.SettingsTourPointer, RecordedVoiceTourNarrator): CompanionManager.beginSettingsTourPointing / pointForSettingsTour(at:bubble:) /
 /// showPointerClick / endSettingsTourPointing → the Overlay port.
 /// </summary>
 public interface ISettingsTourPointer
@@ -36,7 +36,7 @@ public interface ISettingsTourPointer
 }
 
 /// <summary>
-/// The recorded narration. TODO(integration): RecordedVoice.play(line) — the mp3s in
+/// The recorded narration. Wired (CompanionManager.SettingsTourPointer, RecordedVoiceTourNarrator): RecordedVoice.play(line) — the mp3s in
 /// macos/OpenClicky/OpenClicky/RecordedVoice (settings-tour-*.mp3) shipped with the Windows app.
 /// </summary>
 public interface ISettingsTourNarrator

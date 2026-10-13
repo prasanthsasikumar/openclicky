@@ -24,8 +24,7 @@ public static class SkillPromptBuilder
             // Whole skills only: a truncated style guide is worse than none.
             if (section.Length > remaining)
             {
-                // TODO(integration): AppLog.Write once Configuration's AppLog lands (Mac prints this line).
-                System.Diagnostics.Debug.WriteLine($"Skills: skipping \"{skill.Name}\" ({section.Length} chars over the talk budget)");
+                Configuration.AppLog.Write($"skills: skipping \"{skill.Name}\" ({section.Length} chars over the talk budget)");
                 continue;
             }
             remaining -= section.Length;

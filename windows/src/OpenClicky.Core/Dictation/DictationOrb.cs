@@ -2,7 +2,7 @@
 // the phase, the hint pill, the live words, the transcript box and its rewrite chips. The orb's
 // window lives in OpenClicky.Windows/Orb; Companion's orb model is being written alongside.
 //
-// TODO(integration): Companion's OrbModel implements IDictationOrb (or the orb view binds a
+// Wired (Core/Companion/OrbModelDictationAdapter.cs): Companion's OrbModel implements IDictationOrb (or the orb view binds a
 // DictationOrbState directly), and the composition root hands it to DictationTakeController.
 
 using CommunityToolkit.Mvvm.ComponentModel;

@@ -93,6 +93,8 @@ public sealed record CompanionServices
     /// <summary>A new player (the answers, the notices and the recordings each have their own, as on the Mac).</summary>
     public required Func<IAudioPlayer> CreateAudioPlayer { get; init; }
     public required Func<IStreamingPcmPlayer> CreateStreamingPlayer { get; init; }
+    /// <summary>The dictation take controller around the given orb (WindowsDictationHost.CreateTakeController).</summary>
+    public required Func<IDictationOrb, DictationTakeController> CreateDictationTakeController { get; init; }
     /// <summary>The system-prompt windows the pointer must stay off (consent.exe, the credential dialog…), physical pixels.</summary>
     public Func<IEnumerable<PromptWindow>>? PromptWindows { get; init; }
 }

@@ -130,7 +130,7 @@ public static class SpeechVoiceChoices
 
 /// <summary>
 /// The local voices CloudVoiceSpeaker hands work to: Kokoro (the helper) and this PC's voice.
-/// TODO(integration): the app sets <see cref="Current"/> = ForThisPC(platform ISystemVoice) at startup, after KokoroVoice.Shared
+/// Wired (AppComposition): the app sets <see cref="Current"/> = ForThisPC(platform ISystemVoice) at startup, after KokoroVoice.Shared
 /// is assigned.
 /// </summary>
 public sealed record SpeechVoiceServices(

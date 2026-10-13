@@ -19,7 +19,7 @@ namespace OpenClicky.Core.Answers;
 /// <summary>
 /// The focused element as the OS side reads it (Swift `FocusedFieldSnapshot`). Apps are named by
 /// process image name ("chrome.exe") where the Mac used bundle ids.
-/// TODO(integration): map from the Platform layer's focused-field snapshot (UIA: ValuePattern /
+/// Wired (OpenClicky.Windows/Companion/CompanionAdapters.cs WriteInPlaceHost): map from the Platform layer's focused-field snapshot (UIA: ValuePattern /
 /// TextPattern selection, IsPassword, ControlType) once it exists.
 /// </summary>
 public sealed record WritingFieldSnapshot(

@@ -101,6 +101,17 @@ public sealed class IslandWindowManager : IDisposable
         }
     }
 
+    /// <summary>Where the tour card's main button sits (NotchHUDManager.tourPrimaryButtonLocation): the card's
+    /// button column is at its right edge, the main button above the quiet one. Physical pixels; null without a card.</summary>
+    public (ScreenPoint Location, ScreenRect DisplayFrame)? TourPrimaryButtonLocation()
+    {
+        if (PrimaryInstance is not { } primaryInstance || primaryInstance.Model.Expansion != IslandExpansion.Tour) return null;
+        var island = primaryInstance.Window.IslandRectInPixels(0);
+        var scale = primaryInstance.Window.Screen.Scale;
+        var location = new ScreenPoint(island.Right - (24 + 43) * scale, island.Top + island.Height * 0.42);
+        return (location, primaryInstance.Window.Screen.FrameInPixels());
+    }
+
     /// <summary>The monitor the buddy docks on, physical pixels.</summary>
     public ScreenRect DockScreenFrame => (PrimaryInstance?.Window.Screen ?? screens.Primary())?.FrameInPixels() ?? ScreenRect.Empty;
 
