@@ -66,7 +66,8 @@ afterAll(() => {
 
 describe("realtime", () => {
   it("builds ffmpeg/ffplay commands and the session.update payload", () => {
-    expect(defaultMicCommand("ffmpeg", "1").join(" ")).toContain("-f avfoundation -i :1 -ac 1 -ar 24000 -f s16le -");
+    expect(defaultMicCommand("ffmpeg", "1", "darwin").join(" ")).toContain("-f avfoundation -i :1 -ac 1 -ar 24000 -f s16le -");
+    expect(defaultMicCommand("ffmpeg", "Headset Microphone (USB)", "win32").join(" ")).toContain("-f dshow -i audio=Headset Microphone (USB) -ac 1 -ar 24000 -f s16le -");
     expect(defaultPlayerCommand().join(" ")).toContain("-f s16le -ar 24000 -ch_layout mono -i -");
     const u = sessionUpdate({ voice: "marin" }) as any;
     expect(u.session.tools[0].name).toBe("send_to_agent");

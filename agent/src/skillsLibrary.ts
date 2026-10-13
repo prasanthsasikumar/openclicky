@@ -81,7 +81,8 @@ export function syncActiveDir(dir: string): string[] {
     if (!ok) {
       fs.rmSync(link, { recursive: true, force: true });
       try {
-        fs.symlinkSync(path.join(libraryDir(dir), id), link);
+        // Windows: a directory symlink needs admin or Developer Mode; a junction needs neither.
+        fs.symlinkSync(path.join(libraryDir(dir), id), link, process.platform === "win32" ? "junction" : undefined);
       } catch (e) {
         // A concurrent sync (the macOS app and the CLI share this dir) may have just created it.
         if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;

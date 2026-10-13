@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { AgentConfig } from "./config.js";
+import { ffmpegMicInput } from "./audio.js";
 import { openaiRoute, needsOpenAI, realtimeSecretBody } from "./providerRoute.js";
 
 /**
@@ -55,8 +56,9 @@ export interface RealtimeSessionOptions {
   fetchImpl?: typeof fetch;
 }
 
-export function defaultMicCommand(ffmpegBin = "ffmpeg", device = "0"): string[] {
-  return [ffmpegBin, "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-i", `:${device}`, "-ac", "1", "-ar", "24000", "-f", "s16le", "-"];
+/** On Windows `device` is a DirectShow device name (see audio.ts resolveMicDevice). */
+export function defaultMicCommand(ffmpegBin = "ffmpeg", device = "0", platform: NodeJS.Platform = process.platform): string[] {
+  return [ffmpegBin, "-hide_banner", "-loglevel", "error", ...ffmpegMicInput(device, platform), "-ac", "1", "-ar", "24000", "-f", "s16le", "-"];
 }
 
 export function defaultPlayerCommand(ffplayBin = "ffplay"): string[] {

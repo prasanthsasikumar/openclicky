@@ -7,7 +7,7 @@
     "openclicky": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"

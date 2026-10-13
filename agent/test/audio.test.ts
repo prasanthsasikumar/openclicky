@@ -3,17 +3,31 @@ import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ffmpegRecordArgs, recordAudio, transcribe } from "../src/audio.js";
+import { ffmpegRecordArgs, recordAudio, transcribe, parseDshowAudioDevices, resolveMicDevice } from "../src/audio.js";
 import { resolveConfig } from "../src/config.js";
 
 describe("recordAudio", () => {
   it("builds avfoundation capture args", () => {
-    const a = ffmpegRecordArgs({ seconds: 4, outPath: "/t/r.wav" });
+    const a = ffmpegRecordArgs({ seconds: 4, outPath: "/t/r.wav", platform: "darwin" });
     expect(a).toContain("avfoundation");
     expect(a.slice(a.indexOf("-i") + 1)[0]).toBe(":0");
     expect(a.slice(a.indexOf("-t") + 1)[0]).toBe("4");
     expect(a.at(-1)).toBe("/t/r.wav");
-    expect(ffmpegRecordArgs({ seconds: 1, outPath: "x", device: "2" })).toContain(":2");
+    expect(ffmpegRecordArgs({ seconds: 1, outPath: "x", device: "2", platform: "darwin" })).toContain(":2");
+  });
+  it("builds DirectShow capture args on Windows and reads the device list", () => {
+    const a = ffmpegRecordArgs({ seconds: 4, outPath: "C:\\t\\r.wav", device: "Microphone (Realtek Audio)", platform: "win32" });
+    expect(a.join(" ")).toContain("-f dshow -i audio=Microphone (Realtek Audio) -t 4");
+    const listing = [
+      '[dshow @ 000001] "Integrated Camera" (video)',
+      '[dshow @ 000001]   Alternative name "@device_pnp_\\\\?\\usb#vid"',
+      '[dshow @ 000001] "Microphone Array (Realtek(R) Audio)" (audio)',
+      '[dshow @ 000001] "Headset Microphone (USB)" (audio)',
+    ].join("\n");
+    expect(parseDshowAudioDevices(listing)).toEqual(["Microphone Array (Realtek(R) Audio)", "Headset Microphone (USB)"]);
+    // A name is used as given; other platforms keep their index.
+    expect(resolveMicDevice("ffmpeg", "Headset Microphone (USB)", "win32")).toBe("Headset Microphone (USB)");
+    expect(resolveMicDevice("ffmpeg", "1", "darwin")).toBe("1");
   });
   it("runs a fake ffmpeg and validates output", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-aud-"));
