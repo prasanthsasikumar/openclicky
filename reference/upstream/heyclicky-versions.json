@@ -1,5 +1,45 @@
 {
   "seen": {
+    "1.0.53": {
+      "build": "64",
+      "date": "Oct 2, 2026",
+      "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.0.53/HeyClicky.dmg",
+      "title": "Several accounts per app, and a pile of fixes",
+      "recordedAt": "2026-10-13T18:30:23.282Z",
+      "issue": "https://github.com/prasanthsasikumar/openclicky/issues/9"
+    },
+    "1.0.52": {
+      "build": "63",
+      "date": "Sep 24, 2026",
+      "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.0.52/HeyClicky.dmg",
+      "title": "A smaller notch, and invite your friends",
+      "recordedAt": "2026-10-13T18:30:23.283Z",
+      "issue": "https://github.com/prasanthsasikumar/openclicky/issues/10"
+    },
+    "1.0.51": {
+      "build": "61",
+      "date": "Sep 18, 2026",
+      "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.0.51/HeyClicky.dmg",
+      "title": "A resizable Home and a whole bunch of fixes",
+      "recordedAt": "2026-10-13T18:30:23.283Z",
+      "issue": "https://github.com/prasanthsasikumar/openclicky/issues/11"
+    },
+    "1.0.50": {
+      "build": "60",
+      "date": "Sep 14, 2026",
+      "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.0.50/HeyClicky.dmg",
+      "title": "Keeping your Clickys going",
+      "recordedAt": "2026-10-13T18:30:23.283Z",
+      "issue": "https://github.com/prasanthsasikumar/openclicky/issues/12"
+    },
+    "1.0.49": {
+      "build": "59",
+      "date": "Sep 12, 2026",
+      "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.0.49/HeyClicky.dmg",
+      "title": "Introducing Clickys",
+      "recordedAt": "2026-10-13T18:30:23.283Z",
+      "issue": "https://github.com/prasanthsasikumar/openclicky/issues/13"
+    },
     "1.0.48": {
       "build": "57",
       "date": "Aug 25, 2026",

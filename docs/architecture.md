@@ -36,11 +36,10 @@ Codex's environment and only ever presents the user's token; the shell does the 
 | `agent/src/cli.ts` | `openclicky run|ask|do|voice|talk|threads|skills|token` |
 | `agent/src/gate.ts`, `ask.ts`, `audio.ts`, `screenshot.ts` | gate lane, ask lane, ffmpeg capture + STT, `screencapture` |
 | `agent/src/codexHome.ts`, `config/codex-config.toml` | renders the isolated `CODEX_HOME/config.toml` (provider, skills, user skills, MCP servers) |
-| `agent/src/skillsLibrary.ts`, `skillMarkdown.ts` | the user skill library on disk (`~/.openclicky/skills`): list, activate, sync `active/` symlinks, create; SKILL.md frontmatter parser |
+| `agent/src/skillsLibrary.ts`, `skillMarkdown.ts` | the user skill library on disk (`~/.openclicky/skills`): list, activate, sync `active/` symlinks; SKILL.md frontmatter parser |
 | `backend/src/app.ts`, `auth.ts`, `proxy.ts` | routes, Supabase/session auth, streaming proxies, Realtime secret, STT |
-| `backend/src/skillsCreate.ts` | `POST /skills/create`: drafts a SKILL.md from a one-line request (capability-aware) |
 | `backend/scripts/` | `mint-dev-jwt.mjs` (local auth), `build-skills-manifest.mjs` (`skills/` + `app-skills/` → `src/skillsManifest.ts`) |
-| `app-skills/` | 16 app-teaching skills (Finder, Safari, Chrome, Xcode, VS Code, Terminal, Figma, Slack, Mail, Notes, Preview, System Settings, Gmail, Google Docs, GitHub, YouTube); see its README |
+| `app-skills/` | 17 app-teaching skills (Finder, Safari, Chrome, Xcode, VS Code, Terminal, Figma, Slack, Mail, Notes, Preview, System Settings, Gmail, Google Docs, GitHub, YouTube, DaVinci Resolve), copied into the app at build time; see its README |
 | `docs/skills.md` | skill authoring guide (format, matching, budgets, activation) |
 | `scripts/upstream-watch.mjs`, `reference/upstream/` | HeyClicky release watcher and its recorded versions / changelog mirror |
 | `.github/workflows/upstream-watch.yml` | daily run of the watcher; opens an `upstream` issue per new HeyClicky version |
@@ -63,13 +62,10 @@ files are read at run time. `docs/skills.md` is the authoring guide.
 | User library | `~/.openclicky/skills/library/<id>/SKILL.md` (`OPENCLICKY_USER_SKILLS_DIR`) | activated ones only: Codex through `~/.openclicky/skills/active/` (symlinks, second `[[skills.config]]`), and the voice prompts when `surfaces` includes `talk` (≤ 6,000 chars total) |
 
 Activation lives in `~/.openclicky/skills/activations.json` (`{ "active": [ids], "updatedAt" }`).
-The CLI and the app write the same files: `openclicky skills list|activate|deactivate|create`, the
-HUD's Home tab (toggles, "Create a skill", open folder), or drop a folder into `library/` by hand.
-Every agent run re-syncs `active/` so Codex sees the current set. "Create a skill" posts your one
-line to `POST /skills/create`; the backend asks the model for a SKILL.md that only relies on the
-capabilities it is told about (built-in skill ids plus `composio` / `computer-use` when configured),
-validates it, and the client saves and activates it. Set `SKILL_CREATE_MODEL` on the backend to use
-a different model than `OPENAI_MODEL` for drafting. Matching rules: bundle id exact; a site matches
+The CLI and the app read the same files: `openclicky skills list|activate|deactivate|path`, or drop
+a folder into `library/` by hand. Every agent run re-syncs `active/` so Codex sees the current set.
+Skills are not drafted in the app: shared ones arrive as reviewed pull requests to `app-skills/`.
+Matching rules: bundle id exact; a site matches
 the browser host or any of its subdomains; a site skill beats the browser's own app skill; the most
 specific site wins. Add an app skill by creating the folder and running `npm run build` (the
 backend manifest, `GET /skills/library`, lists it with `kind: "app"`); the app picks it up on the

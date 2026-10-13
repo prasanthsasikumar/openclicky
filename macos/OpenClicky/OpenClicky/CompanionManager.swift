@@ -33,7 +33,15 @@ enum CompanionVoiceState {
 
 @MainActor
 final class CompanionManager: ObservableObject {
-    @Published private(set) var voiceState: CompanionVoiceState = .idle
+    @Published private(set) var voiceState: CompanionVoiceState = .idle {
+        didSet {
+            // A guide whose next step never came (the request failed or was cancelled) is over:
+            // nothing is being said or fetched and no step waits, so the stop strip must not stay.
+            if voiceState == .idle && guidedStepWatcher == nil && guideStepUnderWay != nil {
+                guideStepUnderWay = nil
+            }
+        }
+    }
     @Published private(set) var lastTranscript: String?
     /// Who is answering the question being spoken ("Claude Code", "free credits"), for the island.
     @Published private(set) var answeringSourceName: String?
@@ -1595,7 +1603,7 @@ final class CompanionManager: ObservableObject {
     - element is on screen 2 (not where cursor is): "[POINT:400,300:terminal:screen2] that's over on your other monitor, see the terminal window?"
 
     guided steps:
-    when they ask how to do something that takes more than one step on screen, give only the first step, point at it, and end your reply with \(GuidedStepMarker.marker). a step is one click, or one thing to type, nothing more. openclicky then waits for them to do it (a click, or return or tab after typing) and asks you on its own with "\(GuidedStepRules.nextStepRequestOpening) …" and a fresh screenshot. look at the new screen and give the next step the same way: one step, pointed at, ending with \(GuidedStepMarker.marker) while more steps remain. leave \(GuidedStepMarker.marker) off the last step, and off any answer that isn't a step. if the new screen shows they clicked something else or went somewhere unexpected, gently help them back, still ending with \(GuidedStepMarker.marker). if the screen hasn't changed the way that step should change it, it didn't work yet: point at the same thing again and say to try once more. if you can't tell whether the step worked, say what they should see and what to do then, and end with \(GuidedStepMarker.marker) so you keep waiting with them. never end a step with a question. if a permission, password or security prompt is on screen and it isn't what they asked about, it is not a step: never point at it or tell them which button to pick. reply as usual, the tag first pointing at the first step of their task, then a few words that the prompt is theirs to decide, then the step, ending with \(GuidedStepMarker.marker). for a step that is typing, say what to type and to press tab or click the next thing when they're done.
+    when they ask how to do something that takes more than one step on screen, give only the first step, point at it, and end your reply with \(GuidedStepMarker.marker). a step is one click, or one thing to type, nothing more (a right-click that opens a menu is one step, the menu item is the next). openclicky then waits for them to do it (a click, or return or tab after typing) and asks you on its own with "\(GuidedStepRules.nextStepRequestOpening) …" and a fresh screenshot. look at the new screen and give the next step the same way: one step, pointed at, ending with \(GuidedStepMarker.marker) while more steps remain. leave \(GuidedStepMarker.marker) off the last step, and off any answer that isn't a step. if the new screen shows they clicked something else or went somewhere unexpected, gently help them back, still ending with \(GuidedStepMarker.marker). if the screen hasn't changed the way that step should change it, it didn't work yet: point at the same thing again and say to try once more. if you can't tell whether the step worked, say what they should see and what to do then, and end with \(GuidedStepMarker.marker) so you keep waiting with them. never end a step with a question. if a permission, password or security prompt is on screen and it isn't what they asked about, it is not a step: never point at it or tell them which button to pick. reply as usual, the tag first pointing at the first step of their task, then a few words that the prompt is theirs to decide, then the step, ending with \(GuidedStepMarker.marker). for a step that is typing, say what to type and to press tab or click the next thing when they're done.
     example: user asks how to attach a file in mail: "[POINT:612,88:attach button] click the paperclip at the top of your message. \(GuidedStepMarker.marker)"
 
     keep your first sentence short: it is spoken while the rest of your answer is still being written.
@@ -1613,6 +1621,7 @@ final class CompanionManager: ObservableObject {
         // Anything the person asks starts afresh; only OpenClicky's own "what's next?" continues a guide.
         if !isGuidedStepContinuation {
             guidedStepsGivenSoFar = 0
+            guideStepUnderWay = nil
             guidedStepGoal = transcript
         }
 
@@ -1749,6 +1758,7 @@ final class CompanionManager: ObservableObject {
                     // Nothing to say (an empty answer, or a bare tag): the queue never starts the
                     // voice, so "thinking…" would stay up in silence. An empty turn is not history.
                     AppLog.append("ask: empty answer (\(parseResult.coordinate == nil ? "no point" : "point only"))")
+                    guideStepUnderWay = nil
                     dismissCursorCaption()
                     if parseResult.coordinate == nil {
                         lastQuestionFailed = true
@@ -1756,7 +1766,12 @@ final class CompanionManager: ObservableObject {
                     }
                 } else {
                     rememberExchange(userTranscript: transcript, assistantResponse: spokenText)
-                    if replyIsAGuidedStep { waitForTheGuidedStepToBeDone() }
+                    if replyIsAGuidedStep {
+                        waitForTheGuidedStepToBeDone()
+                    } else {
+                        // The last step of a guide, or an answer that was never one.
+                        guideStepUnderWay = nil
+                    }
                 }
 
                 print("🧠 Conversation history: \(conversationHistory.count) exchanges")
@@ -1843,12 +1858,17 @@ final class CompanionManager: ObservableObject {
     private var guidedStepWatcher: GuidedStepWatcher?
     /// What the person asked that started the guide, repeated in every "what's next?".
     private var guidedStepGoal = ""
+    /// The step of the guide under way (1, 2, …) from the first step until the guide ends; nil when
+    /// there is no guide. The island turns into the guide's stop strip and the pointer carries
+    /// "esc to stop" while it is set.
+    @Published private(set) var guideStepUnderWay: Int?
 
     /// The reply was one step of a guide: once the person does it, ask for the next step on a fresh screenshot.
     private func waitForTheGuidedStepToBeDone() {
         guidedStepsGivenSoFar += 1
         guard guidedStepsGivenSoFar < GuidedStepRules.maximumSteps else {
             AppLog.append("guide: stopped after \(guidedStepsGivenSoFar) steps")
+            guideStepUnderWay = nil
             return
         }
         stopWatchingForGuidedStep()
@@ -1866,12 +1886,29 @@ final class CompanionManager: ObservableObject {
                 AppLog.append("guide: ended (\(reason.rawValue)) after \(self.guidedStepsGivenSoFar) steps")
                 self.guidedStepWatcher = nil
                 self.guidedStepsGivenSoFar = 0
+                self.guideStepUnderWay = nil
                 // Esc means stop: the step still being said goes quiet too.
                 if reason == .escape { self.stopSpeaking() }
             }
         )
         guidedStepWatcher = watcher
+        guideStepUnderWay = guidedStepsGivenSoFar
         watcher.start()
+    }
+
+    /// The island's "stop guide": ends the guide wherever it is (waiting for a click, looking at the
+    /// screen for the next step, or saying it), silences it, and takes the caption away.
+    func stopGuide() {
+        guard guideStepUnderWay != nil else { return }
+        AppLog.append("guide: stopped from the island after \(guidedStepsGivenSoFar) steps")
+        guidedStepsGivenSoFar = 0
+        guideStepUnderWay = nil
+        interruptCurrentAnswer(includingAgentWork: false)
+        realtimeVoiceClient.stopSpeaking()
+        // A cancelled answer skips its own reset to idle.
+        voiceState = .idle
+        dismissCursorCaption()
+        scheduleTransientHideIfNeeded()
     }
 
     private func stopWatchingForGuidedStep() {

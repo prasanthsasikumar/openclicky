@@ -2,6 +2,283 @@
 
 Recorded by `scripts/upstream-watch.mjs` from https://www.heyclicky.com/changelog and the Sparkle appcast. Newest first.
 
+## v1.0.53 — Several accounts per app, and a pile of fixes (Oct 2, 2026)
+
+Download: https://github.com/farzaa/clicky-releases/releases/download/v1.0.53/HeyClicky.dmg (build 64)
+
+You can now connect more than one account of the same app, like a work Gmail and a personal one, and your Clickys pick the right one. Computer use is much more dependable, following up on an agent is as easy as holding your voice keys, and we fixed a long list of bugs from your support emails. Thank you to everyone who wrote in <3
+
+### connectors
+
+- **Connect several accounts of one app:** Settings > Integrations now lists each connected app's accounts with the address they sign in as, plus an "Add another account" link. Once an app has two accounts, give each one a label like Work or Personal, and disconnect each one on its own. Then just say which one you mean: "add this to my work calendar" or "check my personal email". If you don't say, your Clickys read from every account and tell you which one each result came from, act on things in the account they live in, and ask you once when it's not clear which account should send something new.
+- **Apps are ready before a Clicky starts:** Right after your Mac woke up, a routine could start before your connected apps had finished loading, then report that it couldn't check Gmail or Stripe. Clickys now wait a moment for your apps to be ready before they start working.
+- **Calendar invites stay on the right calendar:** Adding an event to a secondary calendar no longer also invites your main account, unless you ask for that.
+- **Reddit and Monday, paused for now:** Connecting Reddit or Monday almost never worked, so we've taken them out of the list until it does. Connections that already work keep working.
+
+### clickys & routines
+
+- **Follow up by holding your voice keys:** Point at a finished agent's card in the top right and hold your voice shortcut to answer it, then let go to send, the same gesture as everywhere else. The card shows a Listening waveform while you talk, and a short tap or Escape drops it. You can still click the text box and type.
+- **The card shows only the latest files:** After a reply that made no files, an agent's card kept showing files from an earlier reply as if it had just made them. It now shows only what the latest reply made.
+- **Stopped right away? It doesn't count:** If you stop an agent within 10 seconds of it starting, you get that agent message back, and the card and chat tell you it didn't count.
+- **Leaner agents:** Every step an agent takes now carries less than half the setup it used to, and long conversations reuse what was already read instead of starting over. Long tasks are less likely to pause and ask for more agent messages, and they get going a little faster.
+- **Clickys ask instead of guessing:** When your answer would make the work better, a Clicky now does what it can first and then asks you one short set of questions, instead of inventing details or saying it can't. The voice also only starts an agent when you clearly ask for work, otherwise it offers one, and it holds off when you say "wait".
+- **Always approve, up front:** On the card that asks for more agent messages, Always approve is now the main button, with Approve once beside it.
+- **Routines at your limit wait quietly:** A scheduled routine that hit your agent limit popped up "Upgrade to Max" on every run. It now waits until your allowance resets.
+- **No more twin Clickys:** Sending a message by voice to a Clicky you had just made could create a second Clicky named after the message, like "Tell Scout". It now goes to the Clicky you meant.
+- **One browser window per task:** A Clicky checking a few pages used to leave a new browser window open for each one. It now keeps one window per task and moves around inside it.
+
+### computer use
+
+- **Your Allow sticks:** After you clicked Allow, the request could come right back, or the Clicky said it only had read-only access. That happened when a task paused for more agent messages or handed part of the job to a helper agent. Your yes now carries through both.
+- **Fixes itself instead of failing:** Computer use could start failing on every step until you relaunched HeyClicky, even with every permission on. It now notices when its helper has stopped working, restarts it, and tries again on its own.
+- **Answering is free:** Saying Allow or Not now used to cost another agent message. Now the Clicky just picks up where it asked. The ask cards are also a calm blue instead of your Clicky's color, so they no longer look like an error.
+
+### home & voice
+
+- **Smoother opens:** The notch peek and Home could stutter as they opened. They now open smoothly, and the file piles on each Clicky are ready the moment you hover.
+- **Updates without closing Home:** Checking for updates no longer closes Home. When one is ready, an Update app button shows up in Home's header and in the notch peek, and the installer only opens when you click it.
+- **Clicky remembers the page you just left:** Ask a quick follow-up like "what did billing say?" right after moving to another page, and Clicky can now look back at the page you were just on instead of sending you back to it.
+- **Walkthroughs keep their place:** Long step-by-step walkthroughs could loop, sending you back to pages you had already visited or asking you to "say continue" right after a correct click. Clicky now keeps a running log of what you've done, and waits for slow pages to finish loading before it looks again.
+- **Setups that start where you are:** When Clicky walks you through setting something up, it now asks what you already have instead of assuming you're starting from scratch, and it never repeats a step that just failed.
+- **Making a Clicky, anywhere:** Asking for a new Clicky from text mode or with your voice keys now works even if you left the New Clicky page halfway through. With no Clickys yet, the notch offers Create Clicky right away, and Home's file and folder pickers open in front of the sheet instead of behind it.
+- **Report a bug stays in view:** Report a bug opened your email behind the Home sheet, where you couldn't see it. Home now steps aside.
+
+### suggestions
+
+- **No more repeats:** Suggestions could offer the same ideas across days, or two cards doing nearly the same thing in one batch. They now remember the cards you actually saw, approved, or turned down, and each card in a batch does something different.
+
+### onboarding & settings
+
+- **Your first routine asks first:** One of your first suggested tasks after the tour is now a routine card that says it repeats, with a "Yes, keep it going" button. Before, a routine was set up quietly and you never knew it would run again.
+- **The interview no longer freezes:** Going Back to the tour interview while your Clickys were still being set up left a frozen interview. It now shows the finished step.
+- **Hide floating cursor:** The "Dock cursor" switch in Settings > Cursor is now called "Hide floating cursor", which says what it actually does.
+- **Login item stays off:** If you turned HeyClicky off as a login item in System Settings, it came back with a "Login Item Added" banner on the next launch. It now stays the way you set it.
+
+### fixed
+
+- **Upgrade no longer crashes:** Opening the upgrade page could crash HeyClicky on macOS 26. Fixed.
+- **Answers heard once:** If two copies of HeyClicky were running, every voice answer came back two or three times. A second copy now refuses to start.
+- **No freeze after sleep:** Waking your Mac, or plugging in a display or Bluetooth headphones, could beachball HeyClicky for minutes while your Mac's audio settled. All of that waiting now happens in the background.
+- **Voice recovers from a dropped connection:** On a flaky network or VPN, voice could keep talking to a connection that had quietly died, with no answer and no error. It now notices and reconnects, and it no longer blames your microphone when the connection was the problem.
+- **Voice works with the lid closed:** With your MacBook's lid closed, voice kept listening to the built-in mic and heard only silence. It now switches to another microphone.
+- **The text box stops opening by itself:** Shortcuts like Control+C, Control+arrow, or Control+scroll could count as a double Control tap and open the text box. They don't anymore.
+- **Window screenshots work:** Screenshotting a single window could capture an empty sheet with only the Clicky cursor. HeyClicky now steps out of the way while you pick a window.
+- **Mission Control shows your windows:** Mission Control's desktop thumbnails could show only your wallpaper while HeyClicky was running. They show your windows again.
+- **Markdown files open again:** Some notes your Clickys wrote said they couldn't be opened. They open now.
+- **Walkthrough cursor stays free:** After a click off the target in a walkthrough, the cursor could stay stuck in place. It now lets go as soon as you move your mouse.
+- **Clicky remembers more of you:** Clicky's memory of you could get cut off partway through, often losing how you like it to talk to you. It now keeps every section whole.
+- **Deleting your account starts fresh:** Deleting your account and signing up again brought your old Clickys back. Deleting now also clears your Clickys from this Mac and moves their files to the Trash.
+- **No stray badge:** Files & Folders in Settings no longer shows a permanent "UNKNOWN" badge.
+
+## v1.0.52 — A smaller notch, and invite your friends (Sep 24, 2026)
+
+Download: https://github.com/farzaa/clicky-releases/releases/download/v1.0.52/HeyClicky.dmg (build 63)
+
+You told us the notch got too big, so we made it smaller. Hovering now opens a quick peek at your Clickys, and you can invite friends and get paid for it. Thank you to everyone in our WhatsApp community for telling us what felt off <3
+
+### the notch
+
+- **A smaller notch, by default:** Hovering the notch now opens a small peek instead of the whole Home sheet: your Suggestions, pins, every Clicky, and your apps, with each Clicky's three newest files as a little pile at the end of its row. Hover a file to see what it is, click to open it, or drag it straight out of the notch into another app. When you want the full view, pick a Clicky or hit Expand Home. Move your pointer away and it tucks back into the notch. Prefer the old way? Turn it off in Settings > General > Quick peek on notch hover.
+
+### invite & earn
+
+- **Invite friends and get paid:** You now have a HeyClicky username, and heyclicky.com/@yourname is your invite link. A friend who joins through it gets 25% off their first month on a monthly plan, and you get 25% of their plan's price every month they pay, for up to 12 months, paid in cash. Open Invite & earn from Home's sidebar or Settings to copy your link, see who joined, and track what you've earned. You can also change your username.
+- **Your friend's discount, up front:** If a friend invited you, the plans card shows their discount with the monthly price crossed out, matching what you pay at checkout.
+
+### home
+
+- **Copy text from replies:** A Clicky's reply is now one selectable block of text, so you can drag across paragraphs, lists, and headings, and ⌘A and ⌘C work like anywhere else on your Mac.
+- **Home opens smoothly:** Opening Home onto a Clicky that was working could stutter for a moment right as it came down from the notch. It now opens smoothly, and the chat fills in once it lands.
+- **Home closes when you move away:** After you typed a message, Home could stay stuck open until you clicked somewhere else. It now always tucks away when your pointer leaves, and anything you were halfway through typing is still there next time.
+- **Find archived Clickys:** Archived a Clicky by accident? Archived Clickys now show up when you search, with an Unarchive button to bring them back, chat and all.
+- **Thumbs up, restyled:** The thumbs up a Clicky gives your follow-ups has a new glassy look, and it stays on your message after you restart the app.
+
+### clickys
+
+- **Every Clicky tells you when it's done:** A Clicky now says it's done out loud and beside your cursor however you started it: typed in its chat, from a suggestion, a retry, or a scheduled routine. Calls and screen sharing still keep it quiet, and Do Not Disturb now only silences scheduled routines.
+- **Follow up right from the agent card:** A finished agent's card in the top right has follow-ups again. Tap the mic to answer by voice, or click the text box and type right in the card. The card also shows the files the task made as a little pile of thumbnails you can open.
+- **Clicky knows its own settings:** Ask things like "stop announcing yourself" or "talk slower" and Clicky walks you to the exact setting. Tell it "you talk too much" and it remembers, and it can also tell you how much of your plan you've used.
+- **Clickys run on GPT-6:** Your Clickys now run on GPT-6 Luna, and deep answers use GPT-6 Sol.
+- **Tables you can actually read:** Sheets, tables, and CSVs a Clicky makes for you are now one sheet with the answer first, a handful of short columns, and a single link column. The caveats go in the chat instead of in every cell.
+
+### computer use
+
+- **Your yes covers one conversation:** When a Clicky asks to use your Mac, your yes now applies only to that conversation, not every Clicky that happens to be working. Saying yes or no also no longer restarts anything behind the scenes.
+- **Stays in the background:** Clickys now work inside apps without moving your real pointer or jumping into another app's address bar. The agent's floating cursor is gone for now, since it could draw over the app you were using or in the wrong place. That same cursor layer is why a window screenshot, or sharing a single window in Loom or a call, could come out black or covered. It's gone, so those work again.
+
+### suggestions
+
+- **Fresher, more useful ideas:** Suggestions now build on what happened in your apps in the last two days, so you stop seeing ideas about week-old things. A card that starts from a message offers to handle the whole stream for you, not just that one reply.
+- **Cards stay in order:** The Suggestions page no longer shuffles its cards on each visit, so the first card is the one the sidebar was previewing.
+- **A break when you're busy:** If three mornings of suggestions go unopened in a row, we give them a short break, starting at one day and never longer than a week. You can still turn them off entirely in Settings > Agents.
+- **First tasks end in different ways:** The three first tasks you get after the tour now each finish differently: one makes you something to use or send, one gives you a straight answer in the chat, and one gets work done inside an app.
+
+### onboarding & plans
+
+- **Meet the two default Clickys first:** The end of the tour now introduces Farza's two default Clickys before the three made just for you, and always finishes in the notch.
+- **Pages that look like HeyClicky:** The sign-in, checkout, and shared skill pages in your browser now look like heyclicky.com. When you come back from checkout, Clicky tells you beside your cursor whether your plan started, so you're not left guessing.
+
+### fixed
+
+- **No more boxed citation codes:** Some replies showed little boxes around text like "cite turn2search4" inside tables and paragraphs. They're gone.
+- **Other apps' floating bars:** Another app's floating bar sitting over the notch, like a recorder pill, could quietly stop Escape, typing in a chat, and Adjust on suggestions from working. HeyClicky now only steps aside for menus you're actually using.
+- **The first hover after launch:** The first peek right after opening HeyClicky could fold up under your pointer and open again. It stays open now.
+- **The unread count matches the dots:** The notch's unread count could show fewer Clickys than the blue dots in the sidebar after a restart. They now agree.
+- **A tidier Meta Ads row:** The Meta Ads connector row no longer wraps its status onto two lines, and it spells out how to connect with your own Meta app ID.
+
+## v1.0.51 — A resizable Home and a whole bunch of fixes (Sep 18, 2026)
+
+Download: https://github.com/farzaa/clicky-releases/releases/download/v1.0.51/HeyClicky.dmg (build 61)
+
+Home now pops out of the notch at a compact size, and you can drag its edges to make it exactly as big as you like. Hovering the notch always opens Home, suggestions arrive one card at a time, and long chats are quick again. We also went through every message in our WhatsApp community and every support email from the past week, and fixed every bug we could pin down. Thank you for writing in <3
+
+### home
+
+- **Resize Home right from the notch:** Drag the left, right, or bottom edge of the Home sheet (or a bottom corner) to resize it, just like a window. It grows evenly from the notch, the layout adapts to whatever size you pick, and your size is remembered across opens and restarts. Double-click an edge to reset. Out of the box the sheet now opens smaller, so it feels like a big notch instead of a window ＼(^o^)／
+- **The notch always opens Home:** The old tabbed notch panel is gone. Hovering the notch grows Home every time, and Cmd+, or Settings… opens Home's Settings page. Having two panels behind one hover left stale state that could hold the notch open, or leave it slow or stuck until you restarted the app. That's gone with the old panel, and Home now tucks away almost as soon as your pointer leaves it. If you get stuck during setup, the ⋯ menu on the setup card still has Check for Updates, Log Out, and Quit.
+- **Home remembers being a window:** If you keep Home popped out as a window, it now comes back that way after a restart or an update, in the same spot and at the same size. The pop-out button also uses the picture-in-picture icons, so it no longer looks like full screen.
+- **Sending keeps your place:** If you've scrolled up to read, sending a message no longer yanks you to the bottom. The jump-to-newest arrow sweeps a ring once to show your message landed.
+- **Unread count on the notch:** The resting notch now shows a small gel badge with how many Clickys have something new for you, following the same rule as the blue dots.
+- **A tidier Home:** A busy Clicky's profile now shows its ten newest results, with a See more line for the rest. Computer use permission buttons match Home's gel buttons, and the Home sheet's close and pop-out buttons rest at a quieter grey.
+
+### suggestions
+
+- **One card at a time:** Suggestions now sit in a carousel that moves one card per swipe, with small arrows and faded previews of the cards on either side. The order shuffles on each visit, your feedback drafts stay with their card, and saying "do it" starts the card you're looking at. Approving one now gets a quick "On it." instead of a speech ^-^
+- **A calmer morning card:** The morning suggestions card is shorter, its chime is 30% quieter, and it has a Dismiss button instead of closing on its own. Dismiss it three days in a row without running anything and it rests for five days. Dismissing any notch card also no longer opens Home under your pointer.
+
+### clickys & routines
+
+- **Make several Clickys in one ask:** Say something like "make me three Clickys: inbox, competitor research, and newsletter" and you get all three, up to five at a time. Making a Clicky on the New Clicky page also no longer starts a task or uses a credit. Its chat opens with a few first messages you can tap when you're ready.
+- **Names with more personality:** New Clickys were nearly all getting named "Something Buddy". They now get two friendly words that say the job, varied against the names you already have. Think PDF Desk, or endings like Scout, Lab, and Keeper.
+- **Long chats are quick again:** Scrolling or typing in a Clicky with hundreds of turns could beachball the whole app. HeyClicky now matches conversation history far more efficiently, skips work when nothing has changed, and loads the newest turns first, fetching older ones as you scroll up.
+- **Only the screenshot that matters:** Typing to a Clicky inside Home, tapping a suggested ask, or approving a suggestion no longer attaches a screenshot of Home itself. Older screenshots in a conversation also stop riding along with every new request, so long threads stay lighter. Voice asks still see your screen.
+- **Routines wait for your Mac and your internet:** Routines now hold until your Mac is fully awake, and never start without a usable connection. A run that's waiting shows "I'll run it when the internet is back" in the Clicky's chat, and a run that failed because you were offline doesn't count toward the three-failure pause. Routines also no longer announce when they start.
+- **Failures stay where they happened:** A task that failed to launch kept resurfacing as the newest message after every follow-up. It now stays in its place in the conversation. Inline formatting like bold and code also renders properly in the tucked-away work steps.
+
+### quiet when you're busy
+
+- **Quiet on calls:** While you're on a call or sharing your screen, unprompted voice updates, cursor text, the done chime, the morning hello, and tip cards all stay silent.
+- **Separate switches for voice and cursor text:** Settings > Agents > Announcements now has one switch for spoken updates and one for text beside the cursor. Turning off "Show updates beside the cursor" now hides every case, including two it used to miss.
+
+### connectors
+
+- **Custom connector tokens get checked for real:** A custom connector used to turn green the moment you saved a token, before anything had talked to the server. HeyClicky now makes a real request when you save or edit a token, at launch, and on every Integrations refresh. The row shows Checking, then Connected, or "Token rejected" with an Edit token button. Adding a token also clears a stale browser sign-in warning that made working connectors look broken.
+
+### onboarding & settings
+
+- **Replay the welcome tour:** Settings > General has a new Replay the welcome tour option, with the video, the full tour, and the interview.
+- **Skip the interview by voice:** You can now ask to skip the tour interview out loud, and the New Clicky page opens with one clear question.
+- **No more quitting mid-setup:** macOS could quietly quit HeyClicky 15 to 30 seconds into onboarding because it had no window open, so setup could never finish. It now opts out of Automatic Termination. Thank you Juan for tracking down the exact cause <3
+- **Typing works on a muted Mac:** On a muted Mac, the "Your Mac is muted" card popped up after every typed answer in the New Clicky interview and got in the way. It stays out of the interview now.
+
+### fixed
+
+- **Suggestions show up again:** Suggestion checks were marked failed after three minutes in a queue that was far too small, so almost none of them ever ran (¬_¬) Queued checks now wait their turn, capacity is 20 times higher, and we get alerted if they pile up again. The fix is on our servers, so it helps older builds too.
+- **Paid plans no longer read as Free:** When our sign-in provider was slow, plan cards could say "You're on the Free plan" with no usage meters. HeyClicky now remembers your last known plan, shows "Checking your plan…" or a Try again button while it can't load, and starts refreshing your session earlier so a slow server gets several attempts.
+- **A steadier composer:** Closing the double-Control composer no longer flickers. Taking a screenshot no longer leaves the composer stuck under the menu bar with its buttons unclickable, and a click in another app no longer closes the composer or an answer you're still reading.
+- **Check for Updates no longer freezes the notch:** The "you're up to date" alert could freeze the notch, and its OK button only beeped. Checking for updates now reports the result inline.
+- **Window screenshots aren't blank:** HeyClicky now gets out of the way as soon as you press ⇧⌘4 or ⇧⌘5, so window captures come out properly.
+- **Cleaner dictation:** Dictation no longer pastes a stray <transcript> wrapper, or makes up text from a near-silent tap.
+- **Clearer connection errors:** If OpenAI is unavailable in your region or blocked by your network, HeyClicky now says so instead of "plz restart me".
+- **Crashes and freezes:** Fixed a crash when waking your Mac from sleep, and a freeze that could beachball the whole app when your audio output changed, like connecting headphones.
+- **The WhatsApp community link works again:** The Community row in Settings opened "Could not load" because the old invite had expired. It now points at the current group, on older builds too :)
+- **Links close the Home sheet everywhere:** Links in headings, tables, and the document viewer now tuck the attached Home sheet away too, not just links in plain paragraphs.
+- **Account deletion:** Deleting your account now also removes you from our marketing email list.
+
+## v1.0.50 — Keeping your Clickys going (Sep 14, 2026)
+
+Download: https://github.com/farzaa/clicky-releases/releases/download/v1.0.50/HeyClicky.dmg (build 60)
+
+A follow-up to 1.0.49: fixes for stuck Clickys and routines that kept retrying, plus drafts that stay put and a few Home improvements :)
+
+### clickys & routines
+
+- **Long conversations keep working:** Some long chats could get stuck and reject every new message. Fixed the issue that left those Clickys unable to continue, even when you tried again.
+- **Recover from a missing conversation:** If a Clicky's saved conversation can no longer be found, it now starts a fresh conversation instead of failing every time you give it a task.
+- **Quick follow-ups land properly:** Sending another message just as a Clicky started working could fail because it wasn't ready to receive the follow-up yet. HeyClicky now waits for it to be ready, or sends your message as a new turn if the previous task has already finished.
+- **No more endless routine retries:** A failing routine could retry every five minutes and keep using credits. It now pauses after three failed runs in a row and says why in the Clicky's profile. Resume it when you're ready to try again.
+
+### home & suggestions
+
+- **Your drafts stay put:** Half-typed messages and attached files now stay in their own chat when you close the notch, switch apps, or visit another Clicky. Come back and carry on where you left off. Drafts are kept while HeyClicky stays open.
+- **Mark a chat for later:** Right-click a Clicky and choose "Mark as Unread" to bring back its blue dot, even in the chat you're currently viewing. "Mark as Read" clears it without opening the conversation.
+- **The notch gets out of your way:** Escape now closes the expanded notch panel and keeps it closed until you move your cursor away. Opening a link from a reply also tucks the attached Home sheet away so you can see the page.
+- **A tidier Home:** Right-click menus now match Home's gel buttons. We've also removed the AGENTS.md and Folder shortcuts from the Clicky profile, keeping the focus on its routines and results.
+- **Suggestions bring their sources along:** When a suggestion is based on something found in your connected apps, its supporting source details now travel with the task. That gives the Clicky the message, document, or link to check before asking you where the material is.
+
+### billing
+
+- **Upgrade and plan controls stay visible:** The notch could cover the upgrade card, including when you'd reached your usage limit. It now moves aside before the card appears. Plan savings and Manage subscription buttons also respond immediately, and the plan card returns with an error if the link can't open.
+
+## v1.0.49 — Introducing Clickys (Sep 12, 2026)
+
+Download: https://github.com/farzaa/clicky-releases/releases/download/v1.0.49/HeyClicky.dmg (build 59)
+
+Our biggest update yet. HeyClicky is 20 weeks old, and after 1.2 million messages we noticed we barely used agents ourselves. So we spent the last three weeks building a home for them that we'd actually want to open every day: a little team of Clickys, each with its own name, face, memory, and job. Tell them what's bugging you and they get to work ^-^
+
+### getting started
+
+- **A setup that gets to know you:** Pick a character style, answer four quick questions about yourself and your work, and meet three Clickys made for you. The refreshed tour introduces them by name and shows you where to talk to them and find their suggestions.
+- **Make a new Clicky through conversation:** Tell HeyClicky what you'd like help with. It asks a few useful follow-ups, helps you think it through if you're unsure, and creates a Clicky with that job in mind. Your first time also includes a quick explanation of how Clickys work.
+- **Setup doesn't spend your normal allowance:** Onboarding and creating a Clicky have their own usage limits, so getting set up doesn't use your normal message, Clicky, or dictation allowance. Work you ask the Clicky to do afterward uses your plan as usual.
+
+### clickys & home
+
+- **Clickys that stick around:** Create a Clicky for whatever you're working on. Each has its own name, memory, conversation, and folder for its files. Come back tomorrow and pick up the same work without explaining everything again ^-^
+- **A new home for your Clickys:** We've updated the notch to make it the main home for your Clickys. Your Clickys, conversations, and files now live together in a full chat interface. Open it from the notch, the Dock, or Control + Command + A. Expand it into its own window when you want more room, then tuck it back into the notch. No model pickers, no settings maze. Just a chat and a hold-to-talk pill.
+- **Make them yours:** Choose from Dreamy Cloud and Puff Pals, then customize your Clicky's look. Their faces react as they listen, think, and talk, and doze off when you stop them (˘ω˘) The same face and color follow the Clicky into the notch and the card at the top right while it works.
+- **Keep your people close:** Pin your go-to Clickys, search your conversations, and archive chats you're done with. Status indicators show who's working, who needs you, and which results you haven't read yet.
+- **Your earlier work is still here:** Everything you ran in older versions is still here. Flip the legacy toggle in Settings and it shows up in your Clickys list. Open one to continue the work, or move it into a new or existing Clicky. HeyClicky asks before moving it and carries the earlier work along.
+
+### voice & conversations
+
+- **Just talk to your Clicky:** Hold your voice shortcut in a Clicky's chat to give it a task or follow up directly. Your words land in that conversation. Type whenever you prefer, and send changes while it works without losing your original request.
+- **Ask from anywhere:** You don't have to open Home to work with them. From any app, ask 'what's running right now?', 'tell Launch Scout I like this shirt too', or 'make me a Clicky that cleans my desktop every morning', and HeyClicky routes it to the right one or founds a new one.
+- **Follow-ups know who you mean:** Ask "how's it going?", "what did it find?", or "retry it" and HeyClicky uses the Clicky's progress, recent results, and the chat you were just viewing. Spoken updates name the Clicky, so "yeah, do that" can go back to the right one.
+- **See the work as it happens:** Live progress appears in the conversation, with the work steps tucked away once a task finishes. Stop a task, retry a failed one, or let different Clickys work on separate jobs. Approved suggestions waiting on a busy Clicky stay in that Clicky's queue.
+- **Easier to read long chats:** Older messages load as you scroll up, new replies leave you where you're reading, and a jump-to-latest button gets you back. Conversations and their scroll positions are remembered when you switch away and return.
+- HeyClicky remembers more of your recent conversations (40 messages, up from 20), plus everything you said in the onboarding interview.
+
+### files, apps & settings
+
+- **Bring files into the conversation:** Drag files into a Clicky's chat, attach them, or paste files and images with Command + V. You can send an attachment on its own, and previews make it easier to see what you're sharing.
+- **Open the result right beside the chat:** Preview documents, PDFs, and images inside Home, expand them for a closer look, or open them in their app or Finder. Each chat remembers its own open document, and Markdown previews update as the file changes. Animated images play in documents too.
+- **Connect your own tools:** Add custom MCP connections alongside the built-in app catalog, using a server URL or a local command. Supported connections can sign in through your browser or use an API key. HeyClicky reads what the connector can do so your Clickys know when to use it.
+- **Clearer connection status:** Apps show when they're connecting, ready, or need you to sign in again. Connecting or changing a tool updates what the voice assistant knows about it, without waiting for a fresh conversation.
+- **Settings, at home:** Manage apps, account settings, voices, and shortcuts inside Home. Voice previews and shortcut recording are easier to reach, and the update control tells you whether to download an update or install and relaunch.
+- **Skills are on pause:** We've removed Skills for now. We're still figuring out the right way to make them useful, and we plan to bring them back in a new form. If you miss them, please let us know on WhatsApp or at hi@heyclicky.com. Tell us what you used them for <3
+
+### suggestions
+
+- **Suggestions made for you:** Clickys dig into recent work in your connected apps and relevant web research to suggest concrete things they can help with. Suggestions have their own place in the sidebar, with one idea at a time. Research uses read-only access to supported connected apps; the proposed task waits for your go-ahead.
+- **Say yes, skip, or adjust it:** Say "do it" to start the suggestion you're looking at, or "show me the next one" to skip. Want something a little different? Hit Adjust and talk through the change. You can cancel and come back to the same proposal.
+- **A little morning hello:** When morning ideas are ready, your Clickys can pop out of the notch with a short greeting and a Show me button. The invitation waits when HeyClicky detects a call, screen sharing, or Focus mode, and stops reminding you once you've opened Suggestions or dismissed it.
+- **Deeper research behind them:** We rebuilt the whole pipeline: one researcher per connected app plus the public web, reading full documents from the last 72 hours, then an editor picks the ideas worth your time. Say no to one and tell it why, and tomorrow's batch takes that into account.
+
+### routines
+
+- **Put repeat tasks on a routine:** Ask a Clicky to repeat a task, like "give me a daily briefing" or "check this every few hours". Routines run on this Mac while HeyClicky is open. Open the Clicky's profile to pause, resume, run now, or delete one.
+- **Results without the interruption:** Routine results arrive in the same chat with an unread indicator, without a spoken announcement or completion chime. If your Mac was asleep, a missed routine catches up once after waking instead of piling up every missed run.
+- **Recovery built in:** Routines wait while you're offline or their Clicky is busy, and retry failed work after a short delay. Paused routines stay paused, and archiving a Clicky pauses its routines too.
+
+### computer use
+
+- **You decide when a Clicky can control your Mac:** Before it clicks or types, a Clicky asks for permission in its chat and the floating panel at the top right. Choose "Allow once", "Always allow", or "Not now", or answer by voice. Extra-usage approval requests can be answered by voice too.
+- **A separate browser window:** Browser tasks can use their own window in Chrome and other Chromium browsers, using your signed-in profile. For work on the page you're already viewing, HeyClicky asks whether to use that tab or a separate window. Non-Chromium browsers may fall back to opening a tab.
+
+### improved & fixed
+
+- **Permission setup is less fussy:** Fixed duplicate permission prompts and stuck setup transitions. The Screen Recording guide points to the screen-and-audio list when it can identify it, permission retries stay available, and skipping the tour clears its drawings and speech.
+- **Clearer sounds and replies:** Refreshed the sounds for task starts, finishes, and requests for help. Completion announcements are less likely to go missing or get clipped at the start, and cancelling a suggestion adjustment stops its pending speech too.
+- **Team checkout accepts promo codes:** Team admins can now enter a promotion code directly at checkout.
+- **Lighter on your Mac:** Home idles at 3 to 5% CPU and switching between Clickys stays under 5%. Our first build sat at 36 to 43% doing nothing and pegged a whole core while a Clicky worked, so we fixed that before shipping.
+- **Bluetooth headphones:** Finish cues pre-roll so a cold connection can't swallow them, and the squeak at the start of the first spoken reply is gone.
+- Dictation works with Home open, and only lands in Home's composer when Home actually has focus. A background window never steals words meant for another app.
+- On a Studio Display or other external monitor, the menu bar read as a permanently open menu, so voice holds fell back to the spoken router and Escape got swallowed. Fixed.
+- The screen permission card could stay stuck on 'Pick a display' after you'd already granted access.
+- Buttons on the top-right card could miss their targets, and the Clicky list reordered itself while Clickys worked.
+- Clicky chats stalling on launch with a long history, live work lost across a relaunch, and morning suggestions silently never showing up after a relaunch.
+
 ## v1.0.48 — Walkthroughs go the distance (Aug 25, 2026)
 
 Download: https://github.com/farzaa/clicky-releases/releases/download/v1.0.48/HeyClicky.dmg (build 57)

@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { createSkillFiles } from "../src/skillsLibrary.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.resolve(here, "..", "src", "cli.ts");
@@ -61,10 +62,6 @@ beforeAll(async () => {
         res.writeHead(200, { "content-type": "application/json" });
         return void res.end(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ lane, reason: "fake gate" }) }] }));
       }
-      if (req.url === "/skills/create") {
-        res.writeHead(200, { "content-type": "application/json" });
-        return void res.end(JSON.stringify({ id: "pirate-voice", name: "Pirate Voice", description: "talk like a pirate", markdown: `---\nname: Pirate Voice\ndescription: talk like a pirate (${body.request})\nsurfaces: [talk]\n---\n# Pirate\nArr.\n` }));
-      }
       if (req.url === "/v1/responses") {
         const id = "resp_1";
         const item = { id: "msg_1", type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: "agent says hi", annotations: [] }] };
@@ -86,13 +83,11 @@ beforeAll(async () => {
 afterAll(() => server.close());
 
 describe("openclicky CLI", () => {
-  it("skills create/list/activate/deactivate manage the user library", async () => {
+  it("skills list/activate/deactivate manage the user library", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cli-skills-"));
     const env = { OPENCLICKY_USER_SKILLS_DIR: dir };
-    const created = await runCli(["skills", "create", "talk like a pirate"], env);
-    expect(created.code).toBe(0);
-    expect(created.stdout.trim()).toBe("pirate-voice");
-    expect(fs.readFileSync(path.join(dir, "library", "pirate-voice", "SKILL.md"), "utf8")).toContain("talk like a pirate");
+    // Skills come in as files (written by hand, or merged into app-skills/ by pull request).
+    createSkillFiles(dir, "---\nname: Pirate Voice\ndescription: talk like a pirate\nsurfaces: [talk]\n---\n# Pirate\nArr.\n");
     const list = await runCli(["skills", "list", "--json"], env);
     expect(JSON.parse(list.stdout)).toMatchObject([{ id: "pirate-voice", active: true, surfaces: ["talk"] }]);
     expect((await runCli(["skills", "deactivate", "pirate-voice"], env)).code).toBe(0);

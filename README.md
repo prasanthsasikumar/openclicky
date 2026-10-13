@@ -8,6 +8,7 @@ when it is more than a question, hand the task to a Codex agent. MIT licensed.
 
 <p align="center">
   <a href="https://github.com/prasanthsasikumar/openclicky/releases/latest"><img alt="Download for macOS" src="https://img.shields.io/badge/Download_for_macOS-F0452B?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="docs/linux.md"><img alt="Linux (early)" src="https://img.shields.io/badge/Linux_(early)-22201C?style=for-the-badge&logo=linux&logoColor=white"></a>
   <a href="https://openclicky.flowsxr.com"><img alt="Website" src="https://img.shields.io/badge/Website-22201C?style=for-the-badge&logo=safari&logoColor=white"></a>
   <a href="https://discord.gg/zGGERnM5eq"><img alt="Join the Discord" src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
   <a href="docs/architecture.md"><img alt="How it works" src="https://img.shields.io/badge/How_it_works-5E5A52?style=for-the-badge"></a>
@@ -18,6 +19,7 @@ when it is more than a question, hand the task to a Codex agent. MIT licensed.
   <a href="https://github.com/prasanthsasikumar/openclicky/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/prasanthsasikumar/openclicky?label=release&color=F0452B"></a>
   <img alt="macOS 14.2 or later" src="https://img.shields.io/badge/macOS-14.2%2B-22201C?logo=apple">
   <img alt="Apple Silicon and Intel, notarized" src="https://img.shields.io/badge/Apple_Silicon_%2B_Intel-notarized-22201C">
+  <a href="docs/linux.md"><img alt="Linux, X11" src="https://img.shields.io/badge/Linux-X11-22201C?logo=linux&logoColor=white"></a>
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-5E5A52"></a>
 </p>
 
@@ -54,6 +56,14 @@ free account or your OpenAI key. The same key or account polishes takes with a m
 p.m." → "3 PM", your style's rules) and powers **Hey Clicky**: hold fn + ⌃, say "make it formal", and
 the selected text is rewritten.
 
+### On Linux too (early)
+
+An early Linux client, contributed by [Maya Okonkwo](https://github.com/mayaokonkwo): ask about your
+screen and the pointer points, step-by-step guides, offline dictation and spoken answers, with the
+same keys and the same `~/.openclicky` files as the Mac. Python and GTK 3, X11 only for now (no
+Wayland). Download the `.whl` from the [latest release](https://github.com/prasanthsasikumar/openclicky/releases/latest)
+and follow [OpenClicky on Linux](docs/linux.md).
+
 ### See it work
 
 <table>
@@ -85,15 +95,20 @@ words", "moved to text box". The first run happens on the island under the notch
 | **Language & script** | auto-detect or pin a language; native script or roman letters for Indian languages. |
 | **Installed like an app** | self-installs from the dmg, updates itself (Sparkle), opens at login if you want, frees the fn key from Emoji & Symbols with one click. |
 
-The Mac app is derived from Farza's MIT-licensed [Clicky](https://github.com/farzaa/clicky); HeyClicky
-is a separate product and this project is not affiliated with it. The dictation product shape follows
+The idea comes from Google DeepMind's [AI pointer](https://deepmind.google/blog/ai-pointer/)
+("Reimagining the mouse pointer for the AI era", May 2026): a pointer that understands what is on
+your screen and why it matters to you. OpenClicky is an independent, open-source take on it and is not
+affiliated with Google. Parts of the Mac app's first version came from Farza's MIT-licensed
+[Clicky](https://github.com/farzaa/clicky); HeyClicky is a separate product and this project is not
+affiliated with it either. The dictation product shape follows
 Sarvam's Kivi, studied in [docs/research/2026-10-06-kivi-reverse-engineering.md](docs/research/2026-10-06-kivi-reverse-engineering.md);
 no Kivi code, art or fonts are used.
 
-**Thank you.** To the [Sarvam AI](https://www.sarvam.ai) team behind Kivi: the way it handles dictation (one key
-anywhere, a style per app, a history you can search, an orb that shows every step) taught us how dictation
-on a Mac should feel, and much of OpenClicky's dictation and settings is modelled on it. To Farza, whose open
-Clicky gave the app its start.
+**Thank you.** To Adrien Baranes, Rob Marchant and the Google DeepMind team, whose AI pointer showed
+what a pointer could become and is where OpenClicky began. To the [Sarvam AI](https://www.sarvam.ai) team
+behind Kivi: the way it handles dictation (one key anywhere, a style per app, a history you can search,
+an orb that shows every step) taught us how dictation on a Mac should feel, and much of OpenClicky's
+dictation and settings is modelled on it. And to Farza, for open-sourcing Clicky.
 
 ## What is inside
 
@@ -101,7 +116,7 @@ Modeled on the HeyClicky idea, built as a **headless agent core plus a native sh
 
 - **`macos/OpenClicky`** — the native app. `Dictation/` is the take loop (the key, the engines, the
   formatter, the paste, the store), the orb, the main window and onboarding; the rest is the shell
-  forked from Farza's MIT-licensed Clicky: the cursor buddy, ScreenCaptureKit capture, the
+  (which started from Clicky's code): the cursor buddy, ScreenCaptureKit capture, the
   companion shortcuts, in-process OpenAI Realtime voice, and an **Agent mode** that hands "make /
   fix / run…" requests to a Codex thread.
 - **`agent/`** — a TypeScript CLI that drives the **OpenAI Codex CLI** over JSON-RPC stdio (the "do
@@ -110,9 +125,11 @@ Modeled on the HeyClicky idea, built as a **headless agent core plus a native sh
 - **`backend/`** — a **Hono** API that holds every provider key, verifies **Supabase** auth, proxies
   model calls, mints Realtime voice secrets, transcribes audio, and serves the skill library. Runs on
   Node or Cloudflare Workers unchanged.
-- **Skills in three layers** — 15 built-in agent skills, 16 app-teaching skills matched to the app or
-  site in front of you, and your own library in `~/.openclicky/skills` (fill it from the HUD, the
-  `openclicky skills` CLI, or by hand). The active set reaches both the voice model and the agent.
+- **Skills in three layers** — 15 built-in agent skills, 17 app-teaching skills matched to the app or
+  site in front of you, and your own library in `~/.openclicky/skills` (folders dropped in by hand,
+  switched on with the `openclicky skills` CLI). The active set reaches both the voice model and the
+  agent. Missing your app? [Request a skill](https://github.com/prasanthsasikumar/openclicky/issues/new?template=request-a-skill.yml),
+  or add one by pull request ([how](CONTRIBUTING.md#add-a-skill-for-an-app)).
 - **Pointing from Realtime voice** — the voice model gets a `point_at` tool, so "where is the export
   button?" flies the buddy to it while the answer is spoken, one call per step for walkthroughs.
 
@@ -143,14 +160,15 @@ Notion / Sheets / Slack, and Wispr Flow import.
 | [Dictation design](docs/superpowers/specs/2026-10-06-dictation-kivi-port-design.md) | the take loop, engines, formatting, the space, the orb, installation — what was built and why |
 | [Kivi, reverse-engineered](docs/research/2026-10-06-kivi-reverse-engineering.md) | the report the dictation product shape was taken from |
 | [Dictation hand test](docs/dictation-hand-test.md) | what to try by hand after a build, step by step |
+| [OpenClicky on Linux](docs/linux.md) | the early Linux client: install, shortcuts, settings, what works and what does not yet |
 | [Skill authoring](docs/skills.md) | `SKILL.md` format, matching, budgets, activation |
-| [`app-skills/`](app-skills/) | the 16 app-teaching skills and how to add one |
+| [`app-skills/`](app-skills/) | the 17 app-teaching skills and how to add one |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | setup, test commands, where help is welcome |
 
 ## Next
 
-- Dictation: rich paste for Notion / Sheets / Slack, history sync between Macs, Wispr Flow import.
-  The Windows client is in [`windows/`](windows/README.md).
+- Dictation: rich paste for Notion / Sheets / Slack, history sync between Macs, Wispr Flow import,
+  Wayland for the Linux client. The Windows client is in [`windows/`](windows/README.md).
 - Shell (`macos/OpenClicky`): stream agent milestones onto the cursor bubble, Keychain token entry
   (upstream PR #80 is a good template), active-document reader.
 - Voice: wake word, spoken task-finished summaries, Deepgram/Whisper STT fallback.

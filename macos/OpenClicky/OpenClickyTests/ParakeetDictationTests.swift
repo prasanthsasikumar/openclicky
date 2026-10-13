@@ -70,8 +70,8 @@ struct ParakeetDictationTests {
             onTranscriptUpdate: { heard.partial($0) }, onFinalTranscriptReady: { heard.final($0) }, onError: { _ in },
             transcribe: { _ in "so far" })
         session.appendPCM16(Data(count: 32_000))
-        try? await Task.sleep(nanoseconds: 1_400_000_000)
-        #expect(heard.partials.contains("so far"))
+        // The live words come once a second; a busy CI runner can be late, so wait up to 5 s.
+        #expect(await heard.waitForPartial("so far"))
         session.cancel()
     }
 
@@ -113,6 +113,14 @@ private final class HeardLog: @unchecked Sendable {
     var partials: [String] { lock.withLock { storedPartials } }
     func final(_ text: String) { lock.withLock { storedFinals.append(text) } }
     func partial(_ text: String) { lock.withLock { storedPartials.append(text) } }
+
+    func waitForPartial(_ words: String) async -> Bool {
+        for _ in 0..<250 {
+            if partials.contains(words) { return true }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return false
+    }
 
     func waitForFinal() async -> String? {
         for _ in 0..<50 {

@@ -9,7 +9,9 @@
 //    <userSkillsDirectory>/activations.json        { "active": [ids], "updatedAt": ISO-8601 }
 //    <userSkillsDirectory>/active/<id> → library/<id>   symlinks for activated skills only; Codex loads this dir
 //
-//  App-teaching skills (`app-skills/` in the checkout) are read-only here and matched by frontmost app.
+//  App-teaching skills are read-only here and matched by frontmost app: the ones inside the app
+//  (`Contents/Resources/app-skills`), plus a local folder (a checkout's `app-skills/` or
+//  `~/.openclicky/app-skills`) whose skills add to them and win over a bundled one with the same id.
 //
 
 import Combine
@@ -21,10 +23,10 @@ final class SkillLibraryStore: ObservableObject {
     @Published private(set) var activeIds: Set<String> = []
     @Published private(set) var appSkills: [SkillFile] = []
     @Published var lastError: String?
-    @Published var isCreating = false
 
     let userSkillsDirectory: URL
     let appSkillsDirectory: URL
+    let bundledAppSkillsDirectory: URL?
 
     /// Watches `library/` (skills added or removed) and the root (activations.json rewritten by the CLI).
     private var watchers: [DispatchSourceFileSystemObject] = []
@@ -41,12 +43,14 @@ final class SkillLibraryStore: ObservableObject {
 
     convenience init() {
         self.init(userSkillsDirectory: OpenClickyConfiguration.userSkillsDirectory,
-                  appSkillsDirectory: OpenClickyConfiguration.appSkillsDirectory)
+                  appSkillsDirectory: OpenClickyConfiguration.appSkillsDirectory,
+                  bundledAppSkillsDirectory: OpenClickyConfiguration.bundledAppSkillsDirectory)
     }
 
-    init(userSkillsDirectory: URL, appSkillsDirectory: URL, watch: Bool = true) {
+    init(userSkillsDirectory: URL, appSkillsDirectory: URL, bundledAppSkillsDirectory: URL? = nil, watch: Bool = true) {
         self.userSkillsDirectory = userSkillsDirectory
         self.appSkillsDirectory = appSkillsDirectory
+        self.bundledAppSkillsDirectory = bundledAppSkillsDirectory
         ensureDirectories()
         reload()
         if watch { startWatching() }
@@ -67,7 +71,7 @@ final class SkillLibraryStore: ObservableObject {
         librarySkills = SkillFile.load(directory: libraryDirectory)
         let known = Set(librarySkills.map(\.id))
         activeIds = Set(readActivations().filter { known.contains($0) })
-        appSkills = SkillFile.load(directory: appSkillsDirectory)
+        appSkills = Self.loadAppSkills(bundledDirectory: bundledAppSkillsDirectory, localDirectory: appSkillsDirectory)
         if clearingErrors { lastError = nil }
         syncActiveDirectory()
     }
@@ -77,6 +81,20 @@ final class SkillLibraryStore: ObservableObject {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let active = object["active"] as? [Any] else { return [] }
         return active.compactMap { $0 as? String }
+    }
+
+    /// The bundled skills with the local folder's laid over them: a local skill replaces the bundled
+    /// one with the same folder id, so an edited copy in a checkout wins. Sorted by id, as `SkillFile.load` is,
+    /// because `AppSkillMatcher` takes the first skill whose bundle id matches.
+    static func loadAppSkills(bundledDirectory: URL?, localDirectory: URL) -> [SkillFile] {
+        // A checkout's app-skills/ also holds "_template" for contributors: never a skill to match.
+        let localSkills = SkillFile.load(directory: localDirectory).filter { !$0.id.hasPrefix("_") }
+        guard let bundledDirectory, bundledDirectory.standardizedFileURL != localDirectory.standardizedFileURL else {
+            return localSkills
+        }
+        let localSkillIds = Set(localSkills.map(\.id))
+        let bundledSkillsNotOverridden = SkillFile.load(directory: bundledDirectory).filter { !localSkillIds.contains($0.id) }
+        return (bundledSkillsNotOverridden + localSkills).sorted { $0.id < $1.id }
     }
 
     // MARK: - Activation
@@ -175,86 +193,7 @@ final class SkillLibraryStore: ObservableObject {
         return skill
     }
 
-    /// "Create a skill": the backend drafts the SKILL.md from a one-line request; we store and activate it.
-    func createSkill(request: String) async throws -> SkillFile {
-        let trimmed = request.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw fail(.emptyRequest) }
-        if let hint = AccountCapabilities.current().skillTeachingUnavailableHint { throw fail(.needsOwnKey(hint)) }
-        let route = ProviderRouter.current(for: .skillDrafting)
-        if let sentence = route.unavailableSentence { throw fail(.needsOwnKey(sentence)) }
-
-        var capabilities: [String] = []
-        if OpenClickyConfiguration.activeComposioMcpUrl != nil { capabilities.append("composio") }
-        if OpenClickyConfiguration.resolvedCuaDriverBin != nil { capabilities.append("computer-use") }
-
-        if route == .openAIDirect, let openAIKey = ProviderRouter.currentCredentials().openAIKey {
-            return try await draftSkillOnOwnKey(request: trimmed, openAIKey: openAIKey, capabilities: capabilities)
-        }
-        guard let endpoint = URL(string: "\(OpenClickyConfiguration.backendBaseURL)/skills/create") else {
-            throw fail(.notConfigured)
-        }
-        isCreating = true
-        lastError = nil
-        defer { isCreating = false }
-
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.timeoutInterval = 90
-        OpenClickyConfiguration.authorize(&urlRequest)
-        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: ["request": trimmed, "capabilities": capabilities])
-
-        do {
-            let (data, response) = try await BackendSignIn.send(urlRequest) { try await URLSession.shared.data(for: $0) }
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let object = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
-            guard (200..<300).contains(status) else {
-                let bodyText = String(decoding: data.prefix(300), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-                let message = object["error"] as? String ?? (bodyText.isEmpty ? "backend returned \(status)" : "backend \(status): \(bodyText)")
-                throw SkillLibraryError.backend(message)
-            }
-            guard let markdown = object["markdown"] as? String else { throw SkillLibraryError.backend("no markdown in response") }
-            return try importSkill(markdown: markdown)
-        } catch {
-            lastError = error.localizedDescription
-            throw error
-        }
-    }
-
-    /// "teach a skill" on the person's own OpenAI key: the backend's drafting prompt, sent to OpenAI
-    /// itself. The skills it may lean on are the ones in this library plus the capabilities above.
-    private func draftSkillOnOwnKey(request: String, openAIKey: String, capabilities: [String]) async throws -> SkillFile {
-        isCreating = true
-        lastError = nil
-        defer { isCreating = false }
-        do {
-            let knownSkills = librarySkills.map(\.id) + capabilities
-            var urlRequest = try DirectProviderRequests.openAISkillDraft(key: openAIKey, request: request, capabilities: knownSkills)
-            urlRequest.timeoutInterval = 90
-            let (data, response) = try await URLSession.shared.data(for: urlRequest)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            guard (200..<300).contains(status) else {
-                AppLog.append("skills: drafting on the own openai key failed (\(status))")
-                throw SkillLibraryError.backend("openai answered \(status). check your openai key in shell.json.")
-            }
-            guard let markdown = DirectProviderRequests.skillMarkdown(fromCompletion: data) else {
-                AppLog.append("skills: openai's draft had no text")
-                throw SkillLibraryError.backend("the model did not return a skill file.")
-            }
-            return try importSkill(markdown: markdown)
-        } catch {
-            lastError = error.localizedDescription
-            throw error
-        }
-    }
-
     // MARK: - Helpers
-
-    /// Records the error for the HUD and returns it for throwing.
-    private func fail(_ error: SkillLibraryError) -> SkillLibraryError {
-        lastError = error.localizedDescription
-        return error
-    }
 
     /// `NSFileWriteFileExistsError` (Foundation) or `EEXIST` (POSIX) — the path is already taken.
     static func isAlreadyExists(_ error: NSError) -> Bool {
@@ -313,17 +252,10 @@ final class SkillLibraryStore: ObservableObject {
 
 enum SkillLibraryError: LocalizedError {
     case invalidMarkdown
-    case emptyRequest
-    case notConfigured
-    case needsOwnKey(String)
-    case backend(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidMarkdown: return "The skill file needs frontmatter with a name and a description."
-        case .emptyRequest: return "Describe what the skill should do."
-        case .notConfigured: return "the openclicky backend address in shell.json isn't a valid url."
-        case .needsOwnKey(let message), .backend(let message): return message
         }
     }
 }

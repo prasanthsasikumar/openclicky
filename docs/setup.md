@@ -69,7 +69,6 @@ curl localhost:8787/health        # → {"ok":true}
 | `POST /agent/realtime/session` | token | mints an ephemeral OpenAI Realtime client secret (`OPENAI_REALTIME_MODEL`) |
 | `POST /agent/transcribe` | token | `{ audio: <base64>, mime?, language? }` → `{ text }` via `OPENAI_TRANSCRIBE_MODEL` |
 | `GET /skills/library` | token | the bundled skill manifest (id, name, description, kind, files; app skills carry `apps`/`sites`) |
-| `POST /skills/create` | token | `{ request, capabilities? }` → `{ id, name, description, markdown }`: the model drafts one SKILL.md (`SKILL_CREATE_MODEL`, else `OPENAI_MODEL`) |
 | `GET /billing/me` | token | `{ byok, plan, status, used, limit, periodEnd }` — what the app's Settings → Account shows |
 | `POST /billing/checkout` | token | `{ plan }` → `{ url }`: a Stripe Checkout page for that plan |
 | `POST /billing/portal` | token | `{ url }`: Stripe's customer portal (invoices, upgrade, cancel) |
@@ -101,7 +100,6 @@ grant (`GRANT_ACCOUNTS=true`).
   | transcription (upload) | OpenAI (`gpt-4o-mini-transcribe`) | the account's `/agent/transcribe` |
   | Realtime voice | OpenAI client secret, then OpenAI's socket | the account's `/agent/realtime/session` |
   | dictation clean-up | OpenAI chat; with only an Anthropic key, Claude Haiku | the account's `/v1/polish` |
-  | teach a skill | OpenAI chat | the account's `/skills/create` |
   | agent (Codex) and the CLI | OpenAI (`config/codex-config.toml` points Codex at `api.openai.com`) | the backend on `OPENCLICKY_TOKEN` |
   | AssemblyAI dictation | — (minted on OpenClicky's AssemblyAI key) | account only |
 
@@ -159,7 +157,6 @@ openclicky voice --file note.wav --transcribe-only
 openclicky talk --voice marin                                       # always-on conversation via OpenAI Realtime (Ctrl-C to hang up)
 openclicky threads list | show <id> | archive <id>
 openclicky skills list | activate <id> | deactivate <id> | path       # the user skill library
-openclicky skills create "reply to emails in my voice, short and warm"  # backend drafts it, saved + activated
 ```
 
 `talk` is the HeyClicky-style voice loop: the backend mints an ephemeral Realtime client secret,
@@ -262,8 +259,8 @@ for browsers the front tab's URL through Accessibility, falling back to the wind
 the matching app-teaching skill, adds your activated talk skills, and sends the combined
 instructions to the Realtime session (`session.update`, only when the text changed; the log shows
 `instructions updated (N chars)`). The Claude teacher lane appends the same block to its system
-prompt. The notch HUD's Home tab shows the library as tiles (click one to toggle it) and a "+" tile that
-opens the "Create a skill" field.
+prompt." New app skills arrive by pull request (see
+[CONTRIBUTING.md](../CONTRIBUTING.md#add-a-skill-for-an-app)); there is no in-app skill editor.
 
 The first time an app or site whose app-teaching skill names an `integration` (a Composio toolkit:
 Gmail, YouTube, GitHub, Slack, Figma, Google Docs) comes to the front, the island opens a

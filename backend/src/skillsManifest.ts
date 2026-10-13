@@ -26,6 +26,23 @@ export const SKILLS_MANIFEST: SkillManifestEntry[] = [
     ]
   },
   {
+    "id": "davinci-resolve",
+    "name": "DaVinci Resolve",
+    "description": "Teaching notes for DaVinci Resolve — the pages, where export and speed live, the common edits, what to point at.",
+    "kind": "app",
+    "files": [
+      "SKILL.md"
+    ],
+    "apps": [
+      "com.blackmagic-design.DaVinciResolve",
+      "com.blackmagic-design.DaVinciResolveLite"
+    ],
+    "sites": [],
+    "surfaces": [
+      "talk"
+    ]
+  },
+  {
     "id": "doc",
     "name": "doc",
     "description": "Use when the task involves reading, creating, or editing `.docx` documents, especially when formatting or layout fidelity matters; prefer `python-docx` plus the bundled `scripts/render_docx.py` for visual checks.",

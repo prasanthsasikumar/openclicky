@@ -1,0 +1,27 @@
+[project]
+name = "openclicky-linux"
+version = "0.8.9"
+description = "OpenClicky for Linux (X11): dictation, the pointer, and asking about your screen."
+requires-python = ">=3.10"
+license = "MIT"
+# PyGObject (GTK 3) comes from the distribution: python3-gi and gir1.2-gtk-3.0.
+dependencies = ["python-xlib>=0.33"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+# Offline dictation (Parakeet on this computer): the engine the Mac app embeds, the same version.
+offline = ["sherpa-onnx==1.13.8"]
+
+[project.scripts]
+openclicky-linux = "openclicky_linux.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["openclicky_linux"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["x11: needs Xvfb (a private X server is started for the test; the real desktop is never touched)"]

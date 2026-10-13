@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import type { AgentConfig } from "./config.js";
 
 /**
@@ -63,44 +61,3 @@ export function realtimeSecretBody(opts: { voice?: string; instructions?: string
   };
 }
 
-/** The skill-drafting prompt the backend uses (skillsCreate.ts). */
-const SKILL_SYSTEM = `You write skills for OpenClicky, a Mac voice assistant. A skill is ONE Markdown file in this exact format:
----
-name: <Short Title Case name>
-description: <one sentence: what it does and when to use it>
-surfaces: [talk, agent]
----
-<body: ≤ 600 words. Headings: Use When, Steps/Rules, Voice or Style (if relevant), Do Not.>
-
-surfaces: "talk" applies when the user is chatting or asking; "agent" applies when the agent does work. Use [talk] for styles and knowledge, [agent] for operational workflows, [talk, agent] when unsure. Do not add comments after the value.
-Only rely on capabilities from this list: {{CAPS}}. Never invent tools or integrations. Output the file only, no commentary.`;
-
-/** Bundled agent skill ids (the checkout's skills/ folder), the list the backend's manifest gives the model. */
-export function bundledSkillIds(root: string): string[] {
-  try {
-    return fs.readdirSync(path.join(root, "skills"), { withFileTypes: true })
-      .filter((e) => e.isDirectory() && fs.existsSync(path.join(root, "skills", e.name, "SKILL.md")))
-      .map((e) => e.name)
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-export function skillDraftBody(request: string, capabilities: string[], bundled: string[]) {
-  const capList = [...bundled, ...capabilities].join(", ") || "none";
-  return {
-    model: DIRECT_DEFAULTS.openaiModel,
-    stream: false,
-    messages: [
-      { role: "system", content: SKILL_SYSTEM.replace("{{CAPS}}", capList) },
-      { role: "user", content: `Skill request: ${request.trim()}` },
-    ],
-  };
-}
-
-/** The SKILL.md inside a chat completion, fences stripped as the backend does. */
-export function skillMarkdownFromCompletion(json: unknown): string {
-  const raw = ((json as { choices?: { message?: { content?: string } }[] })?.choices?.[0]?.message?.content ?? "").trim();
-  return raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```\s*$/, "").trim() + "\n";
-}

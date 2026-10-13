@@ -7,7 +7,7 @@ import { ask } from "../src/ask.js";
 import { gate } from "../src/gate.js";
 import { transcribe } from "../src/audio.js";
 import { RealtimeSession } from "../src/realtime.js";
-import { openaiRoute, anthropicRoute, skillDraftBody, skillMarkdownFromCompletion } from "../src/providerRoute.js";
+import { openaiRoute, anthropicRoute } from "../src/providerRoute.js";
 
 // Own keys are the primary route: straight to the vendor. The backend only for a capability with no own key.
 
@@ -81,10 +81,4 @@ describe("provider routes", () => {
     expect(seen[0].body).toEqual({ expires_after: { anchor: "created_at", seconds: 600 }, session: { type: "realtime", model: "gpt-realtime", instructions: "be brief", audio: { output: { voice: "marin" } } } });
   });
 
-  it("drafts a skill the way the backend does", () => {
-    const body = skillDraftBody(" a skill ", ["composio"], ["doc"]);
-    expect(body.messages[0].content).toContain("Only rely on capabilities from this list: doc, composio.");
-    expect(body.messages[1].content).toBe("Skill request: a skill");
-    expect(skillMarkdownFromCompletion({ choices: [{ message: { content: "```markdown\n---\nname: X\n---\nbody\n```" } }] })).toBe("---\nname: X\n---\nbody\n");
-  });
 });

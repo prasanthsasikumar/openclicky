@@ -25,3 +25,9 @@ macos/OpenClicky/scripts/release.env
 reference/windows/*/
 # Sparkle's private EdDSA key, exported for the release script (generate_keys -x); never committed
 macos/OpenClicky/scripts/*.key
+
+# Linux client
+linux/.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/

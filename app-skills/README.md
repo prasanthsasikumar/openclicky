@@ -64,7 +64,16 @@ Budget: the app skill is injected with a cap of 4,000 characters, so keep the bo
 
 ## Adding one
 
+Skills arrive as pull requests (CONTRIBUTING.md, "Add a skill for an app"); start from `_template/`.
+Folders starting with `_` are never loaded or shipped. `npm run check:skills` (run by CI) checks the
+shape, the size, `surfaces: [talk]`, that no other skill claims the same app or site, and that there
+are no links, code blocks or shell commands.
+
 1. Create `app-skills/<id>/SKILL.md` with the frontmatter above. Find a bundle id with
    `osascript -e 'id of app "Name"'` or `mdls -name kMDItemCFBundleIdentifier /Applications/Name.app`.
 2. Run `npm run build` so the backend's skill manifest (`GET /skills/library`, `kind: "app"`) picks it up.
-3. The Mac app reads this folder directly at run time (next voice turn), no rebuild needed.
+3. The Mac app's build copies every `SKILL.md` here into the app (`Contents/Resources/app-skills`, the
+   "Embed app skills" build phase), so a release carries them to everyone. While developing, the app
+   also reads this folder at run time (next voice turn, no rebuild): its skills add to the bundled
+   ones and win over a bundled skill with the same folder id. A person without a checkout can do the
+   same in `~/.openclicky/app-skills/<id>/SKILL.md`.

@@ -21,7 +21,8 @@
     "clean:mac-builds": "bash macos/OpenClicky/scripts/clean-stray-builds.sh",
     "upstream:check": "node scripts/upstream-watch.mjs --write",
     "deploy:backend": "bash scripts/deploy-backend.sh",
-    "lint:source": "bash macos/OpenClicky/scripts/check-source-rules.sh"
+    "lint:source": "bash macos/OpenClicky/scripts/check-source-rules.sh",
+    "check:skills": "node scripts/check-app-skills.mjs"
   },
   "engines": {
     "node": ">=22"

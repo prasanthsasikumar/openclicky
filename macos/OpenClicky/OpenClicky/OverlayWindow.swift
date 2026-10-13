@@ -77,6 +77,13 @@ struct SizePreferenceKey: PreferenceKey {
     }
 }
 
+struct GuideStopHintSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 struct NavigationBubbleSizePreferenceKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
@@ -153,6 +160,7 @@ struct BlueCursorView: View {
     @State private var navigationBubbleText: String = ""
     @State private var navigationBubbleOpacity: Double = 0.0
     @State private var navigationBubbleSize: CGSize = .zero
+    @State private var guideStopHintSize: CGSize = .zero
 
     /// The cursor position at the moment navigation started, used to detect
     /// if the user moves the cursor enough to cancel the navigation.
@@ -258,6 +266,34 @@ struct BlueCursorView: View {
                     .animation(.easeOut(duration: 0.4), value: companionManager.cursorCaptionOpacity)
                     .onPreferenceChange(CaptionBubbleSizePreferenceKey.self) { newSize in
                         captionBubbleSize = newSize
+                    }
+            }
+
+            // While a guide waits for the person to do a step, a quiet tag beside the pointer says how
+            // to leave it: someone new to the guide had no idea it could be stopped. Left of the
+            // pointer, so it never covers the answer caption on its right.
+            if isCursorOnThisScreen && companionManager.guideStepUnderWay != nil && companionManager.voiceState == .idle {
+                Text("esc to stop")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.black.opacity(0.55))
+                    )
+                    .fixedSize()
+                    .overlay(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(key: GuideStopHintSizePreferenceKey.self, value: geo.size)
+                        }
+                    )
+                    .position(x: cursorPosition.x - 12 - (guideStopHintSize.width / 2), y: cursorPosition.y + 14)
+                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                    .transition(.opacity)
+                    .onPreferenceChange(GuideStopHintSizePreferenceKey.self) { newSize in
+                        guideStopHintSize = newSize
                     }
             }
 

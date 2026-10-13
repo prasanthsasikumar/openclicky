@@ -6,6 +6,7 @@
 //  (not typing alone, not esc) is what moves a guide on.
 //
 
+import AppKit
 import Testing
 @testable import OpenClicky
 
@@ -45,6 +46,16 @@ struct GuidedStepsTests {
     @Test func typingAloneIsNotAStepButTypingAfterAClickWaitsLonger() {
         #expect(GuidedStepRules.reaction(to: .otherKey, askIsPending: false) == .ignore)
         #expect(GuidedStepRules.reaction(to: .otherKey, askIsPending: true) == .postponePendingAsk(settleSeconds: GuidedStepRules.settleSecondsWhileTyping))
+    }
+
+    /// "Right-click the clip" is a step: the right click that opens the menu counts like a left click.
+    @Test func aRightClickCountsAsAClick() throws {
+        for eventType in [NSEvent.EventType.leftMouseUp, .rightMouseUp] {
+            let event = try #require(NSEvent.mouseEvent(
+                with: eventType, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+            #expect(GuidedStepWatcher.input(for: event) == .click)
+        }
     }
 
     @Test func escEndsTheGuide() {

@@ -4,7 +4,6 @@ import { requireAuthOrOwnKey } from "./ownKey.js";
 import { requireAuth, verifySupabaseJwt, issueSessionToken, bearerFrom, AuthError, type Principal } from "./auth.js";
 import { proxyOpenAI, proxyAnthropic, createRealtimeSession, transcribeAudio, synthesizeSpeech, assemblyAiToken } from "./proxy.js";
 import { SKILLS_MANIFEST } from "./skillsManifest.js";
-import { createSkill } from "./skillsCreate.js";
 import { requestLogger, type LogSink } from "./log.js";
 import { SupabaseBillingStore, requireCredits, type BillingStore, type BillingContext } from "./billing.js";
 import { SupabaseRest } from "./db.js";
@@ -167,7 +166,6 @@ history.replaceState(null, "", location.pathname);
   app.use("/agent/realtime/session", gate);
   app.use("/agent/transcribe", gate);
   app.use("/v1/*", gate);
-  app.use("/skills/create", gate);
   app.use("/chat", gate);
   app.use("/tts", gate);
   // Mints a real AssemblyAI streaming credential on the backend's key: as metered as any model call.
@@ -193,8 +191,6 @@ history.replaceState(null, "", location.pathname);
 
   // Skill library: the bundled agent skills + app-teaching skills, generated from skills/ and app-skills/ at build time.
   app.get("/skills/library", (c) => c.json({ skills: SKILLS_MANIFEST }));
-  // "Create a skill": draft one SKILL.md from a one-line request; the client stores + activates it.
-  app.post("/skills/create", (c) => createSkill(c, storeFor(c)));
 
   // Billing: the Stripe webhook authenticates by signature; everything else needs the user's token.
   app.post("/billing/webhook", withStore(handleStripeWebhook));

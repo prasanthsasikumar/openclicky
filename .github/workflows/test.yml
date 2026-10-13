@@ -22,6 +22,9 @@ jobs:
       # Errors only. The 371 warnings are the backlog the linter was added to make visible, not a
       # reason to fail the build; `--max-warnings` stays off until that list is worked down.
       - run: npm run lint
+      # Every app skill's shape, size and content (talk-only, no links or commands); a skill pull
+      # request has to pass this before anyone reads it.
+      - run: npm run check:skills
       - run: npm test
       - run: npm run build -w backend
       - run: npm run build -w agent
@@ -60,3 +63,19 @@ jobs:
         run: |
           # Swift Testing says which check failed in "recorded an issue" / "Expectation failed" lines.
           grep -E "error:|failed on|recorded an issue|Expectation failed" build.log test.log 2>/dev/null | sort -u | head -60 || true
+
+  linux-client:
+    # The Linux client (linux/, docs/linux.md). Its X11 tests start their own Xvfb and press keys
+    # through XTEST on it; the tests that need the offline models or a real key skip themselves here.
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: linux
+    steps:
+      - uses: actions/checkout@v4
+      # PyGObject (GTK 3) comes from the distribution, as linux/README.md says, not from pip.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-gi gir1.2-gtk-3.0 python3-venv xvfb
+      # The offline extra (sherpa-onnx) too, so Settings' offline engine and voice rows are tested; the
+      # models themselves are not downloaded here, and the tests that need them skip themselves.
+      - run: python3 -m venv --system-site-packages .venv && .venv/bin/pip install -e '.[test,offline]'
+      - run: .venv/bin/python -m pytest -q

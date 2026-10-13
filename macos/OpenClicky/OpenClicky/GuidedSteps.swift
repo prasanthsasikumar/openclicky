@@ -115,7 +115,7 @@ final class GuidedStepWatcher {
     }
 
     func start() {
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp, .keyDown]) { [weak self] event in
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp, .keyDown]) { [weak self] event in
             let input = Self.input(for: event)
             Task { @MainActor in self?.handle(input) }
         }
@@ -136,8 +136,10 @@ final class GuidedStepWatcher {
         idleTimeout = nil
     }
 
-    private nonisolated static func input(for event: NSEvent) -> GuidedStepInput {
-        if event.type == .leftMouseUp { return .click }
+    /// A right click is a click too: "right-click the clip" is a step, and the menu it opens is
+    /// what the next step points into.
+    nonisolated static func input(for event: NSEvent) -> GuidedStepInput {
+        if event.type == .leftMouseUp || event.type == .rightMouseUp { return .click }
         switch event.keyCode {
         case 36, 76, 48: return .stepKey  // Return, keypad Enter, Tab
         case 53: return .escapeKey

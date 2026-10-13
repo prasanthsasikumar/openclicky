@@ -5,7 +5,6 @@ import readline from "node:readline";
 import { resolveConfig, type AgentConfig } from "./config.js";
 import { readVersion } from "./version.js";
 import { canCallBackend, MISSING_CREDENTIALS } from "./backendHeaders.js";
-import { openaiRoute, needsOpenAI, bundledSkillIds, skillDraftBody, skillMarkdownFromCompletion } from "./providerRoute.js";
 import { CodexAgent, type ApprovalRequest, type ApprovalDecision, type RunResult, buildChildEnv } from "./codex.js";
 import { ensureCodexHome } from "./codexHome.js";
 import { ask } from "./ask.js";
@@ -13,7 +12,7 @@ import { gate, type Lane } from "./gate.js";
 import { captureScreen } from "./screenshot.js";
 import { recordAudio, transcribe, resolveMicDevice } from "./audio.js";
 import { RealtimeSession, defaultMicCommand } from "./realtime.js";
-import { listLibrary, setActive, createSkillFiles } from "./skillsLibrary.js";
+import { listLibrary, setActive } from "./skillsLibrary.js";
 import { spawnTarget } from "./winSpawn.js";
 
 const program = new Command();
@@ -534,7 +533,7 @@ skills
   .action((opts) => {
     const list = listLibrary(resolveConfig().userSkillsDir);
     if (opts.json) return void process.stdout.write(JSON.stringify(list, null, 2) + "\n");
-    if (!list.length) return void process.stdout.write("no skills yet — try: openclicky skills create \"reply to emails in my voice\"\n");
+    if (!list.length) return void process.stdout.write("no skills yet — put a folder with a SKILL.md in ${resolveConfig().userSkillsDir}/library\n");
     for (const s of list) process.stdout.write(`${s.active ? "[on] " : "[off]"} ${s.id.padEnd(28)} ${s.name} — ${s.description.slice(0, 90)}\n`);
   });
 
@@ -547,34 +546,6 @@ const toggleSkill = (id: string, on: boolean) => {
 skills.command("activate").description("activate a skill").argument("<id>").action((id: string) => toggleSkill(id, true));
 skills.command("deactivate").description("deactivate a skill").argument("<id>").action((id: string) => toggleSkill(id, false));
 skills.command("path").description("print the library directory").action(() => void process.stdout.write(resolveConfig().userSkillsDir + "\n"));
-
-skills
-  .command("create")
-  .description("draft a SKILL.md from a one-line request (own OpenAI key: on OpenAI directly; else via the backend), save and activate it")
-  .argument("<request>", "what the skill should do")
-  .option("--capability <name...>", "capabilities the skill may rely on (e.g. composio, computer-use)")
-  .option("--backend-url <url>", "env BACKEND_URL")
-  .option("--token <token>", "env OPENCLICKY_TOKEN")
-  .action(async (request: string, opts) => {
-    const cfg = configFrom(opts);
-    const route = openaiRoute(cfg, "/skills/create", "/chat/completions", { "content-type": "application/json" });
-    if (!route) fail(`skill creation ${needsOpenAI}`);
-    try {
-      const capabilities: string[] = opts.capability ?? [];
-      const r = await fetch(route!.url, {
-        method: "POST",
-        headers: route!.headers,
-        body: JSON.stringify(route!.direct ? skillDraftBody(request, capabilities, bundledSkillIds(cfg.root)) : { request, capabilities }),
-      });
-      if (!r.ok) fail(`skill creation failed (${r.status}): ${(await r.text()).slice(0, 300)}`);
-      const markdown = route!.direct ? skillMarkdownFromCompletion(await r.json()) : ((await r.json()) as { markdown: string }).markdown;
-      const skill = createSkillFiles(cfg.userSkillsDir, markdown);
-      note(`saved ${skill.path}/SKILL.md (active)`);
-      process.stdout.write(skill.id + "\n");
-    } catch (e) {
-      propagate(e);
-    }
-  });
 
 program
   .command("token")
