@@ -221,9 +221,11 @@ internal sealed class AssemblyAIStreamingTranscriptionSession : IBuddyStreamingT
             explicitFinalTranscriptDeadline = null;
         }
         SendJsonMessage("""{"type":"Terminate"}""");
+        // Terminate goes out before the socket closes ("going away"); a stuck send gets a second at most.
+        sender.Complete();
         _ = Task.Run(async () =>
         {
-            await Task.Delay(100).ConfigureAwait(false);
+            await Task.WhenAny(sender.Drained, Task.Delay(TimeSpan.FromSeconds(1))).ConfigureAwait(false);
             lifetime.Cancel();
             await socket.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.EndpointUnavailable).ConfigureAwait(false);
         });

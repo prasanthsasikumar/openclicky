@@ -331,6 +331,7 @@ public class RealtimeTurnTests : IDisposable
         Assert.True(await Eventually.TrueAsync(() => pointed.Count == 1));
         Assert.Equal("save button", pointed[0].Label);
         Assert.Equal(new ScreenPoint(620, 406), pointed[0].Point);
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("function_call_output"))));
         var output = socket.SentTexts.Select(text => JsonNode.Parse(text)!).Last(node => node["type"]!.GetValue<string>() == "conversation.item.create");
         Assert.Equal("function_call_output", output["item"]!["type"]!.GetValue<string>());
         Assert.Equal("pointing at save button", output["item"]!["output"]!.GetValue<string>());

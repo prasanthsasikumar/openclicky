@@ -226,8 +226,8 @@ public sealed class FakeSpeechWebSocket : ISpeechWebSocket
 
 public static class Eventually
 {
-    /// <summary>Waits up to two seconds for <paramref name="condition"/>.</summary>
-    public static async Task<bool> TrueAsync(Func<bool> condition, int timeoutMilliseconds = 2_000)
+    /// <summary>Waits (ten seconds at most: the full suite can starve the thread pool) for <paramref name="condition"/>.</summary>
+    public static async Task<bool> TrueAsync(Func<bool> condition, int timeoutMilliseconds = 10_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
         while (DateTime.UtcNow < deadline)
@@ -255,7 +255,7 @@ public sealed class TranscriptLog
     public void Partial(string text) { lock (stateLock) partials.Add(text); }
     public void Error(Exception error) { lock (stateLock) errors.Add(error); }
 
-    public async Task<string?> WaitForFinalAsync(int timeoutMilliseconds = 2_000)
+    public async Task<string?> WaitForFinalAsync(int timeoutMilliseconds = 10_000)
     {
         await Eventually.TrueAsync(() => Finals.Count > 0, timeoutMilliseconds);
         return Finals.FirstOrDefault();

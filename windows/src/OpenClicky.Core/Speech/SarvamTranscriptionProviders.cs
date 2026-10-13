@@ -385,9 +385,11 @@ public sealed class SarvamStreamingSession : IBuddyStreamingTranscriptionSession
             text = string.Join(" ", partial.Length == 0 ? pieces : pieces.Append(partial));
         }
         if (flavour == Flavour.Realtime) Send(sarvam.RealtimeEventMessage("end"));
+        // The goodbye goes out before the socket closes; a stuck send gets a second at most.
+        sender.Complete();
         _ = Task.Run(async () =>
         {
-            await Task.Delay(200).ConfigureAwait(false);
+            await Task.WhenAny(sender.Drained, Task.Delay(TimeSpan.FromSeconds(1))).ConfigureAwait(false);
             lifetime.Cancel();
             await socket.CloseAsync().ConfigureAwait(false);
         });

@@ -130,8 +130,8 @@ public static class SpeechVoiceChoices
 
 /// <summary>
 /// The local voices CloudVoiceSpeaker hands work to: Kokoro (the helper) and this PC's voice.
-/// TODO(integration): the app sets <see cref="Current"/> at startup with KokoroVoice.Shared
-/// (IsInstalled / AudioAsync) and the platform's ISystemVoice.
+/// TODO(integration): the app sets <see cref="Current"/> = ForThisPC(platform ISystemVoice) at startup, after KokoroVoice.Shared
+/// is assigned.
 /// </summary>
 public sealed record SpeechVoiceServices(
     Func<bool> KokoroIsInstalled,
@@ -139,6 +139,13 @@ public sealed record SpeechVoiceServices(
     ISystemVoice SystemVoice)
 {
     public static SpeechVoiceServices? Current { get; set; }
+
+    /// <summary>The live services: KokoroVoice.Shared (once the app assigned it) and this PC's voice.</summary>
+    public static SpeechVoiceServices ForThisPC(ISystemVoice systemVoice) => new(
+        () => KokoroVoice.IsInstalled,
+        (text, languageCode, cancellationToken) =>
+            (KokoroVoice.Shared ?? throw new KokoroException(KokoroException.NotInstalledMessage)).AudioAsync(text, languageCode, cancellationToken),
+        systemVoice);
 
     public static SpeechVoiceServices Required =>
         Current ?? throw new InvalidOperationException("the voices aren't set up in this build yet.");

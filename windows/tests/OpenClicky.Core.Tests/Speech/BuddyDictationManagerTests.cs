@@ -139,6 +139,8 @@ public class BuddyDictationManagerTests : IDisposable
         var session = harness.Provider.Sessions.Single();
         session.Callbacks.OnError(new TranscriptionProviderException("couldn't reach sarvam: offline"));
         Assert.True(await Eventually.TrueAsync(() => harness.Manager.LastErrorMessage is not null));
+        // The error is set, then the take is cancelled, in the same main-thread turn: wait for the turn to end.
+        await mainThread.InvokeAsync(() => { });
         Assert.Equal("couldn't reach sarvam: offline", harness.Manager.LastErrorMessage);
         Assert.True(session.Cancelled);
         Assert.False(harness.Manager.IsDictationInProgress);

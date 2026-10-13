@@ -22,7 +22,7 @@ public sealed class OrderedSocketSender
         this.socket = socket;
         this.onSendFailed = onSendFailed;
         this.cancellationToken = cancellationToken;
-        _ = Task.Run(DrainAsync);
+        Drained = Task.Run(DrainAsync);
     }
 
     public void SendText(string text) => queue.Writer.TryWrite(new OutgoingText(text));
@@ -31,6 +31,9 @@ public sealed class OrderedSocketSender
 
     /// <summary>Nothing more is sent; what is queued is dropped.</summary>
     public void Complete() => queue.Writer.TryComplete();
+
+    /// <summary>Finishes when everything queued before <see cref="Complete"/> went out (or the sender was cancelled).</summary>
+    public Task Drained { get; }
 
     private async Task DrainAsync()
     {

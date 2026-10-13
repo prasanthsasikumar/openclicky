@@ -1355,6 +1355,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     private async Task ResolvePointAtAsync(Task? previousPointing, ScreenPoint guess, string label, string elementText, string? userRequest,
                                            CompanionScreenCapture capture, Task<IReadOnlyList<ScreenTextLine>>? screenText, CancellationToken cancellationToken)
     {
+        // Like the Mac's `Task { }`: the chain starts after the tool call's handler has sent its output.
+        await Task.Yield();
         if (previousPointing is not null)
         {
             try { await previousPointing; }

@@ -65,10 +65,12 @@ public class SarvamTranscriptionTests
         socket.Receive("partial:namaste");
         Assert.True(await Eventually.TrueAsync(() => log.Partials.Contains("namaste")));
         socket.Receive("final:namaste duniya");
+        Assert.True(await Eventually.TrueAsync(() => log.Partials.Contains("namaste duniya")));
         session.RequestFinalTranscript();
         Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Contains("event:flush")));
         socket.Receive("partial:phir");
         Assert.Equal("namaste duniya phir", await log.WaitForFinalAsync(5_000));
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Contains("event:end") && socket.WasClosed));
         Assert.Equal(["event:speech_start", "audio:9600", "event:speech_end", "event:flush", "event:end"], socket.SentTexts.Where(text => text != "audio:0").Take(5).ToList());
     }
 
