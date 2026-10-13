@@ -140,7 +140,7 @@ Every Swift file has its Windows home (tables above). The last pieces landed in 
   quick actions and the notices (`.AskLane`), the agent lane and result card (`.AgentLane`), Realtime
   wiring with the point_at chain (`.Realtime`), pointing, the demos and the Settings tour's pointer
   (`.Pointing`), captions / pointer presence / quitting (`.Captions`), uses and model downloads
-  (`.Onboarding`), skills / connect card / skill drafting (`.Skills`), the dictation take controller
+  (`.Onboarding`), skills / connect card (`.Skills`), the dictation take controller
   (`.Dictation`, plus `DictationHistoryActions`). Its OS needs are `CompanionServices` / `ICompanionHost`
   (`CompanionPlatform.cs`).
 - **FirstRunTourController** (`Core/Companion/FirstRunTourController.cs`), the island's voice pill rules

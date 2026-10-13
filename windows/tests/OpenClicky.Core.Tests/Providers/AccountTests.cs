@@ -169,13 +169,6 @@ public sealed class AccountCapabilitiesTests
         Assert.Null(new AccountCapabilities(AccountKind.OwnKeys).AgentUnavailableHint);
         Assert.Null(new AccountCapabilities(AccountKind.SignedOut).AgentUnavailableHint);
     }
-
-    [Fact]
-    public void TeachingSkillsNeedsYourOwnKeyOnAnAccount()
-    {
-        Assert.Equal("teaching skills needs your own key for now.", new AccountCapabilities(AccountKind.Account).SkillTeachingUnavailableHint);
-        Assert.Null(new AccountCapabilities(AccountKind.OwnKeys).SkillTeachingUnavailableHint);
-    }
 }
 
 /// <summary>The account profile comes from the backend's /billing/me answer, never from a guess.</summary>

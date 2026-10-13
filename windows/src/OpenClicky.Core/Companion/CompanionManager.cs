@@ -189,7 +189,6 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         SkillLibraryStore = new SkillLibraryStore(
             OpenClickyConfiguration.UserSkillsDirectory,
             OpenClickyConfiguration.AppSkillsDirectory,
-            draftSkillMarkdown: DraftSkillMarkdownAsync,
             post: action => services.MainThread.Post(action));
         PermissionPromptController = new PermissionPromptController();
         AppConnectPromptController = new AppConnectPromptController(preferences, services.MainThread);

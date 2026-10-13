@@ -24,12 +24,12 @@ public sealed class SkillLibraryStoreTests : IDisposable
         return $"---\nname: {name}\ndescription: d {name}\n{surfacesLine}---\n\n# {name}\nbody\n";
     }
 
-    private SkillLibraryStore MakeStore(Func<SkillDraftRequest, CancellationToken, Task<string>>? draft = null)
+    private SkillLibraryStore MakeStore()
     {
         var appSkills = Path.Combine(root, "app-skills");
         Directory.CreateDirectory(appSkills);
         return new SkillLibraryStore(Path.Combine(root, "skills"), appSkills, watch: false,
-            now: () => new DateTimeOffset(2026, 10, 13, 9, 30, 0, TimeSpan.Zero), draftSkillMarkdown: draft);
+            now: () => new DateTimeOffset(2026, 10, 13, 9, 30, 0, TimeSpan.Zero));
     }
 
     /// <summary>A link (symlink / junction) or a copied folder holding the skill.</summary>
@@ -186,47 +186,5 @@ public sealed class SkillLibraryStoreTests : IDisposable
         store.Reload();
         Assert.Equal(new[] { "figma" }, store.AppSkills.Select(item => item.Id));
         Assert.Equal(new[] { "com.figma.Desktop" }, store.AppSkills.First().Apps);
-    }
-
-    // MARK: - Windows additions: create-skill through the injected drafter
-
-    [Fact]
-    public async Task CreateSkillStoresAndActivatesTheDraft()
-    {
-        SkillDraftRequest? seen = null;
-        using var store = MakeStore((request, _) =>
-        {
-            seen = request;
-            return Task.FromResult(Markdown("Morning Brief"));
-        });
-        var skill = await store.CreateSkillAsync("  summarise my morning  ");
-        Assert.Equal("summarise my morning", seen?.Request);
-        Assert.Equal("morning-brief", skill.Id);
-        Assert.Contains("morning-brief", store.ActiveIds);
-        Assert.False(store.IsCreating);
-        Assert.Null(store.LastError);
-    }
-
-    [Fact]
-    public async Task CreateSkillRecordsErrors()
-    {
-        using var store = MakeStore((_, _) => throw SkillLibraryException.Backend("backend 500: boom"));
-        var empty = await Assert.ThrowsAsync<SkillLibraryException>(() => store.CreateSkillAsync("   "));
-        Assert.Equal(SkillLibraryErrorKind.EmptyRequest, empty.Kind);
-        Assert.Equal("Describe what the skill should do.", store.LastError);
-        await Assert.ThrowsAsync<SkillLibraryException>(() => store.CreateSkillAsync("x"));
-        Assert.Equal("backend 500: boom", store.LastError);
-        Assert.False(store.IsCreating);
-    }
-
-    [Fact]
-    public void BackendResponseIsReadLikeTheMac()
-    {
-        Assert.Equal("md", SkillLibraryStore.MarkdownFromBackendResponse(200, "{\"markdown\":\"md\"}"u8.ToArray()));
-        Assert.Equal("nope", Assert.Throws<SkillLibraryException>(() => SkillLibraryStore.MarkdownFromBackendResponse(400, "{\"error\":\"nope\"}"u8.ToArray())).Message);
-        Assert.Equal("backend 502: bad gateway", Assert.Throws<SkillLibraryException>(() => SkillLibraryStore.MarkdownFromBackendResponse(502, "bad gateway"u8.ToArray())).Message);
-        Assert.Equal("backend returned 500", Assert.Throws<SkillLibraryException>(() => SkillLibraryStore.MarkdownFromBackendResponse(500, Array.Empty<byte>())).Message);
-        Assert.Equal("no markdown in response", Assert.Throws<SkillLibraryException>(() => SkillLibraryStore.MarkdownFromBackendResponse(200, "{}"u8.ToArray())).Message);
-        Assert.Equal("{\"request\":\"r\",\"capabilities\":[\"composio\"]}", SkillLibraryStore.BackendCreateRequestBody("r", new[] { "composio" }));
     }
 }

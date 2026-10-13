@@ -19,7 +19,7 @@ public sealed class ProviderRouteTests
     private static readonly ProviderCredentials Nothing = new(" ", "", "\n");
 
     private static readonly ProviderCapability[] OpenAICapabilities =
-        [ProviderCapability.OpenAIChat, ProviderCapability.Speech, ProviderCapability.Transcription, ProviderCapability.Realtime, ProviderCapability.SkillDrafting];
+        [ProviderCapability.OpenAIChat, ProviderCapability.Speech, ProviderCapability.Transcription, ProviderCapability.Realtime];
 
     // MARK: the decision
 
@@ -202,21 +202,6 @@ public sealed class ProviderRouteTests
         Assert.Equal("Hi.", DirectProviderRequests.AnthropicReplyText(whole));
         Assert.Null(DirectProviderRequests.AnthropicReplyText(cut));
         Assert.Null(DirectProviderRequests.AnthropicReplyText(Encoding.UTF8.GetBytes("not json")));
-    }
-
-    [Fact]
-    public void SkillDraftingUsesTheBackendsPromptAndStripsFences()
-    {
-        var request = DirectProviderRequests.OpenAISkillDraft("sk-user", " reply in my voice ", ["doc", "composio"]);
-        Assert.Equal("https://api.openai.com/v1/chat/completions", request.RequestUri!.AbsoluteUri);
-        var body = Json(request);
-        Assert.Equal("gpt-5.5", (string?)body["model"]);
-        Assert.False((bool?)body["stream"]);
-        var messages = body["messages"]!.AsArray();
-        Assert.Contains("Only rely on capabilities from this list: doc, composio.", (string?)messages[0]!["content"]);
-        Assert.Equal("Skill request: reply in my voice", (string?)messages[1]!["content"]);
-        var completion = Encoding.UTF8.GetBytes("""{"choices":[{"message":{"content":"```markdown\n---\nname: X\n---\nbody\n```"}}]}""");
-        Assert.Equal("---\nname: X\n---\nbody\n", DirectProviderRequests.SkillMarkdown(completion));
     }
 
     // MARK: a 401 on a PC with no account

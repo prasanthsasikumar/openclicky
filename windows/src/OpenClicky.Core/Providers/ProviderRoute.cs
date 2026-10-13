@@ -29,8 +29,6 @@ public enum ProviderCapability
     Transcription,
     /// <summary>Realtime voice: the client secret (/agent/realtime/session). OpenAI key.</summary>
     Realtime,
-    /// <summary>"teach a skill" (/skills/create). OpenAI key.</summary>
-    SkillDrafting,
     /// <summary>AssemblyAI streaming (/transcribe-token): minted on OpenClicky's AssemblyAI key, account only.</summary>
     AssemblyAIStreaming,
 }
@@ -205,8 +203,7 @@ public static class ProviderRouter
                     { } other => ProviderRoute.AnswerProvider(other),
                     null => ProviderRoute.Unavailable(NeedsAnthropicKeySentence),
                 };
-            case ProviderCapability.OpenAIChat or ProviderCapability.Speech or ProviderCapability.Transcription
-                or ProviderCapability.Realtime or ProviderCapability.SkillDrafting:
+            case ProviderCapability.OpenAIChat or ProviderCapability.Speech or ProviderCapability.Transcription or ProviderCapability.Realtime:
                 if (credentials.OpenAIKey is not null) return ProviderRoute.OpenAIDirect;
                 break;
         }
@@ -405,50 +402,6 @@ public static class DirectProviderRequests
             ["session"] = session,
         });
         return request;
-    }
-
-    /// <summary>The skill-drafting prompt the backend uses (skillsCreate.ts), the Mac named as Windows.</summary>
-    public const string SkillDraftingSystemPrompt =
-        "You write skills for OpenClicky, a Windows voice assistant. A skill is ONE Markdown file in this exact format:\n"
-        + "---\n"
-        + "name: <Short Title Case name>\n"
-        + "description: <one sentence: what it does and when to use it>\n"
-        + "surfaces: [talk, agent]\n"
-        + "---\n"
-        + "<body: ≤ 600 words. Headings: Use When, Steps/Rules, Voice or Style (if relevant), Do Not.>\n"
-        + "\n"
-        + "surfaces: \"talk\" applies when the user is chatting or asking; \"agent\" applies when the agent does work. Use [talk] for styles and knowledge, [agent] for operational workflows, [talk, agent] when unsure. Do not add comments after the value.\n"
-        + "Only rely on capabilities from this list: {{CAPS}}. Never invent tools or integrations. Output the file only, no commentary.";
-
-    public static HttpRequestMessage OpenAISkillDraft(string key, string skillRequest, IReadOnlyList<string> capabilities)
-    {
-        var capabilityList = capabilities.Count == 0 ? "none" : string.Join(", ", capabilities);
-        return OpenAIChatCompletions(key, new JsonObject
-        {
-            ["model"] = DefaultOpenAIModel,
-            ["stream"] = false,
-            ["messages"] = new JsonArray(
-                new JsonObject { ["role"] = "system", ["content"] = SkillDraftingSystemPrompt.Replace("{{CAPS}}", capabilityList) },
-                new JsonObject { ["role"] = "user", ["content"] = $"Skill request: {skillRequest.Trim()}" }),
-        });
-    }
-
-    private static readonly Regex OpeningFence = new(@"\A```[a-zA-Z]*\n?", RegexOptions.CultureInvariant);
-    private static readonly Regex ClosingFence = new(@"\n?```\s*\z", RegexOptions.CultureInvariant);
-
-    /// <summary>The SKILL.md inside a chat completion, code fences stripped as the backend does. Null when there is no text.</summary>
-    public static string? SkillMarkdown(byte[] completion)
-    {
-        JsonObject? json;
-        try { json = JsonNode.Parse(completion) as JsonObject; }
-        catch (JsonException) { return null; }
-        if (json?["choices"] is not JsonArray choices || choices.Count == 0) return null;
-        if (choices[0]?["message"] is not JsonObject message) return null;
-        var content = StringValue(message["content"])?.Trim();
-        if (string.IsNullOrEmpty(content)) return null;
-        var markdown = OpeningFence.Replace(content, "", 1);
-        markdown = ClosingFence.Replace(markdown, "", 1);
-        return markdown.Trim() + "\n";
     }
 
     private static string? StringValue(JsonNode? node) =>

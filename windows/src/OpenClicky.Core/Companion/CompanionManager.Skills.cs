@@ -64,41 +64,4 @@ public sealed partial class CompanionManager
         ? null
         : new Companion.AppConnectPrompt(prompt.SkillId, prompt.AppName, prompt.Integration, prompt.FrontExecutablePath, prompt.ExamplePrompts,
             prompt.Stage == Agent.AppConnectPromptStage.ComposioMissing ? Companion.AppConnectPromptStage.ComposioMissing : Companion.AppConnectPromptStage.Ask);
-
-    // MARK: - Teaching a skill
-
-    /// <summary>
-    /// Drafts a SKILL.md for "create a skill": the own OpenAI key with the backend's drafting prompt,
-    /// else the backend's /skills/create on the account.
-    /// </summary>
-    private static async Task<string> DraftSkillMarkdownAsync(SkillDraftRequest request, CancellationToken cancellationToken)
-    {
-        if (AccountCapabilities.Current().SkillTeachingUnavailableHint is { } hint) throw SkillLibraryException.NeedsOwnKey(hint);
-        var route = ProviderRouter.Current(ProviderCapability.SkillDrafting);
-        if (route.UnavailableSentence is { } sentence) throw SkillLibraryException.NeedsOwnKey(sentence);
-        var capabilities = new List<string>();
-        if (OpenClickyConfiguration.ActiveComposioMcpUrl is not null) capabilities.Add("composio");
-        if (OpenClickyConfiguration.ResolvedCuaDriverBin is not null) capabilities.Add("computer-use");
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(90));
-        if (route.Kind == ProviderRouteKind.OpenAIDirect && ProviderRouter.CurrentCredentials().OpenAIKey is { } key)
-        {
-            using var openAIRequest = DirectProviderRequests.OpenAISkillDraft(key, request.Request, request.KnownSkills.Concat(capabilities).ToList());
-            using var openAIResponse = await HttpClients.Shared.SendAsync(openAIRequest, timeout.Token);
-            var status = (int)openAIResponse.StatusCode;
-            if (status is < 200 or >= 300) throw SkillLibraryException.Backend($"openai answered {status}. check your openai key in shell.json.");
-            var json = JsonNode.Parse(await openAIResponse.Content.ReadAsStringAsync(timeout.Token));
-            var text = json?["choices"]?[0]?["message"]?["content"]?.GetValue<string>();
-            if (string.IsNullOrWhiteSpace(text)) throw SkillLibraryException.Backend("the model did not return a skill file.");
-            return text;
-        }
-        using var backendRequest = new HttpRequestMessage(HttpMethod.Post, $"{OpenClickyConfiguration.BackendBaseUrl}/skills/create")
-        {
-            Content = new StringContent(SkillLibraryStore.BackendCreateRequestBody(request.Request, capabilities), Encoding.UTF8, "application/json"),
-        };
-        OpenClickyConfiguration.Authorize(backendRequest);
-        using var response = await BackendSignIn.SendAsync(backendRequest, sent => HttpClients.Shared.SendAsync(sent, timeout.Token));
-        return SkillLibraryStore.MarkdownFromBackendResponse((int)response.StatusCode, await response.Content.ReadAsByteArrayAsync(timeout.Token));
-    }
 }

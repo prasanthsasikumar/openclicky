@@ -44,8 +44,6 @@ public sealed record AccountCapabilities(AccountKind Kind)
     public string PolishPath => Kind == AccountKind.OwnKeys ? "/v1/chat/completions" : "/v1/polish";
     /// <summary>The Agents tab's line under a disabled composer; signed out has nothing to explain.</summary>
     public string? AgentUnavailableHint => Kind == AccountKind.Account ? "agent tasks need your own key for now." : null;
-    /// <summary>"teach a skill" drafts the skill on OpenAI (/skills/create), which the grant does not cover.</summary>
-    public string? SkillTeachingUnavailableHint => Kind == AccountKind.Account ? "teaching skills needs your own key for now." : null;
     /// <summary>At most two screenshots go with an account's question (the backend refuses more).</summary>
     public int? MaxAskScreens => Kind == AccountKind.Account ? 2 : null;
 }

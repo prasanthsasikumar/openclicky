@@ -30,19 +30,9 @@ using System.Text.Json.Nodes;
 
 namespace OpenClicky.Core.Skills;
 
-/// <summary>What "create a skill" sends to whoever drafts the SKILL.md (the backend, or the
-/// person's own OpenAI key).</summary>
-/// <param name="Request">The one-line request, trimmed.</param>
-/// <param name="KnownSkills">Ids already in the library (the own-key drafter lists them as skills it may lean on).</param>
-public sealed record SkillDraftRequest(string Request, IReadOnlyList<string> KnownSkills);
-
 public enum SkillLibraryErrorKind
 {
     InvalidMarkdown,
-    EmptyRequest,
-    NotConfigured,
-    NeedsOwnKey,
-    Backend,
 }
 
 public sealed class SkillLibraryException : Exception
@@ -56,16 +46,10 @@ public sealed class SkillLibraryException : Exception
     }
 
     public static SkillLibraryException InvalidMarkdown() => new(SkillLibraryErrorKind.InvalidMarkdown);
-    public static SkillLibraryException EmptyRequest() => new(SkillLibraryErrorKind.EmptyRequest);
-    public static SkillLibraryException NotConfigured() => new(SkillLibraryErrorKind.NotConfigured);
-    public static SkillLibraryException NeedsOwnKey(string message) => new(SkillLibraryErrorKind.NeedsOwnKey, message);
-    public static SkillLibraryException Backend(string message) => new(SkillLibraryErrorKind.Backend, message);
 
     private static string DescribeError(SkillLibraryErrorKind kind, string? detail) => kind switch
     {
         SkillLibraryErrorKind.InvalidMarkdown => "The skill file needs frontmatter with a name and a description.",
-        SkillLibraryErrorKind.EmptyRequest => "Describe what the skill should do.",
-        SkillLibraryErrorKind.NotConfigured => "the openclicky backend address in shell.json isn't a valid url.",
         _ => detail ?? string.Empty,
     };
 }
@@ -78,13 +62,11 @@ public sealed class SkillLibraryStore : INotifyPropertyChanged, IDisposable
     private IReadOnlySet<string> activeIds = new HashSet<string>();
     private IReadOnlyList<SkillFile> appSkills = Array.Empty<SkillFile>();
     private string? lastError;
-    private bool isCreating;
 
     public IReadOnlyList<SkillFile> LibrarySkills { get => librarySkills; private set => Set(ref librarySkills, value); }
     public IReadOnlySet<string> ActiveIds { get => activeIds; private set => Set(ref activeIds, value); }
     public IReadOnlyList<SkillFile> AppSkills { get => appSkills; private set => Set(ref appSkills, value); }
     public string? LastError { get => lastError; set => Set(ref lastError, value); }
-    public bool IsCreating { get => isCreating; set => Set(ref isCreating, value); }
 
     public string UserSkillsDirectory { get; }
     public string AppSkillsDirectory { get; }
@@ -98,7 +80,6 @@ public sealed class SkillLibraryStore : INotifyPropertyChanged, IDisposable
         LibrarySkills.Where(skill => ActiveIds.Contains(skill.Id) && skill.IsForTalk).ToList();
 
     private readonly Func<DateTimeOffset> now;
-    private readonly Func<SkillDraftRequest, CancellationToken, Task<string>>? draftSkillMarkdown;
     private readonly Func<string, string, bool>? createJunction;
     private readonly Action<Action> post;
     private readonly object reloadLock = new();
@@ -111,8 +92,6 @@ public sealed class SkillLibraryStore : INotifyPropertyChanged, IDisposable
     /// <param name="appSkillsDirectory">`app-skills/` of the checkout.</param>
     /// <param name="watch">Watch the directories for changes made by the CLI or by hand.</param>
     /// <param name="now">Clock for activations.json's `updatedAt`.</param>
-    /// <param name="draftSkillMarkdown">Drafts a SKILL.md for "create a skill" and returns the markdown;
-    /// throws <see cref="SkillLibraryException"/> (or anything else) on failure. See <see cref="CreateSkillAsync"/>.</param>
     /// <param name="createJunction">Creates a directory junction (link path, target path) → success. Optional; see the file header.</param>
     /// <param name="post">Runs a background reload (directory watcher) where the UI may observe it — the
     /// app passes its dispatcher. Defaults to running inline on the timer thread.</param>
@@ -121,14 +100,12 @@ public sealed class SkillLibraryStore : INotifyPropertyChanged, IDisposable
         string appSkillsDirectory,
         bool watch = true,
         Func<DateTimeOffset>? now = null,
-        Func<SkillDraftRequest, CancellationToken, Task<string>>? draftSkillMarkdown = null,
         Func<string, string, bool>? createJunction = null,
         Action<Action>? post = null)
     {
         UserSkillsDirectory = userSkillsDirectory;
         AppSkillsDirectory = appSkillsDirectory;
         this.now = now ?? (() => DateTimeOffset.UtcNow);
-        this.draftSkillMarkdown = draftSkillMarkdown;
         this.createJunction = createJunction;
         this.post = post ?? (action => action());
         EnsureDirectories();
@@ -418,73 +395,6 @@ public sealed class SkillLibraryStore : INotifyPropertyChanged, IDisposable
         }
         SetActive(id, true);
         return LibrarySkills.FirstOrDefault(skill => skill.Id == id) ?? throw SkillLibraryException.InvalidMarkdown();
-    }
-
-    /// <summary>
-    /// "Create a skill": the drafter (backend or own key) writes the SKILL.md from a one-line request;
-    /// we store and activate it.
-    /// </summary>
-    // Wired (CompanionManager.Skills.cs DraftSkillMarkdownAsync): the Mac decides the route here before drafting —
-    //   `AccountCapabilities.current().skillTeachingUnavailableHint` → `.needsOwnKey(hint)`;
-    //   `ProviderRouter.current(for: .skillDrafting).unavailableSentence` → `.needsOwnKey(sentence)`;
-    //   capabilities: "composio" when `OpenClickyConfiguration.activeComposioMcpUrl != nil`,
-    //   "computer-use" when `OpenClickyConfiguration.resolvedCuaDriverBin != nil`;
-    //   route `.openAIDirect` with an OpenAI key → `DirectProviderRequests.openAISkillDraft(key:request:capabilities:)`
-    //   (90 s timeout; non-2xx → "openai answered {status}. check your openai key in shell.json.";
-    //   no text → "the model did not return a skill file.") with KnownSkills = library ids + capabilities;
-    //   otherwise POST `{backendBaseURL}/skills/create` (authorized, 90 s, through `BackendSignIn.send`) with
-    //   <see cref="BackendCreateRequestBody"/> and read the reply with <see cref="MarkdownFromBackendResponse"/>.
-    //   The Providers port supplies all of that as the `draftSkillMarkdown` delegate.
-    public async Task<SkillFile> CreateSkillAsync(string request, CancellationToken cancellationToken = default)
-    {
-        var trimmed = request.Trim();
-        if (trimmed.Length == 0) throw Fail(SkillLibraryException.EmptyRequest());
-        if (draftSkillMarkdown is null) throw Fail(SkillLibraryException.NotConfigured());
-
-        IsCreating = true;
-        LastError = null;
-        try
-        {
-            var knownSkills = LibrarySkills.Select(skill => skill.Id).ToList();
-            var markdown = await draftSkillMarkdown(new SkillDraftRequest(trimmed, knownSkills), cancellationToken).ConfigureAwait(false);
-            return ImportSkill(markdown);
-        }
-        catch (Exception exception)
-        {
-            LastError = exception.Message;
-            throw;
-        }
-        finally
-        {
-            IsCreating = false;
-        }
-    }
-
-    /// <summary>The backend `/skills/create` JSON body: `{"request": …, "capabilities": […]}`.</summary>
-    public static string BackendCreateRequestBody(string request, IReadOnlyList<string> capabilities) =>
-        new JsonObject
-        {
-            ["request"] = request,
-            ["capabilities"] = new JsonArray(capabilities.Select(capability => (JsonNode?)JsonValue.Create(capability)).ToArray()),
-        }.ToJsonString();
-
-    /// <summary>Reads the backend's `/skills/create` reply: the `markdown` on 2xx, else a
-    /// <see cref="SkillLibraryException"/> with the backend's `error` or the first 300 bytes of the body.</summary>
-    public static string MarkdownFromBackendResponse(int status, byte[] data)
-    {
-        JsonObject? json = null;
-        try { json = JsonNode.Parse(data) as JsonObject; }
-        catch (JsonException) { }
-        if (status < 200 || status >= 300)
-        {
-            var bodyText = Encoding.UTF8.GetString(data, 0, Math.Min(data.Length, 300)).Trim();
-            var message = json?["error"] is JsonValue errorValue && errorValue.TryGetValue<string>(out var error)
-                ? error
-                : bodyText.Length == 0 ? $"backend returned {status}" : $"backend {status}: {bodyText}";
-            throw SkillLibraryException.Backend(message);
-        }
-        if (json?["markdown"] is JsonValue markdownValue && markdownValue.TryGetValue<string>(out var markdown)) return markdown;
-        throw SkillLibraryException.Backend("no markdown in response");
     }
 
     // MARK: - Helpers
