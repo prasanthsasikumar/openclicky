@@ -12,40 +12,13 @@
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Platform;
 
 namespace OpenClicky.Core.Speech;
 
-/// <summary>
-/// The microphone-and-engine side of a take as the take controller sees it (DictationCapturing.swift).
-/// TODO(integration): the dictation port's Core/Dictation/DictationCapturing.cs owns this seam; make
-/// BuddyDictationManager implement that interface and delete this mirror.
-/// </summary>
-public interface IBuddyDictationCapturing
-{
-    bool IsDictationInProgress { get; }
-    string TranscriptionProviderDisplayName { get; }
-    /// <summary>The capture endpoint to record from; null = the default device.</summary>
-    string? PreferredMicrophoneId { get; set; }
-    /// <summary>Every captured frame, on the capture thread, for a caller that keeps the take's audio.</summary>
-    Action<AudioFrame>? AudioRetentionSink { get; set; }
-
-    /// <summary>The smoothed 0…1 level (main thread).</summary>
-    event Action<double>? AudioPowerLevelChanged;
-    event Action<string?>? ErrorMessageChanged;
-    /// <summary>True from the moment a keyboard session opens until its transcript was delivered or it ended.</summary>
-    event Action<bool>? SessionActivityChanged;
-
-    Task StartPushToTalkFromKeyboardShortcutAsync(string currentDraftText, Action<string> updateDraftText, Action<string> submitDraftText,
-                                                  CancellationToken cancellationToken = default);
-    void StopPushToTalkFromKeyboardShortcut();
-    void CancelCurrentDictation(bool preserveDraftText = true);
-    void ReplaceTranscriptionProvider(IBuddyTranscriptionProvider provider);
-    /// <summary>Words the engine should expect (the dictionary); sent with the next session.</summary>
-    void UpdateContextualKeyterms(IReadOnlyList<string> contextualKeyterms);
-}
-
-public sealed partial class BuddyDictationManager : ObservableObject, IBuddyDictationCapturing, IDisposable
+/// <summary>The real IDictationCapturing (Core/Dictation's seam): the take controller drives one of these.</summary>
+public sealed partial class BuddyDictationManager : ObservableObject, IDictationCapturing, IDisposable
 {
     public static readonly TimeSpan DefaultFinalTranscriptFallbackDelay = TimeSpan.FromSeconds(2.4);
     public const string MicrophonePermissionRequiredSentence = "microphone permission is required for push to talk.";

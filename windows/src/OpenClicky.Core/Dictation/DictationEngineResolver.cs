@@ -1,39 +1,40 @@
 // Ports `DictationEngineResolver` and `HeyClickyEditor` from Dictation/DictationTakeController.swift
-// (the controller itself waits for the Platform layer): which engine can run and why not, the
-// provider the chosen engine is built as, which model polishes takes and answers Hey Clicky, and
-// whether a take's words may go to a model at all.
+// (the controller is DictationTakeController.cs): which engine can run and why not, the provider the
+// chosen engine is built as, which model polishes takes and answers Hey Clicky, and whether a take's
+// words may go to a model at all.
 
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Providers;
+using OpenClicky.Core.Speech;
 
 namespace OpenClicky.Core.Dictation;
 
 /// <summary>
-/// Builds each engine's transcription provider. The providers live in the Speech port, so the
-/// resolver asks through this seam; `TProvider` is the Speech port's provider interface
-/// (the Mac's BuddyTranscriptionProvider).
+/// Builds each engine's transcription provider (Core/Speech's DictationProviderFactory is the real
+/// one; it needs the Platform's Windows speech recogniser for the offline engine).
 /// </summary>
-public interface IDictationProviderFactory<out TProvider>
+public interface IDictationProviderFactory
 {
     /// <summary>Windows speech recognition, pinned to `preferredLocale` ("hi-IN") or the PC's language when null.</summary>
-    TProvider MakeOffline(string? preferredLocale);
-    TProvider MakeParakeet();
+    IBuddyTranscriptionProvider MakeOffline(string? preferredLocale);
+    /// <summary>Parakeet; `bareLanguageCode` (null = detect) is read when a take starts, for its unavailable reason.</summary>
+    IBuddyTranscriptionProvider MakeParakeet(Func<string?> bareLanguageCode);
     /// <summary>Sarvam, reading the dictation language when a take starts.</summary>
-    TProvider MakeSarvam(Func<DictationLanguage> language);
+    IBuddyTranscriptionProvider MakeSarvam(Func<DictationLanguage> language);
     /// <summary>Upload transcription (OpenAI, or the backend's /agent/transcribe); the bare language read when a take starts, null = detect.</summary>
-    TProvider MakeOpenClicky(Func<string?> bareLanguageCode);
+    IBuddyTranscriptionProvider MakeOpenClicky(Func<string?> bareLanguageCode);
     /// <summary>AssemblyAI streaming; the bare language read when a take starts, null = detect.</summary>
-    TProvider MakeAssemblyAI(Func<string?> bareLanguageCode);
+    IBuddyTranscriptionProvider MakeAssemblyAI(Func<string?> bareLanguageCode);
 }
 
 /// <summary>Builds the transcription provider the settings ask for, and says why one cannot be used.</summary>
 public static class DictationEngineResolver
 {
-    public static TProvider MakeProvider<TProvider>(DictationEngineChoice choice, DictationSettings settings, IDictationProviderFactory<TProvider> factory) =>
+    public static IBuddyTranscriptionProvider MakeProvider(DictationEngineChoice choice, DictationSettings settings, IDictationProviderFactory factory) =>
         choice switch
         {
             DictationEngineChoice.Offline => factory.MakeOffline(settings.Language.BareCode is null ? null : settings.Language.Code),
-            DictationEngineChoice.Parakeet => factory.MakeParakeet(),
+            DictationEngineChoice.Parakeet => factory.MakeParakeet(() => settings.Language.BareCode),
             DictationEngineChoice.Sarvam => factory.MakeSarvam(() => settings.Language),
             // The styles page's language, read when a take starts; auto sends none so the model detects it.
             DictationEngineChoice.OpenClicky => factory.MakeOpenClicky(() => settings.Language.BareCode),

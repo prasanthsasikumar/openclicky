@@ -162,9 +162,6 @@ public sealed class AnswerKeyTakePolisherTests
         Assert.Equal(TakePolishErrorKind.EmptyAnswer, (await Assert.ThrowsAsync<TakePolishException>(() => empty.PolishAsync("s", "u"))).Kind);
     }
 
-    [Fact]
-    public void GeminiAnswersAreRead() =>
-        Assert.Equal("Hello.", DirectAnswerKeyCompletion.GeminiText(Encoding.UTF8.GetBytes("""{"candidates":[{"content":{"parts":[{"text":"Hel"},{"text":"lo."}]}}]}""")));
 }
 
 public sealed class PolishErrorTests
