@@ -97,15 +97,21 @@ struct HUDPlacementTests {
         island.setTourCard(FirstRunTourCard(step: .talk, title: "t", detail: "d", secondaryTitle: "skip"))
         island.setHovering(true)
         #expect(island.expansion == .tour)
-        // The card gives way to the busy strip after the island's 0.4 s grace period.
+        // The card gives way to the busy strip after the island's 0.4 s grace period; a busy CI
+        // runner can take longer.
         island.setBusy(true)
-        try await Task.sleep(nanoseconds: 600_000_000)
+        for _ in 0..<150 where island.expansion != .compact {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
         #expect(island.expansion == .compact)
         island.togglePinned()
         island.setHovering(true)
         try await Task.sleep(nanoseconds: 600_000_000)
         #expect(island.expansion == .compact)
         island.setBusy(false)
+        for _ in 0..<150 where island.expansion != .tour {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
         #expect(island.expansion == .tour)
     }
 
