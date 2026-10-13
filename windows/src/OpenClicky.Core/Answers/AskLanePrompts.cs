@@ -6,7 +6,8 @@
 //
 // Verbatim apart from the Mac things the prompts name, said the Windows way: "the menu bar" is
 // "the tray"; the xcode / ⌘⌥C commit example is VS Code's control enter; Apple Mail is Outlook;
-// the demo's "no menu bar items, no dock icons" is the taskbar and title bars.
+// the demo's "no menu bar items, no dock icons" is the taskbar and title bars. Line breaks are
+// always "\n", whatever the checkout's line endings.
 
 using System.Text.Json.Nodes;
 using OpenClicky.Core.Configuration;
@@ -57,13 +58,13 @@ public static class AskLanePrompts
         example: user asks how to attach a file in outlook: "[POINT:612,88:attach button] click the paperclip at the top of your message. {{GuidedStepMarker.Marker}}"
 
         keep your first sentence short: it is spoken while the rest of your answer is still being written.
-        """;
+        """.ReplaceLineEndings("\n");
 
     /// <summary>
     /// The prompt for the pointing demo (onboarding and the tour's "watch this"): one specific thing
     /// near the middle of the screen, a few words about it, and the [POINT:…] tag last.
     /// </summary>
-    public const string OnboardingDemoSystemPrompt = """
+    public static readonly string OnboardingDemoSystemPrompt = """
         you're openclicky, a small blue cursor buddy living on the user's screen. you're showing off during onboarding. look at their screen and find ONE specific, concrete thing to point at. pick something with a clear name or identity: a specific app icon (say its name), a specific word or phrase of text you can read, a specific filename, a specific button label, a specific tab title, a specific image you can describe. do NOT point at vague things like "a window" or "some text", be specific about exactly what you see.
 
         make a short quirky 3-6 word observation about the specific thing you picked, something fun, playful, or curious that shows you actually read/recognized it. no emojis ever. NEVER quote or repeat text you see on screen, just react to it. keep it to 6 words max, no exceptions.
@@ -75,7 +76,7 @@ public static class AskLanePrompts
         format: your comment [POINT:x,y:label]
 
         the screenshot images are labeled with their pixel dimensions. use those dimensions as the coordinate space. origin (0,0) is top-left. x increases rightward, y increases downward.
-        """;
+        """.ReplaceLineEndings("\n");
 
     /// <summary>The question the pointing demo asks with its screenshot.</summary>
     public const string OnboardingDemoUserPrompt = "look around my screen and find something interesting to point at";

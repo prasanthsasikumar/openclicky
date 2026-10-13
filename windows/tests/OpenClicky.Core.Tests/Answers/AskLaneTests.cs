@@ -196,3 +196,15 @@ public class ScreenElementGroundingTests
         Assert.Contains("paper link", request.UserPrompt);
     }
 }
+
+public class AskLanePromptLineEndingTests
+{
+    [Fact]
+    public void ThePromptsUseOnlyLineFeeds()
+    {
+        Assert.DoesNotContain('\r', AskLanePrompts.CompanionVoiceResponseSystemPrompt);
+        Assert.DoesNotContain('\r', AskLanePrompts.OnboardingDemoSystemPrompt);
+        Assert.StartsWith("you're openclicky, a friendly always-on companion", AskLanePrompts.CompanionVoiceResponseSystemPrompt);
+        Assert.EndsWith("while the rest of your answer is still being written.", AskLanePrompts.CompanionVoiceResponseSystemPrompt);
+    }
+}
