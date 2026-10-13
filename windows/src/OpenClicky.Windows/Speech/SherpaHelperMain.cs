@@ -75,6 +75,8 @@ internal sealed class KokoroHelperEngine : IDisposable
             tts?.Dispose();
             tts = null;
             var startedAt = DateTime.UtcNow;
+            // sherpa-onnx hands back a dead engine rather than an error for missing files.
+            if (!KokoroVoice.IsInstalledIn(request.ModelFolder)) throw new KokoroException(KokoroException.ModelNotLoadedMessage);
             try
             {
                 tts = new OfflineTts(Config(request));
@@ -140,6 +142,7 @@ internal sealed class ParakeetHelperEngine : IDisposable
         if (recognizer is null)
         {
             var startedAt = DateTime.UtcNow;
+            if (!ParakeetDictation.IsInstalledIn(request.ModelFolder)) throw new ParakeetException(ParakeetException.ModelNotLoadedMessage);
             try
             {
                 recognizer = new OfflineRecognizer(Config(request.ModelFolder));
