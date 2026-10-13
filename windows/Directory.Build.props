@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Version>0.8.7</Version>
+    <Company>OpenClicky</Company>
+    <Product>OpenClicky</Product>
+  </PropertyGroup>
+</Project>
