@@ -9,7 +9,9 @@
 //    <userSkillsDirectory>/activations.json        { "active": [ids], "updatedAt": ISO-8601 }
 //    <userSkillsDirectory>/active/<id> → library/<id>   symlinks for activated skills only; Codex loads this dir
 //
-//  App-teaching skills (`app-skills/` in the checkout) are read-only here and matched by frontmost app.
+//  App-teaching skills are read-only here and matched by frontmost app: the ones inside the app
+//  (`Contents/Resources/app-skills`), plus a local folder (a checkout's `app-skills/` or
+//  `~/.openclicky/app-skills`) whose skills add to them and win over a bundled one with the same id.
 //
 
 import Combine
@@ -25,6 +27,7 @@ final class SkillLibraryStore: ObservableObject {
 
     let userSkillsDirectory: URL
     let appSkillsDirectory: URL
+    let bundledAppSkillsDirectory: URL?
 
     /// Watches `library/` (skills added or removed) and the root (activations.json rewritten by the CLI).
     private var watchers: [DispatchSourceFileSystemObject] = []
@@ -41,12 +44,14 @@ final class SkillLibraryStore: ObservableObject {
 
     convenience init() {
         self.init(userSkillsDirectory: OpenClickyConfiguration.userSkillsDirectory,
-                  appSkillsDirectory: OpenClickyConfiguration.appSkillsDirectory)
+                  appSkillsDirectory: OpenClickyConfiguration.appSkillsDirectory,
+                  bundledAppSkillsDirectory: OpenClickyConfiguration.bundledAppSkillsDirectory)
     }
 
-    init(userSkillsDirectory: URL, appSkillsDirectory: URL, watch: Bool = true) {
+    init(userSkillsDirectory: URL, appSkillsDirectory: URL, bundledAppSkillsDirectory: URL? = nil, watch: Bool = true) {
         self.userSkillsDirectory = userSkillsDirectory
         self.appSkillsDirectory = appSkillsDirectory
+        self.bundledAppSkillsDirectory = bundledAppSkillsDirectory
         ensureDirectories()
         reload()
         if watch { startWatching() }
@@ -67,7 +72,7 @@ final class SkillLibraryStore: ObservableObject {
         librarySkills = SkillFile.load(directory: libraryDirectory)
         let known = Set(librarySkills.map(\.id))
         activeIds = Set(readActivations().filter { known.contains($0) })
-        appSkills = SkillFile.load(directory: appSkillsDirectory)
+        appSkills = Self.loadAppSkills(bundledDirectory: bundledAppSkillsDirectory, localDirectory: appSkillsDirectory)
         if clearingErrors { lastError = nil }
         syncActiveDirectory()
     }
@@ -77,6 +82,19 @@ final class SkillLibraryStore: ObservableObject {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let active = object["active"] as? [Any] else { return [] }
         return active.compactMap { $0 as? String }
+    }
+
+    /// The bundled skills with the local folder's laid over them: a local skill replaces the bundled
+    /// one with the same folder id, so an edited copy in a checkout wins. Sorted by id, as `SkillFile.load` is,
+    /// because `AppSkillMatcher` takes the first skill whose bundle id matches.
+    static func loadAppSkills(bundledDirectory: URL?, localDirectory: URL) -> [SkillFile] {
+        let localSkills = SkillFile.load(directory: localDirectory)
+        guard let bundledDirectory, bundledDirectory.standardizedFileURL != localDirectory.standardizedFileURL else {
+            return localSkills
+        }
+        let localSkillIds = Set(localSkills.map(\.id))
+        let bundledSkillsNotOverridden = SkillFile.load(directory: bundledDirectory).filter { !localSkillIds.contains($0.id) }
+        return (bundledSkillsNotOverridden + localSkills).sorted { $0.id < $1.id }
     }
 
     // MARK: - Activation

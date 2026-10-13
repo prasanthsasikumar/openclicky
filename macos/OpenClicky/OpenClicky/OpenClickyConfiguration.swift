@@ -458,6 +458,12 @@ enum OpenClickyConfiguration {
         return URL(fileURLWithPath: NSString(string: "~/.openclicky/skills").expandingTildeInPath, isDirectory: true)
     }
 
+    /// The app-teaching skills inside the app (`Contents/Resources/app-skills`), copied from the
+    /// repository's `app-skills/` by the "Embed app skills" build phase, so an install from the dmg has them.
+    static var bundledAppSkillsDirectory: URL? {
+        Bundle.main.resourceURL?.appendingPathComponent("app-skills", isDirectory: true)
+    }
+
     /// App-teaching skills (`app-skills/` in the checkout): `appSkillsPath` from shell.json, else derived from
     /// the CLI path (`…/agent/dist/cli.js` → `…/app-skills`), else `~/.openclicky/app-skills`.
     static var appSkillsDirectory: URL {

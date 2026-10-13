@@ -40,7 +40,7 @@ Codex's environment and only ever presents the user's token; the shell does the 
 | `backend/src/app.ts`, `auth.ts`, `proxy.ts` | routes, Supabase/session auth, streaming proxies, Realtime secret, STT |
 | `backend/src/skillsCreate.ts` | `POST /skills/create`: drafts a SKILL.md from a one-line request (capability-aware) |
 | `backend/scripts/` | `mint-dev-jwt.mjs` (local auth), `build-skills-manifest.mjs` (`skills/` + `app-skills/` → `src/skillsManifest.ts`) |
-| `app-skills/` | 16 app-teaching skills (Finder, Safari, Chrome, Xcode, VS Code, Terminal, Figma, Slack, Mail, Notes, Preview, System Settings, Gmail, Google Docs, GitHub, YouTube); see its README |
+| `app-skills/` | 17 app-teaching skills (Finder, Safari, Chrome, Xcode, VS Code, Terminal, Figma, Slack, Mail, Notes, Preview, System Settings, Gmail, Google Docs, GitHub, YouTube, DaVinci Resolve), copied into the app at build time; see its README |
 | `docs/skills.md` | skill authoring guide (format, matching, budgets, activation) |
 | `scripts/upstream-watch.mjs`, `reference/upstream/` | HeyClicky release watcher and its recorded versions / changelog mirror |
 | `.github/workflows/upstream-watch.yml` | daily run of the watcher; opens an `upstream` issue per new HeyClicky version |

@@ -146,4 +146,46 @@ struct SkillLibraryStoreTests {
         #expect(store.appSkills.map(\.id) == ["figma"])
         #expect(store.appSkills.first?.apps == ["com.figma.Desktop"])
     }
+
+    private func writeAppSkill(in directory: URL, id: String, name: String, bundleIdentifier: String) throws {
+        let folder = directory.appendingPathComponent(id, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try "---\nname: \(name)\ndescription: d\napps: [\(bundleIdentifier)]\nsurfaces: [talk]\n---\nbody\n"
+            .write(to: folder.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+    }
+
+    /// The skills inside the app reach every install; a local folder (a checkout or
+    /// ~/.openclicky/app-skills) adds to them, and its skill wins over the bundled one with the same id.
+    @Test func bundledAppSkillsLoadAndALocalFolderOverridesThemById() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("oc-skills-\(UUID().uuidString)", isDirectory: true)
+        let bundled = root.appendingPathComponent("bundled-app-skills", isDirectory: true)
+        let local = root.appendingPathComponent("app-skills", isDirectory: true)
+        try writeAppSkill(in: bundled, id: "figma", name: "Figma (bundled)", bundleIdentifier: "com.figma.Desktop")
+        try writeAppSkill(in: bundled, id: "notes", name: "Notes", bundleIdentifier: "com.apple.Notes")
+        try writeAppSkill(in: local, id: "figma", name: "Figma (mine)", bundleIdentifier: "com.figma.Desktop")
+        try writeAppSkill(in: local, id: "canva", name: "Canva", bundleIdentifier: "com.canva.CanvaDesktop")
+
+        let store = SkillLibraryStore(userSkillsDirectory: root.appendingPathComponent("skills", isDirectory: true),
+                                      appSkillsDirectory: local,
+                                      bundledAppSkillsDirectory: bundled,
+                                      watch: false)
+
+        #expect(store.appSkills.map(\.id) == ["canva", "figma", "notes"])
+        #expect(store.appSkills.first { $0.id == "figma" }?.name == "Figma (mine)")
+    }
+
+    /// The release build copies the repository's app-skills/ into Contents/Resources (the
+    /// "Embed app skills" build phase); the tests run inside that app.
+    @Test func theAppCarriesItsAppSkillsIncludingDaVinciResolve() throws {
+        let bundled = try #require(OpenClickyConfiguration.bundledAppSkillsDirectory)
+        let skills = SkillFile.load(directory: bundled)
+        #expect(skills.contains { $0.id == "figma" })
+        let resolve = try #require(skills.first { $0.id == "davinci-resolve" })
+        #expect(resolve.isForTalk)
+        for bundleIdentifier in ["com.blackmagic-design.DaVinciResolve", "com.blackmagic-design.DaVinciResolveLite"] {
+            let front = FrontAppContext(bundleIdentifier: bundleIdentifier, appName: "DaVinci Resolve")
+            #expect(AppSkillMatcher.match(front, in: skills)?.id == "davinci-resolve")
+        }
+    }
 }
