@@ -10,6 +10,7 @@
 
 using System.Globalization;
 using System.Text;
+using OpenClicky.Core.Shortcuts;
 
 namespace OpenClicky.Core.Dictation;
 
@@ -145,11 +146,7 @@ public sealed class StableWordCommitter
 
 /// <summary>
 /// The parts of the take's formatting a live phrase uses (Swift passes a `TakeFormattingContext`
-/// and calls `TakeFormatter` directly).
-/// TODO(integration): implement over the ported TakeFormatter/TakeFormattingContext. The Swift calls are
-/// `TakeFormatter.collapseWhitespace(_:)`, `TakeFormatter.removeFillers(from:)` when
-/// `context.style.removeFillers`, `TakeFormatter.applyDictionary(to:terms: context.dictionary)`, and
-/// `TakeFormatter.sentenceCased(_:startingAtSentenceStart:)` when `context.style.sentenceCase`.
+/// and calls `TakeFormatter` directly). `TakeContextPhraseFormatting` is the real one.
 /// </summary>
 public interface ILivePhraseFormatting
 {
@@ -165,6 +162,21 @@ public interface ILivePhraseFormatting
 }
 
 /// <summary>
+/// A take's formatting context as live typing uses it: TakeFormatter's whitespace, fillers (when
+/// the style removes them), the context's dictionary, and sentence case (when the style asks).
+/// </summary>
+public sealed class TakeContextPhraseFormatting(TakeFormattingContext context) : ILivePhraseFormatting
+{
+    public TakeFormattingContext Context { get; } = context;
+    public bool RemovesFillers => Context.Style.RemoveFillers;
+    public bool UsesSentenceCase => Context.Style.SentenceCase;
+    public string CollapseWhitespace(string text) => TakeFormatter.CollapseWhitespace(text);
+    public string RemoveFillers(string text) => TakeFormatter.RemoveFillers(text);
+    public string ApplyDictionary(string text) => TakeFormatter.ApplyDictionary(text, Context.Dictionary);
+    public string SentenceCased(string text, bool startingAtSentenceStart) => TakeFormatter.SentenceCased(text, startingAtSentenceStart);
+}
+
+/// <summary>
 /// Formats one settled phrase with the parts of TakeFormatter's local pass that do not need the
 /// whole take (fillers, dictionary terms, sentence case) and spaces it against what was typed.
 /// </summary>
@@ -175,6 +187,9 @@ public static class LivePhraseFormatter
     /// Spoken shortcuts are not applied: a shortcut expands only when it is the whole take, and a
     /// take that could still be one is held back (`StableWordCommitter.TakeStartTriggers`).
     /// </summary>
+    public static string TextToType(IReadOnlyList<string> phraseWords, TakeFormattingContext context, string typedSoFar) =>
+        TextToType(phraseWords, new TakeContextPhraseFormatting(context), typedSoFar);
+
     public static string TextToType(IReadOnlyList<string> phraseWords, ILivePhraseFormatting formatting, string typedSoFar)
     {
         var text = formatting.CollapseWhitespace(string.Join(" ", phraseWords));
@@ -238,34 +253,8 @@ public readonly record struct TranscriptAlignment(int RemainderStartIndex, bool 
     public IReadOnlyList<string> RemainingWords(IReadOnlyList<string> words) =>
         RemainderStartIndex < words.Count ? words.Skip(RemainderStartIndex).ToList() : Array.Empty<string>();
 
-    /// <summary>
-    /// Case and punctuation do not count: "Hello," lines up with "hello".
-    /// TODO(integration): call TakeFormatter.NormalizedForMatching once Dictation/TakeFormatter is
-    /// ported (Swift: `TakeFormatter.normalizedForMatching(word)`); this is a faithful copy of it:
-    /// lowercased, split on anything that is not alphanumeric (letters, marks, numbers), joined with spaces.
-    /// </summary>
-    public static string NormalizedWord(string word)
-    {
-        var parts = new List<string>();
-        var current = new StringBuilder();
-        foreach (var rune in word.ToLowerInvariant().EnumerateRunes())
-        {
-            var category = Rune.GetUnicodeCategory(rune);
-            var isAlphanumeric = Rune.IsLetterOrDigit(rune) || Rune.IsNumber(rune)
-                                 || category is UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark;
-            if (isAlphanumeric)
-            {
-                current.Append(rune.ToString());
-            }
-            else if (current.Length > 0)
-            {
-                parts.Add(current.ToString());
-                current.Clear();
-            }
-        }
-        if (current.Length > 0) parts.Add(current.ToString());
-        return string.Join(" ", parts);
-    }
+    /// <summary>Case and punctuation do not count: "Hello," lines up with "hello" (TakeFormatter.NormalizedForMatching).</summary>
+    public static string NormalizedWord(string word) => TakeFormatter.NormalizedForMatching(word);
 
     /// <summary>
     /// Where the not-yet-typed words of `finalWords` begin. When the committed words cannot be
@@ -341,10 +330,19 @@ public static class LiveTypingModifierGuard
 
     /// <summary>
     /// The flag the dictation key itself sets, by the Windows dictation keys: Right Ctrl → Control,
-    /// Right Alt → Alt, Right Shift → Shift, Caps Lock → none.
-    /// TODO(integration): take Shortcuts.DictationHotkey directly once it exists
-    /// (Swift: `LiveTypingModifierGuard.ownModifier(of: DictationHotkey)`); callers pass the flag for now.
+    /// Right Alt → Alt, Right Shift → Shift, Caps Lock → none (it changes nothing about unicode text).
     /// </summary>
+    public static LiveTypingModifiers OwnModifier(DictationHotkey dictationKey) => dictationKey switch
+    {
+        DictationHotkey.RightControl => LiveTypingModifiers.Control,
+        DictationHotkey.RightAlt => LiveTypingModifiers.Alt,
+        DictationHotkey.RightShift => LiveTypingModifiers.Shift,
+        _ => LiveTypingModifiers.None,
+    };
+
+    public static bool AllowsTyping(LiveTypingModifiers heldModifiers, DictationHotkey dictationKey) =>
+        AllowsTyping(heldModifiers, OwnModifier(dictationKey));
+
     public static bool AllowsTyping(LiveTypingModifiers heldModifiers, LiveTypingModifiers dictationKeyOwnModifier)
     {
         var heldThatMatter = heldModifiers & ModifiersThatChangeKeystrokes;
