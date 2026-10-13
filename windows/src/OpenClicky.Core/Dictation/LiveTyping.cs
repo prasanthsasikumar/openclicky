@@ -10,6 +10,7 @@
 
 using System.Globalization;
 using System.Text;
+using OpenClicky.Core.Platform;
 using OpenClicky.Core.Shortcuts;
 
 namespace OpenClicky.Core.Dictation;
@@ -386,18 +387,21 @@ public static class LiveTypingExclusions
         return null;
     }
 
+    /// <summary>The same, for a focused element as the Platform layer reads it.</summary>
+    public static string? ReasonNotToType(FocusedTextTarget target, string? fieldProcessName, int ownProcessId, string? ownProcessName = OwnProcessName) =>
+        ReasonNotToType(new LiveTypingTargetIdentity(target.ProcessId, target.AppProcessName), fieldProcessName, ownProcessId, ownProcessName);
+
     private static string Normalized(string processName) =>
         processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? processName : processName + ".exe";
 }
 
 /// <summary>
-/// One take's live typing, as the controller keeps it. `TFocusedTarget` is the OS side's focused
-/// element handle (UIA element + pid); `TFormattingContext` the take's formatting context.
-/// TODO(integration): close the generics over the Platform focused-target type and TakeFormattingContext.
+/// One take's live typing, as the controller keeps it: the focused element at press (UI Automation
+/// runtime id + pid) and the take's formatting context.
 /// </summary>
-public sealed class LiveTypingSession<TFocusedTarget, TFormattingContext>
+public sealed class LiveTypingSession
 {
-    public LiveTypingSession(StableWordCommitter committer, TFocusedTarget focusedTargetAtPress, TFormattingContext formattingContext)
+    public LiveTypingSession(StableWordCommitter committer, FocusedTextTarget focusedTargetAtPress, TakeFormattingContext formattingContext)
     {
         Committer = committer;
         FocusedTargetAtPress = focusedTargetAtPress;
@@ -406,9 +410,9 @@ public sealed class LiveTypingSession<TFocusedTarget, TFormattingContext>
 
     public StableWordCommitter Committer { get; set; }
     /// <summary>The text field that had focus at press; nothing is typed anywhere else.</summary>
-    public TFocusedTarget FocusedTargetAtPress { get; }
+    public FocusedTextTarget FocusedTargetAtPress { get; }
     /// <summary>The take's style, dictionary and shortcuts, read at press.</summary>
-    public TFormattingContext FormattingContext { get; }
+    public TakeFormattingContext FormattingContext { get; }
     /// <summary>Everything typed so far, exactly as typed.</summary>
     public string TypedText { get; set; } = "";
     /// <summary>The engine's words behind `TypedText` (what the final transcript is lined up against).</summary>
@@ -423,6 +427,9 @@ public sealed class LiveTypingSession<TFocusedTarget, TFormattingContext>
     /// typed or copied, and `LatestPartial` stays what was heard up to that moment.
     /// </summary>
     public bool EditKeyJoinedAfterTyping { get; set; }
+
+    /// <summary>The take was cancelled, failed or ended: nothing more is typed for it.</summary>
+    public bool IsAbandoned { get; set; }
 
     /// <summary>Anything reached the app: from here on the take finishes by typing, not by pasting.</summary>
     public bool HasTyped => TypedPhraseCount > 0;

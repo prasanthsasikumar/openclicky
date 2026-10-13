@@ -301,12 +301,7 @@ public sealed class AnswerKeyCompletionException(int status, string detail) : Ex
     public string Detail { get; } = detail;
 }
 
-/// <summary>
-/// One non-streamed completion on an answer key: the seam AnswerKeyTakePolisher asks.
-/// TODO(integration): once Answers/AnswerProviderFactory is ported, implement this over
-/// `AnswerProviderFactory.Make(source, credentials, modelOverrides)` + `provider.Answer(...)`
-/// (Swift: AnswerKeyTakePolisher.polish), and drop `DirectAnswerKeyCompletion`.
-/// </summary>
+/// <summary>One non-streamed completion on an answer key: the seam AnswerKeyTakePolisher asks (tests fake it).</summary>
 public interface IAnswerKeyCompletion
 {
     Task<string> CompleteAsync(AnswerSource source, ProviderCredentials credentials, string? modelOverride,
@@ -314,72 +309,29 @@ public interface IAnswerKeyCompletion
 }
 
 /// <summary>
-/// The stand-in until the answer providers are ported: the OpenAI-compatible sources' chat
-/// completions (max_tokens, as the Mac sends the compatible services) and Gemini's generateContent
-/// (key in `x-goog-api-key`, never in the URL), not streamed.
+/// The completion through the answer providers (Swift: AnswerKeyTakePolisher.polish):
+/// `AnswerProviderFactory.MakeAsync` for the source with the polish model as its override, then one
+/// text-only `AnswerAsync`. A vendor's refusal comes back as AnswerKeyCompletionException.
 /// </summary>
-public sealed class DirectAnswerKeyCompletion : IAnswerKeyCompletion
+public sealed class AnswerProviderKeyCompletion : IAnswerKeyCompletion
 {
-    public static DirectAnswerKeyCompletion Shared { get; } = new();
+    public static AnswerProviderKeyCompletion Shared { get; } = new();
 
     public async Task<string> CompleteAsync(AnswerSource source, ProviderCredentials credentials, string? modelOverride,
                                             string system, string user, int maxTokens, CancellationToken cancellationToken)
     {
-        var key = credentials.Key(source) ?? throw new AnswerKeyCompletionException(0, $"no {source.ShortName().ToLowerInvariant()} key");
-        var model = modelOverride ?? source.DefaultModel() ?? throw new AnswerKeyCompletionException(0, "no model");
-        HttpRequestMessage request;
-        if (source == AnswerSource.Gemini)
-        {
-            var pathSafeModel = Uri.EscapeDataString(model);
-            request = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{pathSafeModel}:generateContent")
-            {
-                Content = DirectProviderRequests.JsonContent(new JsonObject
-                {
-                    ["contents"] = new JsonArray(new JsonObject
-                    {
-                        ["role"] = "user",
-                        ["parts"] = new JsonArray(new JsonObject { ["text"] = user }),
-                    }),
-                    ["generationConfig"] = new JsonObject { ["maxOutputTokens"] = maxTokens },
-                    ["systemInstruction"] = new JsonObject { ["parts"] = new JsonArray(new JsonObject { ["text"] = system }) },
-                }),
-            };
-            request.SetHeader("x-goog-api-key", key);
-        }
-        else
-        {
-            var url = source.ChatCompletionsUrl() ?? throw new AnswerKeyCompletionException(0, "no chat completions endpoint");
-            request = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = DirectProviderRequests.JsonContent(new JsonObject
-                {
-                    ["model"] = model,
-                    ["messages"] = new JsonArray(
-                        new JsonObject { ["role"] = "system", ["content"] = system },
-                        new JsonObject { ["role"] = "user", ["content"] = user }),
-                    [source == AnswerSource.OpenAI ? "max_completion_tokens" : "max_tokens"] = maxTokens,
-                }),
-            };
-            request.SetHeader("Authorization", $"Bearer {key}");
-        }
-        using var response = await HttpClients.Shared.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var data = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-        var status = (int)response.StatusCode;
-        if (status is < 200 or >= 300) throw new AnswerKeyCompletionException(status, Encoding.UTF8.GetString(data, 0, Math.Min(300, data.Length)));
-        return (source == AnswerSource.Gemini ? GeminiText(data) : BackendTakePolisher.ChatCompletionContent(data)) ?? "";
-    }
-
-    internal static string? GeminiText(byte[] data)
-    {
+        var models = new Dictionary<string, string>();
+        if (modelOverride is not null) models[source.Id()] = modelOverride;
         try
         {
-            if (JsonNode.Parse(data)?["candidates"] is not JsonArray candidates || candidates.Count == 0) return null;
-            if (candidates[0]?["content"]?["parts"] is not JsonArray parts) return null;
-            return string.Concat(parts.Select(part => part?["text"] is JsonValue value && value.TryGetValue<string>(out var text) ? text : ""));
+            var provider = await Answers.AnswerProviderFactory.MakeAsync(source, credentials, models, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var request = new Answers.AnswerRequest([], system, [], user, [], maxTokens);
+            var result = await provider.AnswerAsync(request, _ => { }, cancellationToken).ConfigureAwait(false);
+            return result.Text;
         }
-        catch (JsonException)
+        catch (Answers.AnswerProviderException error)
         {
-            return null;
+            throw new AnswerKeyCompletionException(error.Status, error.VendorMessage);
         }
     }
 }
@@ -394,7 +346,7 @@ public sealed class AnswerKeyTakePolisher(AnswerSource source, ProviderCredentia
 {
     public AnswerSource Source { get; } = source;
     public ProviderCredentials Credentials { get; } = credentials;
-    public IAnswerKeyCompletion Completion { get; init; } = DirectAnswerKeyCompletion.Shared;
+    public IAnswerKeyCompletion Completion { get; init; } = AnswerProviderKeyCompletion.Shared;
 
     /// <summary>The keys that can polish, in the order they are tried; the fast ones first.</summary>
     public static IReadOnlyList<AnswerSource> SourcesInOrder { get; } =

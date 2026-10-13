@@ -13,6 +13,7 @@
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Platform;
 
 namespace OpenClicky.Core.Speech;
@@ -28,29 +29,25 @@ public sealed partial class ParakeetDictation : ObservableObject
         new Uri("https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2"),
         "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf", 487_170_055);
 
+    // The model's facts (size, languages, folder, installed) have one home, Dictation's
+    // ParakeetFacts, which the resolver and Settings read too; these forward to it.
+
     /// <summary>What Settings says before the download, rounded.</summary>
-    public const string DownloadSizeText = "465 MB";
+    public const string DownloadSizeText = ParakeetFacts.DownloadSizeText;
 
     /// <summary>The languages Parakeet v3 hears (ISO 639-1).</summary>
-    public static IReadOnlySet<string> LanguageCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt",
-        "mt", "pl", "pt", "ro", "sk", "sl", "es", "sv", "ru", "uk",
-    };
+    public static IReadOnlySet<string> LanguageCodes => ParakeetFacts.LanguageCodes;
 
     /// <summary>Whether it hears <paramref name="bareLanguageCode"/> (null: the dictation language is on
     /// auto-detect, which Parakeet does itself).</summary>
-    public static bool Hears(string? bareLanguageCode) => bareLanguageCode is null || LanguageCodes.Contains(bareLanguageCode);
+    public static bool Hears(string? bareLanguageCode) => ParakeetFacts.Hears(bareLanguageCode);
 
-    public static string Folder => Path.Combine(OpenClickyPaths.ModelsDirectory, "Parakeet");
-    public static string ModelFolder => Path.Combine(Folder, "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8");
+    public static string Folder => ParakeetFacts.Folder;
+    public static string ModelFolder => ParakeetFacts.ModelFolder;
 
-    public static bool IsInstalled => IsInstalledIn(ModelFolder);
+    public static bool IsInstalled => ParakeetFacts.IsInstalled;
 
-    public static bool IsInstalledIn(string modelFolder) =>
-        KokoroVoice.EngineIsAvailable()
-        && new[] { "encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt" }
-            .All(name => File.Exists(Path.Combine(modelFolder, name)));
+    public static bool IsInstalledIn(string modelFolder) => ParakeetFacts.IsInstalledIn(modelFolder);
 
     public const int IdleUnloadSeconds = 180;
 
@@ -63,18 +60,30 @@ public sealed partial class ParakeetDictation : ObservableObject
     /// where the offline engine is the old recogniser; Windows' offline engine is the old Windows
     /// recogniser on every version, so always.
     /// </summary>
-    public static bool IsRecommendedForThisPC => true;
+    public static bool IsRecommendedForThisPC => ParakeetFacts.IsRecommendedForThisPC;
 
-    /// <summary>The dictation engine raw values (DictationEngineChoice in the dictation port).</summary>
+    /// <summary>The dictation engine raw values (DictationEngineChoice's).</summary>
     public const string OfflineEngineRawValue = "offline";
     public const string ParakeetEngineRawValue = "parakeet";
 
-    /// <summary>The engine picked in Settings → Dictation, as its raw value.
-    /// TODO(integration): DictationSettings.Shared.Engine (the dictation port's DictationEngineChoice).</summary>
-    public Func<string>? CurrentDictationEngine { get; set; }
+    /// <summary>The engine picked in Settings → Dictation, as its raw value (DictationSettings.Shared unless replaced).</summary>
+    public Func<string>? CurrentDictationEngine { get; set; } = () => DictationSettings.Shared.Engine.Id();
 
-    /// <summary>Changes the engine picked in Settings → Dictation. TODO(integration): DictationSettings.Shared.Engine = …</summary>
-    public Action<string>? SetDictationEngine { get; set; }
+    /// <summary>Changes the engine picked in Settings → Dictation (DictationSettings.Shared unless replaced).</summary>
+    public Action<string>? SetDictationEngine { get; set; } = rawValue =>
+    {
+        if (DictationEngineChoices.FromRawValue(rawValue) is { } engine) DictationSettings.Shared.Engine = engine;
+    };
+
+    /// <summary>Points the engine hooks at <paramref name="settings"/> (the app's own, or a test's).</summary>
+    public void UseDictationSettings(DictationSettings settings)
+    {
+        CurrentDictationEngine = () => settings.Engine.Id();
+        SetDictationEngine = rawValue =>
+        {
+            if (DictationEngineChoices.FromRawValue(rawValue) is { } engine) settings.Engine = engine;
+        };
+    }
 
     private readonly SherpaHelperClient engine;
     private readonly IProcessRunner processRunner;
@@ -166,6 +175,13 @@ public sealed partial class ParakeetDictation : ObservableObject
 
     // MARK: Automatic setup
 
+    /// <summary>
+    /// The same, read off the dictation settings. TODO(integration): the companion calls this 8 s after
+    /// launch and when the welcome tour ends (the Mac's CompanionManager.startAutomaticModelDownloads).
+    /// </summary>
+    public void StartAutomaticSetup(bool tourIsFinished, DictationSettings settings) =>
+        StartAutomaticSetup(tourIsFinished, settings.Engine.Id(), settings.Language.BareCode);
+
     /// <summary>At launch and when the welcome tour ends: on a PC whose dictation is on the offline engine,
     /// the model downloads in the background and takes over when it is ready.</summary>
     public void StartAutomaticSetup(bool tourIsFinished, string currentEngineRawValue, string? bareLanguageCode)
@@ -225,7 +241,8 @@ public sealed partial class ParakeetDictation : ObservableObject
                     var next = EngineAfterAutomaticDownload(current);
                     if (next != current)
                     {
-                        SetDictationEngine?.Invoke(next);
+                        if (mainThread is null || mainThread.IsMainThread) SetDictationEngine?.Invoke(next);
+                        else await mainThread.InvokeAsync(() => SetDictationEngine?.Invoke(next)).ConfigureAwait(false);
                         AppLog.Write("parakeet: now the dictation engine");
                     }
                 }

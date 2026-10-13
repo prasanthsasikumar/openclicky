@@ -7,6 +7,14 @@
 //
 // On Windows the `offline` engine is Windows speech recognition; the raw values stay the Mac's so
 // a preferences file means the same thing on both. The Mac's macOS-26-only branches are gone.
+//
+// Windows speech recognition is not a private engine the way Apple's is: its dictation needs
+// "Online speech recognition" switched on (Settings → Privacy & security → Speech), and then it can
+// use Microsoft's online speech service. So on Windows Parakeet is the offline engine that keeps the
+// voice on this PC, set up as on a Mac before macOS 26: once the welcome tour is done the model
+// downloads on its own (unless declined, on an unmetered network with room on the disk) and
+// replaces `offline` (ParakeetDictation.StartAutomaticSetup). `offline` stays a choice, and its
+// words say where its audio may go.
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using OpenClicky.Core.Configuration;
@@ -18,9 +26,11 @@ namespace OpenClicky.Core.Dictation;
 /// <summary>Which speech engine turns a take into words.</summary>
 public enum DictationEngineChoice
 {
-    /// <summary>The PC's own recogniser (Windows speech recognition). Nothing leaves the PC.</summary>
+    /// <summary>Windows' own recogniser (Windows speech recognition). No key or account; it may use
+    /// Microsoft's online speech service when Windows' online speech recognition is on.</summary>
     Offline,
-    /// <summary>NVIDIA's Parakeet through sherpa-onnx, downloaded once. Nothing leaves the PC.</summary>
+    /// <summary>NVIDIA's Parakeet through sherpa-onnx, downloaded once. Nothing leaves the PC: the
+    /// offline default on Windows once its model is downloaded.</summary>
     Parakeet,
     /// <summary>Sarvam's Saaras, with the user's own key (`sarvamKey` in shell.json).</summary>
     Sarvam,
@@ -44,7 +54,7 @@ public static class DictationEngineChoices
 
     public static string DisplayName(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline => "on this PC",
+        DictationEngineChoice.Offline => "Windows speech",
         DictationEngineChoice.Parakeet => "Parakeet",
         DictationEngineChoice.Sarvam => "Sarvam",
         DictationEngineChoice.OpenClicky => "OpenClicky",
@@ -52,18 +62,27 @@ public static class DictationEngineChoices
     };
 
     /// <summary>
-    /// The engines whose audio never leaves this PC. Every rule that follows from "nothing leaves
-    /// the PC" reads this one property instead of naming the engines again: no model clean-up
-    /// unless it was allowed by name, no failed take's audio kept for a retry (a local engine that
-    /// failed has no key, credits or network to wait for), the "private · offline" tag.
+    /// The engines that run on this PC's own recogniser, with no key, account or credits. Every rule
+    /// the Mac draws from "an engine on this machine" reads this one property instead of naming the
+    /// engines again: no model clean-up unless it was allowed by name, no failed take's audio kept
+    /// for a retry (a local engine that failed has no key, credits or network to wait for).
+    /// Whether the voice itself stays on the PC is <see cref="KeepsVoiceOnThisPC"/>.
     /// </summary>
     public static bool IsOnDevice(this DictationEngineChoice choice) =>
         choice is DictationEngineChoice.Offline or DictationEngineChoice.Parakeet;
 
+    /// <summary>
+    /// The engines whose audio never leaves this PC: Parakeet only. Windows speech recognition may
+    /// use Microsoft's online speech service (when Windows' online speech recognition is on), so it
+    /// is never called private. The "private · offline" tag reads this.
+    /// </summary>
+    public static bool KeepsVoiceOnThisPC(this DictationEngineChoice choice) => choice == DictationEngineChoice.Parakeet;
+
     /// <summary>Who hears the voice, lower case, for the island ("this pc", "sarvam").</summary>
     public static string ListenerName(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline or DictationEngineChoice.Parakeet => "this pc",
+        DictationEngineChoice.Offline => "windows",
+        DictationEngineChoice.Parakeet => "this pc",
         DictationEngineChoice.Sarvam => "sarvam",
         DictationEngineChoice.OpenClicky => "openai",
         _ => "assemblyai",
@@ -72,7 +91,7 @@ public static class DictationEngineChoices
     /// <summary>The engine's name in Settings → Dictation's "Who hears you".</summary>
     public static string SettingsTitle(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline => "This PC",
+        DictationEngineChoice.Offline => "Windows speech recognition",
         DictationEngineChoice.Parakeet => "Parakeet, on this PC",
         DictationEngineChoice.Sarvam => "Sarvam",
         DictationEngineChoice.OpenClicky => "OpenAI, via OpenClicky",
@@ -82,7 +101,7 @@ public static class DictationEngineChoices
     /// <summary>The title of the "how to dictate" row on the Your words page.</summary>
     public static string HowToDictateTitle(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline => "On this PC",
+        DictationEngineChoice.Offline => "Windows speech recognition",
         DictationEngineChoice.Sarvam => "Sarvam hears you",
         _ => choice.SettingsTitle(),
     };
@@ -90,7 +109,8 @@ public static class DictationEngineChoices
     /// <summary>The tag beside the engine's name in Settings: where the audio goes.</summary>
     public static string AudioDestinationTag(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline or DictationEngineChoice.Parakeet => "Private · offline",
+        DictationEngineChoice.Offline => "May use Microsoft online",
+        DictationEngineChoice.Parakeet => "Private · offline",
         DictationEngineChoice.Sarvam => "Audio goes to Sarvam",
         DictationEngineChoice.OpenClicky => "Audio goes to OpenAI",
         _ => "Audio goes to AssemblyAI",
@@ -99,7 +119,8 @@ public static class DictationEngineChoices
     /// <summary>Where a take's audio goes, as one sentence for the Your words page.</summary>
     public static string AudioDestinationSentence(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline or DictationEngineChoice.Parakeet => "Your voice stays on this PC.",
+        DictationEngineChoice.Offline => "Windows speech recognition hears you. With Windows’ online speech recognition on, it may use Microsoft’s online speech service.",
+        DictationEngineChoice.Parakeet => "Your voice stays on this PC.",
         DictationEngineChoice.Sarvam => "Audio goes to Sarvam with your key.",
         DictationEngineChoice.OpenClicky => "Audio goes to OpenAI through the OpenClicky backend.",
         _ => "Audio goes to AssemblyAI through the OpenClicky backend.",
@@ -108,9 +129,9 @@ public static class DictationEngineChoices
     /// <summary>What the engine does and what it needs, under its name in Settings.</summary>
     public static string SettingsDetail(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline => "Windows speech recognition, on this PC. Nothing leaves this PC. No key, no account.",
+        DictationEngineChoice.Offline => "Windows’ own recogniser. No key, no account. When online speech recognition is on in Windows settings (privacy & security, speech), it may use Microsoft’s online speech service.",
         DictationEngineChoice.Parakeet => ParakeetFacts.IsRecommendedForThisPC
-            ? $"Far more accurate than Windows speech recognition, and offline too. English and 24 European languages. A {ParakeetFacts.DownloadSizeText} download."
+            ? $"Far more accurate than Windows speech recognition, and nothing leaves this PC. English and 24 European languages. A {ParakeetFacts.DownloadSizeText} download."
             : $"NVIDIA’s open model, offline. English and 24 European languages. A {ParakeetFacts.DownloadSizeText} download.",
         DictationEngineChoice.Sarvam => "Saaras hears eleven Indian languages. Billed by Sarvam to your key.",
         DictationEngineChoice.OpenClicky => "Needs an OpenClicky account or your own OpenAI key.",
@@ -134,7 +155,8 @@ public static class DictationEngineChoices
         string[] onDeviceKeywords = choice.IsOnDevice() ? ["offline", "local", "private", "on device"] : ["cloud"];
         string[] own = choice switch
         {
-            DictationEngineChoice.Offline => [.. onDeviceKeywords, "windows"],
+            // Not "private" or "offline": it may use Microsoft's online speech service.
+            DictationEngineChoice.Offline => ["local", "on device", "windows", "microsoft", "speech recognition", "online speech recognition"],
             DictationEngineChoice.Parakeet => [.. onDeviceKeywords, "parakeet", "nvidia", "download", "model"],
             DictationEngineChoice.Sarvam => ["sarvam", "saaras", "key", "api key", "indian", "hindi"],
             DictationEngineChoice.OpenClicky => [.. onDeviceKeywords, "openai", "openclicky", "account", "backend"],
@@ -145,9 +167,9 @@ public static class DictationEngineChoices
 }
 
 /// <summary>
-/// What the dictation settings need to know about Parakeet before the Speech side is wired in.
-/// TODO(integration): the Speech port owns ParakeetDictation (download, helper process); point
-/// `IsInstalledCheck` at it and keep these facts in one place.
+/// The one source of truth about Parakeet's model: its size, its languages, its folder and whether
+/// it is installed. Speech's ParakeetDictation (download, helper process) and the resolver both read
+/// these, so Settings, the island and the provider never disagree.
 /// </summary>
 public static class ParakeetFacts
 {
@@ -175,12 +197,20 @@ public static class ParakeetFacts
     public static bool Hears(string? bareLanguageCode) => bareLanguageCode is null || LanguageCodes.Contains(bareLanguageCode);
 
     /// <summary>%LOCALAPPDATA%\OpenClicky\Models\Parakeet\&lt;model&gt;.</summary>
-    public static string ModelFolder => Path.Combine(OpenClickyPaths.ModelsDirectory, "Parakeet", ModelFolderName);
+    public static string ModelFolder => Path.Combine(Folder, ModelFolderName);
 
-    /// <summary>Whether the model's files are on disk. Replaceable (tests, the Speech port).</summary>
-    public static Func<bool> IsInstalledCheck { get; set; } = () =>
-        new[] { "encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt" }
-            .All(name => File.Exists(Path.Combine(ModelFolder, name)));
+    /// <summary>%LOCALAPPDATA%\OpenClicky\Models\Parakeet (what a download unpacks into and a removal deletes).</summary>
+    public static string Folder => Path.Combine(OpenClickyPaths.ModelsDirectory, "Parakeet");
+
+    /// <summary>The files a working model folder has.</summary>
+    public static IReadOnlyList<string> ModelFileNames { get; } = ["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"];
+
+    /// <summary>The sherpa-onnx engine can be loaded (shared with Kokoro) and the model's files are in <paramref name="modelFolder"/>.</summary>
+    public static bool IsInstalledIn(string modelFolder) =>
+        Speech.KokoroVoice.EngineIsAvailable() && ModelFileNames.All(name => File.Exists(Path.Combine(modelFolder, name)));
+
+    /// <summary>Whether the model is installed. Replaceable (tests).</summary>
+    public static Func<bool> IsInstalledCheck { get; set; } = () => IsInstalledIn(ModelFolder);
 
     public static bool IsInstalled => IsInstalledCheck();
 }
