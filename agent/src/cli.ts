@@ -11,9 +11,10 @@ import { ensureCodexHome } from "./codexHome.js";
 import { ask } from "./ask.js";
 import { gate, type Lane } from "./gate.js";
 import { captureScreen } from "./screenshot.js";
-import { recordAudio, transcribe } from "./audio.js";
+import { recordAudio, transcribe, resolveMicDevice } from "./audio.js";
 import { RealtimeSession, defaultMicCommand } from "./realtime.js";
 import { listLibrary, setActive, createSkillFiles } from "./skillsLibrary.js";
+import { spawnTarget } from "./winSpawn.js";
 
 const program = new Command();
 program
@@ -271,7 +272,7 @@ withRunOptions(
       .description("push-to-talk stand-in: record the microphone, transcribe through the backend, then route like `do`")
       .option("--seconds <n>", "how long to record", "5")
       .option("--file <path>", "transcribe an existing audio file instead of recording")
-      .option("--device <index>", "AVFoundation audio device index", "0")
+      .option("--device <index>", "microphone: AVFoundation index (macOS), DirectShow index or name (Windows)", "0")
       .option("--language <code>", "ISO language hint for transcription")
       .option("--lane <lane>", "force a lane: ask | agent")
       .option("--transcribe-only", "print the transcript and stop"),
@@ -311,7 +312,7 @@ program
   .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL)")
   .option("--token <token>", "Supabase JWT or session token (env OPENCLICKY_TOKEN)")
   .option("--voice <name>", "Realtime voice (e.g. marin, cedar, alloy)")
-  .option("--device <index>", "AVFoundation audio device index", "0")
+  .option("--device <index>", "microphone: AVFoundation index (macOS), DirectShow index or name (Windows)", "0")
   .option("--cwd <dir>", "working directory for agent tasks")
   .option("--model <model>", "Codex model override for agent tasks")
   .option("--seconds <n>", "hang up after N seconds (default: until Ctrl-C)")
@@ -331,7 +332,7 @@ program
       cfg,
       voice: opts.voice,
       fullDuplex: Boolean(opts.fullDuplex),
-      micCommand: defaultMicCommand(cfg.ffmpegBin, opts.device),
+      micCommand: defaultMicCommand(cfg.ffmpegBin, resolveMicDevice(cfg.ffmpegBin, opts.device)),
       onEvent: note,
       onTranscript: (role, text) => process.stdout.write(`${role === "user" ? "you" : "openclicky"}: ${text}\n`),
       onAgentTask: opts.agent === false
@@ -450,7 +451,9 @@ async function codexMcp(cfg: AgentConfig, args: string[], onLine?: (line: string
   return new Promise((resolve, reject) => {
     // Same allowlist as the app-server child: `codex mcp` talks to third-party MCP servers, so it
     // has no business inheriting every credential in the user's shell either.
-    const child = spawn(cfg.codexBin, ["mcp", ...args], { env: buildChildEnv(cfg), stdio: ["ignore", "pipe", "pipe"] });
+    const env = buildChildEnv(cfg);
+    const target = spawnTarget(cfg.codexBin, ["mcp", ...args], env);
+    const child = spawn(target.command, target.args, { env, stdio: ["ignore", "pipe", "pipe"], shell: target.shell });
     let output = "";
     let pending = "";
     const consume = (chunk: Buffer) => {
@@ -509,7 +512,9 @@ withCommonOptions(
       if (url && opts.open !== false) {
         process.stdout.write(`opening ${url}\n`);
         // Codex only prints the URL; open it so the user lands on Composio's page.
-        void import("node:child_process").then(({ spawn }) => spawn("open", [url], { stdio: "ignore" }).unref());
+        // Windows has no `open`; url.dll hands the URL to the default browser without cmd.exe quoting.
+        const opener: [string, string[]] = process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]] : ["open", [url]];
+        void import("node:child_process").then(({ spawn }) => spawn(opener[0], opener[1], { stdio: "ignore" }).unref());
       } else if (line.trim()) {
         process.stdout.write(line + "\n");
       }

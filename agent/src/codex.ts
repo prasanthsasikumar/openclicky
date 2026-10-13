@@ -5,6 +5,7 @@ import { readVersion } from "./version.js";
 import { ensureCodexHome } from "./codexHome.js";
 import { snapshotWorkspace, diffSnapshots, artifactsFromItems } from "./artifacts.js";
 import type { AgentConfig } from "./config.js";
+import { spawnTarget } from "./winSpawn.js";
 
 export interface RunResult {
   threadId: string;
@@ -46,6 +47,16 @@ const SHELL_ENV_ALLOWLIST = ["PATH", "HOME", "USER", "SHELL", "TMPDIR", "LANG", 
 const PROXY_ENV_ALLOWLIST = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"];
 
 /**
+ * Windows only: the system variables a process cannot run without (SystemRoot for Winsock and DNS,
+ * USERPROFILE/APPDATA for the home folder, TEMP, PATHEXT and ComSpec for running commands).
+ */
+const WINDOWS_ENV_ALLOWLIST = [
+  "SystemRoot", "SystemDrive", "windir", "ComSpec", "PATHEXT", "OS", "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS",
+  "USERPROFILE", "USERNAME", "USERDOMAIN", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP",
+  "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CommonProgramFiles", "PSModulePath",
+];
+
+/**
  * Build the Codex child's environment from an explicit allowlist instead of forwarding the whole
  * shell environment. `codex app-server` runs an agent that executes arbitrary shell commands on the
  * user's behalf, so anything left in `process.env` beyond what Codex genuinely needs — AWS keys,
@@ -59,9 +70,9 @@ const PROXY_ENV_ALLOWLIST = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_prox
  * key — see codexHome.ts). Provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, …) are never on this
  * list: Codex must always go through the OpenClicky backend, never see them directly.
  */
-export function buildChildEnv(cfg: AgentConfig, sourceEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function buildChildEnv(cfg: AgentConfig, sourceEnv: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const key of [...SHELL_ENV_ALLOWLIST, ...PROXY_ENV_ALLOWLIST]) {
+  for (const key of [...SHELL_ENV_ALLOWLIST, ...PROXY_ENV_ALLOWLIST, ...(platform === "win32" ? WINDOWS_ENV_ALLOWLIST : [])]) {
     if (sourceEnv[key] !== undefined) env[key] = sourceEnv[key];
   }
   for (const [key, value] of Object.entries(sourceEnv)) {
@@ -144,7 +155,8 @@ export class CodexAgent {
 
     const env = buildChildEnv(this.cfg);
 
-    const child = spawn(this.cfg.codexBin, ["app-server", "--stdio"], { env, stdio: ["pipe", "pipe", "pipe"] });
+    const target = spawnTarget(this.cfg.codexBin, ["app-server", "--stdio"], env);
+    const child = spawn(target.command, target.args, { env, stdio: ["pipe", "pipe", "pipe"], shell: target.shell });
     this.child = child;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d: string) => {

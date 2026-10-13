@@ -13,9 +13,38 @@ export interface RecordOptions {
   ffmpegBin?: string;
 }
 
-/** ffmpeg arguments for a mono 16 kHz WAV capture from the macOS microphone (AVFoundation). */
-export function ffmpegRecordArgs(opts: { seconds: number; outPath: string; device?: string }): string[] {
-  return ["-hide_banner", "-loglevel", "error", "-y", "-f", "avfoundation", "-i", `:${opts.device ?? "0"}`, "-t", String(opts.seconds), "-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", opts.outPath];
+/** ffmpeg's microphone input: AVFoundation `:<index>` on macOS, DirectShow `audio=<device name>` on Windows. */
+export function ffmpegMicInput(device: string | undefined, platform: NodeJS.Platform = process.platform): string[] {
+  if (platform === "win32") return ["-f", "dshow", "-i", `audio=${device ?? ""}`];
+  return ["-f", "avfoundation", "-i", `:${device ?? "0"}`];
+}
+
+/**
+ * The DirectShow audio devices in the order `ffmpeg -list_devices true -f dshow -i dummy` prints
+ * them (lines like `[dshow @ 0x…] "Microphone (Realtek Audio)" (audio)`).
+ */
+export function parseDshowAudioDevices(listing: string): string[] {
+  return Array.from(listing.matchAll(/"([^"]+)"\s+\(audio\)/g), (match) => match[1]);
+}
+
+/**
+ * Windows: DirectShow has no "default" device index, so a numeric `--device` (the default "0")
+ * picks that entry of ffmpeg's device list; a name is used as given. Elsewhere `device` is returned
+ * unchanged.
+ */
+export function resolveMicDevice(ffmpegBin: string, device: string | undefined, platform: NodeJS.Platform = process.platform): string | undefined {
+  if (platform !== "win32" || (device !== undefined && !/^\d+$/.test(device))) return device;
+  const r = spawnSync(ffmpegBin, ["-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"], { encoding: "utf8", windowsHide: true });
+  if (r.error) throw new Error(`${ffmpegBin} failed to start: ${r.error.message} (install with \`winget install ffmpeg\`)`);
+  const devices = parseDshowAudioDevices(`${r.stderr ?? ""}\n${r.stdout ?? ""}`);
+  const name = devices[Number(device ?? "0")];
+  if (!name) throw new Error(`no microphone ${device ?? "0"} among ffmpeg's DirectShow audio devices (${devices.length} found); pass --device "<name>"`);
+  return name;
+}
+
+/** ffmpeg arguments for a mono 16 kHz WAV capture from the microphone (AVFoundation / DirectShow). */
+export function ffmpegRecordArgs(opts: { seconds: number; outPath: string; device?: string; platform?: NodeJS.Platform }): string[] {
+  return ["-hide_banner", "-loglevel", "error", "-y", ...ffmpegMicInput(opts.device, opts.platform), "-t", String(opts.seconds), "-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", opts.outPath];
 }
 
 export function defaultRecordingPath(): string {
@@ -28,12 +57,16 @@ export function defaultRecordingPath(): string {
 export function recordAudio(opts: RecordOptions): string {
   const outPath = opts.outPath ?? defaultRecordingPath();
   const bin = opts.ffmpegBin ?? "ffmpeg";
-  const r = spawnSync(bin, ffmpegRecordArgs({ seconds: opts.seconds, outPath, device: opts.device }), { encoding: "utf8" });
-  if (r.error) throw new Error(`${bin} failed to start: ${r.error.message} (install with \`brew install ffmpeg\`)`);
+  const windows = process.platform === "win32";
+  const device = windows ? resolveMicDevice(bin, opts.device) : opts.device;
+  const r = spawnSync(bin, ffmpegRecordArgs({ seconds: opts.seconds, outPath, device }), { encoding: "utf8" });
+  if (r.error) throw new Error(`${bin} failed to start: ${r.error.message} (install with \`${windows ? "winget install ffmpeg" : "brew install ffmpeg"}\`)`);
   if (r.status !== 0 || !fs.existsSync(outPath) || fs.statSync(outPath).size === 0) {
     throw new Error(
       `${bin} recording failed (exit ${r.status}): ${(r.stderr || r.stdout || "").trim() || "no output"}. ` +
-        "Grant Microphone permission to your terminal in System Settings → Privacy & Security → Microphone.",
+        (windows
+          ? "Allow desktop apps to use the microphone in Settings → Privacy & security → Microphone."
+          : "Grant Microphone permission to your terminal in System Settings → Privacy & Security → Microphone."),
     );
   }
   return outPath;
