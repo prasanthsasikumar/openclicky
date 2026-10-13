@@ -1,6 +1,6 @@
 // Port of macos/OpenClicky/OpenClickyTests/WriteInPlaceTests.swift (+ the Farewell test from
 // HUDPlacementTests and a test of the ported replace flow over a fake host).
-// Not ported here: theQuestionCarriesTheExactWords (CompanionManager.askUserPrompt, Companion folder).
+// theQuestionCarriesTheExactWords (CompanionManager.askUserPrompt) is in AskLaneTests.cs (AskLanePrompts.AskUserPrompt).
 
 using OpenClicky.Core.Answers;
 
