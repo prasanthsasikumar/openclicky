@@ -52,7 +52,7 @@ public static class ScreenElementGrounder
     /// <summary>Asks Claude where <paramref name="label"/>/<paramref name="text"/> is on the screenshot. Null when nothing
     /// can answer (or only a plan), the request fails, or Claude answers [POINT:none]; the log says when it could not ask.</summary>
     /// <param name="analyzeImage">Sends the request and returns the reply text.
-    /// TODO(integration): wire to the Answers port's ClaudeAPI(proxyURL: "{backendBaseURL}/chat", model: Model).AnalyzeImage.</param>
+    /// Answers.ScreenElementGrounding.LocateAsync wires this to ClaudeAPI("{backendBaseURL}/chat", Model).AnalyzeImageAsync.</param>
     public static async Task<Located?> LocateAsync(
         string label,
         string text,

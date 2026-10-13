@@ -23,26 +23,6 @@ using System.Text.RegularExpressions;
 
 namespace OpenClicky.Core.Answers;
 
-/// <summary>
-/// A tool offered with a request (Swift `AnswerRequest.Tool`).
-/// TODO(integration): replace with AnswerRequest.Tool once AnswerProvider is ported (Swift: `AnswerRequest.Tool(name:description:inputSchemaJSON:)`).
-/// </summary>
-public sealed record PlanTool(string Name, string Description, string InputSchemaJson);
-
-/// <summary>
-/// A tool call read from an answer (Swift `ClaudeToolCall`).
-/// TODO(integration): replace with ClaudeToolCall once ClaudeAPI is ported.
-/// </summary>
-public sealed record PlanToolCall(string Id, string Name, IReadOnlyDictionary<string, string> Arguments)
-{
-    public bool Equals(PlanToolCall? other) =>
-        other is not null && Id == other.Id && Name == other.Name
-        && Arguments.Count == other.Arguments.Count
-        && Arguments.All(pair => other.Arguments.TryGetValue(pair.Key, out var value) && value == pair.Value);
-
-    public override int GetHashCode() => HashCode.Combine(Id, Name, Arguments.Count);
-}
-
 /// <summary>How a tag ended: its own "]", the end of its line, or the end of the text so far.</summary>
 public enum ActionTagEnding
 {
@@ -57,7 +37,7 @@ public static class PlanToolProtocol
     public const string ActionTagOpening = "[ACTION";
 
     /// <summary>The block appended to the system prompt when the request offers tools; empty for none.</summary>
-    public static string InstructionBlock(IReadOnlyList<PlanTool> tools)
+    public static string InstructionBlock(IReadOnlyList<AnswerRequest.Tool> tools)
     {
         if (tools.Count == 0) return "";
         var lines = new List<string>
@@ -79,7 +59,7 @@ public static class PlanToolProtocol
     }
 
     /// <summary>The system prompt the CLI gets: the request's own, then the actions block when there is one.</summary>
-    public static string SystemPrompt(string systemPrompt, IReadOnlyList<PlanTool> offering)
+    public static string SystemPrompt(string systemPrompt, IReadOnlyList<AnswerRequest.Tool> offering)
     {
         var block = InstructionBlock(offering);
         if (block.Length == 0) return systemPrompt;
@@ -123,10 +103,10 @@ public static class PlanToolProtocol
     };
 
     /// <summary>The answer with every action tag taken out (and trimmed), and the actions it asked for.</summary>
-    public static (string Text, IReadOnlyList<PlanToolCall> ToolCalls) Parse(string answerText, IReadOnlySet<string> knownToolNames)
+    public static (string Text, IReadOnlyList<ClaudeToolCall> ToolCalls) Parse(string answerText, IReadOnlySet<string> knownToolNames)
     {
         var remainingText = answerText;
-        var toolCalls = new List<PlanToolCall>();
+        var toolCalls = new List<ClaudeToolCall>();
         var searchStart = 0;
         while (searchStart <= remainingText.Length)
         {
@@ -134,7 +114,7 @@ public static class PlanToolProtocol
             if (openingIndex < 0) break;
             var tagEnd = ScanActionTag(remainingText, openingIndex).End;
             var tagText = remainingText[(openingIndex + ActionTagOpening.Length)..tagEnd];
-            if (toolCalls.Count < MaximumActionCount && ToolCall(tagText, knownToolNames, toolCalls.Count) is PlanToolCall toolCall)
+            if (toolCalls.Count < MaximumActionCount && ToolCall(tagText, knownToolNames, toolCalls.Count) is ClaudeToolCall toolCall)
             {
                 toolCalls.Add(toolCall);
             }
@@ -197,7 +177,7 @@ public static class PlanToolProtocol
     /// object (or nothing, for a tool without arguments). Null when the name is unknown or the
     /// arguments are not a JSON object.
     /// </summary>
-    public static PlanToolCall? ToolCall(string tagContent, IReadOnlySet<string> knownToolNames, int callIndex)
+    public static ClaudeToolCall? ToolCall(string tagContent, IReadOnlySet<string> knownToolNames, int callIndex)
     {
         var content = tagContent;
         if (content.EndsWith(']')) content = content[..^1];
@@ -234,30 +214,12 @@ public static class PlanToolProtocol
         {
             return null;
         }
-        return new PlanToolCall($"plan-action-{callIndex + 1}", toolName, arguments);
+        return new ClaudeToolCall($"plan-action-{callIndex + 1}", toolName, arguments);
     }
 
-    /// <summary>
-    /// Strings stay strings and numbers become their text; anything else is left out.
-    /// Same as Swift `AnswerProviderHTTPSupport.toolArguments(fromJSONObject:)`, where a JSON bool
-    /// is an NSNumber and reads "1" / "0".
-    /// TODO(integration): share with the ported AnswerProviderHTTPSupport.ToolArguments.
-    /// </summary>
-    public static Dictionary<string, string> ToolArguments(JsonElement argumentsObject)
-    {
-        var arguments = new Dictionary<string, string>();
-        foreach (var property in argumentsObject.EnumerateObject())
-        {
-            switch (property.Value.ValueKind)
-            {
-                case JsonValueKind.String: arguments[property.Name] = property.Value.GetString()!; break;
-                case JsonValueKind.Number: arguments[property.Name] = property.Value.GetRawText(); break;
-                case JsonValueKind.True: arguments[property.Name] = "1"; break;
-                case JsonValueKind.False: arguments[property.Name] = "0"; break;
-            }
-        }
-        return arguments;
-    }
+    /// <summary>Strings stay strings and numbers become their text; anything else is left out (AnswerProviderHttpSupport.ToolArguments).</summary>
+    public static Dictionary<string, string> ToolArguments(JsonElement argumentsObject) =>
+        AnswerProviderHttpSupport.ToolArguments(argumentsObject);
 
     private static readonly Regex EmptyFencePattern = new(@"```[A-Za-z]*\s*```", RegexOptions.CultureInvariant);
     private static readonly Regex TrailingSpacePattern = new(@"[ \t]+\n", RegexOptions.CultureInvariant);

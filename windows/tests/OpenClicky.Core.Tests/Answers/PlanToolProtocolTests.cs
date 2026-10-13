@@ -1,8 +1,8 @@
 // Port of macos/OpenClicky/OpenClickyTests/PlanToolProtocolTests.swift.
 // The Swift tests build their tools from MacAction.anthropicToolDefinitions(); the Actions folder is
 // not ported yet, so the six quick-action tools are stood in by name and a small schema here.
-// Not ported: the MacAction.parse round trip and CompanionManager.offersQuickActionsToAskLane (both
-// belong to other folders).
+// Not ported: the MacAction.parse round trip (Actions folder). offersQuickActionsToAskLane is in
+// AskLaneTests.cs (AskLanePrompts.OffersQuickActionsToAskLane).
 
 using OpenClicky.Core.Answers;
 
@@ -10,18 +10,18 @@ namespace OpenClicky.Core.Tests.Answers;
 
 public class PlanToolProtocolTests
 {
-    private static readonly IReadOnlyList<PlanTool> QuickActionTools = new[]
+    private static readonly IReadOnlyList<AnswerRequest.Tool> QuickActionTools = new[]
     {
-        new PlanTool("open_app", "Open an app on the person's PC.", """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}"""),
-        new PlanTool("open_url", "Open a web address.", """{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}"""),
-        new PlanTool("create_folder", "Make a folder.", """{"type":"object","properties":{"name":{"type":"string"},"location":{"type":"string","enum":["desktop","documents","downloads"]}},"required":["name"]}"""),
-        new PlanTool("reveal_in_explorer", "Show a file in File Explorer.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
-        new PlanTool("set_volume", "Set the volume.", """{"type":"object","properties":{"level":{"type":"integer"}},"required":["level"]}"""),
-        new PlanTool("media_control", "Play, pause or skip.", """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}"""),
+        new AnswerRequest.Tool("open_app", "Open an app on the person's PC.", """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}"""),
+        new AnswerRequest.Tool("open_url", "Open a web address.", """{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}"""),
+        new AnswerRequest.Tool("create_folder", "Make a folder.", """{"type":"object","properties":{"name":{"type":"string"},"location":{"type":"string","enum":["desktop","documents","downloads"]}},"required":["name"]}"""),
+        new AnswerRequest.Tool("reveal_in_explorer", "Show a file in File Explorer.", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
+        new AnswerRequest.Tool("set_volume", "Set the volume.", """{"type":"object","properties":{"level":{"type":"integer"}},"required":["level"]}"""),
+        new AnswerRequest.Tool("media_control", "Play, pause or skip.", """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}"""),
     };
     private static readonly IReadOnlySet<string> QuickActionToolNames = QuickActionTools.Select(tool => tool.Name).ToHashSet();
 
-    private static (string Text, IReadOnlyList<PlanToolCall> ToolCalls) Parse(string answerText) =>
+    private static (string Text, IReadOnlyList<ClaudeToolCall> ToolCalls) Parse(string answerText) =>
         PlanToolProtocol.Parse(answerText, QuickActionToolNames);
 
     /// <summary>Streams `answerText` through a filter in pieces of `pieceLength` characters and joins what comes out.</summary>
@@ -59,8 +59,8 @@ public class PlanToolProtocolTests
     [Fact]
     public void InstructionBlockIsEmptyWithoutToolsAndTheSystemPromptStaysAsItIs()
     {
-        Assert.Equal("", PlanToolProtocol.InstructionBlock(Array.Empty<PlanTool>()));
-        Assert.Equal("answer in lowercase", PlanToolProtocol.SystemPrompt("answer in lowercase", Array.Empty<PlanTool>()));
+        Assert.Equal("", PlanToolProtocol.InstructionBlock(Array.Empty<AnswerRequest.Tool>()));
+        Assert.Equal("answer in lowercase", PlanToolProtocol.SystemPrompt("answer in lowercase", Array.Empty<AnswerRequest.Tool>()));
         var withTools = PlanToolProtocol.SystemPrompt("answer in lowercase", QuickActionTools);
         Assert.StartsWith("answer in lowercase\n\nQuick actions:", withTools);
     }
@@ -85,7 +85,7 @@ public class PlanToolProtocolTests
     {
         var result = Parse("making that folder on your desktop now.\n[ACTION: create_folder {\"name\":\"test-plan-actions\",\"location\":\"desktop\"}]");
         Assert.Equal("making that folder on your desktop now.", result.Text);
-        Assert.Equal(new[] { new PlanToolCall("plan-action-1", "create_folder", Arguments(("name", "test-plan-actions"), ("location", "desktop"))) }, result.ToolCalls);
+        Assert.Equal(new[] { new ClaudeToolCall("plan-action-1", "create_folder", Arguments(("name", "test-plan-actions"), ("location", "desktop"))) }, result.ToolCalls);
     }
 
     [Fact]
