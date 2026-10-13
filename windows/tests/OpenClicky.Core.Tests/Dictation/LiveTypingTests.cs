@@ -1,6 +1,5 @@
 // Port of the pure parts of macos/OpenClicky/OpenClickyTests/LiveTypingTests.swift.
-// LivePhraseFormatter's tests run over a stand-in for TakeFormatter's local pass (copied from
-// TakeFormatter.swift) until Dictation/TakeFormatter is ported.
+// LivePhraseFormatter's tests run over TakeFormatter's local pass (TakeContextPhraseFormatting).
 // Not ported here: PasteLandingTests, KeyboardTextChunkingTests and onlyRealTextRolesAreTypedInto
 // (they test FocusedFieldReader / PasteLanding / FrontAppTextInserter, OS-side code in other folders).
 
@@ -131,66 +130,29 @@ public class StableWordCommitterTests
     }
 }
 
-/// <summary>TakeFormatter's local pass, copied from TakeFormatter.swift for these tests.</summary>
+/// <summary>TakeFormatter's local pass over a context with the "other" style's switches and these dictionary terms.</summary>
 internal sealed class TakeFormatterStandIn : ILivePhraseFormatting
 {
-    private static readonly string[] Fillers = { "um", "umm", "uh", "uhh", "erm", "hmm" };
-    private readonly IReadOnlyList<(string Written, string[] HeardAs)> dictionary;
+    private readonly TakeContextPhraseFormatting formatting;
 
     public TakeFormatterStandIn(bool sentenceCase = true, bool removeFillers = true, params (string Written, string[] HeardAs)[] dictionary)
     {
-        UsesSentenceCase = sentenceCase;
-        RemovesFillers = removeFillers;
-        this.dictionary = dictionary;
-    }
-
-    public bool RemovesFillers { get; }
-    public bool UsesSentenceCase { get; }
-
-    public string CollapseWhitespace(string text) =>
-        string.Join(" ", text.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
-            .Replace(" \n", "\n").Replace("\n ", "\n").Trim();
-
-    public string RemoveFillers(string text)
-    {
-        var pattern = @"(?<![\p{L}\p{N}])(" + string.Join("|", Fillers.OrderBy(filler => filler, StringComparer.Ordinal).Select(Regex.Escape)) + @")(?![\p{L}\p{N}])[,]?\s*";
-        var stripped = Regex.Replace(text, pattern, "", RegexOptions.IgnoreCase);
-        return CollapseWhitespace(stripped).Replace(" ,", ",").Replace(" .", ".");
-    }
-
-    public string ApplyDictionary(string text)
-    {
-        var replacements = dictionary
-            .SelectMany(term => new[] { term.Written }.Concat(term.HeardAs).Select(alias => (Alias: alias, term.Written)))
-            .Where(replacement => replacement.Alias.Trim().Length > 0)
-            .OrderByDescending(replacement => replacement.Alias.Length);
-        foreach (var (alias, written) in replacements)
+        var style = DictationStyle.Seeded().First(seeded => seeded.Id == "other");
+        style.SentenceCase = sentenceCase;
+        style.RemoveFillers = removeFillers;
+        formatting = new TakeContextPhraseFormatting(new TakeFormattingContext
         {
-            text = Regex.Replace(text, @"(?<![\p{L}\p{N}])" + Regex.Escape(alias) + @"(?![\p{L}\p{N}])", written.Replace("$", "$$"), RegexOptions.IgnoreCase);
-        }
-        return text;
+            Style = style,
+            Dictionary = dictionary.Select(term => new DictionaryTerm(term.Written, term.HeardAs)).ToList(),
+        });
     }
 
-    public string SentenceCased(string text, bool startingAtSentenceStart)
-    {
-        var characters = text.ToCharArray();
-        var atSentenceStart = startingAtSentenceStart;
-        for (var index = 0; index < characters.Length; index++)
-        {
-            var character = characters[index];
-            if (atSentenceStart && char.IsLetter(character))
-            {
-                characters[index] = char.ToUpperInvariant(character);
-                atSentenceStart = false;
-            }
-            else if (char.IsLetterOrDigit(character))
-            {
-                atSentenceStart = false;
-            }
-            if (".!?\n".Contains(character)) atSentenceStart = true;
-        }
-        return new string(characters);
-    }
+    public bool RemovesFillers => formatting.RemovesFillers;
+    public bool UsesSentenceCase => formatting.UsesSentenceCase;
+    public string CollapseWhitespace(string text) => formatting.CollapseWhitespace(text);
+    public string RemoveFillers(string text) => formatting.RemoveFillers(text);
+    public string ApplyDictionary(string text) => formatting.ApplyDictionary(text);
+    public string SentenceCased(string text, bool startingAtSentenceStart) => formatting.SentenceCased(text, startingAtSentenceStart);
 }
 
 public class LivePhraseFormatterTests
