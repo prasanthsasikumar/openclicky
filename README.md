@@ -149,8 +149,8 @@ Notion / Sheets / Slack, and Wispr Flow import.
 
 ## Next
 
-- Dictation: rich paste for Notion / Sheets / Slack, history sync between Macs, Wispr Flow import, a
-  Windows client.
+- Dictation: rich paste for Notion / Sheets / Slack, history sync between Macs, Wispr Flow import.
+  The Windows client is in [`windows/`](windows/README.md).
 - Shell (`macos/OpenClicky`): stream agent milestones onto the cursor bubble, Keychain token entry
   (upstream PR #80 is a good template), active-document reader.
 - Voice: wake word, spoken task-finished summaries, Deepgram/Whisper STT fallback.
@@ -158,6 +158,28 @@ Notion / Sheets / Slack, and Wispr Flow import.
 - Skills: the approval queue + "My Skills" filter, team sharing, and more app skills (HeyClicky covers 89 apps).
 - Pointing: drawing/circling on screen (HeyClicky's spatial context and hand-drawn annotations).
 - Agent: Composio + cua-driver end-to-end once those services are configured; barge-in/always-on voice.
+
+## Code signing policy
+
+Windows releases are signed. Free code signing is provided by [SignPath.io](https://about.signpath.io),
+with a certificate from the [SignPath Foundation](https://signpath.org). Only binaries built by this
+repository's GitHub Actions workflow (`.github/workflows/windows-release.yml`) from its public source are
+signed, and only OpenClicky's own files: the third-party libraries it ships keep their publishers'
+signatures.
+
+- Committers and reviewers: [contributors to this repository](https://github.com/prasanthsasikumar/openclicky/graphs/contributors)
+- Approvers: [@prasanthsasikumar](https://github.com/prasanthsasikumar)
+
+**Privacy.** OpenClicky reaches other networked systems only for what you use it for:
+
+- the AI vendors whose keys you add (OpenAI, Anthropic and others), called directly with your key;
+- the hosted OpenClicky backend when you use a free account (first-run setup without keys of your own
+  starts a guest account, identified by a device hash, with no email);
+- downloads of the optional offline models (Kokoro, Parakeet) and update checks against this
+  repository's GitHub Releases.
+
+Dictation with the offline engine, your history, dictionary and settings stay on your computer.
+Analytics are off unless a build is given a PostHog key.
 
 ## License and contributing
 

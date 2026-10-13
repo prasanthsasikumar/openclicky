@@ -51,9 +51,13 @@ The smoke flags write to the console they were started from and exit with 0 on s
 
 ## Release
 
+Releases are built, signed (SignPath Foundation) and uploaded by `.github/workflows/windows-release.yml`
+when a `vX.Y.Z` tag is pushed; setup and details in [docs/code-signing.md](docs/code-signing.md).
+`build-release.ps1` makes the same packages locally, unsigned:
+
 ```powershell
 cd windows\installer
-.\build-release.ps1                                    # win-x64 + win-arm64, version from the csproj
+.\build-release.ps1                                    # win-x64 + win-arm64, version from Directory.Build.props
 .\build-release.ps1 -Runtimes win-arm64 -Version 0.1.1 # one architecture
 .\build-release.ps1 -Version 0.2.0 -Publish            # with deltas, uploaded as a draft GitHub release
 ```
