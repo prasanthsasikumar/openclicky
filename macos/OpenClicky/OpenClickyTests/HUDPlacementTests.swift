@@ -109,6 +109,21 @@ struct HUDPlacementTests {
         #expect(island.expansion == .tour)
     }
 
+    /// During a guide the island is only the stop strip: it shows between steps too (when nothing
+    /// is being said), hovering never swaps it for the panel, and it goes away when the guide ends.
+    @Test func aGuideKeepsTheIslandAStopStrip() async throws {
+        let island = model(.notch)
+        island.setGuideStep(2)
+        #expect(island.expansion == .compact)
+        island.setHovering(true)
+        try await Task.sleep(nanoseconds: 600_000_000)
+        #expect(island.expansion == .compact)
+        island.setHovering(false)
+        island.setGuideStep(nil)
+        try await Task.sleep(nanoseconds: 600_000_000)
+        #expect(island.expansion == .collapsed)
+    }
+
     @Test func everyGoodbyeSaysHowToComeBackOrIsShort() {
         for farewell in Farewell.all {
             #expect(farewell.text.contains("openclicky") || farewell.text.contains("⌘ space"))

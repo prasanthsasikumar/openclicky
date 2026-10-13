@@ -308,6 +308,19 @@ final class NotchHUDModel: ObservableObject {
         reconcile()
     }
 
+    /// The step of the guide under way (1, 2, …), nil when there is none. While it is set the island
+    /// is only the guide's stop strip: it stays between steps, and hovering never opens the panel.
+    private(set) var guideStep: Int?
+
+    func setGuideStep(_ step: Int?) {
+        guard guideStep != step else { return }
+        let guideStartedOrEnded = (guideStep == nil) != (step == nil)
+        guideStep = step
+        // A panel left pinned open would hide the stop strip for the whole guide.
+        if step != nil { isPinnedOpen = false }
+        if guideStartedOrEnded { reconcile(immediately: step != nil) } else { onLayoutChanged?() }
+    }
+
     func setBusy(_ busy: Bool) {
         isBusy = busy
         reconcile()
@@ -420,7 +433,7 @@ final class NotchHUDModel: ObservableObject {
         if permissionPrompt != nil { return .permission }
         if tourCard != nil && !isBusy { return .tour }
         if connectPrompt != nil { return .connect }
-        if isBusy || captionText != nil { return .compact }
+        if isBusy || captionText != nil || guideStep != nil { return .compact }
         return .collapsed
     }
 
@@ -445,7 +458,7 @@ final class NotchHUDModel: ObservableObject {
             // Hovering the connect card must not swap it for the full panel while the user is
             // reaching for its buttons; a click on the island still pins the full panel open.
             target = .connect
-        } else if isHovering && !isSetupInProgress && !isSpeaking {
+        } else if isHovering && !isSetupInProgress && !isSpeaking && guideStep == nil {
             target = .full
         } else {
             target = restingExpansion
@@ -459,7 +472,7 @@ final class NotchHUDModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 400_000_000)
             // Hovering or a pinned panel holds the island open, except during setup, where the
             // pointer resting on the tour card must not keep the busy strip from showing.
-            guard !Task.isCancelled, let self, self.isSetupInProgress || (self.isSpeaking && !self.isPinnedOpen) || (!self.isHovering && !self.isPinnedOpen), !self.isComposerOpen else { return }
+            guard !Task.isCancelled, let self, self.isSetupInProgress || ((self.isSpeaking || self.guideStep != nil) && !self.isPinnedOpen) || (!self.isHovering && !self.isPinnedOpen), !self.isComposerOpen else { return }
             self.setExpansion(self.restingExpansion)
         }
     }
@@ -795,6 +808,7 @@ final class NotchHUDManager {
             model.hostsDockedCursor = Self.primaryScreen.map(Self.screenID(of:)) == screenID
             model.setBusy(isBusy)
             model.setSpeaking(isSpeaking)
+            model.setGuideStep(companionManager.guideStepUnderWay)
             model.setCompactDetailLine(hasCompactDetailLine)
             model.setCursorDocked(companionManager.isCursorDocked)
             model.setConnectPrompt(connectPrompt)
@@ -833,6 +847,12 @@ final class NotchHUDManager {
                 guard let self else { return }
                 self.isBusy = busy
                 self.instances.forEach { $0.model.setBusy(busy) }
+            }
+            .store(in: &busyCancellables)
+        companionManager.$guideStepUnderWay
+            .removeDuplicates()
+            .sink { [weak self] guideStep in
+                self?.instances.forEach { $0.model.setGuideStep(guideStep) }
             }
             .store(in: &busyCancellables)
         companionManager.$voiceState
@@ -1019,6 +1039,7 @@ struct NotchHUDView: View {
                 islandBackground
                     .frame(width: model.width + topCornerFlare * 2, height: expansion == .collapsed ? notchHeight : model.height)
                     .onTapGesture {
+                        if expansion == .compact && model.guideStep != nil { companionManager.stopGuide(); return }
                         if expansion == .compact && model.isSpeaking { companionManager.stopSpeaking(); return }
                         if expansion != .connect && expansion != .permission && expansion != .composer && expansion != .tour { model.togglePinned() }
                     }
@@ -1168,7 +1189,19 @@ struct NotchCompactStatusView: View {
                     .foregroundColor(DS.HUD.text2)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if isSpeaking {
+                if companionManager.guideStepUnderWay != nil {
+                    // During a guide the whole strip stops the guide on a click; this says so in words,
+                    // because an icon alone was not enough for someone new to it.
+                    HStack(spacing: 5) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 15))
+                        Text("stop guide")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundColor(DS.HUD.text)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("stop the guide")
+                } else if isSpeaking {
                     // The whole strip stops the voice on a click; this says so.
                     Image(systemName: "stop.circle.fill")
                         .font(.system(size: 15))
@@ -1194,8 +1227,15 @@ struct NotchCompactStatusView: View {
         }
         .padding(.horizontal, 14)
         .overlay {
-            // Only while speaking, so a click on the busy strip otherwise still opens the panel.
-            if isSpeaking {
+            // During a guide, a click anywhere on the strip ends it.
+            if companionManager.guideStepUnderWay != nil {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { companionManager.stopGuide() }
+                    .pointerCursor()
+                    .help("click to stop the guide")
+            } else if isSpeaking {
+                // Only while speaking, so a click on the busy strip otherwise still opens the panel.
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { companionManager.stopSpeaking() }
@@ -1217,6 +1257,13 @@ struct NotchCompactStatusView: View {
     }
 
     private var statusText: String {
+        if let guideStep = companionManager.guideStepUnderWay {
+            switch companionManager.voiceState {
+            case .processing: return "step \(guideStep + 1) · looking"
+            case .idle: return "step \(guideStep) · your turn"
+            default: return "step \(guideStep)"
+            }
+        }
         let isDictating = companionManager.isDictatingToFrontApp
         switch companionManager.voiceState {
         case .idle:
