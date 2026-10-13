@@ -13,7 +13,7 @@
     same releases (Companion\VelopackAppUpdater.cs), each architecture from its own channel.
 
 .EXAMPLE
-    .\build-release.ps1                                   # both architectures, version from the csproj
+    .\build-release.ps1                                   # both architectures, version from Directory.Build.props
     .\build-release.ps1 -Runtimes win-arm64 -Version 0.1.1
     .\build-release.ps1 -Version 0.2.0 -Publish           # build, pack with deltas, upload a draft release
 #>
@@ -52,9 +52,10 @@ if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
 }
 
 if (-not $Version) {
-    [xml] $csproj = Get-Content $project
-    $Version = ($csproj.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ }) | Select-Object -First 1
-    if (-not $Version) { throw 'no -Version given and none in the csproj' }
+    # One version for the whole solution, kept in step with macos/OpenClicky/VERSION.
+    [xml] $buildProps = Get-Content (Join-Path $PSScriptRoot '..\Directory.Build.props')
+    $Version = ($buildProps.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ }) | Select-Object -First 1
+    if (-not $Version) { throw 'no -Version given and none in Directory.Build.props' }
 }
 if ($Publish -and -not $GitHubToken) { throw '-Publish needs -GitHubToken or $env:GITHUB_TOKEN' }
 
