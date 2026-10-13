@@ -4,7 +4,8 @@
 //   --openclicky-platform-smoke                    the OS layer on this PC (Platform/PlatformSmoke)
 //   --openclicky-smoke-run "<text>"                gate + agent run through the openclicky CLI
 //   --openclicky-smoke-transcribe <wav> [engine]   one dictation engine on a recording (offline, parakeet, sarvam, openclicky, assemblyai)
-//   --openclicky-voice-smoke <voice>               two sentences rendered in one voice (SpeechVoiceChoice raw value)
+//   --openclicky-voice-smoke <voice> [--play]      two sentences rendered in one voice (SpeechVoiceChoice raw value); --play plays them
+//   --openclicky-mic-smoke <seconds> [engine]      records the microphone, prints its level, saves a WAV and transcribes it
 //   --openclicky-check-source <source>             Settings' Test button for one answer source
 //   --openclicky-answer-smoke                      one real question (a red square) through ClaudeAPI
 
@@ -52,7 +53,14 @@ internal static class SmokeCommands
         if (Argument("--openclicky-voice-smoke") is { } voiceName)
         {
             ConsoleAttachment.Attach();
-            return Task.Run(() => VoiceSmokeAsync(voiceName)).GetAwaiter().GetResult();
+            var play = args.Contains("--play");
+            return Task.Run(() => VoiceSmokeAsync(voiceName, play)).GetAwaiter().GetResult();
+        }
+        if (Argument("--openclicky-mic-smoke") is { } secondsText)
+        {
+            ConsoleAttachment.Attach();
+            var engineName = Argument("--openclicky-mic-smoke", 2) ?? "parakeet";
+            return Task.Run(() => MicSmokeAsync(double.Parse(secondsText, System.Globalization.CultureInfo.InvariantCulture), engineName)).GetAwaiter().GetResult();
         }
         if (Argument("--openclicky-check-source") is { } sourceName)
         {
@@ -165,7 +173,7 @@ internal static class SmokeCommands
         return raw.Trim().Length > 0 ? 0 : 2;
     }
 
-    private static async Task<int> VoiceSmokeAsync(string voiceName)
+    private static async Task<int> VoiceSmokeAsync(string voiceName, bool play)
     {
         _ = new HeadlessPlatform();
         var voice = SpeechVoiceChoices.FromStored(voiceName);
@@ -197,6 +205,12 @@ internal static class SmokeCommands
             {
                 var audio = await CloudVoiceSpeaker.AudioAsync(sentence, voice);
                 Console.WriteLine($"voice-smoke: {voice.RawValue()} rendered {audio.Length / 1024} KB ({AudioSeconds(audio):0.0} s of audio) in {stopwatch.Elapsed.TotalSeconds:0.00} s");
+                if (play)
+                {
+                    var playing = Stopwatch.StartNew();
+                    await new AudioPlayer().PlayToCompletionAsync(audio);
+                    Console.WriteLine($"voice-smoke: played in {playing.Elapsed.TotalSeconds:0.0} s");
+                }
             }
             catch (Exception error)
             {
@@ -205,6 +219,34 @@ internal static class SmokeCommands
             }
         }
         return 0;
+    }
+
+    /// <summary>Records the default microphone through the app's own capture path, then runs one engine on it.</summary>
+    private static async Task<int> MicSmokeAsync(double seconds, string engineName)
+    {
+        var capture = new AudioCapture();
+        var samples = new List<float>();
+        var peakLevel = 0f;
+        capture.FramesAvailable += frame =>
+        {
+            lock (samples) samples.AddRange(frame.Samples);
+            if (frame.Level > peakLevel) peakLevel = frame.Level;
+        };
+        var started = await capture.StartAsync(new AudioCaptureOptions { SampleRate = 16_000 });
+        Console.WriteLine($"mic-smoke: {started.Description}; recording {seconds:0} s — speak now");
+        for (var elapsed = 0.0; elapsed < seconds; elapsed += 0.5)
+        {
+            await Task.Delay(500);
+            Console.WriteLine($"mic-smoke: {elapsed + 0.5:0.0} s level {capture.CurrentLevel:0.000}");
+        }
+        capture.Stop();
+        float[] recorded;
+        lock (samples) recorded = samples.ToArray();
+        var wavPath = Path.Combine(Path.GetTempPath(), "openclicky-mic-smoke.wav");
+        using (var writer = new WaveFileWriter(wavPath, WaveFormat.CreateIeeeFloatWaveFormat(16_000, 1))) writer.WriteSamples(recorded, 0, recorded.Length);
+        var rootMeanSquare = recorded.Length == 0 ? 0 : Math.Sqrt(recorded.Average(sample => (double)sample * sample));
+        Console.WriteLine($"mic-smoke: {recorded.Length / 16_000.0:0.0} s recorded, peak level {peakLevel:0.000}, rms {rootMeanSquare:0.0000}, saved {wavPath}");
+        return await TranscribeAsync(wavPath, engineName);
     }
 
     /// <summary>How long a WAV or MP3 plays, when NAudio can read it.</summary>

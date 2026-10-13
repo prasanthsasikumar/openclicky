@@ -441,7 +441,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
     {
         BuddyDictationManager.ReplaceTranscriptionProvider(
             AccountCapabilities.Current().HearsOnDevice
-                ? new WindowsSpeechTranscriptionProvider(services.OfflineSpeech)
+                ? new OnDeviceHearingProvider(services.OfflineSpeech)
                 : BuddyTranscriptionProviderFactory.MakeDefaultProvider(services.OfflineSpeech));
     }
 

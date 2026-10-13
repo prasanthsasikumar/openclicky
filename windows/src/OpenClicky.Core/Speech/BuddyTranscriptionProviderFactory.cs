@@ -34,7 +34,7 @@ public static class BuddyTranscriptionProviderFactory
             OpenClickyConfiguration.IsConfigured,
             new AssemblyAIStreamingTranscriptionProvider(),
             new OpenAIAudioTranscriptionProvider(),
-            () => new WindowsSpeechTranscriptionProvider(offlineRecognizer));
+            () => new OnDeviceHearingProvider(offlineRecognizer));
         AppLog.Write($"transcription: using {provider.DisplayName}");
         return provider;
     }
