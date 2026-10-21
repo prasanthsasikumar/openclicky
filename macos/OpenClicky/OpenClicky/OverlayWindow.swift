@@ -372,14 +372,17 @@ struct BlueCursorView: View {
                 .allowsHitTesting(false)
 
             // Blue waveform — replaces the triangle while listening
-            BlueCursorWaveformView(audioPowerLevel: companionManager.currentAudioPowerLevel)
+            BlueCursorWaveformView(
+                audioPowerLevel: companionManager.currentAudioPowerLevel,
+                isAnimating: buddyIsVisibleOnThisScreen && companionManager.voiceState == .listening
+            )
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .listening ? cursorOpacity : 0)
                 .position(cursorPosition)
                 .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
                 .animation(.easeIn(duration: 0.15), value: companionManager.voiceState)
 
             // Blue spinner — shown while the AI is processing (transcription + Claude + waiting for TTS)
-            BlueCursorSpinnerView()
+            BlueCursorSpinnerView(isAnimating: buddyIsVisibleOnThisScreen && companionManager.voiceState == .processing)
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .processing ? cursorOpacity : 0)
                 .position(cursorPosition)
                 .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
@@ -908,12 +911,16 @@ struct BlueCursorView: View {
 /// the user is holding the push-to-talk shortcut and speaking.
 struct BlueCursorWaveformView: View {
     let audioPowerLevel: CGFloat
+    /// False while the view sits hidden at opacity 0 (the overlay keeps it in the tree to
+    /// cross-fade): an unpaused timeline redraws 36 times a second even when invisible, which
+    /// kept the idle app at ~13% CPU.
+    var isAnimating: Bool = true
 
     private let barCount = 5
     private let listeningBarProfile: [CGFloat] = [0.4, 0.7, 1.0, 0.7, 0.4]
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 36.0)) { timelineContext in
+        TimelineView(.animation(minimumInterval: 1.0 / 36.0, paused: !isAnimating)) { timelineContext in
             HStack(alignment: .center, spacing: 2) {
                 ForEach(0..<barCount, id: \.self) { barIndex in
                     RoundedRectangle(cornerRadius: 1.5, style: .continuous)
@@ -947,6 +954,9 @@ struct BlueCursorWaveformView: View {
 /// A small blue spinning indicator that replaces the triangle cursor
 /// while the AI is processing a voice input.
 struct BlueCursorSpinnerView: View {
+    /// False while the view sits hidden at opacity 0: a repeatForever rotation keeps redrawing
+    /// even when invisible, so it only runs while the spinner can be seen.
+    var isAnimating: Bool = true
     @State private var isSpinning = false
 
     var body: some View {
@@ -966,10 +976,26 @@ struct BlueCursorSpinnerView: View {
             .rotationEffect(.degrees(isSpinning ? 360 : 0))
             .shadow(color: DS.Colors.overlayCursorColor.opacity(0.6), radius: 6, x: 0, y: 0)
             .onAppear {
-                withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
-                    isSpinning = true
-                }
+                if isAnimating { startSpinning() }
             }
+            .onChange(of: isAnimating) { shouldAnimate in
+                if shouldAnimate { startSpinning() } else { stopSpinning() }
+            }
+    }
+
+    private func startSpinning() {
+        withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
+            isSpinning = true
+        }
+    }
+
+    /// Setting the angle back without an animation replaces the repeating one, which ends it.
+    private func stopSpinning() {
+        var transactionWithoutAnimation = Transaction()
+        transactionWithoutAnimation.disablesAnimations = true
+        withTransaction(transactionWithoutAnimation) {
+            isSpinning = false
+        }
     }
 }
 
