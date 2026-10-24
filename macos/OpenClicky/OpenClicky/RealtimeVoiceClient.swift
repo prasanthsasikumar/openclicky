@@ -112,18 +112,6 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// Performs a fast local action (open an app, make a folder…) and returns the sentence to say.
     /// Main-actor isolated: `MacActionRunner` touches AppKit.
     var onMacAction: (@MainActor (MacAction) async -> MacActionOutcome)?
-    /// Tools a plugin adds to the session while it is on (the Teacher's drawing tools). Read with
-    /// every session update; a plugin switched on or off also changes the instructions, which is
-    /// what sends the update.
-    var pluginToolsProvider: (() -> [[String: Any]])?
-    /// Runs a plugin's tool call with the screenshot the turn carried; nil when no plugin owns the
-    /// tool. Must return quickly: tool calls are handled on the receive loop.
-    var onPluginToolCall: (@MainActor (String, [String: Any], CompanionScreenCapture?) async -> String?)?
-    /// Reads the text a "rephrase this" would replace (the highlight, or the focused text box) when
-    /// a turn's screen is attached; the turn quotes it and `write_in_place` writes over it.
-    var writingTargetProvider: (@MainActor () async -> WritingTarget?)?
-    /// The text to write over for the turn in flight, captured with its screen.
-    private(set) var lastWritingTarget: WritingTarget?
     /// Builds the session instructions for the next turn: the base prompt plus the skills that
     /// apply right now (the app in front, the user's activated skills). Read at connect and before
     /// every turn; only a change is sent to the server as `session.update`.
@@ -212,12 +200,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     For anything bigger (creating or editing files or code, running commands, using integrations, research, \
     multi-step tasks), first say one short sentence acknowledging it, then call the send_to_agent \
     tool with a clear, self-contained task, and afterwards tell the user in one sentence what happened. \
-    Never pretend work was done without the tool. Do not read file paths aloud character by character. \
-    When the screen context quotes text they highlighted or the text box they are in, and they ask you to rephrase, \
-    rewrite, shorten, fix, polish or translate it ("rephrase this", "make this sound professional", "do that for me"), \
-    call write_in_place with the complete new text, then say only a few words about what you changed; never read the \
-    new text out. If they ask how to rephrase it or for suggestions, answer in words and change nothing. \
-    If no text was quoted, ask them to highlight it and ask again.
+    Never pretend work was done without the tool. Do not read file paths aloud character by character.
     """
 
     init(voice: String? = nil, instructions: String = RealtimeVoiceClient.defaultInstructions) {
@@ -567,7 +550,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             "session": [
                 "type": "realtime",
                 "instructions": text,
-                "tools": [tool, pointTool, WriteInPlace.realtimeToolDefinition()] + MacAction.realtimeToolDefinitions() + (pluginToolsProvider?() ?? []),
+                "tools": [tool, pointTool] + MacAction.realtimeToolDefinitions(),
                 "tool_choice": "auto",
                 "audio": ["input": input, "output": output],
             ],
@@ -725,14 +708,6 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private var wasListeningContinuouslyBeforeDictation = false
 
     /// Adds the current screen to the conversation so the model can answer "what is this?".
-    /// The turn's caption: the screenshot's own, then the text a rewrite would replace (quoted in
-    /// full) or, without one, the highlighted text as context for "what does this mean".
-    nonisolated static func screenCaption(_ caption: String, writingTarget: WritingTarget?, selectedText: String?) -> String {
-        if let writingTarget { return caption + " " + writingTarget.contextLine }
-        if let selectedText { return caption + " " + SelectedTextReader.contextLine(for: selectedText) }
-        return caption
-    }
-
     private func attachScreenContext() async {
         guard let screenContextProvider else { return }
         let started = Date()
@@ -740,9 +715,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             log("no screen context (screen recording permission?)")
             return
         }
-        lastWritingTarget = await writingTargetProvider?()
-        let caption = Self.screenCaption(context.caption, writingTarget: lastWritingTarget,
-                                         selectedText: lastWritingTarget == nil ? SelectedTextReader.currentSelection() : nil)
+        var caption = context.caption
+        if let selectedText = SelectedTextReader.currentSelection() {
+            caption += " " + SelectedTextReader.contextLine(for: selectedText)
+        }
         let item: [String: Any] = [
             "type": "message",
             "role": "user",
@@ -1061,16 +1037,6 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             let startedAt = Date()
             output = await onAgentTask?(task) ?? "The agent lane is not available in this session."
             log("agent task finished in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
-        case WriteInPlace.toolName:
-            let newText = arguments["text"] as? String ?? ""
-            if let target = lastWritingTarget {
-                let outcome = await WriteInPlace.replace(target, with: newText)
-                log("write in place: \(outcome)")
-                output = outcome.spokenSentence + " Say only that, in a few words; never read the new text out."
-            } else {
-                log("write in place: no text to write over")
-                output = "No highlighted text or text box was found, so nothing was changed. Ask them to highlight the text and ask again; do not read a rewrite out."
-            }
         case "point_at":
             // Coordinates come as integers (or occasionally as numeric strings); label is free text.
             let number = { (value: Any?) -> Double? in
@@ -1169,10 +1135,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 output = "invalid coordinates: point_at needs finite integer x and y"
             }
         default:
-            if let pluginOutput = await onPluginToolCall?(name, arguments, lastScreenCapture) {
-                log("plugin tool: \(name)")
-                output = pluginOutput
-            }
+            break
         }
         // The output goes out immediately; the follow-up response is requested once, on response.done.
         try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(output.prefix(4000))]])

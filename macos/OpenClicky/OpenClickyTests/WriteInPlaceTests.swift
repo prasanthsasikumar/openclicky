@@ -132,30 +132,3 @@ struct WriteInPlaceTests {
         #expect(!WriteInPlace.noTargetPromptInstruction.contains("—"))
     }
 }
-
-/// The fast voice lane rewrites in place too. It never had the tool: with an own OpenAI key the
-/// ⌃⌥ question goes to Realtime, and "rephrase this" in a Gmail draft was read out (2026-10-23).
-struct RealtimeWriteInPlaceTests {
-    @Test func theRealtimeSessionGetsTheTool() {
-        let tool = WriteInPlace.realtimeToolDefinition()
-        #expect(tool["type"] as? String == "function")
-        #expect(tool["name"] as? String == WriteInPlace.toolName)
-        #expect(((tool["parameters"] as? [String: Any])?["required"] as? [String]) == ["text"])
-    }
-
-    @Test func theTurnCarriesTheTextToWriteOver() {
-        let target = WritingTarget(scope: .selection, text: "hey can u send it", appBundleID: "com.google.Chrome", appName: "Google Chrome")
-        let caption = RealtimeVoiceClient.screenCaption("Screenshot of the screen.", writingTarget: target, selectedText: "ignored")
-        #expect(caption.contains("«hey can u send it»"))
-        #expect(caption.contains("write_in_place"))
-        #expect(!caption.contains("ignored"))
-        let plain = RealtimeVoiceClient.screenCaption("Screenshot of the screen.", writingTarget: nil, selectedText: nil)
-        #expect(plain == "Screenshot of the screen.")
-    }
-
-    @Test func doingItAndExplainingHowAreToldApart() {
-        let instructions = RealtimeVoiceClient.defaultInstructions
-        #expect(instructions.contains("write_in_place"))
-        #expect(instructions.contains("how to rephrase"))
-    }
-}

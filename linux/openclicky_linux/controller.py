@@ -59,6 +59,11 @@ class DictationHost:
     prepare_transcription: Callable[[], None] = lambda: None
     # A take held with left alt was a spoken question: it goes to the pointer (the ask lane).
     ask_question: Callable[[str], None] = lambda _question: None
+    # Heard words → the text to paste (the app's style, numbers, the model clean-up), run off the main
+    # thread with the take's audio; None: the local clean-up on the main loop.
+    format_take: Callable[[str, "FocusedWindow | None"], str] | None = None
+    # Every take that ended with words, for the history: raw, text, window, seconds, outcome.
+    record_take: Callable[[dict], None] = lambda _take: None
 
 
 class OrbModel:
@@ -150,12 +155,17 @@ class DictationTakeController:
         self.state = TakeState.FINISHING
         self.orb.show("working", "moving your words")
         transcribe = self.host.transcribe
+        # A spoken question is never rewritten by a model: it is formatted locally, on the main loop.
+        format_take = None if self.take_asks_the_pointer else self.host.format_take
+        window_at_press = self._window_at_press
 
-        def hear_the_take() -> str:
+        def hear_the_take() -> tuple[str, str | None, float]:
             pcm = recording.stop()
-            if pcm_seconds(pcm) < MINIMUM_SPEECH_SECONDS:
-                return ""
-            return transcribe(wav_from_pcm(pcm))
+            seconds = pcm_seconds(pcm)
+            if seconds < MINIMUM_SPEECH_SECONDS:
+                return "", None, seconds
+            raw = transcribe(wav_from_pcm(pcm))
+            return raw, (format_take(raw, window_at_press) if format_take and raw.strip() else None), seconds
 
         self.host.run_in_background(hear_the_take, lambda outcome: self._finish_take(outcome, this_take_id))
 
@@ -165,6 +175,7 @@ class DictationTakeController:
         if self._recording is not None:
             self._recording.cancel()
             self._recording = None
+        applog.append(f"take {self.take_id} {reason}")
         self._end_take()
         self._show_then_rest("failed", reason, after_seconds=1.4)
 
@@ -175,7 +186,8 @@ class DictationTakeController:
         if isinstance(outcome, BaseException):
             self._fail(str(outcome) or "couldn't transcribe that", this_take_id)
             return
-        text = formatter.format_locally(outcome or "", self.host.load_space())
+        raw, formatted, seconds = outcome if isinstance(outcome, tuple) else (outcome or "", None, 0.0)
+        text = formatted if formatted is not None else formatter.format_locally(raw or "", self.host.load_space())
         if text and self.take_asks_the_pointer:
             # A spoken question: the pointer answers it (and guides, step by step); nothing is typed.
             self.finished_takes.append((text, "asked the pointer"))
@@ -199,6 +211,10 @@ class DictationTakeController:
             return
         self.finished_takes.append((text, message))
         applog.append(f"take {this_take_id} done: {len(text)} chars, {message}")
+        try:
+            self.host.record_take({"raw": raw, "text": text, "window": self._window_at_press, "seconds": seconds, "outcome": message})
+        except Exception as failure:  # noqa: BLE001 - the history must never cost a take its words
+            applog.append(f"take {this_take_id}: not kept in the history ({type(failure).__name__})")
         self._end_take()
         self._show_then_rest("done", message, after_seconds=1.8)
 
@@ -242,6 +258,12 @@ class DictationTakeController:
                 self.orb.show("idle")
 
         self.host.schedule(after_seconds, rest)
+
+    def show_notice(self, message: str) -> None:
+        """A sentence about something other than a take (the speakers are muted), when no take is under way."""
+        applog.append(f"notice: {message}")
+        if self.state is TakeState.IDLE:
+            self._show_then_rest("failed", message, after_seconds=4.0)
 
     def report_late_paste_problem(self, message: str) -> None:
         """The keystroke for a take that already ended could not be sent where it belonged (the paste

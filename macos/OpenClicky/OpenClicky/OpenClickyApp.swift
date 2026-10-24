@@ -109,7 +109,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 client.onAgentTask = { task in "smoke agent would run: \(task)" }
                 client.onMacAction = { action in .failed("smoke run does not perform \(action)") }
                 client.screenContextProvider = { await CompanionScreenCaptureUtility.captureCursorScreenContext() }
-                client.writingTargetProvider = { await WritingTarget.captureFromFrontApp() }
                 client.onPointAt = { screenshotPoint, label, capture in
                     // No overlay in the smoke harness: print what the buddy would fly to.
                     let screenLocation = CompanionManager.screenLocation(forScreenshotPoint: screenshotPoint, in: capture)
@@ -122,29 +121,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                     let started = Date()
                     try await client.connectIfNeeded(mode: .pushToTalk)
                     print("smoke: connected in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
-                    // OPENCLICKY_SMOKE_TEACHER=1 offers the Teacher's tools (switching it on) and runs
-                    // what the model asks for as the app would, printing the call.
-                    let offersTeacher = ProcessInfo.processInfo.environment["OPENCLICKY_SMOKE_TEACHER"] == "1"
-                    if offersTeacher {
-                        client.pluginToolsProvider = { TeacherPlugin.realtimeToolDefinitions() }
-                        client.onTranscript = { role, text in
-                            print("smoke: \(role == .user ? "you" : "openclicky"): \(text)")
-                            if role == .user { TeacherPlugin.startLesson(for: text, capture: client.lastScreenCapture) }
-                        }
-                        client.onPluginToolCall = { toolName, arguments, capture in
-                            guard TeacherPlugin.toolNames.contains(toolName) else { return nil }
-                            print("smoke: \(toolName) \(arguments)")
-                            var settings = IslandComponentSettings(defaults: .standard)
-                            if !settings.enabledPlugins.contains(TeacherPlugin.id) { settings.enabledPlugins.append(TeacherPlugin.id) }
-                            return await TeacherPlugin.perform(toolName: toolName, arguments: arguments, capture: capture)
-                        }
-                    }
                     // Installed after connect (like a skill toggled / app switch mid-session) so the
                     // key-up tail refresh has a changed prompt to send: expect `instructions updated (N chars)`.
                     client.instructionsProvider = {
-                        offersTeacher
-                            ? RealtimeVoiceClient.defaultInstructions + "\n\n" + TeacherPlugin.promptInstruction
-                            : RealtimeVoiceClient.defaultInstructions + "\n\n## Skill: smoke\nAlways mention the word 'harness' once."
+                        RealtimeVoiceClient.defaultInstructions + "\n\n## Skill: smoke\nAlways mention the word 'harness' once."
                     }
                     client.beginPushToTalk()
                     var waitedForMic = 0
@@ -170,8 +150,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                     // A `point_at` that fell back to Claude is still resolving when the reply ends.
                     await client.awaitPendingPointing()
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    // The drawing is written in the background and then drawn; give it time to show.
-                    if offersTeacher { try? await Task.sleep(nanoseconds: 14_000_000_000) }
                     print("smoke: after idle → \(await client.debugSummary())")
                     client.disconnect(reason: finished ? "smoke done" : "smoke timed out waiting for the reply")
                     exit(finished ? 0 : 1)
@@ -215,121 +193,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                     print("smoke: error=\(error.localizedDescription)")
                     exit(1)
                 }
-            }
-            return
-        }
-
-        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-teacher-render"), argumentIndex + 2 < launchArguments.count {
-            // Draws a sketch file, finished, into a PNG instead of onto the screen (comparing what
-            // models draw without showing whatever else is on screen).
-            //   OpenClicky --openclicky-teacher-render sketch.txt out.png [ink|chalk|paper]
-            let sketchPath = launchArguments[argumentIndex + 1]
-            let outputPath = launchArguments[argumentIndex + 2]
-            let styleWord = argumentIndex + 3 < launchArguments.count ? launchArguments[argumentIndex + 3] : "paper"
-            let style: TeacherBoardStyle = styleWord == "ink" ? .inkOnLightPage : (styleWord == "chalk" ? .chalkOnDarkPage : .paper)
-            let result = TeacherSketchParser.parse((try? String(contentsOfFile: sketchPath, encoding: .utf8)) ?? "")
-            guard let sketch = result.sketch else {
-                print("render: nothing drawable (\(result.skippedLines.count) lines skipped)")
-                exit(1)
-            }
-            let bounds = TeacherSketchLayout.drawingBounds(of: sketch)
-            let width: CGFloat = 560
-            let height = (width * bounds.height / max(bounds.width, 1)).rounded()
-            let background = style == .chalkOnDarkPage ? Color(hex: "#1E1F22") : (style == .inkOnLightPage ? .white : Color(hex: "#FFFDF6"))
-            let view = TeacherSketchView(sketch: sketch, style: style, startedAt: .distantPast)
-                .padding(22)
-                .frame(width: width, height: height)
-                .background(background)
-            let renderer = ImageRenderer(content: view)
-            renderer.scale = 2
-            guard let image = renderer.cgImage,
-                  let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
-                print("render: could not render")
-                exit(1)
-            }
-            try? png.write(to: URL(fileURLWithPath: outputPath))
-            print("render: \(sketch.strokes.count) strokes, skipped \(result.skippedLines) → \(outputPath)")
-            exit(0)
-        }
-
-        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-teacher-lesson"), argumentIndex + 2 < launchArguments.count {
-            // Writes the lesson for a question the way the app starts one (whatever route this
-            // Mac's keys or account give), then draws it into a PNG and prints the route and time.
-            //   OpenClicky --openclicky-teacher-lesson "teach me refraction" out.png [screen.jpg]
-            let question = launchArguments[argumentIndex + 1]
-            let outputPath = launchArguments[argumentIndex + 2]
-            let screenshotJPEG = argumentIndex + 3 < launchArguments.count ? FileManager.default.contents(atPath: launchArguments[argumentIndex + 3]) : nil
-            setvbuf(stdout, nil, _IONBF, 0)
-            Task { @MainActor in
-                let route = TeacherSketchWriter.route(for: ProviderRouter.currentCredentials())
-                print("lesson: route \(TeacherSketchWriter.routeName(route)), starts early: \(TeacherSketchWriter.canStartLessonsEarly)")
-                let startedAt = Date()
-                let reply = await TeacherSketchWriter.lesson(for: question, screenshotJPEG: screenshotJPEG)
-                print("lesson: answered in \(String(format: "%.1f", Date().timeIntervalSince(startedAt))) s")
-                switch reply {
-                case .picture(let query)?:
-                    print("lesson: a picture of \(query)")
-                    exit(0)
-                case .sketch(let written)?:
-                    try? written.write(toFile: outputPath + ".txt", atomically: true, encoding: .utf8)
-                    let result = TeacherSketchParser.parse(written)
-                    guard let sketch = result.sketch else {
-                        print("lesson: nothing drawable")
-                        exit(1)
-                    }
-                    let bounds = TeacherSketchLayout.drawingBounds(of: sketch)
-                    let view = TeacherSketchView(sketch: sketch, style: .paper, startedAt: .distantPast)
-                        .padding(22)
-                        .frame(width: 560, height: (560 * bounds.height / max(bounds.width, 1)).rounded())
-                        .background(Color(hex: "#FFFDF6"))
-                    let renderer = ImageRenderer(content: view)
-                    renderer.scale = 2
-                    if let image = renderer.cgImage, let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
-                        try? png.write(to: URL(fileURLWithPath: outputPath))
-                    }
-                    print("lesson: \(sketch.strokes.count) strokes, skipped \(result.skippedLines) → \(outputPath)")
-                    exit(0)
-                case nil:
-                    print("lesson: nothing written (see app.log)")
-                    exit(1)
-                }
-            }
-            return
-        }
-
-        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-teacher-smoke") {
-            // Draws a lesson on the cursor's screen without a voice turn, then exits: the draw
-            // tool's own Pythagoras example, a sketch file, or `picture:<search words>`.
-            //   OpenClicky --openclicky-teacher-smoke [sketch.txt | picture:neuron diagram]
-            let argument = argumentIndex + 1 < launchArguments.count ? launchArguments[argumentIndex + 1] : nil
-            setvbuf(stdout, nil, _IONBF, 0)
-            Task { @MainActor in
-                let capture = await CompanionScreenCaptureUtility.captureCursorScreenContext()?.capture
-                print("smoke: screenshot \(capture == nil ? "unavailable (paper fallback)" : "taken")")
-                let board = TeacherBoard.shared
-                if let argument, argument.hasPrefix("picture:") {
-                    let query = String(argument.dropFirst("picture:".count))
-                    guard let picture = await TeacherPictureFinder.find(query: query, caption: query) else {
-                        print("smoke: no picture found")
-                        exit(1)
-                    }
-                    board.show(picture: picture, capture: capture, requestToken: board.beginPictureSearch())
-                    print("smoke: picture from \(picture.credit), \(Int(picture.image.size.width))×\(Int(picture.image.size.height))")
-                    try? await Task.sleep(nanoseconds: 8_000_000_000)
-                    exit(0)
-                }
-                let source = argument.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) }
-                    ?? (TeacherPlugin.sketchGrammar.components(separatedBy: "Example, Pythagoras:\n").last ?? "")
-                let result = TeacherSketchParser.parse(source)
-                guard let sketch = result.sketch else {
-                    print("smoke: nothing drawable (\(result.skippedLines.count) lines skipped)")
-                    exit(1)
-                }
-                board.onLabelWritten = { location, _ in print("smoke: buddy → label at (\(Int(location.x)), \(Int(location.y)))") }
-                board.show(sketch: sketch, title: "smoke", capture: capture)
-                print("smoke: \(sketch.strokes.count) strokes, skipped \(result.skippedLines)")
-                try? await Task.sleep(nanoseconds: UInt64((TeacherSketchTimeline.totalSeconds(for: sketch) + 4) * 1_000_000_000))
-                exit(0)
             }
             return
         }
@@ -403,54 +266,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                     exit(player.duration > 1 ? 0 : 2)
                 } catch {
                     print("mac-voice-smoke: error \(error.localizedDescription)")
-                    exit(1)
-                }
-            }
-            return
-        }
-        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-teacher-ask"), argumentIndex + 1 < launchArguments.count {
-            // Debug: one real question down the ask lane's own prompt and tools (whatever source
-            // shell.json routes to) with the Teacher switched on; draws what comes back, then exits.
-            //   OpenClicky --openclicky-teacher-ask "teach me how refraction works"
-            let question = launchArguments[argumentIndex + 1]
-            setvbuf(stdout, nil, _IONBF, 0)
-            var settings = IslandComponentSettings(defaults: .standard)
-            if !settings.enabledPlugins.contains(TeacherPlugin.id) { settings.enabledPlugins.append(TeacherPlugin.id) }
-            Task { @MainActor in
-                print("teacher-ask: route \(ProviderRouter.current(for: .claude).logName)")
-                let captures = (try? await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()) ?? []
-                let cursorCapture = captures.first(where: { $0.isCursorScreen }) ?? captures.first
-                let api = ClaudeAPI(currentProxyURL: { "\(OpenClickyConfiguration.backendBaseURL)/chat" })
-                let startedAt = Date()
-                var firstTextAt: Date?
-                do {
-                    let (text, toolCalls, duration) = try await api.analyzeImageStreaming(
-                        // No screenshot goes out: the drawing does not depend on it, and a test run
-                        // must not send whatever happens to be on screen. It only places the board.
-                        images: [],
-                        systemPrompt: CompanionManager.withReplyLanguage(CompanionManager.companionVoiceResponseSystemPrompt + CompanionManager.pluginPromptLines()),
-                        userPrompt: question,
-                        tools: TeacherPlugin.anthropicToolDefinitions(),
-                        onTextChunk: { _ in if firstTextAt == nil { firstTextAt = Date() } })
-                    print("teacher-ask: first text after \(String(format: "%.1f", firstTextAt?.timeIntervalSince(startedAt) ?? -1)) s, done in \(String(format: "%.1f", duration)) s")
-                    print("teacher-ask: said \"\(text)\"")
-                    for call in toolCalls {
-                        print("teacher-ask: \(call.name) \(call.arguments["title"] ?? call.arguments["query"] ?? "")\n\(call.arguments["sketch"] ?? "")")
-                        if call.name == TeacherPlugin.drawToolName {
-                            print("teacher-ask: skipped lines \(TeacherSketchParser.parse(call.arguments["sketch"] ?? "").skippedLines)")
-                        }
-                        print("teacher-ask: → \(await TeacherPlugin.perform(toolName: call.name, arguments: call.arguments, capture: cursorCapture) ?? "not a teacher tool")")
-                    }
-                    let drawingSeconds: Double
-                    if case .sketch(let sketch)? = TeacherBoard.shared.lesson?.content {
-                        drawingSeconds = TeacherSketchTimeline.totalSeconds(for: sketch)
-                    } else {
-                        drawingSeconds = 0
-                    }
-                    try? await Task.sleep(nanoseconds: UInt64((drawingSeconds + 8) * 1_000_000_000))
-                    exit(toolCalls.isEmpty ? 2 : 0)
-                } catch {
-                    print("teacher-ask: error \(error.localizedDescription)")
                     exit(1)
                 }
             }

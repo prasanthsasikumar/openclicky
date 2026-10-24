@@ -75,11 +75,11 @@ struct IslandComponentSelectorTests {
     @MainActor
     @Test func theRealRegistryListsTheBuiltInsThenThePlugins() {
         let ids = IslandComponentRegistry.all.map(\.id)
-        #expect(ids == ["shortcuts", "transcript", "agent", "system", "shelf", "agents", "media", "teacher"])
-        #expect(IslandComponentRegistry.all.map(\.preferredHeight) == [45, 52, 52, 84, 84, 76, 84, 64])
-        #expect(IslandComponentRegistry.all.map(\.isPlugin) == [false, false, false, true, true, true, true, true])
-        #expect(IslandPluginRegistry.all.map(\.id) == ["system", "shelf", "agents", "media", "teacher"])
-        #expect(IslandComponentRegistry.all.map { $0.settingsDetail != nil } == [false, false, false, true, true, true, true, true])
+        #expect(ids == ["shortcuts", "transcript", "agent", "system", "shelf", "agents", "media"])
+        #expect(IslandComponentRegistry.all.map(\.preferredHeight) == [45, 52, 52, 84, 84, 76, 84])
+        #expect(IslandComponentRegistry.all.map(\.isPlugin) == [false, false, false, true, true, true, true])
+        #expect(IslandPluginRegistry.all.map(\.id) == ["system", "shelf", "agents", "media"])
+        #expect(IslandComponentRegistry.all.map { $0.settingsDetail != nil } == [false, false, false, true, true, true, true])
     }
 
     @Test func theContextIsBuiltFromWhatTheAppAlreadyPublishes() {

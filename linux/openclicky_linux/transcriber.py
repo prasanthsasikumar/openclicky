@@ -28,7 +28,11 @@ REQUEST_TIMEOUT_SECONDS = 30
 
 
 class TranscriptionError(Exception):
-    """Carries the sentence the orb shows."""
+    """Carries the sentence the orb shows; `account_refused` as `ask.AskError`'s."""
+
+    def __init__(self, message: str, account_refused: bool = False) -> None:
+        super().__init__(message)
+        self.account_refused = account_refused
 
 
 DICTATION_ENGINES = ("auto", "offline", "openai", "account")
@@ -124,7 +128,8 @@ def transcribe(wav_bytes: bytes, settings: LinuxSettings, offline_engine=None) -
             answer = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as refusal:
         if refusal.code == 401:
-            raise TranscriptionError(f"{vendor} refused the key or token (401). check ~/.openclicky/shell.json") from refusal
+            raise TranscriptionError(f"{vendor} refused the key or token (401). check ~/.openclicky/shell.json",
+                                     account_refused=route.kind == "backend") from refusal
         raise TranscriptionError(f"{vendor} could not transcribe ({refusal.code})") from refusal
     except (urllib.error.URLError, TimeoutError, OSError) as failure:
         raise TranscriptionError(f"couldn't reach {vendor}: {getattr(failure, 'reason', failure)}") from failure

@@ -15,6 +15,11 @@ describe("recordAudio", () => {
     expect(a.at(-1)).toBe("/t/r.wav");
     expect(ffmpegRecordArgs({ seconds: 1, outPath: "x", device: "2", platform: "darwin" })).toContain(":2");
   });
+  it("builds PulseAudio capture args on Linux: the default source, or one named", () => {
+    const a = ffmpegRecordArgs({ seconds: 4, outPath: "/t/r.wav", platform: "linux" });
+    expect(a.join(" ")).toContain("-f pulse -i default -t 4");
+    expect(ffmpegRecordArgs({ seconds: 1, outPath: "x", device: "alsa_input.usb-mic", platform: "linux" }).join(" ")).toContain("-i alsa_input.usb-mic");
+  });
   it("builds DirectShow capture args on Windows and reads the device list", () => {
     const a = ffmpegRecordArgs({ seconds: 4, outPath: "C:\\t\\r.wav", device: "Microphone (Realtek Audio)", platform: "win32" });
     expect(a.join(" ")).toContain("-f dshow -i audio=Microphone (Realtek Audio) -t 4");
@@ -37,7 +42,7 @@ describe("recordAudio", () => {
     expect(recordAudio({ seconds: 1, outPath: out, ffmpegBin: bin })).toBe(out);
     const bad = path.join(dir, "bad.sh");
     fs.writeFileSync(bad, "#!/bin/sh\necho 'Input/output error' >&2; exit 1\n", { mode: 0o755 });
-    expect(() => recordAudio({ seconds: 1, outPath: path.join(dir, "n.wav"), ffmpegBin: bad })).toThrow(/Microphone permission/);
+    expect(() => recordAudio({ seconds: 1, outPath: path.join(dir, "n.wav"), ffmpegBin: bad })).toThrow(process.platform === "linux" ? /microphone is not muted/ : /Microphone permission/);
   });
 });
 

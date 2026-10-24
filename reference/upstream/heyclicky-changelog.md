@@ -2,41 +2,6 @@
 
 Recorded by `scripts/upstream-watch.mjs` from https://www.heyclicky.com/changelog and the Sparkle appcast. Newest first.
 
-## v1.1.1 — HeyClicky can draw in 3D, 2D and much more (Oct 23, 2026)
-
-Download: https://github.com/farzaa/clicky-releases/releases/download/v1.1.1/HeyClicky.dmg (build 66)
-
-Our biggest update yet. HeyClicky now explains things by drawing right on your screen, in 2D and 3D, with one brain that sees, talks, remembers and gets things done. It can drive your Mac for you, work in your Chrome, and everything lives in one simple notch. Thank you to everyone who wrote in and tried the early builds <3
-
-### what's new
-
-- **HeyClicky for Windows:** The first version of HeyClicky for Windows is out. Get it from the download for windows button on the homepage.
-- **HeyClicky draws, in 2D and 3D:** Ask about anything and HeyClicky circles, points and sketches right on your screen while it talks. Explanations land on little cards with real photos, and when the answer is a real thing, like an engine, a molecule or a building, HeyClicky builds a 3D model you can drag around and click on to ask about any part.
-- **One brain:** HeyClicky now has one brain that hears you, sees your screen, answers, and hands bigger work to agents. It starts answering a couple of seconds after you let go, remembers what was on your screen earlier in the conversation, and remembers your conversations from day to day.
-- **HeyClicky drive:** HeyClicky can take the wheel. When something needs doing in a Mac app, HeyClicky asks, and with your yes it moves the mouse and types while you watch. Move your mouse, talk or press Escape and you're back in control.
-- **The HeyClicky Chrome extension:** Your agents can now work in your own Chrome, on the sites you're already signed into, in their own tab group beside your tabs. HeyClicky asks once, the first time a task needs it, and can install it for you.
-- **A new notch:** Everything now lives in your notch: Home, your whole chat with HeyClicky, and Settings. Agents you've handed work to hang from the notch as little windows that show their plan while they work and their result when they're done.
-- **Captions:** Turn on "Captions while HeyClicky talks" in Settings > Voice to see HeyClicky's words at the bottom of the screen while it talks. Typed questions that get a drawing show their answer as captions too, so the chat stays out of the way.
-
-### also new
-
-- **Just hand it off:** Ask for something bigger and it runs as a job with its own window on the notch. Follow up and it picks up where it left off. Clickys you made before are still there.
-- **Routines, just by asking:** Say "every Tuesday and Thursday at 5, check my inbox for invoices" and HeyClicky sets it up. Change, pause or delete it the same way, or from Settings > Routines.
-- **A shorter tour:** Onboarding skips the style step, shows HeyClicky driving and dictation, and ends by drawing where you're headed.
-- **Suggestions are taking a break:** Suggested tasks are paused while we rethink how they show up. They'll be back soon.
-
-### fixed
-
-- **Pro shows up right after you pay:** HeyClicky could keep showing Free after you upgraded. It now keeps checking until your plan updates.
-- **Failed payments can be fixed:** If a renewal failed, paying again hit an error. It now opens the billing page to update your card.
-- **Routines stop crying wolf:** Routines no longer say you're offline when you aren't, ask you to connect apps that are connected, or keep reopening the upgrade card.
-- **Window screenshots on two displays:** Screenshotting a single window came out blank on Macs with more than one display. Fixed.
-- **Settings tidy-ups:** Long shortcuts no longer squish in Settings > Shortcuts, and each expired account in Settings > Integrations has its own Reconnect button.
-
-## v1.0.54 (Fri, 23 Oct 2026 10:56:43 -0700)
-
-Download: https://github.com/farzaa/clicky-releases/releases/download/v1.0.54/HeyClicky.dmg (build 65)
-
 ## v1.0.53 — Several accounts per app, and a pile of fixes (Oct 2, 2026)
 
 Download: https://github.com/farzaa/clicky-releases/releases/download/v1.0.53/HeyClicky.dmg (build 64)

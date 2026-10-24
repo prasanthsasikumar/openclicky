@@ -10,7 +10,10 @@ sent: the answer is spoken on this computer.
 - An answer is spoken a sentence at a time: the first as soon as it is ready, the next generated
   while the first plays (the Mac's `SpokenChunker`: the first sentence at once, then pieces of at
   least 120 characters). Esc or a new question stops it mid-word.
-- Played with whatever the desktop has: `pw-play` (PipeWire), `paplay` (PulseAudio) or `aplay` (ALSA).
+- Played with whatever the desktop has: `paplay` (PulseAudio, and PipeWire through pipewire-pulse),
+  else `pw-play` (PipeWire alone), else `aplay` (ALSA). A player that fails is passed over for the
+  next one: on Ubuntu 22.04 `pw-play` is installed (screen sharing uses PipeWire) but PipeWire has no
+  speakers there ("no node available"), and every answer went unheard while it came first.
 """
 
 from __future__ import annotations
@@ -40,7 +43,7 @@ KOKORO = ModelAsset(
 IDLE_SECONDS_BEFORE_UNLOADING = 180.0
 # The Mac's grouping: later sentences go together until a piece is at least this long.
 PIECE_MINIMUM_CHARACTERS = 120
-PLAYERS = (("pw-play",), ("paplay",), ("aplay", "-q"))
+PLAYERS = (("paplay",), ("pw-play",), ("aplay", "-q"))
 
 
 @dataclass(frozen=True)
@@ -102,6 +105,30 @@ def find_player() -> tuple[str, ...] | None:
     return next((player for player in PLAYERS if shutil.which(player[0])), None)
 
 
+def installed_players() -> list[tuple[str, ...]]:
+    return [player for player in PLAYERS if shutil.which(player[0])]
+
+
+def muted_output(pactl_mute: str, pactl_volume: str) -> bool:
+    """From `pactl get-sink-mute` and `get-sink-volume`: muted, or every channel at 0 %."""
+    if "yes" in pactl_mute.lower():
+        return True
+    levels = [part.strip() for part in pactl_volume.split("/") if part.strip().endswith("%")]
+    return bool(levels) and all(level == "0%" for level in levels)
+
+
+def output_is_muted() -> bool:
+    """The speakers answers would play on are muted or at 0 %; False when it cannot be told."""
+    if not shutil.which("pactl"):
+        return False
+    try:
+        mute = subprocess.run(["pactl", "get-sink-mute", "@DEFAULT_SINK@"], capture_output=True, text=True, timeout=2).stdout
+        volume = subprocess.run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"], capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return muted_output(mute, volume.splitlines()[0] if volume else "")
+
+
 def is_ready() -> bool:
     return is_installed(KOKORO) and is_engine_available() and find_player() is not None
 
@@ -121,6 +148,8 @@ class Voice:
         self._speech_id = 0
         self._playing: subprocess.Popen | None = None
         self._playing_lock = threading.Lock()
+        # Players that failed to play here (an installed PipeWire without speakers): not tried again.
+        self._failed_players: set[str] = set()
         # What was sent to the player, in order (the tests read it).
         self.spoken: list[str] = []
 
@@ -194,17 +223,32 @@ class Voice:
         threading.Thread(target=play, daemon=True).start()
         return True
 
+    def _players_to_try(self, player: tuple[str, ...]) -> list[tuple[str, ...]]:
+        """The player given, then every other installed one, leaving out those that failed here."""
+        candidates = [player] + [other for other in installed_players() if other[0] != player[0]]
+        return [candidate for candidate in candidates if candidate[0] not in self._failed_players] or [player]
+
     def _play(self, wav: bytes, player: tuple[str, ...], this_speech: int, piece: str) -> None:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio_file:
             audio_file.write(wav)
             path = audio_file.name
         try:
-            with self._playing_lock:
-                if this_speech != self._speech_id:
+            recorded = False
+            for candidate in self._players_to_try(player):
+                with self._playing_lock:
+                    if this_speech != self._speech_id:
+                        return
+                    playing = subprocess.Popen([*candidate, path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    self._playing = playing
+                    if not recorded:
+                        self.spoken.append(piece)
+                        recorded = True
+                exit_status = playing.wait()
+                # Stopped on purpose (esc, a new question), or played: done with this piece.
+                if exit_status == 0 or this_speech != self._speech_id:
                     return
-                self._playing = subprocess.Popen([*player, path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.spoken.append(piece)
-            self._playing.wait()
+                self._failed_players.add(candidate[0])
+                applog.append(f"voice: {candidate[0]} could not play (exit {exit_status}); trying the next player")
         finally:
             os.unlink(path)
 

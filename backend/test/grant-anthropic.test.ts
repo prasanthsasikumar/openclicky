@@ -22,20 +22,6 @@ describe("prepareGrantBody", () => {
     expect("tools" in out).toBe(false);
     expect("tool_choice" in out).toBe(false);
   });
-  it("turns thinking off in the form the model accepts, and never turns it on", () => {
-    const off = (model: string, type: string) => (prepareGrantBody({ thinking: { type }, messages: msgs }, model) as Record<string, unknown>).thinking;
-    // Sonnet 5.5 takes only between_tools; Haiku and the 4.x models only disabled (checked 2026-10-23).
-    expect(off("claude-sonnet-5-5", "disabled")).toEqual({ type: "between_tools" });
-    expect(off("claude-sonnet-5-5", "between_tools")).toEqual({ type: "between_tools" });
-    expect(off("claude-haiku-4-5", "between_tools")).toEqual({ type: "disabled" });
-    expect(off("claude-haiku-5-5", "disabled")).toEqual({ type: "disabled" });
-    expect(off("claude-sonnet-4-6", "disabled")).toEqual({ type: "disabled" });
-    // Opus 5.5 and Fable accept neither: the request goes without it.
-    expect(off("claude-opus-5-5", "disabled")).toBeUndefined();
-    // Extended thinking is still not paid for.
-    expect(off("claude-sonnet-5-5", "enabled")).toBeUndefined();
-    expect((prepareGrantBody({ thinking: { type: "enabled", budget_tokens: 4000 }, messages: msgs }, "claude-haiku-4-5") as Record<string, unknown>).thinking).toBeUndefined();
-  });
   it("clamps a non-numeric or non-positive max_tokens to the cap", () => {
     for (const bad of ["abc", 0, -5, null, NaN]) {
       expect((prepareGrantBody({ max_tokens: bad, messages: msgs }, "m") as Record<string, unknown>).max_tokens).toBe(1024);

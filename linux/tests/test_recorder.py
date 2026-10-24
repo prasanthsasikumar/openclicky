@@ -92,3 +92,10 @@ def test_the_test_says_what_it_heard():
     assert "virtual machine" in microphone_test_verdict(0.0)
     assert microphone_test_verdict(0.005).startswith("✓ It hears something, but quietly")
     assert microphone_test_verdict(0.1) == "✓ Heard you. This microphone works."
+
+
+def test_parecord_hands_over_audio_in_small_fragments_so_a_short_take_is_not_empty():
+    # At its default (about two seconds a fragment) a take under two seconds came back empty.
+    from openclicky_linux.recorder import RECORDER_COMMANDS
+
+    assert "--latency-msec=30" in RECORDER_COMMANDS[0]

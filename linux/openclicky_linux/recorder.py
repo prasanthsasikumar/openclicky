@@ -21,8 +21,12 @@ SAMPLE_RATE = 16_000
 SAMPLE_WIDTH_BYTES = 2
 CHANNELS = 1
 
+# parecord's latency matters: left at its default, the sound server hands over recorded audio in
+# fragments of about two seconds and drops the unfinished one when the recorder stops, so a take
+# under two seconds came back empty ("didn't catch that") and longer ones lost their end (found on a
+# real microphone, 2026-10-23). 30 ms fragments lose nothing.
 RECORDER_COMMANDS: tuple[tuple[str, ...], ...] = (
-    ("parecord", "--raw", f"--rate={SAMPLE_RATE}", f"--channels={CHANNELS}", "--format=s16le"),
+    ("parecord", "--raw", f"--rate={SAMPLE_RATE}", f"--channels={CHANNELS}", "--format=s16le", "--latency-msec=30"),
     ("arecord", "-q", "-t", "raw", "-f", "S16_LE", "-r", str(SAMPLE_RATE), "-c", str(CHANNELS)),
 )
 

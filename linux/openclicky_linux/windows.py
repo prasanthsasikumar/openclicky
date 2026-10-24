@@ -3,10 +3,11 @@
 - The ask box (left ctrl tapped twice, or the tray): one line, Enter sends, Esc closes. It takes the
   keyboard while open; when it closes the window manager gives the focus back.
 - Settings: the fields in `~/.openclicky/shell.json` that matter on Linux, in groups (dictation, the
-  pointer, keys & account), with a line that says where dictation and answers will go as you type.
-  Save writes them with `config.save_settings` (every other key stays). Keys show as dots.
+  voice, the pointer, the account, your own keys, the agent, startup), with a line that says where
+  dictation and answers will go as you type. Save writes them with `config.save_settings` (every
+  other key stays). Keys show as dots. The account signs in and out at once (`account_form.py`).
 - The tray icon (any system tray: Xfce, KDE, MATE, Cinnamon; GNOME needs an extension): Ask…,
-  Settings…, Quit.
+  Your words…, Settings…, Quit.
 """
 
 from __future__ import annotations
@@ -22,11 +23,13 @@ gi.require_version("Gdk", "3.0")
 gi.require_version("GdkX11", "3.0")
 from gi.repository import Gdk, GdkPixbuf, GdkX11, GLib, Gtk  # noqa: E402
 
-from . import autostart, offline  # noqa: E402
+from . import autostart, lanes, offline, preferences  # noqa: E402
+from .account_form import AccountForm  # noqa: E402
 from . import voice as voice_module  # noqa: E402
 from .recorder import MicrophoneRecording, RecorderUnavailable, default_microphone_name, level_of, list_microphones  # noqa: E402
 from .config import HOSTED_BACKEND_URL, LinuxSettings, environment_overrides, load_settings, save_settings  # noqa: E402
 from .presence import PRESENCE_LABELS  # noqa: E402
+from .session import is_wayland_session  # noqa: E402
 from .pointer_view import POINTER_OUTLINE, POINTER_HEIGHT, POINTER_WIDTH  # noqa: E402
 from .x11 import polygon_rows  # noqa: E402
 
@@ -96,11 +99,18 @@ class ComposerWindow:
         self.window.set_default_size(self.WIDTH, -1)
         self.entry = Gtk.Entry()
         self.entry.set_placeholder_text("ask about your screen…  (enter sends, esc closes)")
-        self.entry.set_margin_start(10)
-        self.entry.set_margin_end(10)
-        self.entry.set_margin_top(10)
-        self.entry.set_margin_bottom(10)
-        self.window.add(self.entry)
+        # The placeholder hides as soon as the box has the keyboard, which it has from the start: the
+        # same words stay under it.
+        hint = Gtk.Label(label="ask about anything on your screen · enter sends · esc closes", xalign=0)
+        hint.get_style_context().add_class("dim-label")
+        layout = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        layout.set_margin_start(10)
+        layout.set_margin_end(10)
+        layout.set_margin_top(10)
+        layout.set_margin_bottom(8)
+        layout.pack_start(self.entry, False, False, 0)
+        layout.pack_start(hint, False, False, 0)
+        self.window.add(layout)
         self.entry.connect("activate", lambda entry: on_submit(entry.get_text()))
         self.window.connect("key-press-event", self._on_key)
         self.window.connect("delete-event", lambda *_: self.hide() or True)
@@ -168,6 +178,12 @@ class SettingsWindow:
         # The names the tests (and the old row) use.
         self.offline_status, self.offline_button = self.offline_row.status, self.offline_row.button
         self.start_offline_download = self.offline_row.start_download
+        self.fields["polish_with_model"] = Gtk.CheckButton(label="Clean up my words with AI (punctuation, “3 PM”, your style's rules)")
+        layout.pack_start(self.fields["polish_with_model"], False, False, 0)
+        self.fields["polish_offline_takes"] = Gtk.CheckButton(label="Also clean up what the offline engine heard (it then leaves this computer)")
+        layout.pack_start(self.fields["polish_offline_takes"], False, False, 0)
+        self.fields["incognito"] = Gtk.CheckButton(label="Incognito: keep no history of what I dictate")
+        layout.pack_start(self.fields["incognito"], False, False, 0)
         self._heading(layout, "Voice")
         self.fields["speak_answers"] = Gtk.CheckButton(label="Speak answers (on this computer, in Kokoro's voice)")
         self.fields["speak_answers"].connect("toggled", lambda _button: self._update_routes())
@@ -178,12 +194,31 @@ class SettingsWindow:
                                   not_downloaded_line="Kokoro, about {size} MB, the Mac app's offline voice.")
         self._heading(layout, "Pointer")
         self.fields["pointer_presence"] = self._choice(layout, "Show the pointer", POINTER_CHOICES)
-        self._heading(layout, "Keys & account")
+        if is_wayland_session():
+            # Wayland never says where the mouse is: there is nothing to follow.
+            self.fields["pointer_presence"].set_sensitive(False)
+            layout.pack_start(self._small_label("On Wayland the pointer rests at the top of the screen and flies out to what an "
+                                                "answer is about; moving the mouse sends it back. Wayland never tells an app where "
+                                                "the mouse is, so it cannot follow it."), False, False, 0)
+        self._heading(layout, "Account")
+        layout.pack_start(self._small_label("A free OpenClicky account answers and transcribes when you have no key of your own. "
+                                            "No password: your email, and a code when it already has an account."), False, False, 0)
+        self.account_status = Gtk.Label(xalign=0)
+        self.account_status.set_line_wrap(True)
+        self.account_form = AccountForm(say=self._say_about_account, on_changed=self._update_routes)
+        layout.pack_start(self.account_form.box, False, False, 0)
+        layout.pack_start(self.account_status, False, False, 0)
+        self._heading(layout, "Your own keys")
         self.fields["openai_api_key"] = self._text(layout, "OpenAI key", "sk-… (dictation, and answers without an Anthropic key)", secret=True)
         self.fields["anthropic_api_key"] = self._text(layout, "Anthropic key", "sk-ant-… (answers)", secret=True)
         self.fields["openrouter_api_key"] = self._text(layout, "OpenRouter key", "sk-or-… (answers, when there is no Anthropic key)", secret=True)
-        self.fields["account_token"] = self._text(layout, "OpenClicky token", "an account token, used when a key is missing", secret=True)
         self.fields["backend_url"] = self._text(layout, "Backend", HOSTED_BACKEND_URL)
+
+        self._heading(layout, "Agent")
+        self.agent_mode = Gtk.CheckButton(label="Hand bigger tasks to a Codex agent (“make a folder of my screenshots and zip it”)")
+        layout.pack_start(self.agent_mode, False, False, 0)
+        self.agent_status = self._small_label("")
+        layout.pack_start(self.agent_status, False, False, 0)
 
         self._heading(layout, "Startup")
         self.start_at_login = Gtk.CheckButton(label="Start OpenClicky when I log in")
@@ -244,6 +279,27 @@ class SettingsWindow:
             self.shortcuts_grid.attach(description, 1, row_index, 1, 1)
             self.shortcut_lines.append(f"{how} {' + '.join(keys)}: {what}")
         self.shortcuts_grid.show_all()
+
+    @staticmethod
+    def _small_label(text: str) -> Gtk.Label:
+        label = Gtk.Label(label=text, xalign=0)
+        label.set_line_wrap(True)
+        label.set_max_width_chars(70)
+        label.get_style_context().add_class("dim-label")
+        return label
+
+    def _say_about_account(self, text: str, good: bool | None) -> None:
+        self.account_status.set_text(text)
+
+    def _show_agent_state(self) -> None:
+        from . import agent
+
+        if agent.is_tool_installed():
+            self.agent_status.set_text("The openclicky command-line tool is installed: the gate sends tasks to it, questions to the pointer.")
+        else:
+            self.agent_status.set_text("Needs the openclicky command-line tool and Codex (see docs/setup.md, “Run the agent”). "
+                                       "Without them, quick actions still work: open an app or a site, make or show a folder, "
+                                       "the volume, play and pause.")
 
     def _heading(self, layout: Gtk.Box, title: str) -> None:
         label = Gtk.Label(xalign=0)
@@ -374,7 +430,7 @@ class SettingsWindow:
             value = getattr(settings, field_name)
             if field_name == "microphone":
                 self._fill_microphones(value)
-            elif field_name == "speak_answers":
+            elif isinstance(widget, Gtk.CheckButton):
                 widget.set_active(bool(value))
             elif field_name == "kokoro_speaker":
                 self._loaded_speaker = value
@@ -390,6 +446,10 @@ class SettingsWindow:
             else:
                 widget.set_text(value or "")
         self.start_at_login.set_active(autostart.is_enabled())
+        self.account_form.refresh()
+        self.account_status.set_text("")
+        self.agent_mode.set_active(lanes.agent_mode_is_on())
+        self._show_agent_state()
         self.offline_row.show_state()
         self.voice_row.show_state()
         self._show_shortcuts()
@@ -421,6 +481,9 @@ class SettingsWindow:
         from_environment = load_settings()
 
         def has(field_name: str) -> bool:
+            if field_name == "account_token":
+                # The account form writes it straight into shell.json.
+                return bool(from_environment.account_token)
             return bool((values.get(field_name) or "").strip()) or bool(getattr(from_environment, field_name, None) and
                                                                       field_name.endswith("_api_key"))
         engine = values.get("dictation_engine") or "auto"
@@ -430,12 +493,12 @@ class SettingsWindow:
         elif engine == "openai" or (engine == "auto" and has("openai_api_key")):
             dictation = "your OpenAI key" if has("openai_api_key") else "nowhere yet: add an OpenAI key"
         elif engine == "account" or (engine == "auto" and has("account_token")):
-            dictation = "your OpenClicky account" if has("account_token") else "nowhere yet: add a token"
+            dictation = "your OpenClicky account" if has("account_token") else "nowhere yet: sign in to your account"
         else:
-            dictation = "nowhere yet: download the offline engine, or add an OpenAI key or a token"
+            dictation = "nowhere yet: download the offline engine, add an OpenAI key, or sign in"
         answers = ("your Anthropic key" if has("anthropic_api_key") else "your OpenRouter key" if has("openrouter_api_key")
                    else "your OpenAI key" if has("openai_api_key")
-                   else "your OpenClicky account" if has("account_token") else "nothing yet: add a key or a token")
+                   else "your OpenClicky account" if has("account_token") else "nothing yet: sign in, or add a key")
         if not values.get("speak_answers"):
             spoken = "Answers are shown, not spoken."
         elif voice_module.is_ready():
@@ -447,6 +510,7 @@ class SettingsWindow:
     def save(self) -> None:
         try:
             save_settings(self.values())
+            preferences.set_values(**{lanes.AGENT_MODE: None if self.agent_mode.get_active() else False})
         except (OSError, ValueError, RuntimeError) as failure:  # RuntimeError: a symlink loop
             self.status_label.set_text(f"Not saved: {failure}")
             return
@@ -576,9 +640,11 @@ def pointer_icon(size: int = 22) -> GdkPixbuf.Pixbuf:
 
 
 class TrayIcon:
-    def __init__(self, on_ask: Callable[[], None], on_settings: Callable[[], None], on_quit: Callable[[], None]) -> None:
+    def __init__(self, on_ask: Callable[[], None], on_settings: Callable[[], None], on_quit: Callable[[], None],
+                 on_words: Callable[[], None] | None = None) -> None:
         self.menu = Gtk.Menu()
-        for label, action in (("Ask…", on_ask), ("Settings…", on_settings), (None, None), ("Quit", on_quit)):
+        items = [("Ask…", on_ask)] + ([("Your words…", on_words)] if on_words else []) + [("Settings…", on_settings), (None, None), ("Quit", on_quit)]
+        for label, action in items:
             item = Gtk.SeparatorMenuItem() if label is None else Gtk.MenuItem(label=label)
             if action is not None:
                 item.connect("activate", lambda _item, action=action: action())

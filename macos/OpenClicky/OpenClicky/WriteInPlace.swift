@@ -209,18 +209,6 @@ enum WriteInPlace {
         ]
     }
 
-    /// The same tool for the Realtime session. That lane never had it: with an own OpenAI key the
-    /// ⌃⌥ question goes to Realtime, and "rephrase this" in a Gmail draft was read out instead.
-    static func realtimeToolDefinition() -> [String: Any] {
-        let anthropic = anthropicToolDefinition()
-        return [
-            "type": "function",
-            "name": toolName,
-            "description": anthropic["description"] as? String ?? "",
-            "parameters": anthropic["input_schema"] as? [String: Any] ?? [:],
-        ]
-    }
-
     /// Added to the ask prompt when the tool is offered.
     static let promptInstruction = """
     writing in place: when the user asks you to rephrase, rewrite, shorten, fix or translate the text quoted as highlighted or in their text box, call write_in_place with the complete new text, and say only a few words about what you changed (for example "made it warmer and shorter."). openclicky puts it in their email and tells them how to undo it. never read the new text out.

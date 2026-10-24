@@ -833,5 +833,182 @@ def scenario_live_minimize() -> dict:
     return {"frame": [frame.x, frame.y, frame.width, frame.height], "pointer": [round(value) for value in app.pointer.position],
             "mode": app.pointer.mode}
 
+
+
+# MARK: Wayland mode on Xvfb: the keys come from an input device, the paste is shift+insert
+
+import struct as _struct  # noqa: E402
+
+from openclicky_linux.evdev import EV_KEY, EV_SYN, KEY_LEFTCTRL, KEY_RIGHTCTRL, DeviceKind  # noqa: E402
+
+
+class ShiftInsertKeyboard:
+    """Stands in for the uinput virtual keyboard: the same keystroke, shift+insert, through XTEST
+    (the X server here is the compositor the keystroke would reach)."""
+
+    def __init__(self) -> None:
+        self.pastes = 0
+
+    def paste(self) -> None:
+        self.pastes += 1
+        key("Shift_L", True)
+        key("Insert", True)
+        key("Insert", False)
+        key("Shift_L", False)
+
+
+def _device_event(code: int, value: int) -> bytes:
+    now = time.time()
+    return (_struct.pack("llHHi", int(now), int(now % 1 * 1_000_000), EV_KEY, code, value)
+            + _struct.pack("llHHi", int(now), int(now % 1 * 1_000_000), EV_SYN, 0, 0))
+
+
+class StandInCompositor:
+    """What mutter, KWin and wlroots do when an XWayland client takes the clipboard: ask it for
+    TARGETS at once, to offer the selection to Wayland apps. Watches with XFixes, on its own thread."""
+
+    def __init__(self, take_up: bool = True, selections: tuple[str, ...] = ("CLIPBOARD", "PRIMARY")) -> None:
+        import threading
+
+        from Xlib.ext import xfixes
+
+        self.display = xdisplay.Display()
+        self.display.xfixes_query_version()
+        self.window = self.display.screen().root.create_window(0, 0, 1, 1, 0, X.CopyFromParent)
+        self.requests = 0
+        self.take_up = take_up
+        for name in selections:
+            self.display.xfixes_select_selection_input(self.window, self.display.intern_atom(name),
+                                                       xfixes.XFixesSetSelectionOwnerNotifyMask)
+        self.display.flush()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        targets = self.display.intern_atom("TARGETS")
+        while True:
+            event = self.display.next_event()
+            if self.take_up and getattr(event, "owner", None) and event.owner.id not in (0, self.window.id):
+                self.requests += 1
+                self.window.convert_selection(event.selection, targets, targets, X.CurrentTime)
+                self.display.flush()
+
+
+def _dictate_on_wayland(dictation_key: str, dictation_code: int, compositor_takes_up: bool = True,
+                        compositor_selections: tuple[str, ...] = ("CLIPBOARD", "PRIMARY")) -> dict:
+    compositor = StandInCompositor(take_up=compositor_takes_up, selections=compositor_selections)
+    _window, entry = text_box_window()
+    clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+    primary = Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY)
+    clipboard.set_text("what was on the clipboard before", -1)
+    primary.set_text("what was selected before", -1)
+    pump(0.1)
+    read_end, write_end = os.pipe()
+    os.set_blocking(read_end, False)
+    virtual_keyboard = ShiftInsertKeyboard()
+    app = wire_up(dictation_key, start_recording=StandInRecording, transcribe=lambda _wav: "um, hello from open clicky",
+                  wayland=True, virtual_keyboard=virtual_keyboard, input_device_paths=lambda: ["stand-in keyboard"])
+    app.listener._probe = lambda path: (read_end, "stand-in keyboard", DeviceKind(keyboard=True, pointer=False))
+    orb_history: list = []
+    app.dictation.orb.listeners.append(lambda orb: orb_history.append([orb.phase, orb.message]))
+    app.listener.start()
+    pump(0.3)
+    os.write(write_end, _device_event(dictation_code, 1))
+    pump(0.9)
+    os.write(write_end, _device_event(dictation_code, 0))
+    pump(5, until=lambda: bool(entry.get_text()) or any(phase == "failed" for phase, _ in orb_history))
+    pump(1.0)  # past the clipboard restore
+    app.listener.stop()
+    return {"text_box": entry.get_text(), "clipboard": clipboard.wait_for_text(), "primary": primary.wait_for_text(),
+            "pastes": virtual_keyboard.pastes, "orb_history": orb_history, "compositor_requests": compositor.requests,
+            "pointer_knows_the_mouse": app.pointer.knows_the_mouse, "pointer_visible": app.pointer.triangle.get_visible()}
+
+
+def scenario_wayland_dictate_with_right_ctrl() -> dict:
+    return _dictate_on_wayland("Control_R", KEY_RIGHTCTRL)
+
+
+def scenario_wayland_dictate_with_left_ctrl() -> dict:
+    # The default key, shared with the ask box: it listens once held alone for 0.3 s.
+    return _dictate_on_wayland("Control_L", KEY_LEFTCTRL)
+
+
+def scenario_wayland_compositor_without_a_primary_selection() -> dict:
+    return _dictate_on_wayland("Control_R", KEY_RIGHTCTRL, compositor_selections=("CLIPBOARD",))
+
+
+def scenario_wayland_compositor_never_takes_up_the_words() -> dict:
+    return _dictate_on_wayland("Control_R", KEY_RIGHTCTRL, compositor_takes_up=False)
+
+
+# MARK: the first-run setup and the Words window
+
+
+def scenario_setup_window_walkthrough() -> dict:
+    from openclicky_linux import autostart, preferences
+    from openclicky_linux.onboarding import SetupWindow
+
+    finished: list = []
+    window = SetupWindow(wayland=False, on_closed=finished.append)
+    window.show()
+    pump(0.4)
+    seen = []
+    for _ in range(12):
+        page = window.page
+        seen.append([page.page_id, page.title.get_text(), window.primary_button.get_label(),
+                     window.secondary_button.get_label() if window.secondary_button.get_visible() else None])
+        screenshot(f"setup-{page.page_id}")
+        if page.page_id == "answers":
+            window.account_form.email_entry.set_text("not an email")
+            window.account_form.start()
+            pump(0.1)
+            seen.append(["answers status", page.status.get_text()])
+            window.key_entry.set_text("sk-ant-test-key")
+            window._use_key()
+            seen.append(["answers status", page.status.get_text()])
+        if page.page_id == "offline":
+            window.secondary_button.clicked()  # skip the 840 MB
+        else:
+            window.primary_button.clicked()
+        pump(0.3)
+        if finished:
+            break
+    return {"seen": seen, "finished": finished, "setup_done": preferences.get(preferences.SETUP_DONE),
+            "autostart": autostart.is_enabled(), "launcher": autostart.launcher_path().exists(), "icon": autostart.icon_path().exists()}
+
+
+def scenario_words_window() -> dict:
+    from openclicky_linux.history import TakeRecord, TakeStore
+    from openclicky_linux.space import load_space
+    from openclicky_linux.words_window import WordsWindow
+
+    store = TakeStore()
+    store.insert(TakeRecord(raw_text="um hello from the test", formatted_text="Hello from the test", app_name="gedit"))
+    store.insert(TakeRecord(raw_text="see you at five", formatted_text="See you at five", app_name="Slack"))
+    window = WordsWindow(store)
+    window.show()
+    pump(0.4)
+    shown = [row[3] for row in window.history_rows]
+    window.search.set_text("hello")
+    pump(0.5)
+    searched = [row[3] for row in window.history_rows]
+    window.search.set_text("")
+    pump(0.5)
+    screenshot("words-history")
+    window.notebook.set_current_page(1)
+    window.dictionary_editor.key_entry.set_text("aditya shatriya, aditya")
+    window.dictionary_editor.value_entry.set_text("Aaditya Kshatriya")
+    window.dictionary_editor.add()
+    window.notebook.set_current_page(2)
+    window.shortcuts_editor.key_entry.set_text("my sign off")
+    window.shortcuts_editor.value_entry.set_text("Best,\\nSam")
+    window.shortcuts_editor.add()
+    pump(0.3)
+    screenshot("words-shortcuts")
+    space = load_space()
+    return {"shown": shown, "searched": searched, "stats": window.stats_label.get_text(),
+            "dictionary": [[term.written, list(term.heard_as)] for term in space.dictionary],
+            "shortcuts": [[shortcut.trigger, shortcut.replacement] for shortcut in space.shortcuts]}
+
+
 if __name__ == "__main__":
     print(json.dumps(globals()[f"scenario_{sys.argv[1]}"]()))

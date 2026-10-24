@@ -45,8 +45,16 @@ def run_scenario(name: str, display: str, openclicky_home: Path | None = None, e
                        OPENCLICKY_HOME=str(openclicky_home or LINUX_DIRECTORY / "tests" / "no-such-openclicky-home"),
                        # Never the person's own autostart folder or log.
                        XDG_CONFIG_HOME=tempfile.mkdtemp(prefix="openclicky-test-config-"),
-                       XDG_STATE_HOME=tempfile.mkdtemp(prefix="openclicky-test-state-"))
+                       XDG_STATE_HOME=tempfile.mkdtemp(prefix="openclicky-test-state-"),
+                       XDG_DATA_HOME=tempfile.mkdtemp(prefix="openclicky-test-data-"),
+                       # The history goes to that private folder; the models downloaded on this
+                       # computer are still found (the real-engine tests use them).
+                       OPENCLICKY_MODELS_DIR=str(__import__("openclicky_linux.offline", fromlist=["models_directory"]).models_directory()))
     environment.update(extra_environment or {})
+    if "XDG_DATA_HOME" in (extra_environment or {}):
+        # A scenario with a data folder of its own downloads and removes models there, never in the
+        # computer's own models folder.
+        environment["OPENCLICKY_MODELS_DIR"] = str(Path(extra_environment["XDG_DATA_HOME"]) / "openclicky" / "models")
     finished = subprocess.run([sys.executable, str(LINUX_DIRECTORY / "tests" / "x11_scenarios.py"), name],
                               env=environment, capture_output=True, text=True, timeout=60)
     assert finished.returncode == 0, finished.stderr
@@ -280,3 +288,58 @@ def test_live_the_pointer_lands_on_the_minimize_button(display_with_a_window_man
     assert y <= pointer_y <= y + 32, outcome  # in the title bar
     # xfwm4's minimize button: the third from the right end (shade, minimize, maximize, close).
     assert x + width - 80 <= pointer_x <= x + width - 50, outcome
+
+
+@pytest.mark.parametrize("dictation_key", ["right_ctrl", "left_ctrl"])
+def test_on_wayland_a_take_from_the_input_device_is_pasted_with_shift_insert_and_both_selections_put_back(private_display, dictation_key):
+    outcome = run_scenario(f"wayland_dictate_with_{dictation_key}", private_display)
+    assert outcome["text_box"] == "Hello from open clicky"
+    assert outcome["pastes"] == 1
+    # The keystroke went only once the compositor had asked for the words.
+    assert outcome["compositor_requests"] >= 1
+    assert outcome["clipboard"] == "what was on the clipboard before"
+    assert outcome["primary"] == "what was selected before"
+    assert ["done", "moved to text box"] in outcome["orb_history"]
+    # Wayland never says where the mouse is: the pointer rests out of sight until it answers.
+    assert outcome["pointer_knows_the_mouse"] is False
+    assert outcome["pointer_visible"] is False
+
+
+
+def test_the_first_run_setup_walks_through_every_page_and_installs_the_launcher(private_display, tmp_path):
+    home = tmp_path / "openclicky-home"
+    home.mkdir()
+    outcome = run_scenario("setup_window_walkthrough", private_display, openclicky_home=home)
+    pages = [entry[0] for entry in outcome["seen"] if not entry[0].endswith("status")]
+    # X11 needs no permission pages.
+    assert pages == ["hello", "microphone", "answers", "offline", "startup", "done"]
+    statuses = [entry[1] for entry in outcome["seen"] if entry[0] == "answers status"]
+    assert statuses == ["that doesn't look like an email yet.", "✓ saved. answers come from your anthropic key."]
+    assert json.loads((home / "shell.json").read_text())["anthropicApiKey"] == "sk-ant-test-key"
+    assert outcome["finished"] == [True] and outcome["setup_done"] is True
+    assert outcome["autostart"] and outcome["launcher"] and outcome["icon"]
+
+
+def test_the_words_window_shows_and_searches_the_history_and_saves_words_the_mac_way(private_display, tmp_path):
+    home = tmp_path / "openclicky-home"
+    home.mkdir()
+    outcome = run_scenario("words_window", private_display, openclicky_home=home)
+    assert outcome["shown"] == ["See you at five", "Hello from the test"]
+    assert outcome["searched"] == ["Hello from the test"]
+    assert "takes in all, kept only on this computer" in outcome["stats"]
+    assert outcome["dictionary"] == [["Aaditya Kshatriya", ["aditya shatriya", "aditya"]]]
+    assert outcome["shortcuts"] == [["my sign off", "Best,\nSam"]]
+
+
+
+def test_on_wayland_words_the_compositor_never_took_up_are_never_typed(private_display):
+    # Typed anyway, the app in front would paste the clipboard from before (a key, a password).
+    outcome = run_scenario("wayland_compositor_never_takes_up_the_words", private_display)
+    assert outcome["pastes"] == 0 and outcome["text_box"] == ""
+    assert ["failed", "couldn't paste. copied, press ctrl+v"] in outcome["orb_history"]
+    assert outcome["clipboard"] == "Hello from open clicky"
+
+
+def test_on_wayland_a_compositor_without_a_primary_selection_still_gets_the_words(private_display):
+    outcome = run_scenario("wayland_compositor_without_a_primary_selection", private_display)
+    assert outcome["pastes"] == 1 and outcome["text_box"] == "Hello from open clicky"

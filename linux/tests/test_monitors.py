@@ -98,3 +98,15 @@ def test_pictures_are_the_size_the_model_really_looks_at():
     assert round(3440 * scale) * round(1440 * scale) <= 1_150_000 * 1.01
     # Never enlarged.
     assert picture_scale(1024, 768) == 1.0
+
+
+def test_a_monitors_part_of_the_desktops_picture_on_a_desktop_scaled_up():
+    from openclicky_linux.screen import crop_rectangle
+
+    left_monitor, right_monitor = MonitorArea(0, 0, 1280, 800), MonitorArea(1280, 0, 1920, 1080)
+    # The picture has twice the desktop's pixels (a 2x Wayland desktop seen through XWayland).
+    assert crop_rectangle(left_monitor, 6400, 2160, 3200, 1080) == (0, 0, 2560, 1600)
+    assert crop_rectangle(right_monitor, 6400, 2160, 3200, 1080) == (2560, 0, 3840, 2160)
+    # At 1:1, the monitor's own rectangle; never outside the picture.
+    assert crop_rectangle(right_monitor, 3200, 1080, 3200, 1080) == (1280, 0, 1920, 1080)
+    assert crop_rectangle(MonitorArea(3000, 0, 400, 400), 3200, 1080, 3200, 1080) == (3000, 0, 200, 400)

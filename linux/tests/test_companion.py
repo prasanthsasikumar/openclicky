@@ -387,3 +387,44 @@ def test_a_failure_or_an_empty_answer_is_not_spoken():
     asking.submit("again?")
     desktop.run_everything()
     assert spoken == []
+
+
+def test_on_wayland_the_screenshot_is_taken_off_the_main_thread_with_the_pointer_still_hidden():
+    desktop, pointer, asking = make()
+    desktop.answer = "[POINT:392,245:save button] click save."
+    hidden_while_the_desktop_took_it = []
+
+    def take_it_in_the_background():
+        hidden_while_the_desktop_took_it.append(pointer.hidden)
+        return [desktop.screenshot]
+    # Wayland's capture hands back a function, which goes to the background like the question does.
+    asking.host.capture_screen = lambda: take_it_in_the_background
+    asking.submit("where do i save?")
+    desktop.run_everything()
+    assert hidden_while_the_desktop_took_it == [True]
+    assert pointer.calls[0] == ("caption", THINKING_CAPTION, False)
+    assert ("fly", 784, 490) in pointer.calls
+
+
+def test_on_wayland_a_refused_screenshot_says_so_and_asks_nothing():
+    desktop, pointer, asking = make()
+
+    def refused():
+        raise RuntimeError("the desktop refused the screenshot")
+    asking.host.capture_screen = lambda: refused
+    asking.submit("where do i save?")
+    desktop.run_everything()
+    assert desktop.asked == []
+    assert not pointer.hidden
+    assert pointer.calls == [("caption", "couldn't see the screen: the desktop refused the screenshot", True)]
+
+
+def test_a_screenshot_finished_after_esc_is_dropped():
+    desktop, pointer, asking = make()
+    asking.host.capture_screen = lambda: (lambda: [desktop.screenshot])
+    asking.submit("where do i save?")
+    while desktop.timers:
+        desktop.timers.pop(0)()
+    asking.escape()
+    desktop.run_everything()
+    assert desktop.asked == []

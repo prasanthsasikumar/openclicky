@@ -43,14 +43,6 @@ function countImages(content: unknown): number {
 }
 
 /** The request as the grant allows it: server's model, capped output, cached system prompt, at most two images, no extended thinking. */
-/** "No thinking" as each model takes it (checked against the API 2026-10-23): Sonnet 5 only as
- *  between_tools, Haiku and the 4.x models only as disabled; Opus 5 and Fable take neither. */
-export function noThinkingFor(model: string): { type: string } | undefined {
-  if (/^claude-sonnet-5/.test(model)) return { type: "between_tools" };
-  if (/^claude-(haiku|sonnet-4|opus-4)/.test(model)) return { type: "disabled" };
-  return undefined;
-}
-
 export function prepareGrantBody(body: Record<string, unknown>, model: string): Record<string, unknown> | { error: string } {
   const messages: Block[] = [];
   for (const m of (Array.isArray(body.messages) ? body.messages : []) as Block[]) {
@@ -74,12 +66,7 @@ export function prepareGrantBody(body: Record<string, unknown>, model: string): 
   if (system) prepared.system = system;
   else delete prepared.system;
   // The grant does not pay for extended thinking, server-side tools or hosted MCP/containers: they bill outside the token estimate.
-  // Asking for no thinking is kept, in the form the server's model accepts: without it Sonnet 5.5
-  // thinks by default and can spend the whole 1,024-token cap before writing anything.
-  const wantsNoThinking = ["disabled", "between_tools"].includes(String((body.thinking as Block | undefined)?.type));
   delete prepared.thinking;
-  const noThinking = wantsNoThinking ? noThinkingFor(model) : undefined;
-  if (noThinking) prepared.thinking = noThinking;
   delete prepared.mcp_servers;
   delete prepared.container;
   if (Array.isArray(body.tools)) {

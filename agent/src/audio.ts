@@ -13,9 +13,13 @@ export interface RecordOptions {
   ffmpegBin?: string;
 }
 
-/** ffmpeg's microphone input: AVFoundation `:<index>` on macOS, DirectShow `audio=<device name>` on Windows. */
+/**
+ * ffmpeg's microphone input: AVFoundation `:<index>` on macOS, DirectShow `audio=<device name>` on
+ * Windows, PulseAudio (PipeWire through pipewire-pulse) on Linux: a source name, or the default.
+ */
 export function ffmpegMicInput(device: string | undefined, platform: NodeJS.Platform = process.platform): string[] {
   if (platform === "win32") return ["-f", "dshow", "-i", `audio=${device ?? ""}`];
+  if (platform === "linux") return ["-f", "pulse", "-i", device && device !== "0" ? device : "default"];
   return ["-f", "avfoundation", "-i", `:${device ?? "0"}`];
 }
 
@@ -60,13 +64,17 @@ export function recordAudio(opts: RecordOptions): string {
   const windows = process.platform === "win32";
   const device = windows ? resolveMicDevice(bin, opts.device) : opts.device;
   const r = spawnSync(bin, ffmpegRecordArgs({ seconds: opts.seconds, outPath, device }), { encoding: "utf8" });
-  if (r.error) throw new Error(`${bin} failed to start: ${r.error.message} (install with \`${windows ? "winget install ffmpeg" : "brew install ffmpeg"}\`)`);
+  const linux = process.platform === "linux";
+  const installHint = windows ? "winget install ffmpeg" : linux ? "sudo apt install ffmpeg" : "brew install ffmpeg";
+  if (r.error) throw new Error(`${bin} failed to start: ${r.error.message} (install with \`${installHint}\`)`);
   if (r.status !== 0 || !fs.existsSync(outPath) || fs.statSync(outPath).size === 0) {
     throw new Error(
       `${bin} recording failed (exit ${r.status}): ${(r.stderr || r.stdout || "").trim() || "no output"}. ` +
         (windows
           ? "Allow desktop apps to use the microphone in Settings → Privacy & security → Microphone."
-          : "Grant Microphone permission to your terminal in System Settings → Privacy & Security → Microphone."),
+          : linux
+            ? "Check the microphone is not muted in your sound settings (pactl list sources)."
+            : "Grant Microphone permission to your terminal in System Settings → Privacy & Security → Microphone."),
     );
   }
   return outPath;

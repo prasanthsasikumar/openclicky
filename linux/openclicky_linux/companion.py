@@ -42,8 +42,9 @@ class PointerSurface(Protocol):
 class AskHost:
     show_composer: Callable[[], None]
     hide_composer: Callable[[], None]
-    # One picture per monitor, the one with the mouse first (or a single picture).
-    capture_screen: Callable[[], "Screenshot | list[Screenshot]"]
+    # One picture per monitor, the one with the mouse first (or a single picture); or, on Wayland, a
+    # function that takes them, which is run off the main thread.
+    capture_screen: Callable[[], "Screenshot | list[Screenshot] | Callable[[], list[Screenshot]]"]
     # (question, pictures, conversation) → the model's answer; raises with a sentence to show.
     ask: Callable[[str, "Screenshot | list[Screenshot]", Conversation], str]
     run_in_background: Callable[[Callable[[], Any], Callable[[Any], None]], None]
@@ -52,6 +53,8 @@ class AskHost:
     prepare_voice: Callable[[], None] = lambda: None
     speak: Callable[[str], None] = lambda _text: None
     stop_speaking: Callable[[], None] = lambda: None
+    # Ends work still going for the last question (an agent run), on esc or a new question.
+    cancel_work: Callable[[], None] = lambda: None
 
 
 def caption_hold_seconds(text: str) -> float:
@@ -95,9 +98,11 @@ class AskController:
 
     def _ask(self, question: str) -> None:
         self.questions_asked.append(question)
-        # A new question ends whatever is still being said, and the voice gets ready (it loads in a
-        # few seconds, while the answer is being thought about).
+        # A new question ends whatever is still being said or done, and the voice gets ready (it
+        # loads in a few seconds, while the answer is being thought about).
         self.host.stop_speaking()
+        if self.is_answering:
+            self.host.cancel_work()
         self.host.prepare_voice()
         this_question_id = next(self._question_ids)
         self.question_id = this_question_id
@@ -113,6 +118,19 @@ class AskController:
         except Exception as failure:  # noqa: BLE001 - shown to the person, like any other failure
             self.pointer.show_after_screenshot()
             self._show_failure(f"couldn't see the screen: {failure}", this_question_id)
+            return
+        if callable(screenshot):
+            # Wayland: the desktop takes the picture, and that waits on it, so off the main thread.
+            self.host.run_in_background(screenshot, lambda outcome: self._captured(question, outcome, this_question_id))
+            return
+        self._captured(question, screenshot, this_question_id)
+
+    def _captured(self, question: str, screenshot: Any, this_question_id: int) -> None:
+        if this_question_id != self.question_id:
+            return
+        if isinstance(screenshot, BaseException):
+            self.pointer.show_after_screenshot()
+            self._show_failure(f"couldn't see the screen: {screenshot}", this_question_id)
             return
         self.pointer.show_after_screenshot()
         self.pointer.show_caption(THINKING_CAPTION, hold_seconds=None)
@@ -163,6 +181,8 @@ class AskController:
             return False
         self.pointer.show_after_screenshot()
         self.host.stop_speaking()
+        if self.is_answering:
+            self.host.cancel_work()
         self._stop_waiting_for_step()
         self.guide_steps_given = 0
         self.question_id = next(self._question_ids)
@@ -171,6 +191,11 @@ class AskController:
         self.pointer.dismiss_caption()
         self.pointer.return_to_mouse()
         return True
+
+    def show_progress(self, text: str, for_question_id: int) -> None:
+        """What the agent is doing for a question still being answered, beside the pointer."""
+        if for_question_id == self.question_id and self.is_answering and text.strip():
+            self.pointer.show_caption(text.strip()[:120], hold_seconds=None)
 
     def caption_finished(self) -> None:
         """The pointer's caption ran out its time: the pointer goes back to the mouse."""

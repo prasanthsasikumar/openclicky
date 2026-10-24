@@ -7,6 +7,9 @@ Anthropic key straight to Anthropic (Messages, the Mac's default model), else an
 another), else an own OpenAI key to OpenAI chat completions, else the OpenClicky account through the
 backend's `POST /chat` (the same Messages body the Mac relays), else a sentence naming what is missing. Own keys never go to the backend. Answers are not streamed: they are short,
 and the caption shows them whole.
+
+`ask_with_tools` also offers tools (the quick actions in `actions.py`, as the Mac's ask lane does
+wherever the agent lane does not run) and returns the calls the model made with its answer.
 """
 
 from __future__ import annotations
@@ -65,7 +68,12 @@ SYSTEM_PROMPT += guided.PROMPT_SECTION
 
 
 class AskError(Exception):
-    """Carries the sentence the caption shows."""
+    """Carries the sentence the caption shows; `account_refused` when the account's token was refused
+    (renewing the session and asking once more may help)."""
+
+    def __init__(self, message: str, account_refused: bool = False) -> None:
+        super().__init__(message)
+        self.account_refused = account_refused
 
 
 @dataclass(frozen=True)
@@ -106,6 +114,12 @@ def _labelled_screens(screens: list[Screenshot], question: str, image_block) -> 
 
 
 @dataclass(frozen=True)
+class ToolCall:
+    name: str
+    arguments: dict
+
+
+@dataclass(frozen=True)
 class AskRequest:
     kind: str  # "anthropic" | "openrouter" | "openai" | "backend"
     request: urllib.request.Request
@@ -120,51 +134,63 @@ class Conversation:
         del self.exchanges[:-HISTORY_EXCHANGES]
 
 
-def _with_language(settings: LinuxSettings) -> str:
+def _with_language(settings: LinuxSettings, extra_instructions: str = "") -> str:
+    prompt = SYSTEM_PROMPT + (f"\n\n{extra_instructions}" if extra_instructions else "")
     if settings.language_code and settings.bare_language_code != "en":
-        return SYSTEM_PROMPT + f"\nalways answer in the language with code {settings.language_code}, whatever language the question is in."
-    return SYSTEM_PROMPT
+        return prompt + f"\nalways answer in the language with code {settings.language_code}, whatever language the question is in."
+    return prompt
 
 
-def _anthropic_body(question: str, screens: list[Screenshot], conversation: Conversation, settings: LinuxSettings) -> dict:
+def _anthropic_body(question: str, screens: list[Screenshot], conversation: Conversation, settings: LinuxSettings,
+                    tools: list[dict] | None = None, extra_instructions: str = "") -> dict:
     messages = []
     for earlier_question, earlier_answer in conversation.exchanges:
         messages += [{"role": "user", "content": earlier_question}, {"role": "assistant", "content": earlier_answer}]
     messages.append({"role": "user", "content": _labelled_screens(screens, question, lambda screen: {
         "type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(screen.png_bytes).decode("ascii")}})})
-    return {"model": ANTHROPIC_MODEL, "max_tokens": MAX_ANSWER_TOKENS, "system": _with_language(settings), "messages": messages}
+    body = {"model": ANTHROPIC_MODEL, "max_tokens": MAX_ANSWER_TOKENS, "system": _with_language(settings, extra_instructions), "messages": messages}
+    if tools:
+        body["tools"] = tools
+    return body
 
 
 def _openai_body(question: str, screens: list[Screenshot], conversation: Conversation, settings: LinuxSettings,
-                 model: str = OPENAI_MODEL) -> dict:
-    messages: list[dict] = [{"role": "system", "content": _with_language(settings)}]
+                 model: str = OPENAI_MODEL, tools: list[dict] | None = None, extra_instructions: str = "") -> dict:
+    messages: list[dict] = [{"role": "system", "content": _with_language(settings, extra_instructions)}]
     for earlier_question, earlier_answer in conversation.exchanges:
         messages += [{"role": "user", "content": earlier_question}, {"role": "assistant", "content": earlier_answer}]
     messages.append({"role": "user", "content": _labelled_screens(screens, question, lambda screen: {
         "type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(screen.png_bytes).decode("ascii")}})})
-    return {"model": model, "max_tokens": MAX_ANSWER_TOKENS, "messages": messages}
+    body = {"model": model, "max_tokens": MAX_ANSWER_TOKENS, "messages": messages}
+    if tools:
+        body["tools"] = [{"type": "function", "function": {"name": tool["name"], "description": tool["description"],
+                                                           "parameters": tool["input_schema"]}} for tool in tools]
+    return body
 
 
-def request_for(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings) -> AskRequest:
-    """`screenshot` is one picture or one per monitor, the one with the mouse first."""
+def request_for(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings,
+                tools: list[dict] | None = None, extra_instructions: str = "") -> AskRequest:
+    """`screenshot` is one picture or one per monitor, the one with the mouse first; `tools` are
+    Anthropic tool definitions, sent in each vendor's own shape."""
     screens = as_screen_list(screenshot)[:MAXIMUM_SCREENS]
+    options = {"tools": tools, "extra_instructions": extra_instructions}
     if settings.anthropic_api_key:
-        body = json.dumps(_anthropic_body(question, screens, conversation, settings)).encode()
+        body = json.dumps(_anthropic_body(question, screens, conversation, settings, **options)).encode()
         return AskRequest("anthropic", urllib.request.Request(ANTHROPIC_MESSAGES_URL, data=body, method="POST", headers={
             "x-api-key": settings.anthropic_api_key, "anthropic-version": ANTHROPIC_VERSION, "Content-Type": "application/json"}))
     if settings.openrouter_api_key:
         model = settings.openrouter_model or OPENROUTER_MODEL
-        body = json.dumps(_openai_body(question, screens, conversation, settings, model=model)).encode()
+        body = json.dumps(_openai_body(question, screens, conversation, settings, model=model, **options)).encode()
         return AskRequest("openrouter", urllib.request.Request(OPENROUTER_CHAT_URL, data=body, method="POST", headers={
             "Authorization": f"Bearer {settings.openrouter_api_key}", "Content-Type": "application/json",
             # OpenRouter's app attribution headers: shown on its dashboard, never needed to answer.
             "HTTP-Referer": "https://openclicky.flowsxr.com", "X-Title": "OpenClicky for Linux"}))
     if settings.openai_api_key:
-        body = json.dumps(_openai_body(question, screens, conversation, settings)).encode()
+        body = json.dumps(_openai_body(question, screens, conversation, settings, **options)).encode()
         return AskRequest("openai", urllib.request.Request(OPENAI_CHAT_URL, data=body, method="POST", headers={
             "Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"}))
     if settings.account_token:
-        body = json.dumps(_anthropic_body(question, screens[:MAXIMUM_SCREENS_ON_AN_ACCOUNT], conversation, settings)).encode()
+        body = json.dumps(_anthropic_body(question, screens[:MAXIMUM_SCREENS_ON_AN_ACCOUNT], conversation, settings, **options)).encode()
         return AskRequest("backend", urllib.request.Request(f"{settings.backend_url}/chat", data=body, method="POST", headers={
             "Authorization": f"Bearer {settings.account_token}", "anthropic-version": ANTHROPIC_VERSION, "Content-Type": "application/json"}))
     raise AskError("asking needs an anthropic, openrouter or openai key, or an openclicky account. add one in settings.")
@@ -179,27 +205,55 @@ def answer_text(kind: str, response: dict) -> str:
     return "".join(block.get("text", "") for block in blocks if isinstance(block, dict) and block.get("type") == "text").strip()
 
 
-def ask(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings) -> str:
-    routed = request_for(question, screenshot, conversation, settings)
+def tool_calls_in(kind: str, response: dict) -> list[ToolCall]:
+    """The tools the model called: Anthropic's `tool_use` blocks, or OpenAI's `tool_calls`."""
+    calls = []
+    if kind in ("openai", "openrouter"):
+        choices = response.get("choices") or []
+        message = choices[0].get("message", {}) if choices and isinstance(choices[0], dict) else {}
+        for call in message.get("tool_calls") or []:
+            function = call.get("function") if isinstance(call, dict) else None
+            if not isinstance(function, dict) or not isinstance(function.get("name"), str):
+                continue
+            try:
+                arguments = json.loads(function.get("arguments") or "{}")
+            except ValueError:
+                arguments = {}
+            calls.append(ToolCall(function["name"], arguments if isinstance(arguments, dict) else {}))
+        return calls
+    for block in response.get("content") or []:
+        if isinstance(block, dict) and block.get("type") == "tool_use" and isinstance(block.get("name"), str):
+            calls.append(ToolCall(block["name"], block.get("input") if isinstance(block.get("input"), dict) else {}))
+    return calls
+
+
+def ask_with_tools(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings,
+                   tools: list[dict] | None = None, extra_instructions: str = "") -> tuple[str, list[ToolCall]]:
+    """The answer and the tools it called (at most two, as on the Mac)."""
+    routed = request_for(question, screenshot, conversation, settings, tools=tools, extra_instructions=extra_instructions)
     started = time.monotonic()
     try:
-        answer = _send(routed)
+        answer, calls = _send(routed, tools_offered=bool(tools))
     except AskError as failure:
         applog.append(f"ask: {routed.kind} failed after {time.monotonic() - started:.1f} s: {failure}")
         raise
     applog.append(f"ask: {routed.kind} answered in {time.monotonic() - started:.1f} s, {len(as_screen_list(screenshot))} screen(s)"
-                  f"{', a guided step' if guided.contains_marker(answer) else ''}")
-    return answer
+                  f"{', a guided step' if guided.contains_marker(answer) else ''}{f', {len(calls)} tool call(s)' if calls else ''}")
+    return answer, calls[:2]
 
 
-def _send(routed: AskRequest) -> str:
+def ask(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings) -> str:
+    return ask_with_tools(question, screenshot, conversation, settings)[0]
+
+
+def _send(routed: AskRequest, tools_offered: bool = False) -> tuple[str, list[ToolCall]]:
     vendor = {"anthropic": "anthropic", "openrouter": "openrouter", "openai": "openai", "backend": "the openclicky backend"}[routed.kind]
     try:
         with urllib.request.urlopen(routed.request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             answer = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as refusal:
         if refusal.code == 401:
-            raise AskError(f"{vendor} refused the key or token. check it in settings.") from refusal
+            raise AskError(f"{vendor} refused the key or token. check it in settings.", account_refused=routed.kind == "backend") from refusal
         if refusal.code == 402 and routed.kind == "backend":
             raise AskError("your openclicky allowance is used up for now.") from refusal
         if refusal.code == 402:
@@ -209,7 +263,9 @@ def _send(routed: AskRequest) -> str:
         raise AskError(f"couldn't reach {vendor}.") from failure
     except ValueError as failure:
         raise AskError(f"{vendor} sent back something that isn't json.") from failure
-    text = answer_text(routed.kind, answer if isinstance(answer, dict) else {})
-    if not text:
+    answer = answer if isinstance(answer, dict) else {}
+    text = answer_text(routed.kind, answer)
+    calls = tool_calls_in(routed.kind, answer) if tools_offered else []
+    if not text and not calls:
         raise AskError(f"{vendor} answered with no text.")
-    return text
+    return text, calls

@@ -1,21 +1,5 @@
 {
   "seen": {
-    "1.1.1": {
-      "build": "66",
-      "date": "Oct 23, 2026",
-      "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.1.1/HeyClicky.dmg",
-      "title": "HeyClicky can draw in 3D, 2D and much more",
-      "recordedAt": "2026-10-24T10:56:53.337Z",
-      "issue": "https://github.com/prasanthsasikumar/openclicky/issues/17"
-    },
-    "1.0.54": {
-      "build": "65",
-      "date": "Fri, 23 Oct 2026 10:56:43 -0700",
-      "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.0.54/HeyClicky.dmg",
-      "title": "",
-      "recordedAt": "2026-10-24T10:56:53.337Z",
-      "issue": "https://github.com/prasanthsasikumar/openclicky/issues/18"
-    },
     "1.0.53": {
       "build": "64",
       "date": "Oct 2, 2026",

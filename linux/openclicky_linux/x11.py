@@ -11,12 +11,12 @@
   listen-only, like the Mac app's `CGEvent` tap, so the key keeps working in other apps and
   nothing is grabbed. It runs on its own thread with its own connections.
 
-Wayland deliberately allows none of this; `is_wayland_session` lets the app say so at start.
+Wayland deliberately allows none of this to an X client: there `evdev.py`, `uinput.py` and
+`portal.py` do these jobs (see `session.py`), and only `shape_window` is still used, through XWayland.
 """
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from typing import Callable
@@ -36,12 +36,6 @@ TERMINAL_WINDOW_CLASSES = frozenset({
     "lxterminal", "qterminal", "terminology", "wezterm", "wezterm-gui", "foot", "st", "st-256color",
     "guake", "yakuake", "tilda", "cool-retro-term", "sakura", "ptyxis",
 })
-
-
-def is_wayland_session(environment: dict[str, str] | None = None) -> bool:
-    environment = os.environ if environment is None else environment
-    return environment.get("XDG_SESSION_TYPE") == "wayland" or (
-        bool(environment.get("WAYLAND_DISPLAY")) and not environment.get("DISPLAY"))
 
 
 def _window_class(display: xdisplay.Display, window) -> str | None:

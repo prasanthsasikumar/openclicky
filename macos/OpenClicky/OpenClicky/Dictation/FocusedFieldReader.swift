@@ -60,22 +60,7 @@ struct FocusedTextTarget {
 }
 
 enum FocusedFieldReader {
-    private static let editableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
-    /// Roles that are a text box only with evidence: a settable value or an editable ancestor.
-    /// AXWebArea is here, not above: a Chrome page with nothing clicked reports the page itself as
-    /// focused, and counted as a box a take sent ⌘V into the page and put the old clipboard back,
-    /// so the words were lost instead of waiting for a click into a box (2026-10-23).
-    private static let editableWithEvidenceRoles: Set<String> = ["AXGroup", "AXStaticText", "AXUnknown", "AXWebArea"]
-
-    /// Whether a focused element of `role` takes typed text. The two checks cost Accessibility
-    /// round trips, so they run only for the roles that need them.
-    static func isEditable(role: String?, valueIsSettable: @autoclosure () -> Bool, hasEditableAncestor: @autoclosure () -> Bool) -> Bool {
-        guard let role else { return false }
-        if editableRoles.contains(role) { return true }
-        // Electron and web apps focus a generic element with an editable ancestor or a settable value.
-        guard editableWithEvidenceRoles.contains(role) else { return false }
-        return valueIsSettable() || hasEditableAncestor()
-    }
+    private static let editableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField", "AXWebArea"]
     private static let maxValueCharacters = 20_000
     private static let messagingTimeoutSeconds: Float = 0.25
 
@@ -93,8 +78,11 @@ enum FocusedFieldReader {
         let subrole = string(focused, kAXSubroleAttribute)
         snapshot.role = role
         snapshot.isSecure = subrole == "AXSecureTextField"
-        let editable = isEditable(role: role, valueIsSettable: isSettable(focused, kAXValueAttribute),
-                                  hasEditableAncestor: hasEditableAncestor(focused))
+        var editable = role.map { editableRoles.contains($0) } ?? false
+        // Electron and web apps focus a generic element with an editable ancestor or a settable value.
+        if !editable, let role, role == "AXGroup" || role == "AXStaticText" || role == "AXUnknown" {
+            editable = isSettable(focused, kAXValueAttribute) || hasEditableAncestor(focused)
+        }
         snapshot.isEditable = editable && !snapshot.isSecure
         if snapshot.isEditable, !snapshot.isSecure {
             if let value = string(focused, kAXValueAttribute) { snapshot.value = String(value.prefix(maxValueCharacters)) }
