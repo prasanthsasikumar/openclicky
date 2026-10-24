@@ -36,6 +36,11 @@ struct WritingTarget: Equatable {
         /// Mac (2026-10-18, the second Mac to), and an Electron app can read the same. Checked
         /// again the same way before the paste.
         case clipboard
+        /// An editable web box that reports no text at all: Apple Mail's message body. The model
+        /// reads it from the screenshot, and the whole box is selected and replaced only when it
+        /// asks to rewrite, never on capture (selecting on every question would leave an email
+        /// selected for the next keystroke to wipe).
+        case screenOnly
     }
 
     let scope: Scope
@@ -65,10 +70,24 @@ struct WritingTarget: Equatable {
     /// is not editable (words selected on a web page) is nothing to write over, copied or not.
     static func target(in snapshot: FocusedFieldSnapshot, copiedSelection: String?, ownBundleID: String? = Bundle.main.bundleIdentifier) -> WritingTarget? {
         if let readTarget = target(in: snapshot, ownBundleID: ownBundleID) { return readTarget }
-        guard copyIsWorthTrying(in: snapshot, ownBundleID: ownBundleID),
-              let copiedSelection, !copiedSelection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              copiedSelection.count <= maximumCharacters else { return nil }
-        return WritingTarget(scope: .selection, text: copiedSelection, appBundleID: snapshot.appBundleID, appName: snapshot.appName, source: .clipboard)
+        guard copyIsWorthTrying(in: snapshot, ownBundleID: ownBundleID) else { return nil }
+        if let copiedSelection, !copiedSelection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard copiedSelection.count <= maximumCharacters else { return nil }
+            return WritingTarget(scope: .selection, text: copiedSelection, appBundleID: snapshot.appBundleID, appName: snapshot.appName, source: .clipboard)
+        }
+        // Nothing highlighted in an editable web box that reports no text (Mail's message body):
+        // the whole box, read by the model from the screenshot.
+        if snapshot.isEditable, let role = snapshot.role, FocusedFieldReader.editableWithEvidenceRoles.contains(role),
+           snapshot.value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
+            return WritingTarget(scope: .wholeField, text: "", appBundleID: snapshot.appBundleID, appName: snapshot.appName, source: .screenOnly)
+        }
+        return nil
+    }
+
+    /// For a box read from the screen: the cursor is still in an editable box of the same app, so
+    /// selecting all selects that box and nothing else.
+    func cursorIsStillInTheBox(_ snapshot: FocusedFieldSnapshot) -> Bool {
+        source == .screenOnly && snapshot.appBundleID == appBundleID && snapshot.isEditable && !snapshot.isSecure
     }
 
     /// Whether copying the highlight could give a target the snapshot did not.
@@ -96,13 +115,16 @@ struct WritingTarget: Equatable {
     var kindForLog: String {
         switch scope {
         case .selection: return source == .clipboard ? "copied highlight" : "highlight"
-        case .wholeField: return "whole box"
+        case .wholeField: return source == .screenOnly ? "whole box read from the screen" : "whole box"
         }
     }
 
     /// Added to the question, so the model has the exact words.
     var contextLine: String {
         let place = appName.map { " in \($0)" } ?? ""
+        if source == .screenOnly {
+            return "The user's cursor is in a text box\(place) whose text cannot be read directly; read it from the screenshot. If they ask to rephrase, rewrite, shorten, fix, polish or translate it (\"this email\", \"this\", \"what i wrote\"), call write_in_place with the complete new text for the whole box."
+        }
         switch scope {
         case .selection:
             return "The user has highlighted this text\(place): «\(text)». If they ask to rephrase, rewrite, shorten, fix, polish or translate it, call write_in_place with the complete new text."
@@ -267,6 +289,26 @@ enum WriteInPlace {
         guard !newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .emptyText }
         let trimmedNewText = keepingSurroundingSpace(of: target.text, around: newText)
         guard AXIsProcessTrusted() else { return .noAccessibility }
+        if target.source == .screenOnly {
+            // Selected only now that a rewrite was asked for, and only while the cursor is still in
+            // that box; the original is copied on the way, so it stays one ⌘V away.
+            guard target.cursorIsStillInTheBox(FocusedFieldReader.snapshot()) else {
+                AppLog.append("write in place: the cursor left the box, nothing pasted")
+                return .targetGone
+            }
+            _ = postCommandKey(virtualKeyCodeA)
+            try? await Task.sleep(for: .milliseconds(150))
+            guard let original = await SelectionCopier.copySelection(),
+                  !original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                AppLog.append("write in place: the box read from the screen was empty, nothing pasted")
+                return .targetGone
+            }
+            guard FrontAppTextInserter.insert(keepingSurroundingSpace(of: original, around: newText)) == .typed else { return .noAccessibility }
+            try? await Task.sleep(for: .milliseconds(400))
+            FrontAppTextInserter.copyToPasteboard(original)
+            AppLog.append("write in place: whole box read from the screen in \(target.appName ?? "an app"), \(original.count) chars replaced, posted")
+            return .probablyReplaced
+        }
         if target.source == .clipboard {
             // Accessibility could not read this box: the highlight is checked the way it was read,
             // and the paste cannot be read back either, so it counts as probably landed.

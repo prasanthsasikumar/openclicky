@@ -159,3 +159,47 @@ struct RealtimeWriteInPlaceTests {
         #expect(instructions.contains("how to rephrase"))
     }
 }
+
+/// Apple Mail's message body is an editable web area that reports no text to Accessibility, so
+/// "rephrase this" with the cursor in an email (nothing highlighted) found nothing to write over,
+/// while the same request worked in Gmail, whose box Chrome reads out (2026-10-24).
+struct UnreadableBoxWriteInPlaceTests {
+    private func mailBody(value: String? = "", role: String = "AXWebArea", editable: Bool = true) -> FocusedFieldSnapshot {
+        FocusedFieldSnapshot(appBundleID: "com.apple.mail", appName: "Mail", role: role, isEditable: editable,
+                             isSecure: false, value: value, selectedText: nil)
+    }
+
+    @Test func anEditableWebBoxWithNoReadableTextIsTheWholeBoxReadFromTheScreen() {
+        for body in [mailBody(), mailBody(value: nil), mailBody(role: "AXGroup")] {
+            let target = WritingTarget.target(in: body, copiedSelection: nil, ownBundleID: "org.openclicky.app")
+            #expect(target?.source == .screenOnly)
+            #expect(target?.scope == .wholeField)
+            #expect(target?.appBundleID == "com.apple.mail")
+        }
+    }
+
+    @Test func aHighlightStillWinsAndRealTextBoxesAreNotGuessed() {
+        // Words highlighted in the body are copied and used as they are.
+        #expect(WritingTarget.target(in: mailBody(), copiedSelection: "tmrw", ownBundleID: "x")?.source == .clipboard)
+        // An empty native text box is empty, not unreadable.
+        #expect(WritingTarget.target(in: mailBody(role: "AXTextArea"), copiedSelection: nil, ownBundleID: "x") == nil)
+        // A page that is not editable, or an element nobody can see, is no target.
+        #expect(WritingTarget.target(in: mailBody(editable: false), copiedSelection: nil, ownBundleID: "x") == nil)
+        #expect(WritingTarget.target(in: mailBody(role: "AXWebArea", editable: true), copiedSelection: nil, ownBundleID: "com.apple.mail") == nil)
+    }
+
+    @Test func theModelIsToldToReadTheBoxFromTheScreenshot() {
+        let target = WritingTarget(scope: .wholeField, text: "", appBundleID: "com.apple.mail", appName: "Mail", source: .screenOnly)
+        #expect(target.contextLine.contains("screenshot"))
+        #expect(target.contextLine.contains("write_in_place"))
+        #expect(target.kindForLog == "whole box read from the screen")
+    }
+
+    @Test func itIsOnlyReplacedWhileTheCursorIsStillInThatBox() {
+        let target = WritingTarget(scope: .wholeField, text: "", appBundleID: "com.apple.mail", appName: "Mail", source: .screenOnly)
+        #expect(target.cursorIsStillInTheBox(mailBody()))
+        #expect(!target.cursorIsStillInTheBox(mailBody(editable: false)))
+        #expect(!target.cursorIsStillInTheBox(FocusedFieldSnapshot(appBundleID: "com.google.Chrome", appName: "Chrome", role: "AXWebArea",
+                                                                   isEditable: true, isSecure: false, value: "", selectedText: nil)))
+    }
+}

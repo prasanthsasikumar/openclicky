@@ -65,7 +65,7 @@ enum FocusedFieldReader {
     /// AXWebArea is here, not above: a Chrome page with nothing clicked reports the page itself as
     /// focused, and counted as a box a take sent ⌘V into the page and put the old clipboard back,
     /// so the words were lost instead of waiting for a click into a box (2026-10-23).
-    private static let editableWithEvidenceRoles: Set<String> = ["AXGroup", "AXStaticText", "AXUnknown", "AXWebArea"]
+    static let editableWithEvidenceRoles: Set<String> = ["AXGroup", "AXStaticText", "AXUnknown", "AXWebArea"]
 
     /// Whether a focused element of `role` takes typed text. The two checks cost Accessibility
     /// round trips, so they run only for the roles that need them.
