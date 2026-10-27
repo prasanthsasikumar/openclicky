@@ -30,10 +30,11 @@ final class KokoroVoice: ObservableObject {
 
     /// The embedded sherpa-onnx version (scripts/embed-kokoro-engine.sh); must match sherpa-onnx-c-api.h.
     nonisolated static let runtimeVersion = "1.13.8"
-    /// Kokoro v1.0, multilingual, full precision.
+    /// Kokoro v1.0, multilingual, full precision. sherpa-onnx re-packed this archive on 2026-10-26
+    /// (same files inside, new SHA-256), and every download against the old pin failed its check.
     nonisolated static let modelDownload = ModelDownload(
         url: URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2")!,
-        sha256: "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298", bytes: 349_906_910)
+        sha256: "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4", bytes: 349_886_476)
     /// What Settings says before the download, rounded.
     nonisolated static let downloadSizeText = "350 MB"
 

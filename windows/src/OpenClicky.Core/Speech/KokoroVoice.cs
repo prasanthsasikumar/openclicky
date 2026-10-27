@@ -30,7 +30,7 @@ public sealed partial class KokoroVoice : ObservableObject
     /// <summary>Kokoro v1.0, multilingual, full precision.</summary>
     public static ModelDownload ModelDownload { get; } = new(
         new Uri("https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"),
-        "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298", 349_906_910);
+        "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4", 349_886_476);
 
     /// <summary>What Settings says before the download, rounded.</summary>
     public const string DownloadSizeText = "350 MB";
