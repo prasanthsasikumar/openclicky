@@ -2,6 +2,31 @@
 
 Recorded by `scripts/upstream-watch.mjs` from https://www.heyclicky.com/changelog and the Sparkle appcast. Newest first.
 
+## v1.1.3 — A quick check of the new updates (Oct 24, 2026)
+
+A small behind-the-scenes update that checks HeyClicky's new self-updating works smoothly. Nothing changes in how you use it.
+
+### improvements
+
+- Updating from 1.1.2 to this version happens on its own, which is how every update arrives from now on.
+
+## v1.1.2 — HeyClicky for Windows now updates itself (Oct 24, 2026)
+
+HeyClicky now updates itself, comes with a new installer that works on every PC, and fixes the crashes and bugs you told us about in the first few days.
+
+### what's new
+
+- **Updates install themselves:** HeyClicky checks for a new version in the background and installs it when you quit, or right away from Settings > General > Install & Relaunch. If you're on 1.1.1, download it once more from heyclicky.com and you won't have to again.
+- **A new installer for every PC:** The installer is small, signed and the same file every release, so Windows should stop warning about it, and when HeyClicky can't run on a PC it says exactly why, with an Email us button.
+
+### fixes
+
+- HeyClicky didn't start on Windows set to a language that writes numbers with a comma, like French, German or Spanish.
+- 3D drawings work on PCs whose graphics card can't draw them the usual way.
+- Clicking the chat box after HeyClicky drove your PC kept giving the keyboard back to the app behind it.
+- A drive could end the moment it began, and typing during a drive now stops as soon as you take the screen back.
+- Dragging a drawing's cards, turning a 3D figure after moving its window, and a few crashes from the first days.
+
 ## v1.1.1 — HeyClicky can draw in 3D, 2D and much more (Oct 23, 2026)
 
 Download: https://github.com/farzaa/clicky-releases/releases/download/v1.1.1/HeyClicky.dmg (build 66)
