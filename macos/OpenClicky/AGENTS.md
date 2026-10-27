@@ -63,6 +63,8 @@ An OpenAI key alone does not cover Claude: with no Anthropic key and no account 
 
 **Realtime connection lifecycle**: `RealtimeVoiceClient` counts as connected only once OpenAI's first event arrives on the socket (a refused handshake is an error with its status, not a silent success). Every press reuses the socket only if it is under 50 minutes old (OpenAI caps sessions at 60) and was heard from in the last minute or answers a ping; otherwise it reconnects. The keep-warm loop reconnects in the background only in always-on mode or within 15 minutes of the last turn, because every session is minted by the backend and billed. A socket lost under a turn calls `onConnectionLost`, which returns `voiceState` to idle (a stuck `.processing` also blocked dictation).
 
+**Ending hands-free by voice**: in always-on mode only, the session also offers `stop_listening` (`RealtimeVoiceClient.stopListeningToolDefinition`). The model calls it on a clear sign-off ("that's all", "stop listening", "ok bye"), never on thanks alone or a request to stop something else; its output asks for a short goodbye, and once that response is done and has played (`endHandsFreeOnceTheGoodbyeHasPlayed`, at most 8 s) `onStopListeningRequested` turns hands-free off through the shortcut's own path (`announceHandsFreeChange`; logged `hands-free off (by voice)`). Which phrases count is the model's judgement, so it is checked live, not by unit tests.
+
 ## Key Files
 
 Dictation (`OpenClicky/Dictation/`):

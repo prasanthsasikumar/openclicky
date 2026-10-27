@@ -254,6 +254,9 @@ final class CompanionManager: ObservableObject {
             self.scheduleTransientHideIfNeeded()
         }
         realtimeVoiceClient.onEvent = { line in print("🎙️ \(line)") }
+        realtimeVoiceClient.onStopListeningRequested = { [weak self] in
+            self?.endHandsFreeBySignOff()
+        }
         // A socket that died under a turn used to leave voiceState on processing for good, which
         // also refused dictation. Unstick it and say why; the next press reconnects.
         realtimeVoiceClient.onTurnHeardNothing = { [weak self] in
@@ -1505,6 +1508,20 @@ final class CompanionManager: ObservableObject {
             return
         }
         setAlwaysListening(!isAlwaysListening)
+        announceHandsFreeChange(how: nil)
+    }
+
+    /// "that's all, thanks" while hands-free is on: the Realtime model called `stop_listening` and
+    /// its goodbye has played. Ends hands-free exactly as the shortcut does.
+    private func endHandsFreeBySignOff() {
+        guard isAlwaysListening else { return }
+        setAlwaysListening(false)
+        announceHandsFreeChange(how: "by voice")
+    }
+
+    /// The caption and log line for a hands-free change; `how` tells the log a voice sign-off from
+    /// the shortcut.
+    private func announceHandsFreeChange(how: String?) {
         let feedback = isAlwaysListening
             ? "hands-free is on. just talk, i'm listening. hold control and tap fn twice to stop."
             : "hands-free is off. hold control + option to talk."
@@ -1513,8 +1530,10 @@ final class CompanionManager: ObservableObject {
         } else {
             streamCursorCaption(feedback, holdSeconds: 6)
         }
-        print("👂 Hands-free \(isAlwaysListening ? "on" : "off")")
-        AppLog.append("hands-free \(isAlwaysListening ? "on" : "off")")
+        let state = isAlwaysListening ? "on" : "off"
+        let line = how.map { "hands-free \(state) (\($0))" } ?? "hands-free \(state)"
+        print("👂 \(line)")
+        AppLog.append(line)
     }
 
     private func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {

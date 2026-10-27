@@ -151,6 +151,57 @@ struct RealtimeSessionHandshakeOrderTests {
         #expect(!client.isConnected)
     }
 
+    private static func toolNames(inSessionUpdate message: String) throws -> [String] {
+        let event = try #require(try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any])
+        let session = try #require(event["session"] as? [String: Any])
+        let tools = try #require(session["tools"] as? [[String: Any]])
+        return tools.compactMap { $0["name"] as? String }
+    }
+
+    private static func connectedClient(mode: RealtimeVoiceClient.TurnMode) async throws -> (RealtimeVoiceClient, HandshakePendingSocket) {
+        let client = RealtimeVoiceClient()
+        let socket = HandshakePendingSocket()
+        let session = Task { @MainActor in
+            try await client.startSession(on: socket, model: "gpt-realtime", mode: mode, instructions: "be brief", whileWaitingForHandshake: {})
+        }
+        await waitUntil { socket.isWaitingToReceive }
+        socket.open(firstEvent: #"{"type":"session.created"}"#)
+        try await session.value
+        return (client, socket)
+    }
+
+    /// Hands-free ends by voice ("that's all, thanks"): the model gets a tool for it, but only while
+    /// hands-free is on. Push-to-talk listens only while the keys are held, so it has nothing to end.
+    @Test func theSignOffToolIsOfferedOnlyInHandsFree() async throws {
+        let (handsFreeClient, handsFreeSocket) = try await Self.connectedClient(mode: .alwaysOn)
+        #expect(try Self.toolNames(inSessionUpdate: try #require(handsFreeSocket.sentTexts.first)).contains(RealtimeVoiceClient.stopListeningToolName))
+        handsFreeClient.disconnect(reason: nil)
+
+        let (pushToTalkClient, pushToTalkSocket) = try await Self.connectedClient(mode: .pushToTalk)
+        #expect(!(try Self.toolNames(inSessionUpdate: try #require(pushToTalkSocket.sentTexts.first)).contains(RealtimeVoiceClient.stopListeningToolName)))
+        pushToTalkClient.disconnect(reason: nil)
+    }
+
+    /// The sign-off is answered with a goodbye, and hands-free ends only once that response is done,
+    /// so closing the session never cuts the goodbye off.
+    @Test func aSignOffEndsHandsFreeAfterTheGoodbye() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        var stopRequests = 0
+        client.onStopListeningRequested = { stopRequests += 1 }
+
+        await Self.waitUntil { socket.isWaitingToReceive }
+        socket.open(firstEvent: #"{"type":"response.function_call_arguments.done","name":"stop_listening","call_id":"call_1","response_id":"resp_1","arguments":"{}"}"#)
+        await Self.waitUntil { socket.sentTexts.contains { $0.contains("function_call_output") } }
+        #expect(socket.sentTexts.contains { $0.contains("function_call_output") && $0.contains("call_1") })
+        #expect(stopRequests == 0)
+
+        await Self.waitUntil { socket.isWaitingToReceive }
+        socket.open(firstEvent: #"{"type":"response.done","response":{"status":"completed"}}"#)
+        await Self.waitUntil { stopRequests > 0 }
+        #expect(stopRequests == 1)
+        client.disconnect(reason: nil)
+    }
+
     @Test func aTerminalLaunchIsNamedInsteadOfAnUnexplainedZero() {
         let line = RealtimeVoiceClient.microphoneAuthorizationDescription(captureAuthorization: .notDetermined, recordPermission: .granted)
         #expect(line.contains("not determined for this process"))

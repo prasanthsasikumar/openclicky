@@ -119,6 +119,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// Runs a plugin's tool call with the screenshot the turn carried; nil when no plugin owns the
     /// tool. Must return quickly: tool calls are handled on the receive loop.
     var onPluginToolCall: (@MainActor (String, [String: Any], CompanionScreenCapture?) async -> String?)?
+    /// Hands-free only: the person signed off by voice ("that's all, thanks"). Called once the
+    /// goodbye that answers the sign-off has finished playing; the companion turns hands-free off.
+    var onStopListeningRequested: (@MainActor () -> Void)?
+    /// A sign-off was heard: hands-free ends after the goodbye response is done and has played.
+    private var stopListeningAfterGoodbye = false
     /// Reads the text a "rephrase this" would replace (the highlight, or the focused text box) when
     /// a turn's screen is attached; the turn quotes it and `write_in_place` writes over it.
     var writingTargetProvider: (@MainActor () async -> WritingTarget?)?
@@ -368,6 +373,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         lastServerEventAt = nil
         stopForwardingMicrophone()
         pushToTalkArmed = false
+        // A sign-off heard on a session that is going away belongs to that session only.
+        stopListeningAfterGoodbye = false
         idlePauseTask?.cancel()
         flushPlayback()
         audio.release()
@@ -572,15 +579,31 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 "required": ["x", "y", "label", "text"],
             ],
         ]
+        // Ending hands-free by voice only makes sense while hands-free is on.
+        let handsFreeTools = mode == .alwaysOn ? [Self.stopListeningToolDefinition()] : []
         return [
             "type": "session.update",
             "session": [
                 "type": "realtime",
                 "instructions": text,
-                "tools": [tool, pointTool, WriteInPlace.realtimeToolDefinition()] + MacAction.realtimeToolDefinitions() + (pluginToolsProvider?() ?? []),
+                "tools": [tool, pointTool, WriteInPlace.realtimeToolDefinition()] + MacAction.realtimeToolDefinitions() + handsFreeTools + (pluginToolsProvider?() ?? []),
                 "tool_choice": "auto",
                 "audio": ["input": input, "output": output],
             ],
+        ]
+    }
+
+    static let stopListeningToolName = "stop_listening"
+
+    /// The model decides what counts as a sign-off, since people end in many ways; fixed words
+    /// would also fire on "how do I quit Photoshop". A missed sign-off costs one key press, a
+    /// wrong one cuts the person off, so the description leans towards keeping on listening.
+    nonisolated static func stopListeningToolDefinition() -> [String: Any] {
+        [
+            "type": "function",
+            "name": stopListeningToolName,
+            "description": "Turn hands-free listening off and go back to push-to-talk. Call it only when the user clearly signs off from talking to you: \"that's all I need\", \"stop listening\", \"I'm done, you can stop\", \"ok bye\", \"that's it for now\". Never for thanks alone (\"thank you\", \"great, thanks\"), and never when they ask to stop or quit something else (an app, music, a task, an answer). If you are not sure, keep listening and do not call it. Call it before saying anything; its result tells you what to say.",
+            "parameters": ["type": "object", "properties": [String: Any](), "required": [String]()],
         ]
     }
 
@@ -1030,6 +1053,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             if !continued {
                 onResponseFinished?()
                 scheduleIdlePauseIfNeeded()
+                if stopListeningAfterGoodbye {
+                    stopListeningAfterGoodbye = false
+                    endHandsFreeOnceTheGoodbyeHasPlayed()
+                }
             }
         case "error":
             let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? text
@@ -1065,6 +1092,14 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         }
         var output = "unknown tool \(name)"
         switch name {
+        case Self.stopListeningToolName:
+            if currentMode == .alwaysOn {
+                log("hands-free: sign-off heard")
+                stopListeningAfterGoodbye = true
+                output = "Hands-free listening is ending. Say a short goodbye in a few words, nothing else."
+            } else {
+                output = "Hands-free is not on; nothing to stop. Do not mention it."
+            }
         case "send_to_agent":
             let task = arguments["task"] as? String ?? ""
             log("agent task: \(task)")
@@ -1187,6 +1222,21 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         // The output goes out immediately; the follow-up response is requested once, on response.done.
         try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(output.prefix(4000))]])
         requestContinuation(after: event)
+    }
+
+    /// response.done arrives when the server has sent the goodbye, not when it has played: turning
+    /// hands-free off closes the session, which would cut it off. Waits for playback to end (at most
+    /// 8 s, in case no audio came) before asking the companion to stop.
+    private func endHandsFreeOnceTheGoodbyeHasPlayed() {
+        Task { @MainActor [weak self] in
+            let deadline = Date().addingTimeInterval(8)
+            while let self, self.isSpeaking, Date() < deadline {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            guard let self else { return }
+            self.log("hands-free: ending after the goodbye")
+            self.onStopListeningRequested?()
+        }
     }
 
     /// Ask the model to continue after a tool output. Extracted so the fast-action path and the
