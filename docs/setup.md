@@ -282,7 +282,10 @@ npm run release:mac:publish    # …and tag vX.Y.Z (from macos/OpenClicky/VERSIO
 The script signs with your Apple Development certificate by default (fine for this Mac; other
 Macs must right-click → Open). For public downloads set `OPENCLICKY_SIGN_IDENTITY="Developer ID
 Application: …"` and, once `xcrun notarytool store-credentials` is set up, `OPENCLICKY_NOTARY_PROFILE`.
-Bump `macos/OpenClicky/VERSION` before publishing. Releases: https://github.com/prasanthsasikumar/openclicky/releases
+Bump `macos/OpenClicky/VERSION` before publishing and write the version's `## x.y.z` section in
+`CHANGELOG.md`: the script puts it in the Sparkle update dialog and under "What's new" on the GitHub
+release, and `--publish` refuses to run without it (`npm run check:changelog` is the same test, run
+in CI). Releases: https://github.com/prasanthsasikumar/openclicky/releases
 
 **The dmg installs itself.** Launched from the mounted image, the app offers "Move to Applications"
 (`DiskImageSelfInstaller`), copies itself there, strips the quarantine flag and relaunches the

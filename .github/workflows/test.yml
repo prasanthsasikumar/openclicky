@@ -25,6 +25,9 @@ jobs:
       # Every app skill's shape, size and content (talk-only, no links or commands); a skill pull
       # request has to pass this before anyone reads it.
       - run: npm run check:skills
+      # CHANGELOG.md must have a section for the version in macos/OpenClicky/VERSION: it is what
+      # the update dialog shows, so a version bump without notes fails here, not at release time.
+      - run: npm run check:changelog
       - run: npm test
       - run: npm run build -w backend
       - run: npm run build -w agent

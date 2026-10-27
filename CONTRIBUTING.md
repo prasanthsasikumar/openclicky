@@ -93,6 +93,12 @@ this way, as reviewed pull requests; the app has no skill editor.
 Not a writer? Open a **Request a skill** issue: name the app and the questions people ask, and someone
 will write it.
 
+## Changes people will notice
+
+If a pull request changes what the app does for the person using it, add a bullet to `CHANGELOG.md`
+under the next version (one line, the gist in bold, written for someone reading the update prompt).
+That text is what the update dialog and the GitHub release show.
+
 ## Where help is welcome
 
 - Pointing accuracy on more apps and sites (`ScreenTextLocator`, `BrowserTabLocator`, app skills).

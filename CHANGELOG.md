@@ -1,0 +1,48 @@
+# Changelog
+
+What each OpenClicky release changed, in the words the update dialog shows. One `## x.y.z` section
+per version, newest first. The release script (`macos/OpenClicky/scripts/release.sh`) reads the
+section for the version in `macos/OpenClicky/VERSION` and puts it in the Sparkle update dialog and
+the GitHub release, so a publish refuses to run until this file has a section for that version.
+
+Write for the person who sees the update prompt: what they can now do, in plain words, one bullet
+per change with the gist in bold. Links, `code` and *italics* are fine; keep it to bullets and
+short paragraphs. Windows and Linux notes go in the same section when they apply.
+
+## 0.9.4
+
+- **"Rephrase this" rewrites in place in Apple Mail too.** With the cursor in an email body and nothing highlighted, "rephrase this so it sounds professional" rewrote nothing, because Mail's message body reports no text to Accessibility. Clicky now reads the box from the screenshot and, when you ask for a rewrite, selects it and pastes the new text. ⌘V puts the original back.
+- **Fix: dictation that heard nothing on some Macs.** Since 0.8.1, on some Macs every take ended in "didn't catch that" and the microphone test stayed flat, though the microphone worked everywhere else. OpenClicky now leaves the Mac's default microphone alone, as it did before.
+- **Fix: the Kokoro voice downloads again.** Its download failed its check after the archive was re-packed upstream. On Windows and Linux too.
+- **Fix: your music stays at full volume while Clicky is idle.** With the fast voice lane, other apps' sound could stay turned down until you quit OpenClicky. The microphone is now opened only when you press the shortcut.
+
+## 0.9.3
+
+- **Teacher: Clicky draws while it explains.** Ask "teach me how Pythagoras works", "how does a rotary engine work compared to a normal engine" or "explain refraction" and the lesson is drawn in handwriting in the emptiest part of your screen (ink on a white page, chalk on a dark one, a paper sheet when there's no room), stroke by stroke, with labels and arrows, while the pointer flies to each label. When a drawing can't show it well, a real picture from Wikimedia Commons comes up instead. Esc, the ✕ beside the drawing, or your next question clears it. Switch it on under Settings → Plugins → Teacher.
+- **"Solve this" writes out the working.** With a problem on screen, "solve this" or "work this out step by step" puts the worked solution next to it, one step per line, the answer in red.
+- **Answers you can read when you can't listen.** If you typed the question, your sound is muted or the volume is low, the answer is written on screen too.
+- **Works without an OpenAI key.** Lessons are drawn by whatever you have: an OpenAI or Anthropic key, another API key, or a free OpenClicky account (about 3–5 seconds). The fast voice lane still needs your own OpenAI key.
+- **"Rephrase this" rewrites in place on the fast voice lane too.** With your own OpenAI key, highlighting text (a Gmail draft, say) and asking to rephrase, shorten or polish it replaces the text instead of reading a new version out. Asking *how* to rephrase it is still answered in words. ⌘Z gets yours back.
+- **Fix: dictation with no text box selected no longer loses your words.** In Chrome with nothing clicked, the page itself counted as a text box, so the words were pasted into nothing and your clipboard put back. Now Clicky asks you to click into a box, waits for it, and pastes there, or leaves the words on the clipboard for ⌘V.
+
+## 0.9.2
+
+- **Esc stops Clicky at any time.** While it listens, thinks, speaks or guides you, Esc (or a click on the island) stops it. A stopped answer never carries out an action, and the island can now stop the first step of a guide too. Esc during a dictation take still only cancels the take.
+- **A moment before your screen is sent.** After you ask, the island shows "sending your screen · esc to cancel" for about a second; cancel and nothing is captured or sent. The next steps of a guide don't pause again. Switch it off under Settings → Privacy ("Pause before sending my screen").
+- **"That wasn't the spot I pointed at."** In a step-by-step guide, a click well away from where the pointer pointed is noticed, and Clicky looks again and points you back.
+- **"Not sure" instead of a confident wrong point.** When Clicky can't find what you asked about, the pointer stays put, it tells you what to look for, and the island reads "not sure · tell me what you see".
+- **A new island.** Black melting into glass with notch-shaped corners; hovering peeks and a click opens the panel. Optional plugins, all off until you switch them on under Settings → Plugins: System (CPU, memory, disk and battery), Shelf (drop files on the island, drag them back out), Coding agents (what a Claude Code or Codex session is doing) and Now playing (Music and Spotify, with controls).
+
+## 0.9.1
+
+- **"Rephrase this" works in Gmail, Chrome and Electron apps.** Chrome, Edge, Brave, Arc and Electron apps keep their accessibility tree switched off until an assistive app wakes it, so OpenClicky found nothing to write over and only read a rewrite out. It now wakes the tree, and where a highlight still cannot be read it copies the highlight itself (your clipboard is put back) and replaces it in place. With nothing highlighted, it asks you to highlight the text instead of reading a rewrite out. Mac and Windows.
+- **Parakeet on every Mac.** Offline dictation with Parakeet downloads on its own once the tour is done, on macOS 26 as well. "Clean up my words with AI" is on from a fresh install; switch it off for live typing.
+- **Permissions, announced.** The first setup card says four permissions are coming and names them, with a tick under the cards as each one lands.
+- **"What is this?" means the pointer.** The question now carries where the mouse is, with a close-up, so asking about a desktop item answers about that item rather than the window in front. Asking the same thing again within three minutes tells the model its first answer probably missed.
+- **Windows: right Ctrl dictates, right Ctrl + Win asks.** Hold right Ctrl to dictate and let go to paste, as on the Mac ("Tap to keep listening" in Settings → Dictation brings the tap-toggle back). Win joining a held right Ctrl asks instead. The tour says the Windows keys in the app's own voice.
+- **Windows fixes.** A dictation that ended with nothing pasted and a busy microphone after the first take; an error logged on every quit; online speech recognition can be switched on from the island in one click; spoken numbers in a folder name become digits.
+
+## 0.9.0
+
+- **OpenClicky for Windows.** A native Windows app for Windows 10 (2004 or later) and 11, x64 and ARM64, contributed by [Tan Wei Jie (Justin)](https://github.com/weijietan97). Hold **Ctrl + Win** to ask and the pointer shows you where; hold **right Ctrl** to dictate. It has the island, the tours, every settings page, skills, offline dictation (Parakeet) and voice (Kokoro). Download `OpenClicky.Windows-win-Setup.exe` (x64) or the `arm64` one from the release, or go to [openclicky.flowsxr.com/download/windows](https://openclicky.flowsxr.com/download/windows/). It is not code-signed yet, so SmartScreen may warn: choose *More info*, then *Run anyway*. After that it updates itself.
+- **Skills arrive by pull request.** App skills are written as files and reviewed on GitHub. There's a "Request a skill" form for people who'd rather not write one. Drafting a skill inside the app is gone.

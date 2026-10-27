@@ -61,6 +61,23 @@ BUILD_NUMBER="$(git -C "$REPO_DIR" rev-list --count HEAD)"
 COMMIT="$(git -C "$REPO_DIR" rev-parse --short HEAD)"
 TAG="v$VERSION"
 
+# Release notes come from CHANGELOG.md (the "## $VERSION" section): they are what the Sparkle update
+# dialog shows and what the GitHub release says. A publish without them is refused here, before the
+# build, so nobody waits on notarization to learn that; a local build only warns and falls back to
+# the build line. (v0.9.3 shipped with "Build 477" as its whole update prompt, which read as an
+# empty update to the people who got it.)
+NOTES_SCRIPT="$REPO_DIR/scripts/release-notes.mjs"
+if node "$NOTES_SCRIPT" check "$VERSION"; then
+  HAVE_NOTES=1
+else
+  HAVE_NOTES=0
+  if [[ $PUBLISH -eq 1 ]]; then
+    echo "refusing to publish $TAG without release notes" >&2
+    exit 1
+  fi
+  echo "▸ no CHANGELOG.md section for $VERSION; the update notes will only name the build (fine for a local install)"
+fi
+
 # Notarization needs a secure timestamp on every binary. Apple's timestamp server is flaky enough
 # that asking Xcode to timestamp each of its many signing steps (resource bundles included) fails
 # builds at random, so Xcode signs without one and every piece of code is re-signed below with a
@@ -200,8 +217,14 @@ if [[ -x "$SPARKLE_BIN/generate_appcast" ]] && { [[ -f "$SPARKLE_KEY_FILE" ]] ||
   APPCAST_DIR="$EXPORT_DIR/appcast"
   rm -rf "$APPCAST_DIR" && mkdir -p "$APPCAST_DIR"
   cp "$ZIP_PATH" "$APPCAST_DIR/"
+  # generate_appcast embeds <name>.html beside the zip as the item's description, which the app
+  # renders in the update dialog.
   RELEASE_NOTES="$APPCAST_DIR/$APP_NAME-$VERSION.html"
-  printf '<html><body><h2>OpenClicky %s</h2><p>Build %s (%s).</p></body></html>\n' "$VERSION" "$BUILD_NUMBER" "$COMMIT" > "$RELEASE_NOTES"
+  if [[ $HAVE_NOTES -eq 1 ]]; then
+    node "$NOTES_SCRIPT" html "$VERSION" > "$RELEASE_NOTES"
+  else
+    printf '<html><body><h2>OpenClicky %s</h2><p>Build %s (%s).</p></body></html>\n' "$VERSION" "$BUILD_NUMBER" "$COMMIT" > "$RELEASE_NOTES"
+  fi
   "$SPARKLE_BIN/generate_appcast" ${SPARKLE_KEY_ARGS[@]+"${SPARKLE_KEY_ARGS[@]}"} \
     --download-url-prefix "https://github.com/$GITHUB_REPO/releases/download/$TAG/" \
     --embed-release-notes \
@@ -237,6 +260,12 @@ if [[ $PUBLISH -eq 1 ]]; then
   fi
   NOTES_FILE="$EXPORT_DIR/notes.md"
   {
+    echo "## What's new"
+    echo
+    node "$NOTES_SCRIPT" markdown "$VERSION"
+    echo
+    echo "## Mac"
+    echo
     echo "OpenClicky $VERSION (build $BUILD_NUMBER, $COMMIT)."
     echo
     if [[ "$SIGN_IDENTITY" == Apple\ Development* ]]; then

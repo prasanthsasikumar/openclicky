@@ -22,7 +22,8 @@
     "upstream:check": "node scripts/upstream-watch.mjs --write",
     "deploy:backend": "bash scripts/deploy-backend.sh",
     "lint:source": "bash macos/OpenClicky/scripts/check-source-rules.sh",
-    "check:skills": "node scripts/check-app-skills.mjs"
+    "check:skills": "node scripts/check-app-skills.mjs",
+    "check:changelog": "node scripts/release-notes.mjs check \"$(cat macos/OpenClicky/VERSION)\""
   },
   "engines": {
     "node": ">=22"
