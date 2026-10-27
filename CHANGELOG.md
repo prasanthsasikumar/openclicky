@@ -13,6 +13,7 @@ short paragraphs. Windows and Linux notes go in the same section when they apply
 
 - **"Rephrase this" rewrites in place in Apple Mail too.** With the cursor in an email body and nothing highlighted, "rephrase this so it sounds professional" rewrote nothing, because Mail's message body reports no text to Accessibility. Clicky now reads the box from the screenshot and, when you ask for a rewrite, selects it and pastes the new text. ⌘V puts the original back.
 - **Fix: dictation that heard nothing on some Macs.** Since 0.8.1, on some Macs every take ended in "didn't catch that" and the microphone test stayed flat, though the microphone worked everywhere else. OpenClicky now leaves the Mac's default microphone alone, as it did before.
+- **Fix: the hands-free shortcut works.** Holding ⌃ and tapping fn twice did nothing on Macs with a Globe key, because macOS sends an extra Globe key event after each fn tap that cut the double tap short. The island now shows the shortcut in the right order too: hold ⌃, tap fn twice.
 - **Fix: the Kokoro voice downloads again.** Its download failed its check after the archive was re-packed upstream. On Windows and Linux too.
 - **Fix: your music stays at full volume while Clicky is idle.** With the fast voice lane, other apps' sound could stay turned down until you quit OpenClicky. The microphone is now opened only when you press the shortcut.
 

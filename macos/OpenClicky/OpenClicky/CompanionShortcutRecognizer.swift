@@ -55,6 +55,8 @@ struct CompanionShortcutRecognizer {
     /// Two taps this close together make a double tap.
     static let doubleTapWindowSeconds: TimeInterval = 0.45
     private static let escapeKeyCode: UInt16 = 53
+    /// The fn / Globe key as a key event (kVK_Function is 63 on flagsChanged; this is the other one).
+    private static let globeKeyCode: UInt16 = 179
 
     /// The modifiers that take part in the shortcuts; caps lock and the like are ignored.
     private static let trackedModifierFlags: NSEvent.ModifierFlags = [.control, .option, .shift, .command, .function]
@@ -106,6 +108,10 @@ struct CompanionShortcutRecognizer {
     ) -> [CompanionShortcutEvent] {
         switch eventKind {
         case .keyDown, .keyUp:
+            // With control held, macOS follows each release of fn with a key down and up of the
+            // Globe key's own key code. That is fn itself, not another key: counting it as one
+            // forgot the first tap and the hands-free double tap never completed (2026-10-27).
+            if keyCode == Self.globeKeyCode { return [] }
             keyWasPressedDuringControlTap = true
             if isDictationKeyHeld {
                 keyEventDuringDictationHold = true

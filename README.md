@@ -42,8 +42,8 @@ when it is more than a question, hand the task to a Codex agent. MIT licensed.
 
 ### Ask and get pointed at it
 
-Hold **⌃ control + ⌥ option** and ask about anything on screen, tap **⌃ twice** to type instead, tap
-**fn + ⌃ twice** for hands-free. The "do work" lane (files, commands, apps) additionally needs the
+Hold **⌃ control + ⌥ option** and ask about anything on screen, tap **⌃ twice** to type instead, hold
+**⌃** and tap **fn twice** for hands-free. The "do work" lane (files, commands, apps) additionally needs the
 `openclicky` CLI and [Codex](https://github.com/openai/codex): see [Run the agent](docs/setup.md#run-the-agent).
 
 [![Watch the OpenClicky demo](https://img.youtube.com/vi/bWsjCIrmoKA/maxresdefault.jpg)](https://youtu.be/bWsjCIrmoKA)

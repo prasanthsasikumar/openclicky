@@ -1494,7 +1494,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    /// fn + control tapped twice: always-on listening on or off (Realtime only).
+    /// fn tapped twice with control held: always-on listening on or off (Realtime only).
     func toggleHandsFree() {
         guard usesRealtimeVoice else {
             // Say the real reason: a free account cannot use realtime at all, whatever the switch says.
@@ -1506,7 +1506,7 @@ final class CompanionManager: ObservableObject {
         }
         setAlwaysListening(!isAlwaysListening)
         let feedback = isAlwaysListening
-            ? "hands-free is on. just talk, i'm listening. tap fn + control twice to stop."
+            ? "hands-free is on. just talk, i'm listening. hold control and tap fn twice to stop."
             : "hands-free is off. hold control + option to talk."
         if isCursorDocked {
             showCaptionBesideMouseWhileDocked(feedback, holdSeconds: 6)

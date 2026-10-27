@@ -367,13 +367,15 @@ struct NotchShortcutGrid: View {
             }
             GridRow {
                 shortcut(title: "dictate", keys: [dictationKey], gesture: "hold", isLive: false)
-                shortcut(title: "hands-free", keys: [dictationKey, "⌃"], gesture: "tap ×2", isLive: companionManager.isAlwaysListening)
+                // Control goes down first: fn pressed first starts a dictation take.
+                shortcut(title: "hands-free", heldKey: "⌃", keys: [dictationKey], gesture: "tap ×2", isLive: companionManager.isAlwaysListening)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func shortcut(title: String, keys: [String], gesture: String, isLive: Bool) -> some View {
+    /// `heldKey`: a key held down before the others, drawn first with "hold".
+    private func shortcut(title: String, heldKey: String? = nil, keys: [String], gesture: String, isLive: Bool) -> some View {
         HStack(spacing: 4) {
             Text(title).font(.system(size: 12)).foregroundColor(DS.HUD.text).lineLimit(1).fixedSize()
             if isLive {
@@ -381,6 +383,14 @@ struct NotchShortcutGrid: View {
             }
             Spacer(minLength: 4)
             HStack(spacing: 3) {
+                if let heldKey {
+                    NotchKeycap(text: heldKey, isSmall: true)
+                    Text("hold")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(DS.HUD.text3)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
                 ForEach(keys, id: \.self) { key in NotchKeycap(text: key, isSmall: true) }
                 Text(gesture)
                     .font(.system(size: 10, design: .monospaced))

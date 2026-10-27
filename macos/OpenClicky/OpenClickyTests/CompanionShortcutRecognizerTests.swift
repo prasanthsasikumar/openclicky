@@ -15,6 +15,7 @@ struct CompanionShortcutRecognizerTests {
     private static let fnKeyCode: UInt16 = 63
     private static let leftControlKeyCode: UInt16 = 59
     private static let leftOptionKeyCode: UInt16 = 58
+    private static let globeKeyCode: UInt16 = 179
 
     private func flags(_ recognizer: inout CompanionShortcutRecognizer, _ modifierFlags: NSEvent.ModifierFlags, keyCode: UInt16 = 0, at time: TimeInterval) -> [CompanionShortcutEvent] {
         recognizer.handle(.flagsChanged, keyCode: keyCode, modifierFlags: modifierFlags, at: time)
@@ -115,6 +116,20 @@ struct CompanionShortcutRecognizerTests {
         #expect(flags(&recognizer, [.control], keyCode: Self.fnKeyCode, at: 0.1) == [.dictationReleased(wasTap: true)])
         _ = flags(&recognizer, [.control, .function], keyCode: Self.fnKeyCode, at: 0.3)
         #expect(flags(&recognizer, [.control], keyCode: Self.fnKeyCode, at: 0.4) == [.dictationReleased(wasTap: true), .handsFreeToggleRequested])
+    }
+
+    /// Recorded on a MacBook Pro (2026-10-27): with control held, every release of fn is followed
+    /// 1 ms later by a key down and up of key code 179, the Globe key's own key event. It is fn
+    /// itself, not another key, so it must not break the double tap.
+    @Test func theGlobeKeyEventAfterEachFnReleaseStillTogglesHandsFree() {
+        var recognizer = CompanionShortcutRecognizer()
+        _ = flags(&recognizer, [.control], keyCode: Self.leftControlKeyCode, at: 0)
+        _ = flags(&recognizer, [.control, .function], keyCode: Self.fnKeyCode, at: 1.749)
+        #expect(flags(&recognizer, [.control], keyCode: Self.fnKeyCode, at: 1.880) == [.dictationReleased(wasTap: true)])
+        #expect(recognizer.handle(.keyDown, keyCode: Self.globeKeyCode, modifierFlags: [.control], at: 1.881) == [])
+        #expect(recognizer.handle(.keyUp, keyCode: Self.globeKeyCode, modifierFlags: [.control], at: 1.881) == [])
+        _ = flags(&recognizer, [.control, .function], keyCode: Self.fnKeyCode, at: 1.972)
+        #expect(flags(&recognizer, [.control], keyCode: Self.fnKeyCode, at: 2.072) == [.dictationReleased(wasTap: true), .handsFreeToggleRequested])
     }
 
     @Test func fnControlOptionIsTalkNotDictation() {
