@@ -442,13 +442,23 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             mode: mode,
             instructions: connectInstructions,
             whileWaitingForHandshake: {
-                // Push-to-talk only opens the microphone while the shortcut is held; always-on keeps
-                // it open. The graph is built once here (and released right away) so key-down is a
-                // fast engine restart. Nothing is forwarded yet: that starts with a press or with
-                // `startListeningContinuously`, both after the connect returns.
+                // Always-on keeps the microphone open, so its graph is built while the socket comes
+                // up. Push-to-talk builds it at the press instead (`beginPushToTalk`). Nothing is
+                // forwarded yet: that starts with a press or with `startListeningContinuously`, both
+                // after the connect returns.
+                guard Self.startsAudioWhileConnecting(mode: mode) else { return }
                 try await self.startAudioIfNeeded()
-                if mode == .pushToTalk { self.audio.pause() }
             })
+    }
+
+    /// Whether connecting also sets up the audio graph. Not for push-to-talk: the graph carries
+    /// Apple's voice-processing unit, which turns every other app's sound down for as long as it
+    /// exists, paused or not. Built at launch and only paused, it kept headphones quiet until
+    /// OpenClicky quit (2026-10-24); the idle release in `scheduleIdlePauseIfNeeded` only follows a
+    /// turn. The first press after launch now opens the microphone cold (~0.7 s instead of ~0.1 s),
+    /// as every press after half a minute idle already did.
+    nonisolated static func startsAudioWhileConnecting(mode: TurnMode) -> Bool {
+        mode == .alwaysOn
     }
 
     /// Opens `socket` and brings the session up, in this order: resume, wait for the server's first

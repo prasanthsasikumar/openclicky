@@ -39,6 +39,15 @@ struct RealtimeConnectionRuleTests {
         #expect(!RealtimeVoiceClient.isRecentlyUsed(lastTurnStartedAt: now.addingTimeInterval(-3 * 60 * 60), now: now))
     }
 
+    /// Apple's voice-processing unit turns every other app's sound down while it exists, even
+    /// stopped. Building it while connecting at launch, then only pausing it, left headphones quiet
+    /// until OpenClicky quit (2026-10-24). Push-to-talk now builds it at the press; hands-free,
+    /// which listens all the time, still starts it with the connection.
+    @Test func connectingStartsAudioOnlyInHandsFreeMode() {
+        #expect(!RealtimeVoiceClient.startsAudioWhileConnecting(mode: .pushToTalk))
+        #expect(RealtimeVoiceClient.startsAudioWhileConnecting(mode: .alwaysOn))
+    }
+
     /// A press released before the microphone opened sent an empty commit and asked for a reply
     /// anyway; the model invented a task and handed it to the agent. Under OpenAI's own 100 ms
     /// minimum, a turn is not sent.
