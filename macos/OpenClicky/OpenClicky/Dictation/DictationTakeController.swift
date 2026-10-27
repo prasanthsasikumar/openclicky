@@ -361,7 +361,7 @@ final class DictationTakeController: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                     guard let self, self.isTakeInProgress, self.takeID == endedTakeID, !self.takeReceivedFinalTranscript,
                           !self.dictationManager.isDictationInProgress else { return }
-                    self.failTake("didn't catch that", takeID: endedTakeID)
+                    self.failTakeThatHeardNoWords(takeID: endedTakeID)
                 }
             }
             .store(in: &cancellables)
@@ -692,6 +692,19 @@ final class DictationTakeController: ObservableObject {
         scheduleIdle(after: 2.5)
     }
 
+    /// The engine gave back no words. When the microphone never heard a voice either, the
+    /// microphone is the likely cause (a silent input records nothing for Parakeet to read), so the
+    /// orb says so; the log keeps the loudest level either way.
+    private func failTakeThatHeardNoWords(takeID failedTakeID: UUID) {
+        let loudestLevelDescription = loudestLevelThisTake.map { String(format: "%.3f", Double($0)) } ?? "none"
+        AppLog.append("take \(failedTakeID.uuidString.prefix(8)) no words (loudest \(loudestLevelDescription), \(levelSamplesThisTake) levels)")
+        if let loudestLevelThisTake, levelSamplesThisTake >= 10, loudestLevelThisTake < Self.silentTakeLevel {
+            failTake("didn't catch that. check the microphone", takeID: failedTakeID)
+        } else {
+            failTake("didn't catch that", takeID: failedTakeID)
+        }
+    }
+
     private func endTake() {
         state = .idle
         takeIsToggle = false
@@ -719,7 +732,7 @@ final class DictationTakeController: ObservableObject {
             raw = liveTyping.typedRawWords.joined(separator: " ")
         }
         guard !raw.isEmpty else {
-            failTake("didn't catch that", takeID: thisTakeID)
+            failTakeThatHeardNoWords(takeID: thisTakeID)
             return
         }
         // Words from a take the microphone never heard a voice in are the engine's guess at

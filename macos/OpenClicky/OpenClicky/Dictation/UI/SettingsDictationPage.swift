@@ -242,9 +242,12 @@ private struct MicrophoneTestRow: View {
     @State private var isTesting = false
     @State private var testLevel: CGFloat = 0
     @State private var testEngine: AVAudioEngine?
+    /// Why the last test could not start. The button used to do nothing at all, which looked
+    /// exactly like a microphone that hears nothing (a tester, 2026-10-27).
+    @State private var testStartProblem: String?
 
     var body: some View {
-        SettingsRow(title: "Test your microphone", detail: isTesting ? "Speak, and the bars should follow your voice." : "Hear whether the chosen input picks you up.") {
+        SettingsRow(title: "Test your microphone", detail: testRowDetail) {
             HStack(spacing: 12) {
                 if isTesting { OrbLevelBars(level: testLevel, color: SettingsLook.success).frame(width: 40, height: 16) }
                 Button(isTesting ? "Stop" : "Speak to Test") { isTesting ? stopTest() : startTest() }
@@ -254,20 +257,38 @@ private struct MicrophoneTestRow: View {
         .onDisappear(perform: stopTest)
     }
 
+    private var testRowDetail: String {
+        if isTesting { return "Speak, and the bars should follow your voice." }
+        if let testStartProblem { return testStartProblem }
+        return "Hear whether the chosen input picks you up."
+    }
+
     private func startTest() {
+        testStartProblem = nil
         let engine = AVAudioEngine()
         MicrophoneDevices.apply(preferredUID: settings.preferredMicrophoneUID, to: engine)
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 else { return }
+        let microphoneName = MicrophoneDevices.effectiveInputName(preferredUID: settings.preferredMicrophoneUID) ?? "no microphone"
+        AppLog.append("microphone test: \(microphoneName), \(Int(format.sampleRate)) Hz, \(format.channelCount) ch, permission \(AVCaptureDevice.authorizationStatus(for: .audio).rawValue)")
+        guard format.sampleRate > 0 else {
+            testStartProblem = "\(microphoneName) gave no audio. Check Privacy & Security › Microphone, or pick another input."
+            AppLog.append("microphone test: no input format")
+            return
+        }
         let testLevelBinding = $testLevel
         input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.makeLevelTap { level in
             DispatchQueue.main.async { testLevelBinding.wrappedValue = level }
         })
         engine.prepare()
-        if (try? engine.start()) != nil {
+        do {
+            try engine.start()
             testEngine = engine
             isTesting = true
+        } catch {
+            input.removeTap(onBus: 0)
+            testStartProblem = "\(microphoneName) wouldn't start (\((error as NSError).code)). Pick another input, or reconnect it."
+            AppLog.append("microphone test: start failed: \(error)")
         }
     }
 

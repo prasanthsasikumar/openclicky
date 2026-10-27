@@ -323,6 +323,21 @@ struct DictationTakeControllerTests {
         #expect(h.controller.lastTake?.displayText.lowercased().contains("this is a test") == true)
     }
 
+    /// A microphone that records silence makes Parakeet answer nothing at all, which said only
+    /// "didn't catch that" five takes in a row (a tester after updating, 2026-10-27): no words
+    /// from a take that never heard a voice points at the microphone.
+    @Test @MainActor func noWordsFromASilentMicrophoneSaysCheckTheMicrophone() async throws {
+        let h = try Harness()
+        h.controller.handle(.dictationPressed)
+        await h.waitUntil { h.controller.state == .listening }
+        for _ in 0..<12 { h.capture.level.send(0.004) }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        h.controller.handle(.dictationReleased(wasTap: false))
+        h.capture.deliverFinal("")
+        await h.waitUntil { h.controller.state == .idle }
+        #expect(h.orb.phase == .failed("didn't catch that. check the microphone"))
+    }
+
     /// Speakers in the headphone jack: its input hears nothing, and the offline recogniser wrote
     /// the silence down as "no", which was pasted. A take whose microphone never heard a voice
     /// pastes nothing; the same words from a microphone that did are pasted.

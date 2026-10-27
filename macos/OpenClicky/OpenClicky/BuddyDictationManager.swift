@@ -61,7 +61,10 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     }
 
     private var transcriptionProvider: any BuddyTranscriptionProvider
-    private let audioEngine = AVAudioEngine()
+    private var audioEngine = AVAudioEngine()
+    /// True once `audioEngine` was pointed at a microphone other than the default; it stays there,
+    /// so the next take on the default gets a new engine.
+    private var audioEngineHasChosenMicrophone = false
     private var activeTranscriptionSession: (any BuddyStreamingTranscriptionSession)?
     /// Which session the callbacks may speak for. Each session gets a new identity before it is
     /// opened, and it is cleared when the session ends, so a late partial, final or error from an
@@ -317,10 +320,18 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         self.activeTranscriptionSession = activeTranscriptionSession
         print("🎙️ BuddyDictationManager: provider ready, starting audio engine")
 
-        let inputNode = audioEngine.inputNode
         // Settings → microphone: a chosen input device, else the system default.
+        let usesChosenMicrophone = MicrophoneDevices.choiceDiffersFromDefault(preferredUID: preferredMicrophoneUID)
+        if audioEngineHasChosenMicrophone && !usesChosenMicrophone {
+            audioEngine = AVAudioEngine()
+        }
+        audioEngineHasChosenMicrophone = usesChosenMicrophone
         MicrophoneDevices.apply(preferredUID: preferredMicrophoneUID, to: audioEngine)
+        let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
+        // Which microphone a take records from, so a log of takes that heard nothing says whether
+        // the input was a silent device (a virtual one, the headphone jack) or the engine.
+        AppLog.append("microphone: \(MicrophoneDevices.effectiveInputName(preferredUID: preferredMicrophoneUID) ?? "none"), \(Int(inputFormat.sampleRate)) Hz, \(inputFormat.channelCount) ch")
 
         inputNode.removeTap(onBus: 0)
         // AVAudioEngine calls this block on the CoreAudio render thread, but `AVAudioNodeTapBlock`

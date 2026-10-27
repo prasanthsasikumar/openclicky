@@ -54,16 +54,21 @@ nonisolated enum MicrophoneDevices {
         return stringProperty(of: deviceID, kAudioObjectPropertyName)
     }
 
-    /// Points the engine's input at the device with `uid`, or at the system default when `uid` is
-    /// nil or no longer connected. The default is set explicitly, not left alone: an engine kept for
-    /// the app's life stays on the last device it was given, so going back to "mac default" did
-    /// nothing until relaunch. Returns false when no device could be selected (logged).
+    /// Points the engine's input at the device with `uid` when that is not the system default, and
+    /// otherwise leaves a fresh engine alone. A fresh engine's input is not the microphone itself but
+    /// a device AVAudioEngine builds to follow the default; setting the default microphone on it
+    /// anyway reconfigures the engine, and on a tester's Mac (2026-10-27, 44.1 kHz built-in mic) the
+    /// engine then delivered two silent buffers per take and stopped, so every take and the mic test
+    /// heard nothing. An engine that was once given a chosen device stays on it, so a caller keeping
+    /// one across takes builds a new engine to go back to the default (`differsFromDefault`).
+    /// Returns false when no device could be selected (logged).
     @discardableResult
     static func apply(preferredUID: String?, to engine: AVAudioEngine) -> Bool {
         let connected = allDeviceIDs().compactMap { deviceID in
             stringProperty(of: deviceID, kAudioDevicePropertyDeviceUID).map { ConnectedInput(deviceID: deviceID, uid: $0) }
         }
-        let choice = deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultInputDeviceID())
+        let defaultDeviceID = defaultInputDeviceID()
+        let choice = deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultDeviceID)
         if choice.chosenUIDIsMissing, let preferredUID {
             AppLog.append("microphone: \(preferredUID) is not connected, using the mac default")
         }
@@ -71,6 +76,7 @@ nonisolated enum MicrophoneDevices {
             AppLog.append("microphone: no input device to select")
             return false
         }
+        guard choiceDiffersFromDefault(choice: choice, defaultDeviceID: defaultDeviceID) else { return true }
         guard let audioUnit = engine.inputNode.audioUnit else {
             AppLog.append("microphone: the engine has no input unit")
             return false
@@ -84,9 +90,9 @@ nonisolated enum MicrophoneDevices {
         return true
     }
 
-    /// True when the person chose a microphone that is connected and is not the Mac's default
-    /// input. Echo cancellation can only record from the default, so the realtime lane asks this
-    /// before turning it on.
+    /// True when a take records from a device other than the Mac's default input: a connected
+    /// chosen one, or the built-in microphone standing in for the headphone jack. Echo cancellation
+    /// can only record from the default, so the realtime lane asks this before turning it on.
     static func choiceDiffersFromDefault(preferredUID: String?) -> Bool {
         let connected = allDeviceIDs().compactMap { deviceID in
             stringProperty(of: deviceID, kAudioDevicePropertyDeviceUID).map { ConnectedInput(deviceID: deviceID, uid: $0) }
