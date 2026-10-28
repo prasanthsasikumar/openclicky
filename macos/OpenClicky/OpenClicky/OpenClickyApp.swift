@@ -561,6 +561,23 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         if let tourIndex = launchArguments.firstIndex(of: "--openclicky-ui-tour"), tourIndex + 1 < launchArguments.count {
             UITour(companionManager: companionManager, logPath: launchArguments[tourIndex + 1]).run()
         }
+        if let pasteIndex = launchArguments.firstIndex(of: "--openclicky-paste-probe"), pasteIndex + 1 < launchArguments.count {
+            // Debug: does this build's paste land in the front app's text box? ⌘A then the text
+            // through FrontAppTextInserter, read back by PasteLanding, after 3 s for the box to be focused.
+            setvbuf(stdout, nil, _IONBF, 0)
+            let text = launchArguments[pasteIndex + 1]
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                let before = FocusedFieldReader.snapshot()
+                print("paste-probe: trusted=\(AXIsProcessTrusted()) front=\(before.appName ?? "?") role=\(before.role ?? "none") editable=\(before.isEditable)")
+                _ = WriteInPlace.postCommandKey(0) // virtual key code 0 is "a": ⌘A
+                try? await Task.sleep(for: .milliseconds(150))
+                let outcome = FrontAppTextInserter.insert(text)
+                let landing = await PasteLanding.verify(text: text, before: before)
+                print("paste-probe: insert=\(outcome) landing=\(landing)")
+                exit(0)
+            }
+        }
         if let askIndex = launchArguments.firstIndex(of: "--openclicky-ask"), askIndex + 1 < launchArguments.count {
             // Debug: one typed question through the whole ask lane (the local rung, else the cloud
             // path with its pause and screenshot), exiting once the turn is over. For live checks

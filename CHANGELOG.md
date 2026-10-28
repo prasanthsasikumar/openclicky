@@ -11,6 +11,7 @@ short paragraphs. Windows and Linux notes go in the same section when they apply
 
 ## 0.9.4
 
+- **Simple requests are done on your Mac.** "Open Safari", "set the volume to thirty", "pause the music", and "make this shorter" with text in front of you are understood by Apple Intelligence on Macs that have it (macOS 26): no screenshot is sent, no credits are used, and the answer comes in about a second. Everything else goes to Clicky as before. Settings → Clicky → Simple requests stay on this Mac.
 - **"Rephrase this" rewrites in place in Apple Mail too.** With the cursor in an email body and nothing highlighted, "rephrase this so it sounds professional" rewrote nothing, because Mail's message body reports no text to Accessibility. Clicky now reads the box from the screenshot and, when you ask for a rewrite, selects it and pastes the new text. ⌘V puts the original back.
 - **Fix: dictation that heard nothing on some Macs.** Since 0.8.1, on some Macs every take ended in "didn't catch that" and the microphone test stayed flat, though the microphone worked everywhere else. OpenClicky now leaves the Mac's default microphone alone, as it did before.
 - **Fix: the Kokoro voice downloads again.** Its download failed its check after the archive was re-packed upstream. On Windows and Linux too.
