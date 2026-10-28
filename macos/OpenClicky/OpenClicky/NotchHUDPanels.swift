@@ -62,7 +62,7 @@ struct NotchBandRow: View {
             // The pointer's mark (its state on hover) and, when there is more than one component
             // to show, the capsule that flips them: no standing line of text, no row of its own.
             HStack(spacing: 10) {
-                NotchPointerMark(isDimmed: companionManager.isCursorDocked)
+                NotchPointerMark(isDimmed: false)
                     .help(NotchPointerStatus.statusText(model: model, companionManager: companionManager))
                     .accessibilityLabel(NotchPointerStatus.statusText(model: model, companionManager: companionManager))
                 if model.showsCapsule {
@@ -110,7 +110,7 @@ struct NotchPointerStatus: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            NotchPointerMark(isDimmed: companionManager.isCursorDocked)
+            NotchPointerMark(isDimmed: false)
             Text(Self.statusText(model: model, companionManager: companionManager))
                 .font(.system(size: 12))
                 .foregroundColor(DS.HUD.text2)
@@ -120,9 +120,8 @@ struct NotchPointerStatus: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// From the dock state, the "show the pointer" switch and the "the pointer shows" setting.
+    /// From the "show the pointer" switch and the "the pointer shows" setting.
     static func statusText(model: NotchHUDModel, companionManager: CompanionManager) -> String {
-        if companionManager.isCursorDocked { return model.placement.isSideDrawer ? "pointer is docked in the drawer" : "pointer is docked" }
         if !companionManager.isClickyCursorEnabled { return "pointer shows while you talk" }
         switch companionManager.pointerPresence {
         case .always: return "pointer follows your mouse"
@@ -154,7 +153,6 @@ struct NotchPeekLine: View {
 
     /// The status in fewer words, so it fits beside "click to open" on the peek's one line.
     static func shortStatusText(companionManager: CompanionManager) -> String {
-        if companionManager.isCursorDocked { return "pointer docked" }
         if !companionManager.isClickyCursorEnabled { return "pointer while you talk" }
         switch companionManager.pointerPresence {
         case .always: return "pointer follows you"
@@ -165,7 +163,7 @@ struct NotchPeekLine: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            NotchPointerMark(isDimmed: companionManager.isCursorDocked)
+            NotchPointerMark(isDimmed: false)
             Text(text)
                 .foregroundColor(DS.HUD.text2)
             Text("· click to open")
@@ -277,8 +275,8 @@ enum NotchVoiceDestination {
 
 // MARK: - Body
 
-/// The body's one row: dock or release the pointer, (i) "what can you do?", and the shortcuts (or,
-/// when the dictation engine can't run, what is missing).
+/// The body's one row: (i) "what can you do?" and the shortcuts (or, when the dictation engine
+/// can't run, what is missing). The dock button that led the row is gone (2026-10-28).
 struct NotchPanelBody: View {
     @ObservedObject var model: NotchHUDModel
     @ObservedObject var companionManager: CompanionManager
@@ -289,41 +287,19 @@ struct NotchPanelBody: View {
     var body: some View {
         if model.placement.isSideDrawer {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) { dockButton; infoButton }
+                infoButton
                 shortcutsOrWarning
             }
         } else {
             HStack(alignment: .center, spacing: 10) {
-                dockButton.frame(width: 128)
                 infoButton
                 shortcutsOrWarning.padding(.leading, 2)
             }
         }
     }
 
-    private var dockButton: some View {
-        let isDocked = companionManager.isCursorDocked
-        let isIdle = companionManager.voiceState == .idle
-        return Button(action: { companionManager.setCursorDocked(!isDocked) }) {
-            Text(isDocked ? "release pointer" : (model.placement.isSideDrawer ? "dock in the drawer" : "dock in the notch"))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.black)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.rowHeight)
-                .background(RoundedRectangle(cornerRadius: DS.HUD.tileRadius, style: .continuous).fill(isDocked ? DS.HUD.pointer : DS.HUD.text))
-                .contentShape(RoundedRectangle(cornerRadius: DS.HUD.tileRadius, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .pointerCursor(isEnabled: isIdle)
-        .disabled(!isIdle)
-        .opacity(isIdle ? 1 : 0.5)
-        .help(isDocked ? "talk still works while docked" : "park the pointer until Clicky needs it")
-    }
-
-    /// (i): the buddy types out what OpenClicky does, next to itself (or in this island while it
-    /// is docked). The panel closes so the buddy is in view.
+    /// (i): the buddy types out what OpenClicky does, next to itself. The panel closes so the
+    /// buddy is in view.
     private var infoButton: some View {
         Button(action: {
             model.close()

@@ -14,6 +14,16 @@ import Testing
 struct PointerPresenceTests {
     private let frameInterval: TimeInterval = 1.0 / 30.0
 
+    @Test @MainActor func aPointerThatWasDockedIsReleasedOnceAndTheSettingForgotten() {
+        // "Dock the pointer in the island" was removed (2026-10-28); someone who had it on gets the
+        // pointer the way everyone has it, and the stored flag goes so it is never read again.
+        let defaults = UserDefaults(suiteName: "retired-dock-\(UUID().uuidString)")!
+        defaults.set(true, forKey: CompanionManager.retiredDockedPointerKey)
+        #expect(CompanionManager.forgetRetiredDockSetting(in: defaults))
+        #expect(defaults.object(forKey: CompanionManager.retiredDockedPointerKey) == nil)
+        #expect(!CompanionManager.forgetRetiredDockSetting(in: defaults))
+    }
+
     /// Feeds a straight move from `from` to `to` over `duration` seconds, sampled at 30 Hz.
     private func sweep(_ tracker: inout PointerPresenceTracker, from: CGPoint, to: CGPoint, start: TimeInterval, duration: TimeInterval) -> TimeInterval {
         let steps = max(1, Int(duration / frameInterval))

@@ -5,16 +5,16 @@
 //  The notch HUD, drawn like HeyClicky's: a solid black island hanging from the top of the screen
 //  around the notch, its top corners flaring into the menu bar and its bottom corners rounded, with
 //  no border and no shadow. Colours and sizes come from `DS.HUD` (the refinement sheet). States:
-//    collapsed — exactly the notch (or a virtual notch on other displays), docked pointer or not:
-//                hovering opens the panel, whose band says the pointer is docked and whose dock
-//                button releases it
+//    collapsed — exactly the notch (or a virtual notch on other displays): hovering peeks, a
+//                click opens the panel
 //    compact   — a 380 × 37 strip that opens while OpenClicky listens / thinks / speaks, one
 //                caption line taller when there is something to say under it
 //    connect   — the "connect <app> to openclicky?" card that opens when a supported app or site
 //                comes to the front for the first time (never / not now / connect + example prompts)
 //    full      — the one short panel that opens on hover or click: the band (pointer status,
-//                voice pill, Settings, quit) over one row (dock, (i), the four shortcuts); no tabs
-//  The cursor buddy can dock here: it flies into the notch and lives in the HUD as a glowing badge.
+//                voice pill, Settings, quit) over one row ((i), the four shortcuts); no tabs
+//  The first-run tour flies the cursor buddy out of the notch; it never docks here (the option to
+//  park it in the notch was removed 2026-10-28).
 //  `HUDPlacement` moves the island: the notch (above), a drawer on the left or right screen edge
 //  (collapsed to a vertical handle), or hidden while idle (shortcuts only).
 //
@@ -39,7 +39,8 @@ struct NotchGeometry: Equatable {
         CGRect(x: screenFrame.midX - notchWidth / 2, y: screenFrame.maxY - notchHeight, width: notchWidth, height: notchHeight)
     }
 
-    /// Where the docked buddy "lives": just under the notch's bottom edge.
+    /// Just under the notch's bottom edge: where the buddy appears when it is introduced from the
+    /// notch (the first-run tour) before flying to the mouse.
     var dockPoint: CGPoint {
         CGPoint(x: notchRect.midX, y: notchRect.minY - 6)
     }
@@ -100,8 +101,8 @@ final class NotchHUDModel: ObservableObject {
     // side drawer); heights include the menu-bar band the island hangs from.
     /// Nothing shows below the notch while idle (HeyClicky's collapsed state is the notch itself).
     let collapsedLipHeight: CGFloat = 0
-    /// The busy strip is 380 × 37 and grows by one caption line; the caption strip (the (i) text
-    /// while the buddy is docked) is wider and three lines tall.
+    /// The busy strip is 380 × 37 and grows by one caption line; the caption strip (the goodbye on
+    /// quit) is wider and three lines tall.
     /// The busy strip is wider under a hardware notch, so the words beside the camera have room.
     var compactWidth: CGFloat {
         if isShowingCaption { return 400 }
@@ -151,7 +152,7 @@ final class NotchHUDModel: ObservableObject {
         return cardTopInset + (placement.isSideDrawer ? 168 : 116) + statusRoom
     }
 
-    /// Text typed out in the compact strip (the open panel's (i) while the buddy is docked); nil = none.
+    /// Text typed out in the compact strip (the goodbye on quit); nil = none.
     @Published private(set) var captionText: String?
     /// True while the text composer is open on this island.
     @Published private(set) var isComposerOpen = false
@@ -163,11 +164,6 @@ final class NotchHUDModel: ObservableObject {
 
     /// The caption strip shows only while nothing busier needs the island (the goodbye excepted).
     var isShowingCaption: Bool { captionText != nil && (!isBusy || isSayingGoodbye) }
-
-    /// True while the cursor buddy is docked; mirrored from CompanionManager by the HUD manager.
-    @Published private(set) var isCursorDocked = false
-    /// Whether this screen's island is the one the buddy docks into (the notch screen).
-    var hostsDockedCursor = false
 
     /// Displays without a notch show only the handle line, flush with the top edge of the screen
     /// (inside the menu bar band, where the notch would be), like HeyClicky's.
@@ -271,7 +267,7 @@ final class NotchHUDModel: ObservableObject {
     var showsCapsule: Bool { selection.available.count > 1 }
 
     /// The active component's height: 45 pt for the shortcuts row under a notch, 92 in a side
-    /// drawer (the dock button stacks over the shortcut grid), else what the component asks for.
+    /// drawer (the (i) stacks over the shortcut grid), else what the component asks for.
     var slotHeight: CGFloat {
         let component = registry.first { $0.id == selection.active } ?? registry[0]
         if placement.isSideDrawer && component.id == IslandComponentRegistry.shortcutsID { return 92 }
@@ -331,7 +327,7 @@ final class NotchHUDModel: ObservableObject {
 
     var islandFrame: CGRect { islandFrame(width: width, height: height) }
 
-    /// Where the docked buddy "lives": under the notch, or just inside a side drawer's handle.
+    /// Where the buddy is introduced from: under the notch, or just inside a side drawer's handle.
     var dockPoint: CGPoint {
         guard placement.isSideDrawer else { return geometry.dockPoint }
         let handle = islandFrame(width: collapsedWidth, height: collapsedHeight)
@@ -447,12 +443,6 @@ final class NotchHUDModel: ObservableObject {
         guard hasCompactDetailLine != hasDetailLine else { return }
         hasCompactDetailLine = hasDetailLine
         if expansion == .compact { onLayoutChanged?() }
-    }
-
-    func setCursorDocked(_ docked: Bool) {
-        guard isCursorDocked != docked else { return }
-        isCursorDocked = docked
-        onLayoutChanged?()
     }
 
     // MARK: Drags
@@ -693,7 +683,7 @@ final class NotchHUDWindow: NSPanel {
 // MARK: - Manager
 
 /// Owns one HUD window per screen. The screen with the hardware notch hosts the primary HUD (the
-/// cursor docks there); every other display gets the same island drawn as a pill under its menu
+/// first-run tour flies the cursor out of it); every other display gets the same island drawn as a pill under its menu
 /// bar, so the HUD is reachable wherever the pointer is. Each window is sized to its state so the
 /// transparent area never blocks clicks elsewhere.
 @MainActor
@@ -764,12 +754,9 @@ final class NotchHUDManager {
         instances.first(where: { $0.model.geometry.hasHardwareNotch }) ?? instances.first
     }
 
-    /// Where the docked buddy lives (primary screen).
+    /// Just under the primary screen's notch: where the buddy starts when it is introduced from
+    /// the notch.
     var dockPoint: CGPoint { primaryInstance?.model.dockPoint ?? dockGeometry.dockPoint }
-
-    /// The display the buddy docks on (AppKit global frame), so a flight from another display
-    /// can be split at the display edges.
-    var dockScreenFrame: CGRect { dockGeometry.screenFrame }
 
     private var dockGeometry: NotchGeometry {
         if let primaryInstance { return primaryInstance.model.geometry }
@@ -879,7 +866,7 @@ final class NotchHUDManager {
         composerThreadId = nil
     }
 
-    // MARK: Caption (the open panel's (i) while the buddy is docked)
+    // MARK: Caption (the goodbye on quit)
 
     private var captionTypingTimer: Timer?
     private var captionDismissWorkItem: DispatchWorkItem?
@@ -1008,14 +995,12 @@ final class NotchHUDManager {
             }
             let model = NotchHUDModel(geometry: geometry)
             model.placement = placement
-            model.hostsDockedCursor = Self.primaryScreen.map(Self.screenID(of:)) == screenID
             model.glassLevel = UserDefaults.standard.object(forKey: IslandGlass.defaultsKey) as? Double ?? IslandGlass.defaultLevel
             model.reduceMotionProvider = { [settings = companionManager.dictationSettings] in settings.reduceAnimation }
             model.setBusy(isBusy)
             model.setSpeaking(isSpeaking)
             model.setGuideStep(companionManager.guideStepUnderWay)
             model.setCompactDetailLine(hasCompactDetailLine)
-            model.setCursorDocked(companionManager.isCursorDocked)
             model.setConnectPrompt(connectPrompt)
             model.setPermissionPrompt(permissionPrompt)
             model.setTourCard(tourCard)
@@ -1080,12 +1065,6 @@ final class NotchHUDManager {
                 guard let self else { return }
                 self.hasCompactDetailLine = hasDetailLine
                 self.instances.forEach { $0.model.setCompactDetailLine(hasDetailLine) }
-            }
-            .store(in: &busyCancellables)
-        companionManager.$isCursorDocked
-            .removeDuplicates()
-            .sink { [weak self] docked in
-                self?.instances.forEach { $0.model.setCursorDocked(docked) }
             }
             .store(in: &busyCancellables)
         observeIslandContext(of: companionManager)
@@ -1511,7 +1490,6 @@ struct NotchHUDView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: islandAlignment)
         .contentShape(Rectangle())
         .animation(model.isSettlingGracefully ? .spring(response: 1.3, dampingFraction: 0.92) : (model.reduceMotion ? IslandMotion.fade : .spring(response: 0.42, dampingFraction: 0.84)), value: expansion)
-        .animation(.easeInOut(duration: 0.25), value: companionManager.isCursorDocked)
         .animation(.easeInOut(duration: 0.2), value: companionManager.voiceState)
         // The whole island (the notch, the peek, the open panel) takes drops for the shelf.
         .onDrop(of: IslandDropDelegate.acceptedTypes, delegate: IslandDropDelegate(model: model, shelf: companionManager.notchHUDManager.shelf))
@@ -1719,7 +1697,7 @@ struct NotchCompactStatusView: View {
     }
 }
 
-/// The (i) caption while the buddy is docked: the badge with the text typing out next to it.
+/// The island's caption (the goodbye on quit): the badge with the text typing out next to it.
 struct NotchCaptionView: View {
     @ObservedObject var companionManager: CompanionManager
     let captionText: String
@@ -1862,7 +1840,7 @@ struct NotchComposerTextField: NSViewRepresentable {
     }
 }
 
-/// The docked buddy, or the current voice-state indicator while busy.
+/// The pointer's mark, or the current voice-state indicator while busy.
 struct NotchBuddyBadge: View {
     @ObservedObject var companionManager: CompanionManager
 
@@ -1873,16 +1851,7 @@ struct NotchBuddyBadge: View {
         case .processing:
             BlueCursorSpinnerView()
         case .idle, .responding:
-            if companionManager.isCursorDocked {
-                Button(action: { companionManager.setCursorDocked(false) }) {
-                    NotchPointerMark(isDimmed: false)
-                }
-                .buttonStyle(.plain)
-                .pointerCursor()
-                .help("release the pointer")
-            } else {
-                NotchPointerMark(isDimmed: false)
-            }
+            NotchPointerMark(isDimmed: false)
         }
     }
 }

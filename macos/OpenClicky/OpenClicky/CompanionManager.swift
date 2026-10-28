@@ -346,7 +346,7 @@ final class CompanionManager: ObservableObject {
         return trimmed.isEmpty ? base : base + "\n\n" + trimmed
     }
 
-    // MARK: - Notch HUD + docked cursor (OpenClicky)
+    // MARK: - Notch HUD + the pointer's flights (OpenClicky)
 
     /// The notch HUD: a lip under the notch that opens on hover / while busy.
     let notchHUDManager = NotchHUDManager()
@@ -362,13 +362,6 @@ final class CompanionManager: ObservableObject {
     /// Opens the "Connect <app> to OpenClicky" card in the HUD when a supported app or site comes to the front.
     let appConnectPromptController = AppConnectPromptController()
 
-    /// True while the buddy lives in the notch HUD instead of following the mouse.
-    @Published private(set) var isCursorDocked: Bool = false
-
-    /// Bumped when the user docks the buddy. The overlay that is showing the buddy answers by
-    /// starting a `.toDock` flight from its own screen (see `beginCursorFlight`).
-    @Published private(set) var cursorDockRequestToken: Int = 0
-
     /// The leg of a buddy flight in progress, if any. Each display has its own overlay, so a
     /// flight to another display is split at the display edges; the overlay whose screen matches
     /// `screenFrame` animates the leg and reports back when it is done.
@@ -378,66 +371,23 @@ final class CompanionManager: ObservableObject {
     /// Where a freshly shown overlay should start the buddy (the notch) before flying out.
     var cursorLaunchOriginScreenLocation: CGPoint?
 
-    private(set) var isDockingInProgress = false
+    /// What "dock the pointer in the island" left in UserDefaults. The option is gone (2026-10-28:
+    /// keeping the pointer parked added nothing; it rests out of sight and comes back on a shake or
+    /// when Clicky needs it), so the key is only read once, to clear it.
+    static let retiredDockedPointerKey = "isOpenClickyCursorDocked"
 
-    /// Dock the buddy in the notch, or release it back to the mouse.
-    func setCursorDocked(_ docked: Bool) {
-        if docked { dockCursorToNotch() } else { undockCursorFromNotch() }
-    }
-
-    private func dockCursorToNotch() {
-        guard !isCursorDocked, !isDockingInProgress else { return }
-        guard voiceState == .idle else { return }
-        isDockingInProgress = true
-        if !isOverlayVisible {
-            showOverlayOnAllScreens()
-        }
-        transientHideTask?.cancel()
-        transientHideTask = nil
-        clearDetectedElementLocation()
-        dismissCursorCaption()
-        // Bumped on the next runloop turn so a freshly created overlay observes the change.
-        DispatchQueue.main.async {
-            self.cursorDockRequestToken &+= 1
-        }
-        // Both legs of the longest flight take under 3.5 s. If no overlay picked the request up
-        // (the pointer between displays, say), dock without the flight rather than hang.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
-            guard let self, self.isDockingInProgress else { return }
-            print("🎯 Docking without a flight (no overlay animated it)")
-            self.finishDockingCursor()
-        }
-        print("🎯 Docking cursor to notch at \(notchHUDManager.dockPoint)")
-    }
-
-    /// Called by the overlay once the flight into the notch has finished.
-    func finishDockingCursor() {
-        isDockingInProgress = false
-        isCursorDocked = true
-        UserDefaults.standard.set(true, forKey: "isOpenClickyCursorDocked")
-        overlayWindowManager.hideOverlay()
-        isOverlayVisible = false
-        cursorFlightLeg = nil
-        clearDetectedElementLocation()
-    }
-
-    private func undockCursorFromNotch() {
-        guard isCursorDocked else { return }
-        isCursorDocked = false
-        UserDefaults.standard.set(false, forKey: "isOpenClickyCursorDocked")
-        cursorFlightLeg = nil
-        notchHUDManager.clearCaption()
-        // Re-create the overlay with the buddy starting at the notch; it flies to the mouse.
-        cursorLaunchOriginScreenLocation = notchHUDManager.dockPoint
-        showOverlayOnAllScreens()
-        print("🎯 Cursor released from the notch")
+    /// Clears the retired dock flag; true when there was one to clear (someone who had docked).
+    static func forgetRetiredDockSetting(in defaults: UserDefaults) -> Bool {
+        guard defaults.object(forKey: retiredDockedPointerKey) != nil else { return false }
+        defaults.removeObject(forKey: retiredDockedPointerKey)
+        return true
     }
 
     // MARK: Cursor flights between displays
 
-    /// Starts a flight from the overlay on `fromScreenFrame` to the notch (`.toDock`) or to the
-    /// mouse pointer (`.toMouse`). When the destination is on another display the flight gets two
-    /// legs: to the nearest edge of this display, then across the destination display.
+    /// Starts a flight from the overlay on `fromScreenFrame` to the mouse pointer. When the mouse is
+    /// on another display the flight gets two legs: to the nearest edge of this display, then
+    /// across the mouse's display.
     func beginCursorFlight(_ purpose: CursorFlightLeg.Purpose, fromScreenFrame: CGRect) {
         guard cursorFlightLeg == nil else { return }
         let (destination, destinationScreenFrame) = cursorFlightDestination(for: purpose, fallbackScreenFrame: fromScreenFrame)
@@ -474,8 +424,6 @@ final class CompanionManager: ObservableObject {
 
     private func cursorFlightDestination(for purpose: CursorFlightLeg.Purpose, fallbackScreenFrame: CGRect) -> (CGPoint, CGRect) {
         switch purpose {
-        case .toDock:
-            return (notchHUDManager.dockPoint, notchHUDManager.dockScreenFrame)
         case .toMouse:
             let mouseLocation = NSEvent.mouseLocation
             let mouseScreenFrame = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })?.frame ?? fallbackScreenFrame
@@ -587,7 +535,6 @@ final class CompanionManager: ObservableObject {
         // The spinner (processing) hides the triangle, so the flight would be invisible; the
         // buddy is visible in idle and responding.
         if voiceState == .processing { voiceState = .idle }
-        launchDockedCursorForPointing()
 
         let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines)
         detectedElementBubbleText = (trimmedLabel?.isEmpty == false) ? trimmedLabel : nil
@@ -617,15 +564,6 @@ final class CompanionManager: ObservableObject {
         }()
         guard let targetScreenCapture else { return }
         pointAt(screenshotPoint: pointCoordinate, label: parseResult.elementLabel, in: targetScreenCapture)
-    }
-
-    /// While docked, pointing needs the buddy on screen: launch it from the notch, let the
-    /// normal navigation fly it to the element, and it returns to the notch afterwards.
-    private func launchDockedCursorForPointing() {
-        guard isCursorDocked, !isOverlayVisible else { return }
-        cursorLaunchOriginScreenLocation = notchHUDManager.dockPoint
-        cursorFlightLeg = nil
-        showOverlayOnAllScreens()
     }
 
     // Both read the backend URL per request: built once from it, they kept asking the old
@@ -837,10 +775,6 @@ final class CompanionManager: ObservableObject {
                 guard let self else { return }
                 let awake = self.pointerPresenceTracker.update(mouse: NSEvent.mouseLocation, at: ProcessInfo.processInfo.systemUptime)
                 if awake != self.isPointerAwake { self.isPointerAwake = awake }
-                // In the shake mode a shake means "come here": a docked pointer leaves the notch too.
-                if self.pointerPresenceTracker.shookOnLastUpdate, self.isCursorDocked, self.voiceState == .idle {
-                    self.setCursorDocked(false)
-                }
             }
         }
     }
@@ -905,13 +839,13 @@ final class CompanionManager: ObservableObject {
         // still granted, show the cursor overlay immediately. If permissions
         // were revoked (e.g. signing change), don't show the cursor — the
         // island's permission cards ask for them back first.
+        // Someone who had the pointer docked gets it back the way everyone has it: resting out of
+        // sight until a shake or Clicky needs it ("the pointer shows" decides).
+        if Self.forgetRetiredDockSetting(in: .standard) {
+            AppLog.append("pointer: the retired dock setting was cleared")
+        }
         if hasCompletedOnboarding && allPermissionsGranted && isClickyCursorEnabled {
-            if UserDefaults.standard.bool(forKey: "isOpenClickyCursorDocked") {
-                // Restore the docked state without an animation: the buddy is simply home.
-                isCursorDocked = true
-            } else {
-                showOverlayOnAllScreens()
-            }
+            showOverlayOnAllScreens()
         }
 
         // OpenClicky: the notch HUD is always available; it needs no permissions.
@@ -1255,7 +1189,7 @@ final class CompanionManager: ObservableObject {
         controller.onNoTextBoxAtPress = { [weak self] message in
             guard let self else { return }
             // The pointer may be resting out of sight ("after a shake"): it is the one speaking.
-            AppLog.append("pointer: asked for a text box (overlay \(self.isOverlayVisible ? "shown" : "hidden"), docked \(self.isCursorDocked), presence \(self.pointerPresence.rawValue), awake \(self.isPointerAwake), voice \(self.voiceState))")
+            AppLog.append("pointer: asked for a text box (overlay \(self.isOverlayVisible ? "shown" : "hidden"), presence \(self.pointerPresence.rawValue), awake \(self.isPointerAwake), voice \(self.voiceState))")
             self.wakePointer()
             self.showQuietNotice(message)
         }
@@ -1309,13 +1243,10 @@ final class CompanionManager: ObservableObject {
 
     func beginSettingsTourPointing() {
         pointerStaysOnTarget = true
-        if isCursorDocked {
-            cursorLaunchOriginScreenLocation = notchHUDManager.dockPoint
-        }
         if !isOverlayVisible { showOverlayOnAllScreens() }
     }
 
-    /// The tour is over: the pointer goes back to the mouse (or the notch) a moment later.
+    /// The tour is over: the pointer goes back to the mouse a moment later.
     func endSettingsTourPointing() {
         pointerStaysOnTarget = false
         guard let lastLocation = detectedElementScreenLocation else { return }
@@ -1354,7 +1285,7 @@ final class CompanionManager: ObservableObject {
     /// flying out of the notch the first time, so it is there for the remaining cards.
     private func showPointerDuringSetupIfWanted(flyingFromTheNotch: Bool) {
         // Only a first run: someone who used OpenClicky before has finished onboarding already.
-        guard !firstRunTour.isFinished, !hasCompletedOnboarding, isClickyCursorEnabled, !isCursorDocked, !isOverlayVisible else { return }
+        guard !firstRunTour.isFinished, !hasCompletedOnboarding, isClickyCursorEnabled, !isOverlayVisible else { return }
         if flyingFromTheNotch { cursorLaunchOriginScreenLocation = notchHUDManager.dockPoint }
         showOverlayOnAllScreens()
     }
@@ -1362,7 +1293,7 @@ final class CompanionManager: ObservableObject {
     /// The tour's first moment: the pointer flies out of the notch to the mouse and says hello
     /// (already out since Accessibility was granted, it just says hello).
     func introducePointerForTour() {
-        if !isCursorDocked && !isOverlayVisible {
+        if !isOverlayVisible {
             cursorLaunchOriginScreenLocation = notchHUDManager.dockPoint
             showOverlayOnAllScreens()
         }
@@ -1477,7 +1408,7 @@ final class CompanionManager: ObservableObject {
         guard !trimmedText.isEmpty else { return }
         transientHideTask?.cancel()
         transientHideTask = nil
-        if !isClickyCursorEnabled && !isOverlayVisible && !isCursorDocked {
+        if !isClickyCursorEnabled && !isOverlayVisible {
             showOverlayOnAllScreens()
         }
         interruptCurrentAnswer(includingAgentWork: true)
@@ -1535,11 +1466,7 @@ final class CompanionManager: ObservableObject {
         let feedback = isAlwaysListening
             ? "hands-free is on. just talk, i'm listening. hold control and tap fn twice to stop."
             : "hands-free is off. hold control + option to talk."
-        if isCursorDocked {
-            showCaptionBesideMouseWhileDocked(feedback, holdSeconds: 6)
-        } else {
-            streamCursorCaption(feedback, holdSeconds: 6)
-        }
+        streamCursorCaption(feedback, holdSeconds: 6)
         let state = isAlwaysListening ? "on" : "off"
         let line = how.map { "hands-free \(state) (\($0))" } ?? "hands-free \(state)"
         print("👂 \(line)")
@@ -1576,8 +1503,7 @@ final class CompanionManager: ObservableObject {
             transientHideTask = nil
 
             // If the cursor is hidden, bring it back transiently for this interaction
-            // (unless it is docked in the notch — the HUD shows the voice state instead)
-            if !isClickyCursorEnabled && !isOverlayVisible && !isCursorDocked {
+            if !isClickyCursorEnabled && !isOverlayVisible {
                 showOverlayOnAllScreens()
             }
 
@@ -2214,7 +2140,7 @@ final class CompanionManager: ObservableObject {
             dismissCursorCaption()
             transientHideTask?.cancel()
             transientHideTask = nil
-            if !isClickyCursorEnabled && !isOverlayVisible && !isCursorDocked {
+            if !isClickyCursorEnabled && !isOverlayVisible {
                 showOverlayOnAllScreens()
             }
             interruptCurrentAnswer(includingAgentWork: true)
@@ -2545,8 +2471,8 @@ final class CompanionManager: ObservableObject {
 
     /// One quiet caption (the running-low notice), typed out the way the Home tab's (i) is.
     func showQuietNotice(_ message: String) {
-        showCaptionBesideMouseWhileDocked(message, holdSeconds: 8)
-        if !isCursorDocked { scheduleTransientHideIfNeeded() }
+        showCaptionBesideMouse(message, holdSeconds: 8)
+        scheduleTransientHideIfNeeded()
     }
 
     /// Speaks a hardcoded error message with the system voice when the agent lane fails. It uses
@@ -2701,17 +2627,12 @@ final class CompanionManager: ObservableObject {
         showAskCaption(errorMessage, holdSeconds: 6)
     }
 
-    /// A caption by the pointer for the ask lane (what was heard, "thinking…", a problem), beside
-    /// the mouse when the buddy is docked.
+    /// A caption by the pointer for the ask lane (what was heard, "thinking…", a problem).
     private func showAskCaption(_ message: String, holdSeconds: TimeInterval) {
-        if isCursorDocked {
-            showCaptionBesideMouseWhileDocked(message, holdSeconds: holdSeconds)
-        } else {
-            streamCursorCaption(message, holdSeconds: holdSeconds)
-        }
+        streamCursorCaption(message, holdSeconds: holdSeconds)
     }
 
-    /// A caption shown whole at once, beside the mouse when docked: one that has to be readable
+    /// A caption shown whole at once: one that has to be readable
     /// within the moment it stands for (the pause before sending), where typing it out would not be.
     private func showAskCaptionAtOnce(_ message: String, holdSeconds: TimeInterval) {
         showAskLiveTranscript(message)
@@ -2722,11 +2643,6 @@ final class CompanionManager: ObservableObject {
     private func showAskLiveTranscript(_ partialTranscript: String) {
         let heardSoFar = partialTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !heardSoFar.isEmpty else { return }
-        if isCursorDocked, !isOverlayVisible {
-            transientHideTask?.cancel()
-            transientHideTask = nil
-            showOverlayOnAllScreens()
-        }
         cursorCaptionTypingTimer?.invalidate()
         cursorCaptionTypingTimer = nil
         cursorCaptionDismissWorkItem?.cancel()
@@ -2788,15 +2704,12 @@ final class CompanionManager: ObservableObject {
             guard let self, self.cursorCaptionOpacity == 0.0 else { return }
             self.isCursorCaptionVisible = false
             self.cursorCaptionText = ""
-            self.hideCaptionOnlyOverlayIfDocked()
         }
     }
 
-    /// While docked, a caption still types out beside the mouse pointer on the display in use —
-    /// not as a strip under every display's notch, which read as something else appearing. The
-    /// overlay is shown for the caption alone: the overlay hides the buddy while it is docked and
-    /// following, so it stays in the notch.
-    private func showCaptionBesideMouseWhileDocked(_ message: String, holdSeconds: TimeInterval) {
+    /// A caption beside the mouse pointer on the display in use, with the overlay brought up for it
+    /// if the pointer was out of sight (a quiet notice while it rests).
+    private func showCaptionBesideMouse(_ message: String, holdSeconds: TimeInterval) {
         if !isOverlayVisible {
             transientHideTask?.cancel()
             transientHideTask = nil
@@ -2805,26 +2718,12 @@ final class CompanionManager: ObservableObject {
         streamCursorCaption(message, holdSeconds: holdSeconds)
     }
 
-    /// The caption-only overlay goes away with its caption, unless the docked buddy has since
-    /// launched to point at something (it hides the overlay itself when it docks again).
-    private func hideCaptionOnlyOverlayIfDocked() {
-        guard isCursorDocked, isOverlayVisible, !isDockingInProgress,
-              detectedElementScreenLocation == nil, cursorFlightLeg == nil else { return }
-        overlayWindowManager.hideOverlay()
-        isOverlayVisible = false
-    }
-
-    /// The Home tab's (i): the buddy types out what OpenClicky does, next to itself. While the
-    /// buddy is docked the text types out in the notch island instead; a hidden buddy is shown
-    /// for the duration.
+    /// The Home tab's (i): the buddy types out what OpenClicky does, next to itself; a hidden
+    /// buddy is shown for the duration.
     func explainWhatOpenClickyDoes() {
         let message = "hi, i'm openclicky. hold control + option and ask about anything on your screen. "
             + "i'll answer out loud and point at what you need. tap control twice to type instead, "
             + "hold fn to dictate into any app, and real work goes to the agent."
-        if isCursorDocked {
-            showCaptionBesideMouseWhileDocked(message, holdSeconds: 8)
-            return
-        }
         if !isOverlayVisible {
             transientHideTask?.cancel()
             transientHideTask = nil
