@@ -4,8 +4,9 @@ import stat
 
 import pytest
 
+from openclicky_linux import answers
 from openclicky_linux.ask import (
-    ANTHROPIC_MODEL, OPENAI_MODEL, AskError, Conversation, Screenshot, answer_text, request_for,
+    ANTHROPIC_MODEL, OPENAI_MODEL, AskError, Conversation, Screenshot, request_for,
 )
 from openclicky_linux.config import LinuxSettings, load_settings, save_settings
 from openclicky_linux.gestures import DictationGestureRecognizer, TextComposerRequested
@@ -102,7 +103,7 @@ def test_an_account_goes_to_the_backends_chat_never_with_own_keys():
 
 
 def test_nothing_configured_says_what_to_add():
-    with pytest.raises(AskError, match="anthropic, openrouter or openai key, or an openclicky account"):
+    with pytest.raises(AskError, match="once you add your email for a free account"):
         request_for("hi", SCREENSHOT, Conversation(), LinuxSettings())
 
 
@@ -111,11 +112,20 @@ def test_a_language_other_than_english_is_asked_for():
     assert "hi-IN" in json.loads(routed.request.data)["system"]
 
 
-def test_answers_are_read_from_each_vendors_shape():
-    assert answer_text("anthropic", {"content": [{"type": "text", "text": " [POINT:none] hi "}]}) == "[POINT:none] hi"
-    assert answer_text("backend", {"content": [{"type": "tool_use"}, {"type": "text", "text": "ok"}]}) == "ok"
-    assert answer_text("openai", {"choices": [{"message": {"content": "ok "}}]}) == "ok"
-    assert answer_text("openai", {}) == ""
+def test_answers_are_read_from_each_vendors_stream():
+    anthropic = answers.AnthropicStream()
+    pieces = [anthropic.consume(f"data: {json.dumps(event)}") for event in (
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "[POINT:none] "}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"}})]
+    assert pieces == ["[POINT:none] ", "hi", ""] and anthropic.text == "[POINT:none] hi"
+    openai = answers.OpenAIStream()
+    for line in ('data: {"choices":[{"delta":{"content":"ok"}}]}', "data: [DONE]", ": keep-alive"):
+        openai.consume(line)
+    assert openai.text == "ok"
+    gemini = answers.GeminiStream()
+    gemini.consume('data: {"candidates":[{"content":{"parts":[{"text":"hel","thought":true},{"text":"hello"}]}}]}')
+    assert gemini.text == "hello"
 
 
 def test_the_conversation_keeps_the_last_ten_exchanges():
@@ -230,6 +240,7 @@ def test_settings_say_which_keys_do_what_for_the_key_picked():
     assert ("Hold", ("Left Ctrl",), "Dictate: speak, then let go. Your words are typed where the cursor is.") in left
     assert ("Hold", ("Left Ctrl", "Left Alt"), "Ask out loud: the pointer answers, shows you where, and guides you step by step.") in left
     assert ("Tap twice", ("Left Ctrl",), "Ask by typing.") in left
+    assert ("Hold", ("Left Ctrl", "Shift"), "Hey Clicky: say how to change the selected text (“make it formal”).") in left
     assert not any(how.startswith("Tap, then") for how, _keys, _what in left)  # left ctrl cannot be tapped to dictate
     right_alt = shortcut_rows("Alt_R", "onShake")
     assert right_alt[0][1] == ("Right Alt",) and right_alt[1][0] == "Tap, then tap again"

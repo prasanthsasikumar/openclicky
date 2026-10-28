@@ -44,9 +44,44 @@ export function windowsScreenshotCommand(outPath: string, opts: { allDisplays?: 
 }
 
 /**
- * Capture the screen to a PNG (macOS `screencapture`, Windows PowerShell). Throws with a permission
- * hint on failure: on macOS the terminal running OpenClicky needs Screen Recording access in System
- * Settings → Privacy & Security.
+ * Linux has no one screenshot tool: the first one installed that works in this session, as
+ * [command, arguments]. Wayland desktops refuse X11 tools, so grim (wlroots), gnome-screenshot and
+ * spectacle (KDE) come first; scrot and ImageMagick's import read an X11 screen.
+ */
+export function linuxScreenshotCommands(outPath: string, wayland: boolean): [string, string[]][] {
+  const waylandTools: [string, string[]][] = [
+    ["grim", [outPath]],
+    ["gnome-screenshot", ["-f", outPath]],
+    ["spectacle", ["-b", "-n", "-f", "-o", outPath]],
+  ];
+  const x11Tools: [string, string[]][] = [
+    ["scrot", ["-o", outPath]],
+    ["import", ["-window", "root", outPath]],
+    ["gnome-screenshot", ["-f", outPath]],
+  ];
+  return wayland ? waylandTools : x11Tools;
+}
+
+function captureLinuxScreen(outPath: string): string {
+  const wayland = process.env.XDG_SESSION_TYPE === "wayland" || Boolean(process.env.WAYLAND_DISPLAY);
+  const tried: string[] = [];
+  for (const [bin, args] of linuxScreenshotCommands(outPath, wayland)) {
+    const r = spawnSync(bin, args, { encoding: "utf8" });
+    if (r.error) continue; // not installed
+    if (r.status === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 0) return outPath;
+    tried.push(`${bin} (exit ${r.status}): ${(r.stderr || r.stdout || "").trim() || "no output"}`);
+  }
+  throw new Error(
+    tried.length
+      ? `screen capture failed: ${tried.join("; ")}`
+      : `no screenshot tool found: install ${wayland ? "grim (Sway, Hyprland), gnome-screenshot or spectacle" : "scrot or imagemagick"}`,
+  );
+}
+
+/**
+ * Capture the screen to a PNG (macOS `screencapture`, Windows PowerShell, a Linux tool). Throws with
+ * a permission hint on failure: on macOS the terminal running OpenClicky needs Screen Recording
+ * access in System Settings → Privacy & Security.
  */
 export function captureScreen(outPath = defaultScreenshotPath(), opts: { allDisplays?: boolean; bin?: string } = {}): string {
   if (process.platform === "win32" && !opts.bin) {
@@ -58,7 +93,8 @@ export function captureScreen(outPath = defaultScreenshotPath(), opts: { allDisp
     }
     return outPath;
   }
-  if (process.platform !== "darwin" && !opts.bin) throw new Error("screenshot capture is only supported on macOS (screencapture) and Windows");
+  if (process.platform === "linux" && !opts.bin) return captureLinuxScreen(outPath);
+  if (process.platform !== "darwin" && !opts.bin) throw new Error("screenshot capture is only supported on macOS (screencapture), Windows and Linux");
   const r = spawnSync(opts.bin ?? "screencapture", screenshotArgs(outPath, opts), { encoding: "utf8" });
   if (r.error) throw new Error(`screencapture failed to start: ${r.error.message}`);
   if (r.status !== 0 || !fs.existsSync(outPath) || fs.statSync(outPath).size === 0) {

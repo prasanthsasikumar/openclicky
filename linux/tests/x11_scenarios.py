@@ -200,7 +200,7 @@ def scenario_ask_and_point() -> dict:
     window, save_center = app_window_with_a_save_button()
     asked = []
 
-    def stand_in_model(question, screenshot_taken, conversation):
+    def stand_in_model(question, screenshot_taken, conversation, **_streaming):
         # One picture per monitor; the private display has one.
         from openclicky_linux.ask import as_screen_list
         pictures = as_screen_list(screenshot_taken)
@@ -223,9 +223,12 @@ def scenario_ask_and_point() -> dict:
     screenshot("ask-box")
     typed = app.composer.entry.get_text()
     tap("Return")
-    pump(0.06)
+    # First a moment to call it off (Settings → Privacy, on by default), then out of sight.
+    pump(0.3, until=lambda: app.pointer.caption_label.get_text() != "")
+    paused_with = app.pointer.caption_label.get_text()
+    pump(2, until=lambda: not app.pointer.triangle.get_visible())
     hidden_for_the_screenshot = not app.pointer.triangle.get_visible()
-    pump(2, until=lambda: app.pointer.caption_label.get_text() != "")
+    pump(2, until=lambda: app.pointer.caption_label.get_text() not in ("", paused_with))
     thinking = app.pointer.caption_label.get_text()
     pump(6, until=lambda: app.pointer.mode == "pointing" and "keeps your note" in app.pointer.caption_label.get_text())
     pump(0.3)
@@ -237,7 +240,7 @@ def scenario_ask_and_point() -> dict:
     pump(3, until=lambda: app.pointer.mode == "following")
     pump(0.2)
     app.listener.stop()
-    return {"hidden_for_the_screenshot": hidden_for_the_screenshot,
+    return {"hidden_for_the_screenshot": hidden_for_the_screenshot, "paused_with": paused_with,
             "composer_opened": composer_opened, "composer_has_keyboard": composer_has_keyboard, "typed": typed,
             "composer_closed": composer_closed, "thinking": thinking, "asked": asked, "save_center": list(save_center),
             "pointed_at": pointed_at, "caption": caption, "after_escape": [app.pointer.mode, app.pointer.caption.get_visible()]}
@@ -251,7 +254,7 @@ def scenario_settings_window() -> dict:
     shortcuts_shown = list(settings.shortcut_lines)
     routes_before = settings.routes_label.get_text()
     settings.fields["anthropic_api_key"].set_text("sk-ant-test")
-    settings.fields["language_code"].set_text("en-IN")
+    settings._fill_languages("en-IN")  # kept even where the region does not offer it
     settings.fields["dictation_key"].set_active_id("Alt_R")
     settings.fields["pointer_presence"].set_active_id("whenAnswering")
     pump(0.2)
@@ -412,7 +415,7 @@ def scenario_guided_steps() -> dict:
     live = os.environ.get("OPENCLICKY_LIVE") == "1"
     questions = []
 
-    def stand_in_model(question, screenshot_taken, conversation):
+    def stand_in_model(question, screenshot_taken, conversation, **_streaming):
         questions.append(question)
         time.sleep(0.3)
         if len(questions) == 1:
@@ -427,9 +430,9 @@ def scenario_guided_steps() -> dict:
         from openclicky_linux.ask import ask as ask_model
         from openclicky_linux.config import load_settings
 
-        def model(question, screenshot_taken, conversation):
+        def model(question, screenshot_taken, conversation, **streaming):
             questions.append(question)
-            return ask_model(question, screenshot_taken, conversation, load_settings())
+            return ask_model(question, screenshot_taken, conversation, load_settings(), **streaming)
     else:
         model = stand_in_model
 
@@ -535,7 +538,7 @@ def scenario_paste_problems() -> dict:
 
 def scenario_escape_closing_the_ask_box_keeps_the_guide() -> dict:
     app = wire_up("Control_R", start_recording=StandInRecording, transcribe=lambda _wav: "",
-                  ask=lambda question, pictures, conversation: "[POINT:200,200:menu] open the menu first. [NEXT]")
+                  ask=lambda question, pictures, conversation, **_streaming: "[POINT:200,200:menu] open the menu first. [NEXT]")
     app.listener.start()
     pump(0.3)
     app.asking.submit("how do i do it?")
@@ -751,7 +754,7 @@ def scenario_left_ctrl() -> dict:
     transcripts = iter(["um, buy more lemons", "where do i save this"])
     questions = []
 
-    def stand_in_model(question, pictures, conversation):
+    def stand_in_model(question, pictures, conversation, **_streaming):
         questions.append(question)
         return f"[POINT:{save_center[0]},{save_center[1]}:save button] that save button keeps it."
 
@@ -824,7 +827,7 @@ def scenario_live_minimize() -> dict:
     pump(1.5)
     frame = window.get_window().get_frame_extents()
     app = wire_up("Control_L", start_recording=StandInRecording, transcribe=lambda _wav: "",
-                  ask=lambda question, pictures, conversation: ask_model(question, pictures, conversation, load_settings()))
+                  ask=lambda question, pictures, conversation, **streaming: ask_model(question, pictures, conversation, load_settings(), **streaming))
     pump(0.5)
     app.asking.submit("how do i minimize this window?")
     pump(60, until=lambda: len(app.asking.conversation.exchanges) >= 1 and app.pointer.mode != "flying")
@@ -832,6 +835,205 @@ def scenario_live_minimize() -> dict:
     screenshot("live-minimize")
     return {"frame": [frame.x, frame.y, frame.width, frame.height], "pointer": [round(value) for value in app.pointer.position],
             "mode": app.pointer.mode}
+
+
+
+# MARK: Wayland mode on Xvfb: the keys come from an input device, the paste is shift+insert
+
+import struct as _struct  # noqa: E402
+
+from openclicky_linux.evdev import EV_KEY, EV_SYN, KEY_LEFTCTRL, KEY_RIGHTCTRL, DeviceKind  # noqa: E402
+
+
+class ShiftInsertKeyboard:
+    """Stands in for the uinput virtual keyboard: the same keystroke, shift+insert, through XTEST
+    (the X server here is the compositor the keystroke would reach)."""
+
+    def __init__(self) -> None:
+        self.pastes = 0
+
+    def paste(self) -> None:
+        self.pastes += 1
+        key("Shift_L", True)
+        key("Insert", True)
+        key("Insert", False)
+        key("Shift_L", False)
+
+
+def _device_event(code: int, value: int) -> bytes:
+    now = time.time()
+    return (_struct.pack("llHHi", int(now), int(now % 1 * 1_000_000), EV_KEY, code, value)
+            + _struct.pack("llHHi", int(now), int(now % 1 * 1_000_000), EV_SYN, 0, 0))
+
+
+class StandInCompositor:
+    """What mutter, KWin and wlroots do when an XWayland client takes the clipboard: ask it for
+    TARGETS at once, to offer the selection to Wayland apps. Watches with XFixes, on its own thread."""
+
+    def __init__(self, take_up: bool = True, selections: tuple[str, ...] = ("CLIPBOARD", "PRIMARY")) -> None:
+        import threading
+
+        from Xlib.ext import xfixes
+
+        self.display = xdisplay.Display()
+        self.display.xfixes_query_version()
+        self.window = self.display.screen().root.create_window(0, 0, 1, 1, 0, X.CopyFromParent)
+        self.requests = 0
+        self.take_up = take_up
+        for name in selections:
+            self.display.xfixes_select_selection_input(self.window, self.display.intern_atom(name),
+                                                       xfixes.XFixesSetSelectionOwnerNotifyMask)
+        self.display.flush()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        targets = self.display.intern_atom("TARGETS")
+        while True:
+            event = self.display.next_event()
+            if self.take_up and getattr(event, "owner", None) and event.owner.id not in (0, self.window.id):
+                self.requests += 1
+                self.window.convert_selection(event.selection, targets, targets, X.CurrentTime)
+                self.display.flush()
+
+
+def _dictate_on_wayland(dictation_key: str, dictation_code: int, compositor_takes_up: bool = True,
+                        compositor_selections: tuple[str, ...] = ("CLIPBOARD", "PRIMARY")) -> dict:
+    compositor = StandInCompositor(take_up=compositor_takes_up, selections=compositor_selections)
+    _window, entry = text_box_window()
+    clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+    primary = Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY)
+    clipboard.set_text("what was on the clipboard before", -1)
+    primary.set_text("what was selected before", -1)
+    pump(0.1)
+    read_end, write_end = os.pipe()
+    os.set_blocking(read_end, False)
+    virtual_keyboard = ShiftInsertKeyboard()
+    app = wire_up(dictation_key, start_recording=StandInRecording, transcribe=lambda _wav: "um, hello from open clicky",
+                  wayland=True, virtual_keyboard=virtual_keyboard, input_device_paths=lambda: ["stand-in keyboard"])
+    app.listener._probe = lambda path: (read_end, "stand-in keyboard", DeviceKind(keyboard=True, pointer=False))
+    orb_history: list = []
+    app.dictation.orb.listeners.append(lambda orb: orb_history.append([orb.phase, orb.message]))
+    app.listener.start()
+    pump(0.3)
+    os.write(write_end, _device_event(dictation_code, 1))
+    pump(0.9)
+    os.write(write_end, _device_event(dictation_code, 0))
+    pump(5, until=lambda: bool(entry.get_text()) or any(phase == "failed" for phase, _ in orb_history))
+    pump(1.0)  # past the clipboard restore
+    app.listener.stop()
+    return {"text_box": entry.get_text(), "clipboard": clipboard.wait_for_text(), "primary": primary.wait_for_text(),
+            "pastes": virtual_keyboard.pastes, "orb_history": orb_history, "compositor_requests": compositor.requests,
+            "pointer_knows_the_mouse": app.pointer.knows_the_mouse, "pointer_visible": app.pointer.triangle.get_visible()}
+
+
+def scenario_wayland_dictate_with_right_ctrl() -> dict:
+    return _dictate_on_wayland("Control_R", KEY_RIGHTCTRL)
+
+
+def scenario_wayland_dictate_with_left_ctrl() -> dict:
+    # The default key, shared with the ask box: it listens once held alone for 0.3 s.
+    return _dictate_on_wayland("Control_L", KEY_LEFTCTRL)
+
+
+def scenario_wayland_compositor_without_a_primary_selection() -> dict:
+    return _dictate_on_wayland("Control_R", KEY_RIGHTCTRL, compositor_selections=("CLIPBOARD",))
+
+
+def scenario_wayland_compositor_never_takes_up_the_words() -> dict:
+    return _dictate_on_wayland("Control_R", KEY_RIGHTCTRL, compositor_takes_up=False)
+
+
+# MARK: the first-run setup and the Words window
+
+
+def scenario_setup_window_walkthrough() -> dict:
+    from openclicky_linux import autostart, preferences
+    from openclicky_linux.onboarding import SetupWindow
+
+    finished: list = []
+    window = SetupWindow(wayland=False, on_closed=finished.append)
+    window.show()
+    pump(0.4)
+    seen = []
+    for _ in range(12):
+        page = window.page
+        seen.append([page.page_id, page.title.get_text(), window.primary_button.get_label(),
+                     window.secondary_button.get_label() if window.secondary_button.get_visible() else None])
+        screenshot(f"setup-{page.page_id}")
+        if page.page_id == "answers":
+            window.account_form.email_entry.set_text("not an email")
+            window.account_form.start()
+            pump(0.1)
+            seen.append(["answers status", page.status.get_text()])
+            window.key_entry.set_text("sk-ant-test-key")
+            window._use_key()
+            seen.append(["answers status", page.status.get_text()])
+        if page.page_id == "offline":
+            window.secondary_button.clicked()  # skip the 840 MB
+        else:
+            window.primary_button.clicked()
+        pump(0.3)
+        if finished:
+            break
+    return {"seen": seen, "finished": finished, "setup_done": preferences.get(preferences.SETUP_DONE),
+            "autostart": autostart.is_enabled(), "launcher": autostart.launcher_path().exists(), "icon": autostart.icon_path().exists()}
+
+
+def scenario_words_window() -> dict:
+    from openclicky_linux.history import TakeRecord, TakeStore
+    from openclicky_linux.space import load_space
+    from openclicky_linux.words_window import WordsWindow
+
+    store = TakeStore()
+    store.insert(TakeRecord(raw_text="um hello from the test", formatted_text="Hello from the test", app_name="gedit"))
+    store.insert(TakeRecord(raw_text="see you at five", formatted_text="See you at five", app_name="Slack"))
+    store.insert(TakeRecord(raw_text="", formatted_text="", app_name="gedit", status="failed", failure_reason="couldn't reach openai",
+                            created_at=1.0))
+    window = WordsWindow(store)
+    window.show()
+    pump(0.4)
+    shown = [row[3] for row in window.history_rows]
+    window.search.set_text("hello")
+    pump(0.5)
+    searched = [row[3] for row in window.history_rows]
+    window.search.set_text("")
+    window.filter.set_active_id("failed")
+    pump(0.3)
+    failed = [row[3] for row in window.history_rows]
+    window.filter.set_active_id("all")
+    pump(0.5)
+    screenshot("words-history")
+    window.notebook.set_current_page(1)
+    window.dictionary_editor.key_entry.set_text("aditya shatriya, aditya")
+    window.dictionary_editor.value_entry.set_text("Aaditya Kshatriya")
+    window.dictionary_editor.add()
+    window.notebook.set_current_page(2)
+    window.shortcuts_editor.key_entry.set_text("my sign off")
+    window.shortcuts_editor.value_entry.set_text("Best,\\nSam")
+    window.shortcuts_editor.add()
+    pump(0.3)
+    screenshot("words-shortcuts")
+    space = load_space()
+    return {"shown": shown, "searched": searched, "failed": failed, "stats": window.stats_label.get_text(),
+            "dictionary": [[term.written, list(term.heard_as)] for term in space.dictionary],
+            "shortcuts": [[shortcut.trigger, shortcut.replacement] for shortcut in space.shortcuts]}
+
+
+def scenario_live_typing() -> dict:
+    """Live typing's keystrokes into a text box: the layout's own keys, and characters it lacks."""
+    from openclicky_linux.x11 import LiveKeyboard
+
+    window = Gtk.Window(title="typing target")
+    entry = Gtk.Entry()
+    window.add(entry)
+    window.show_all()
+    window.present()
+    pump(1.0, until=lambda: entry.has_focus())
+    keyboard = LiveKeyboard()
+    typed = keyboard.type_text("Héllo → wörld") and keyboard.type_text(", OK? é")
+    pump(1.5)
+    return {"typed": typed, "text": entry.get_text(), "given_back": not keyboard._borrowed}
+
 
 if __name__ == "__main__":
     print(json.dumps(globals()[f"scenario_{sys.argv[1]}"]()))

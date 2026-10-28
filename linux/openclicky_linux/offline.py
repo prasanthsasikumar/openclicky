@@ -54,6 +54,9 @@ class OfflineEngineError(Exception):
 
 
 def models_directory() -> Path:
+    # OPENCLICKY_MODELS_DIR: the tests give the downloaded models to a run with its own data folder.
+    if os.environ.get("OPENCLICKY_MODELS_DIR"):
+        return Path(os.environ["OPENCLICKY_MODELS_DIR"])
     data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
     return data_home / "openclicky" / "models"
 

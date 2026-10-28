@@ -131,3 +131,19 @@ def test_right_ctrl_still_listens_at_once_and_alt_still_asks():
     recognizer = DictationGestureRecognizer()
     recognizer.ask_key_down()
     assert recognizer.dictation_key_down(10.0) == [DictationPressed(ask=True)]
+
+
+def test_shift_with_the_dictation_key_makes_the_take_an_edit():
+    from openclicky_linux.gestures import EditJoined
+    recognizer = DictationGestureRecognizer()
+    assert recognizer.edit_key_down() == []
+    assert recognizer.dictation_key_down(10.0) == [DictationPressed(edit=True)]
+    recognizer.dictation_key_up(11.0)
+    recognizer.edit_key_up()
+    recognizer.dictation_key_down(20.0)
+    assert recognizer.edit_key_down() == [EditJoined()]
+    # Shared with the ask box (left ctrl): the take starts after the delay, as an edit.
+    shared = DictationGestureRecognizer(shares_key_with_the_ask_box=True)
+    shared.edit_key_down()
+    [started] = shared.dictation_key_down(30.0)
+    assert shared.hold_elapsed(started.press_id) == [DictationPressed(edit=True)]

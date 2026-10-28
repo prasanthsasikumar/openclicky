@@ -65,7 +65,7 @@ const withCommonOptions = (cmd: Command) =>
     .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL; default https://api.openclicky.flowsxr.com, the hosted backend — point it at http://localhost:8787 to use your own)")
     .option("--token <token>", "Supabase JWT or session token (env OPENCLICKY_TOKEN)")
     .option("--image <path>", "attach a local screenshot/image")
-    .option("--screenshot", "capture the screen now (macOS screencapture) and attach it")
+    .option("--screenshot", "capture the screen now (macOS screencapture, Windows, Linux grim/gnome-screenshot/spectacle/scrot/import) and attach it")
     .option("--json", "print the result as JSON")
     .option("--events", "stream JSON Lines events to stdout (for UIs)")
     .option("--verbose", "show Codex stderr / request details")
@@ -512,7 +512,9 @@ withCommonOptions(
         process.stdout.write(`opening ${url}\n`);
         // Codex only prints the URL; open it so the user lands on Composio's page.
         // Windows has no `open`; url.dll hands the URL to the default browser without cmd.exe quoting.
-        const opener: [string, string[]] = process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]] : ["open", [url]];
+        // Linux desktops open it with xdg-open.
+        const opener: [string, string[]] =
+          process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]] : process.platform === "linux" ? ["xdg-open", [url]] : ["open", [url]];
         void import("node:child_process").then(({ spawn }) => spawn(opener[0], opener[1], { stdio: "ignore" }).unref());
       } else if (line.trim()) {
         process.stdout.write(line + "\n");

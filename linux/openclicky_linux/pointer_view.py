@@ -7,6 +7,18 @@ an empty input shape, so clicks go straight through it) and the caption. Follows
 a little below and to the right so the real cursor stays clear. Whether it shows while following is
 the presence setting (`presence.py`: always, while the mouse moves, after a shake, only while
 answering); flying, pointing or captioning, it always shows.
+
+On Wayland the mouse's position is never told to another app, so the pointer cannot follow it: it
+rests out of sight at the top centre of the main monitor (where the Mac's pointer flies out of the
+notch), says "thinking…" there, flies out to what the answer is about, and flies home after. Once
+its answer has been read, moving the mouse sends it home, out of the way of the click.
+
+Clicks pass through both windows on Wayland too, with one catch (measured on GNOME 42 with a test
+mouse): an XWayland window that moves after it is mapped keeps blocking clicks, its empty input
+shape left behind, and setting the shape again does not help. So the caption is sized and placed
+for its whole sentence before it shows (the untyped rest is drawn in the bubble's own colour: it
+never grows or moves while typing), and on Wayland a window that moved is unmapped and mapped again
+where it landed (`_settle`), which lets clicks through again.
 """
 
 from __future__ import annotations
@@ -37,7 +49,14 @@ FLIGHT_FRAME_MILLISECONDS = 16
 # it shows, the pointer and its caption raise themselves about twice a second, and at once whenever
 # they fly or a caption appears.
 RAISE_EVERY_FOLLOW_TICKS = 15
+# Wayland: where the pointer rests, below the top of the main monitor's work area (under the top bar).
+# Below the island's busy strip (island.py), which hangs from the top centre too: their captions
+# overlapped when both sat at the top edge.
+HOME_TOP_MARGIN = 52
+# Wayland: once an answer is typed out, this long before a mouse movement sends the pointer home.
+STEP_ASIDE_AFTER_SECONDS = 1.0
 
+CAPTION_COLOUR = "#f0452b"
 _CAPTION_CSS = b"""
 .openclicky-pointer { background-color: #f0452b; }
 .openclicky-caption { background-color: #f0452b; border-radius: 6px; padding: 5px 8px; }
@@ -58,12 +77,25 @@ def _make_click_through(window: Gtk.Window, outline_rows=None) -> None:
     shape_window(window.get_window().get_xid(), outline_rows=outline_rows, click_through=True, display_name=display.get_name())
 
 
+def _contains(area, x: int, y: int) -> bool:
+    return area.x <= x < area.x + area.width and area.y <= y < area.y + area.height
+
+
 class PointerView:
     def __init__(self, presence: str = "always", on_caption_finished: Callable[[], None] = lambda: None,
-                 rest_delay_seconds: float = 3.0) -> None:
-        self.tracker = PointerPresenceTracker(presence, rest_delay_seconds=rest_delay_seconds)
+                 rest_delay_seconds: float = 3.0, knows_the_mouse: bool = True) -> None:
+        # False on Wayland: the pointer rests at its home and shows only while answering.
+        self.knows_the_mouse = knows_the_mouse
+        self.tracker = PointerPresenceTracker(presence if knows_the_mouse else "whenAnswering", rest_delay_seconds=rest_delay_seconds)
+        # When the caption finished typing (None while typing or hidden): a movement after that
+        # sends the pointer home on Wayland.
+        self._caption_typed_at: float | None = None
         self.on_caption_finished = on_caption_finished
         self.mode = "following"  # "following" | "flying" | "pointing"
+        self.reduce_motion = False
+        # Docked (the island's "dock"): the pointer waits at the top of the screen, by the island,
+        # until an answer needs it, as it always does on Wayland.
+        self.docked = False
         self.position = (0.0, 0.0)
         self._flight: tuple[tuple[float, float], tuple[float, float], float, float, str] | None = None
         self._caption_text = ""
@@ -107,6 +139,7 @@ class PointerView:
         self._apply_presence()
         self._ticks_since_raise = 0
         GLib.timeout_add(FOLLOW_INTERVAL_MILLISECONDS, self._follow_tick)
+        Gdk.Screen.get_default().connect("monitors-changed", lambda _screen: self.displays_changed())
 
     # MARK: where it is
 
@@ -115,7 +148,31 @@ class PointerView:
         _screen, mouse_x, mouse_y = Gdk.Display.get_default().get_default_seat().get_pointer().get_position()[0:3]
         return mouse_x, mouse_y
 
+    @staticmethod
+    def home_position() -> tuple[float, float]:
+        """Wayland's resting place: the top centre of the main monitor's work area."""
+        display = Gdk.Display.get_default()
+        monitor = display.get_primary_monitor() or display.get_monitor(0)
+        area = monitor.get_workarea()
+        return float(area.x + (area.width - POINTER_WIDTH) // 2), float(area.y + HOME_TOP_MARGIN)
+
+    def displays_changed(self) -> None:
+        """A monitor came or went (the Mac rebuilds its overlays): a pointer left pointing where no
+        monitor is now comes back, and on Wayland the resting pointer moves to the new home."""
+        display = Gdk.Display.get_default()
+        point_x, point_y = round(self.position[0]), round(self.position[1])
+        on_a_monitor = any(_contains(display.get_monitor(index).get_geometry(), point_x, point_y)
+                           for index in range(display.get_n_monitors()))
+        if self.mode == "following":
+            self.position = self._follow_target()
+            self._move_triangle()
+        elif not on_a_monitor:
+            self.dismiss_caption()
+            self.return_to_mouse()
+
     def _follow_target(self) -> tuple[float, float]:
+        if not self.knows_the_mouse or self.docked:
+            return self.home_position()
         mouse_x, mouse_y = self.mouse_position()
         return float(mouse_x + FOLLOW_OFFSET[0]), float(mouse_y + FOLLOW_OFFSET[1])
 
@@ -152,8 +209,19 @@ class PointerView:
             self.triangle.hide()
 
     def set_presence(self, presence: str) -> None:
-        self.tracker.presence = presence
+        if self.knows_the_mouse:
+            self.tracker.presence = presence
         self._apply_presence()
+
+    def mouse_moved(self) -> None:
+        """Wayland: the mouse moved somewhere. An answer read for a moment is put away (its caption
+        dismissed, the pointer sent home), so neither is in the way of the click that follows."""
+        if self.knows_the_mouse or self._caption_typed_at is None or not self.caption.get_visible():
+            return
+        if self._caption_hold_seconds is None or time.monotonic() - self._caption_typed_at < STEP_ASIDE_AFTER_SECONDS:
+            return
+        self.dismiss_caption()
+        self.on_caption_finished()
 
     def raise_above_other_windows(self) -> None:
         for window in (self.triangle, self.caption):
@@ -165,6 +233,10 @@ class PointerView:
         self._ticks_since_raise += 1
         if self._ticks_since_raise >= RAISE_EVERY_FOLLOW_TICKS:
             self.raise_above_other_windows()
+        if not self.knows_the_mouse:
+            # Nothing to follow: the pointer rests at home, out of sight unless it is answering.
+            self._apply_presence()
+            return True
         mouse_x, mouse_y = self.mouse_position()
         self.tracker.update(mouse_x, mouse_y, time.monotonic())
         if self.mode == "following":
@@ -190,7 +262,9 @@ class PointerView:
         self.mode = "flying"
         self._apply_presence()
         self.raise_above_other_windows()
-        self._flight = (start, destination, time.monotonic(), flight_seconds(start, destination), then)
+        # Reduce motion (Settings → General): the flight takes no time, so the pointer is simply there.
+        seconds = 0.01 if self.reduce_motion else flight_seconds(start, destination)
+        self._flight = (start, destination, time.monotonic(), seconds, then)
         GLib.timeout_add(FLIGHT_FRAME_MILLISECONDS, self._flight_tick)
 
     def _flight_tick(self) -> bool:
@@ -213,20 +287,50 @@ class PointerView:
                 # Back beside the mouse: shown for now, then it rests away as the presence says.
                 self.tracker.wake(time.monotonic())
             self._apply_presence()
+            self._settle()
             return False
         return True
 
     # MARK: the caption
 
-    def show_caption(self, text: str, hold_seconds: float | None) -> None:
-        """Types `text` out beside the pointer; holds it `hold_seconds` once typed (None: until replaced)."""
+    def _caption_markup(self, typed: int) -> str:
+        """The typed part, then the rest in the bubble's own colour: there, but not seen yet."""
+        shown, hidden = self._caption_text[:typed], self._caption_text[typed:]
+        return GLib.markup_escape_text(shown) + (f'<span foreground="{CAPTION_COLOUR}">{GLib.markup_escape_text(hidden)}</span>' if hidden else "")
+
+    def _settle(self) -> None:
+        """Wayland: windows that moved while mapped are mapped again where they are, so clicks pass
+        through them (see the module's note). Not seen: no frame is drawn in between."""
+        if self.knows_the_mouse:
+            return
+        for window in (self.triangle, self.caption):
+            if window.get_visible():
+                window.hide()
+                window.show_all()
+
+    def show_caption(self, text: str, hold_seconds: float | None, continue_typing: bool = False) -> None:
+        """Types `text` out beside the pointer; holds it `hold_seconds` once typed (None: until replaced).
+        `continue_typing`: `text` carries on the caption showing (a streamed answer that grew), so the
+        letters already typed stay and typing goes on from there."""
+        if continue_typing and self.caption.get_visible() and text.startswith(self._caption_text):
+            typed = self._caption_typed
+        else:
+            typed = 0
+        if self.reduce_motion:
+            # Shown whole, not typed out (the last "letter" is typed by the first tick).
+            typed = max(typed, len(text) - 1)
         self._cancel_caption_timers()
         self._caption_text = text
-        self._caption_typed = 0
-        # The bubble is as wide as the whole caption will need (up to 42 characters) from the
-        # first letter, so it neither grows while typing nor wraps after every word.
+        self._caption_typed = typed
+        self._caption_typed_at = None
+        # The bubble is sized and placed for the whole caption (up to 42 characters a line) before
+        # it shows, so it never grows, wraps differently or moves while it types.
+        if not self.knows_the_mouse and self.caption.get_visible():
+            self.caption.hide()
         self.caption_label.set_width_chars(min(len(text), 42))
-        self.caption_label.set_text("")
+        self.caption_label.set_markup(self._caption_markup(typed))
+        self.caption.resize(1, 1)
+        self._place_caption(self.caption.get_preferred_size()[1].width)
         self._caption_hold_seconds = hold_seconds
         self.caption.show_all()
         self._apply_presence()
@@ -235,12 +339,11 @@ class PointerView:
 
     def _type_next_character(self) -> bool:
         self._caption_typed += 1
-        self.caption_label.set_text(self._caption_text[: self._caption_typed])
-        self.caption.resize(1, 1)
-        self._place_caption()
+        self.caption_label.set_markup(self._caption_markup(self._caption_typed))
         if self._caption_typed < len(self._caption_text):
             return True
         self._caption_timer = None
+        self._caption_typed_at = time.monotonic()
         if self._caption_hold_seconds is not None:
             self._caption_dismiss_timer = GLib.timeout_add(int(self._caption_hold_seconds * 1000), self._caption_ran_out)
         return False
@@ -253,6 +356,7 @@ class PointerView:
 
     def dismiss_caption(self) -> None:
         self._cancel_caption_timers()
+        self._caption_typed_at = None
         self.caption.hide()
         self._apply_presence()
 
@@ -263,8 +367,9 @@ class PointerView:
         self._caption_timer = None
         self._caption_dismiss_timer = None
 
-    def _place_caption(self) -> None:
-        caption_width, _caption_height = self.caption.get_size()
+    def _place_caption(self, caption_width: int | None = None) -> None:
+        if caption_width is None:
+            caption_width, _caption_height = self.caption.get_size()
         pointer_x, pointer_y = self.position
         # The edge that matters is the pointer's own monitor's, not the far side of the desktop.
         monitor = Gdk.Display.get_default().get_monitor_at_point(round(pointer_x), round(pointer_y)).get_geometry()

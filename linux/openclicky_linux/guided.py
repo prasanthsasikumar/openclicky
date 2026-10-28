@@ -30,6 +30,7 @@ IDLE_SECONDS_BEFORE_GIVING_UP = 120.0
 MAXIMUM_STEPS = 15
 
 NEXT_STEP_REQUEST_OPENING = "(i did that step. this is my screen now. what's next?"
+OFF_TARGET_REQUEST_OPENING = "(i clicked about"
 
 
 def contains_marker(text: str) -> bool:
@@ -41,10 +42,14 @@ def removing_markers(text: str) -> str:
     return _MARKER_PATTERN.sub("", text).strip()
 
 
-def next_step_request(goal: str) -> str:
+def next_step_request(goal: str, pixels_off_target: int | None = None) -> str:
     """The question OpenClicky asks for the person once they did a step. It repeats what they first
     asked, because the conversation keeps only the last ten exchanges and a long guide would
-    otherwise lose its goal."""
+    otherwise lose its goal. A click well away from the pointed spot (`ask_lane.click_verdict`)
+    says how far off, so the model checks the new screen before going on."""
+    if pixels_off_target is not None:
+        return (f"{OFF_TARGET_REQUEST_OPENING} {pixels_off_target} pixels away from where you pointed. this is my screen now. "
+                f"check whether that was the right thing; if not, gently point me back. what i asked was: {goal})")
     return f"{NEXT_STEP_REQUEST_OPENING} what i asked was: {goal})"
 
 

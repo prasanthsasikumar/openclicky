@@ -21,8 +21,12 @@ SAMPLE_RATE = 16_000
 SAMPLE_WIDTH_BYTES = 2
 CHANNELS = 1
 
+# parecord's latency matters: left at its default, the sound server hands over recorded audio in
+# fragments of about two seconds and drops the unfinished one when the recorder stops, so a take
+# under two seconds came back empty ("didn't catch that") and longer ones lost their end (found on a
+# real microphone, 2026-10-23). 30 ms fragments lose nothing.
 RECORDER_COMMANDS: tuple[tuple[str, ...], ...] = (
-    ("parecord", "--raw", f"--rate={SAMPLE_RATE}", f"--channels={CHANNELS}", "--format=s16le"),
+    ("parecord", "--raw", f"--rate={SAMPLE_RATE}", f"--channels={CHANNELS}", "--format=s16le", "--latency-msec=30"),
     ("arecord", "-q", "-t", "raw", "-f", "S16_LE", "-r", str(SAMPLE_RATE), "-c", str(CHANNELS)),
 )
 
@@ -31,12 +35,13 @@ class RecorderUnavailable(Exception):
     pass
 
 
-def find_recorder_command(microphone: str | None = None) -> tuple[str, ...]:
+def find_recorder_command(microphone: str | None = None, rate: int = SAMPLE_RATE) -> tuple[str, ...]:
     """The recorder to run; `microphone` is a PulseAudio/PipeWire source name from
     `list_microphones` (None: the system default). Only parecord can pick one; arecord, the ALSA
-    fallback, always uses the default."""
+    fallback, always uses the default. `rate`: fast voice records at 24 kHz."""
     for command in RECORDER_COMMANDS:
         if shutil.which(command[0]):
+            command = tuple(part.replace(str(SAMPLE_RATE), str(rate)) for part in command)
             if microphone and command[0] == "parecord":
                 return command + (f"--device={microphone}",)
             return command

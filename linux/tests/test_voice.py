@@ -113,3 +113,37 @@ def test_kokoro_says_it_and_parakeet_hears_it(tmp_path):
         assert listener.transcribe(pcm, rate).lower().rstrip(".") == "that save button up top will do it"
     finally:
         listener.unload()
+
+
+def test_a_player_that_cannot_play_here_is_passed_over_for_the_next(tmp_path, monkeypatch):
+    # Ubuntu 22.04: pw-play is installed but PipeWire has no speakers ("no node available", exit 1).
+    failing = tmp_path / "failing-player"
+    failing.write_text("#!/bin/sh\necho 'no node available' >&2\nexit 1\n")
+    failing.chmod(0o755)
+    working = stand_in_player(tmp_path)
+    monkeypatch.setattr(voice, "installed_players", lambda: [(str(failing),), working])
+    speaking = voice.Voice(helper_command=[sys.executable, "-c", STAND_IN_HELPER], player=(str(failing),))
+    assert speaking.speak("Hello there. This is the second sentence.", "en")
+    played = lambda: [path for path in tmp_path.glob("*.wav") if path.stem.isdigit()]
+    deadline = time.monotonic() + 10
+    while len(played()) < 2 and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert len(played()) == 2
+    # Both pieces spoken once each, and the failing player was not tried again for the second.
+    assert speaking.spoken == ["Hello there.", "This is the second sentence."]
+    assert speaking._failed_players == {str(failing)}
+    speaking.unload()
+
+
+def test_paplay_comes_first_since_it_plays_on_pulseaudio_and_pipewire_alike():
+    assert voice.PLAYERS[0] == ("paplay",)
+
+
+@pytest.mark.parametrize("mute, volume, muted", [
+    ("Mute: yes", "Volume: front-left: 0 /   0% / -inf dB,   front-right: 0 /   0% / -inf dB", True),
+    ("Mute: no", "Volume: front-left: 0 /   0% / -inf dB,   front-right: 0 /   0% / -inf dB", True),
+    ("Mute: no", "Volume: front-left: 32768 /  50% / -18.06 dB,   front-right: 32768 /  50% / -18.06 dB", False),
+    ("", "", False),
+])
+def test_muted_speakers_are_told_from_pactl(mute, volume, muted):
+    assert voice.muted_output(mute, volume) is muted

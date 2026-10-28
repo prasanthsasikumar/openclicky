@@ -1,35 +1,31 @@
-"""Asking about the screen by text: the question and a screenshot go to a model, which answers in a
+"""Asking about the screen: the question and the screenshots go to a model, which answers in a
 sentence or two and may start with a `[POINT:…]` tag the pointer flies to.
 
-Routed in the Mac app's order (`ProviderCredentials.answerSourcesInOrder`): the person's own
-Anthropic key straight to Anthropic (Messages, the Mac's default model), else an own OpenRouter key
-(OpenAI-style chat completions, the Mac's OpenRouter model unless `answerModels.openrouter` names
-another), else an own OpenAI key to OpenAI chat completions, else the OpenClicky account through the
-backend's `POST /chat` (the same Messages body the Mac relays), else a sentence naming what is missing. Own keys never go to the backend. Answers are not streamed: they are short,
-and the caption shows them whole.
+Who answers is `answers.py`'s choice (the Mac's order: own keys, then the plans switched on, then
+the free account, unless Settings picks one); own keys never go to the backend. The answer
+streams: `on_text` hears it as it is written, so the pointer can fly and the voice start before it
+is finished. A question can carry extras (`AskExtras`): lines that go with it but are not kept in
+the conversation (where the mouse is, "asked again"), and more pictures (the close-up around the
+mouse).
+
+`ask_with_tools` also offers tools (the quick actions in `actions.py`, as the Mac's ask lane does
+wherever the agent lane does not run) and returns the calls the model made with its answer.
 """
 
 from __future__ import annotations
 
-import base64
-import json
 import time
-import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from typing import Callable
 
-from . import applog, guided
+from . import answers, applog, guided
+from .ask_lane import UNSURE_PROMPT_SECTION
 from .config import LinuxSettings
 
-ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_VERSION = "2023-06-01"
-ANTHROPIC_MODEL = "claude-sonnet-4-6"
-OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
-OPENAI_MODEL = "gpt-4.1"
-OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "anthropic/claude-sonnet-4.6"
+ANTHROPIC_MODEL = answers.DEFAULT_CLAUDE_MODEL
+OPENAI_MODEL = answers.SOURCES_BY_ID["openAI"].default_model
 MAX_ANSWER_TOKENS = 400
-REQUEST_TIMEOUT_SECONDS = 60
 # Exchanges kept for follow-ups ("and where is that?"), as on the Mac.
 HISTORY_EXCHANGES = 10
 
@@ -62,10 +58,13 @@ examples:
 """
 
 SYSTEM_PROMPT += guided.PROMPT_SECTION
+SYSTEM_PROMPT += UNSURE_PROMPT_SECTION
+SYSTEM_PROMPT += "\nkeep your first sentence short: it is spoken while the rest of your answer is still being written.\n"
 
-
-class AskError(Exception):
-    """Carries the sentence the caption shows."""
+# The Mac's sentence for no way to answer at all: the free account first, then keys.
+NEEDS_A_WAY_TO_ANSWER = answers.NEEDS_A_WAY_TO_ANSWER
+AskError = answers.AnswerError
+ToolCall = answers.ToolCall
 
 
 @dataclass(frozen=True)
@@ -81,6 +80,21 @@ class Screenshot:
     origin_y: int = 0
 
 
+@dataclass(frozen=True)
+class AskExtras:
+    """What goes with one question and is not kept in the conversation: lines after the question,
+    pictures after the screens (each with its label), and the skills that apply (`skills.py`), after
+    the instructions."""
+    prompt_lines: tuple[str, ...] = ()
+    images: tuple[tuple[bytes, str], ...] = ()
+    skills_block: str = ""
+    # Writing in place (`writing.py`): its line for the instructions, its tool, and what runs it
+    # (the new text → the sentence said about it).
+    instruction: str = ""
+    tools: tuple[dict, ...] = ()
+    write_in_place: Callable[[str], str] | None = None
+
+
 # An account's answers take at most two pictures (the Mac's `AccountCapabilities.maxAskScreens`); own keys up to four.
 MAXIMUM_SCREENS_ON_AN_ACCOUNT = 2
 MAXIMUM_SCREENS = 4
@@ -90,24 +104,9 @@ def as_screen_list(screens: "Screenshot | list[Screenshot]") -> list[Screenshot]
     return [screens] if isinstance(screens, Screenshot) else list(screens)
 
 
-def _labelled_screens(screens: list[Screenshot], question: str, image_block) -> list[dict]:
-    """Each picture followed by its label ("screen 1 (primary focus, 1280x800 pixels)"), the question
-    last; with one screen, its label and the question share one block."""
-    content: list[dict] = []
-    for index, screen in enumerate(screens):
-        focus = "primary focus, " if index == 0 else ""
-        label = f"screen {index + 1} ({focus}{screen.width}x{screen.height} pixels)"
-        content.append(image_block(screen))
-        if index == len(screens) - 1:
-            content.append({"type": "text", "text": f"{label}\n\n{question}"})
-        else:
-            content.append({"type": "text", "text": label})
-    return content
-
-
 @dataclass(frozen=True)
 class AskRequest:
-    kind: str  # "anthropic" | "openrouter" | "openai" | "backend"
+    kind: str  # "anthropic" | "openrouter" | "openai" | "backend" | another source's id, lowercased
     request: urllib.request.Request
 
 
@@ -120,96 +119,72 @@ class Conversation:
         del self.exchanges[:-HISTORY_EXCHANGES]
 
 
-def _with_language(settings: LinuxSettings) -> str:
+def _with_language(settings: LinuxSettings, extra_instructions: str = "") -> str:
+    prompt = SYSTEM_PROMPT + (f"\n\n{extra_instructions}" if extra_instructions else "")
     if settings.language_code and settings.bare_language_code != "en":
-        return SYSTEM_PROMPT + f"\nalways answer in the language with code {settings.language_code}, whatever language the question is in."
-    return SYSTEM_PROMPT
+        return prompt + f"\nalways answer in the language with code {settings.language_code}, whatever language the question is in."
+    return prompt
 
 
-def _anthropic_body(question: str, screens: list[Screenshot], conversation: Conversation, settings: LinuxSettings) -> dict:
-    messages = []
-    for earlier_question, earlier_answer in conversation.exchanges:
-        messages += [{"role": "user", "content": earlier_question}, {"role": "assistant", "content": earlier_answer}]
-    messages.append({"role": "user", "content": _labelled_screens(screens, question, lambda screen: {
-        "type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(screen.png_bytes).decode("ascii")}})})
-    return {"model": ANTHROPIC_MODEL, "max_tokens": MAX_ANSWER_TOKENS, "system": _with_language(settings), "messages": messages}
+def answer_request(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings,
+                   tools: list[dict] | None = None, extra_instructions: str = "", extras: AskExtras | None = None,
+                   maximum_screens: int = MAXIMUM_SCREENS) -> answers.AnswerRequest:
+    """The question, its pictures (each labelled "screen 1 (primary focus, 1280x800 pixels)"), the
+    earlier exchanges and the prompt, as every source is asked."""
+    extras = extras or AskExtras()
+    images = []
+    for index, screen in enumerate(as_screen_list(screenshot)[:maximum_screens]):
+        focus = "primary focus, " if index == 0 else ""
+        images.append(answers.Image(screen.png_bytes, f"screen {index + 1} ({focus}{screen.width}x{screen.height} pixels)"))
+    images += [answers.Image(data, label, "image/png" if data[:4] == b"\x89PNG" else "image/jpeg") for data, label in extras.images]
+    # The Mac's `askUserPrompt`: each line of context in brackets after the question.
+    user_prompt = question + ("\n\n" + "\n".join(f"[{line}]" for line in extras.prompt_lines) if extras.prompt_lines else "")
+    instructions = "\n\n".join(part for part in (extra_instructions, extras.instruction, extras.skills_block.strip()) if part)
+    return answers.AnswerRequest(images=images, system_prompt=_with_language(settings, instructions),
+                                 history=list(conversation.exchanges), user_prompt=user_prompt, tools=list(tools or []),
+                                 max_tokens=MAX_ANSWER_TOKENS)
 
 
-def _openai_body(question: str, screens: list[Screenshot], conversation: Conversation, settings: LinuxSettings,
-                 model: str = OPENAI_MODEL) -> dict:
-    messages: list[dict] = [{"role": "system", "content": _with_language(settings)}]
-    for earlier_question, earlier_answer in conversation.exchanges:
-        messages += [{"role": "user", "content": earlier_question}, {"role": "assistant", "content": earlier_answer}]
-    messages.append({"role": "user", "content": _labelled_screens(screens, question, lambda screen: {
-        "type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(screen.png_bytes).decode("ascii")}})})
-    return {"model": model, "max_tokens": MAX_ANSWER_TOKENS, "messages": messages}
+def _kind(source: answers.Source) -> str:
+    return {"openClickyAccount": "backend", "openRouter": "openrouter", "openAI": "openai"}.get(source.id, source.id.lower())
 
 
-def request_for(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings) -> AskRequest:
-    """`screenshot` is one picture or one per monitor, the one with the mouse first."""
-    screens = as_screen_list(screenshot)[:MAXIMUM_SCREENS]
-    if settings.anthropic_api_key:
-        body = json.dumps(_anthropic_body(question, screens, conversation, settings)).encode()
-        return AskRequest("anthropic", urllib.request.Request(ANTHROPIC_MESSAGES_URL, data=body, method="POST", headers={
-            "x-api-key": settings.anthropic_api_key, "anthropic-version": ANTHROPIC_VERSION, "Content-Type": "application/json"}))
-    if settings.openrouter_api_key:
-        model = settings.openrouter_model or OPENROUTER_MODEL
-        body = json.dumps(_openai_body(question, screens, conversation, settings, model=model)).encode()
-        return AskRequest("openrouter", urllib.request.Request(OPENROUTER_CHAT_URL, data=body, method="POST", headers={
-            "Authorization": f"Bearer {settings.openrouter_api_key}", "Content-Type": "application/json",
-            # OpenRouter's app attribution headers: shown on its dashboard, never needed to answer.
-            "HTTP-Referer": "https://openclicky.flowsxr.com", "X-Title": "OpenClicky for Linux"}))
-    if settings.openai_api_key:
-        body = json.dumps(_openai_body(question, screens, conversation, settings)).encode()
-        return AskRequest("openai", urllib.request.Request(OPENAI_CHAT_URL, data=body, method="POST", headers={
-            "Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"}))
-    if settings.account_token:
-        body = json.dumps(_anthropic_body(question, screens[:MAXIMUM_SCREENS_ON_AN_ACCOUNT], conversation, settings)).encode()
-        return AskRequest("backend", urllib.request.Request(f"{settings.backend_url}/chat", data=body, method="POST", headers={
-            "Authorization": f"Bearer {settings.account_token}", "anthropic-version": ANTHROPIC_VERSION, "Content-Type": "application/json"}))
-    raise AskError("asking needs an anthropic, openrouter or openai key, or an openclicky account. add one in settings.")
+def _source_or_refusal(settings: LinuxSettings) -> answers.Source:
+    source = answers.answering_source(settings)
+    if source is None:
+        raise AskError(NEEDS_A_WAY_TO_ANSWER)
+    return source
 
 
-def answer_text(kind: str, response: dict) -> str:
-    if kind in ("openai", "openrouter"):
-        choices = response.get("choices") or []
-        content = choices[0].get("message", {}).get("content") if choices else None
-        return content.strip() if isinstance(content, str) else ""
-    blocks = response.get("content") or []
-    return "".join(block.get("text", "") for block in blocks if isinstance(block, dict) and block.get("type") == "text").strip()
+def request_for(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings,
+                tools: list[dict] | None = None, extra_instructions: str = "", extras: AskExtras | None = None) -> AskRequest:
+    """The HTTP request the answering source gets (for the plans, which run a CLI, there is none)."""
+    source = _source_or_refusal(settings)
+    maximum = MAXIMUM_SCREENS_ON_AN_ACCOUNT if source.id == "openClickyAccount" else MAXIMUM_SCREENS
+    built = answer_request(question, screenshot, conversation, settings, tools, extra_instructions, extras, maximum)
+    return AskRequest(_kind(source), answers.http_request(source, built, settings))
 
 
-def ask(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings) -> str:
-    routed = request_for(question, screenshot, conversation, settings)
+def ask_with_tools(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings,
+                   tools: list[dict] | None = None, extra_instructions: str = "", extras: AskExtras | None = None,
+                   on_text: Callable[[str], None] = lambda _piece: None) -> tuple[str, list[ToolCall]]:
+    """The answer and the tools it called (at most two, as on the Mac), streamed into `on_text`."""
+    source = _source_or_refusal(settings)
+    maximum = MAXIMUM_SCREENS_ON_AN_ACCOUNT if source.id == "openClickyAccount" else MAXIMUM_SCREENS
+    built = answer_request(question, screenshot, conversation, settings, tools, extra_instructions, extras, maximum)
     started = time.monotonic()
     try:
-        answer = _send(routed)
+        answer, calls = answers.answer(source, built, settings, on_text)
     except AskError as failure:
-        applog.append(f"ask: {routed.kind} failed after {time.monotonic() - started:.1f} s: {failure}")
+        applog.append(f"ask: {source.id} failed after {time.monotonic() - started:.1f} s: {failure}")
         raise
-    applog.append(f"ask: {routed.kind} answered in {time.monotonic() - started:.1f} s, {len(as_screen_list(screenshot))} screen(s)"
-                  f"{', a guided step' if guided.contains_marker(answer) else ''}")
-    return answer
+    if not answer.strip() and not calls:
+        raise AskError(f"{source.short_name.lower()} answered with no text.")
+    applog.append(f"ask: {_kind(source)} answered in {time.monotonic() - started:.1f} s, {len(as_screen_list(screenshot))} screen(s)"
+                  f"{', a guided step' if guided.contains_marker(answer) else ''}{f', {len(calls)} tool call(s)' if calls else ''}")
+    return answer.strip(), calls[:2]
 
 
-def _send(routed: AskRequest) -> str:
-    vendor = {"anthropic": "anthropic", "openrouter": "openrouter", "openai": "openai", "backend": "the openclicky backend"}[routed.kind]
-    try:
-        with urllib.request.urlopen(routed.request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            answer = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as refusal:
-        if refusal.code == 401:
-            raise AskError(f"{vendor} refused the key or token. check it in settings.") from refusal
-        if refusal.code == 402 and routed.kind == "backend":
-            raise AskError("your openclicky allowance is used up for now.") from refusal
-        if refusal.code == 402:
-            raise AskError(f"{vendor} says the key is out of credit.") from refusal
-        raise AskError(f"{vendor} couldn't answer ({refusal.code}).") from refusal
-    except (urllib.error.URLError, TimeoutError, OSError) as failure:
-        raise AskError(f"couldn't reach {vendor}.") from failure
-    except ValueError as failure:
-        raise AskError(f"{vendor} sent back something that isn't json.") from failure
-    text = answer_text(routed.kind, answer if isinstance(answer, dict) else {})
-    if not text:
-        raise AskError(f"{vendor} answered with no text.")
-    return text
+def ask(question: str, screenshot: "Screenshot | list[Screenshot]", conversation: Conversation, settings: LinuxSettings,
+        extras: AskExtras | None = None, on_text: Callable[[str], None] = lambda _piece: None) -> str:
+    return ask_with_tools(question, screenshot, conversation, settings, extras=extras, on_text=on_text)[0]

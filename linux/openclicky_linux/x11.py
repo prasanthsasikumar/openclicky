@@ -11,12 +11,12 @@
   listen-only, like the Mac app's `CGEvent` tap, so the key keeps working in other apps and
   nothing is grabbed. It runs on its own thread with its own connections.
 
-Wayland deliberately allows none of this; `is_wayland_session` lets the app say so at start.
+Wayland deliberately allows none of this to an X client: there `evdev.py`, `uinput.py` and
+`portal.py` do these jobs (see `session.py`), and only `shape_window` is still used, through XWayland.
 """
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from typing import Callable
@@ -27,6 +27,8 @@ from Xlib.ext import record, shape, xtest
 from Xlib.protocol import rq
 
 from . import applog
+from .ask_lane import PROMPT_WINDOW_CLASSES, OnScreenWindow
+from .skills import FrontApp
 from .controller import FocusedWindow
 
 # WM_CLASS values (lowercased) of terminals, where paste is ctrl+shift+v (ctrl+v is a literal ^V).
@@ -36,12 +38,6 @@ TERMINAL_WINDOW_CLASSES = frozenset({
     "lxterminal", "qterminal", "terminology", "wezterm", "wezterm-gui", "foot", "st", "st-256color",
     "guake", "yakuake", "tilda", "cool-retro-term", "sakura", "ptyxis",
 })
-
-
-def is_wayland_session(environment: dict[str, str] | None = None) -> bool:
-    environment = os.environ if environment is None else environment
-    return environment.get("XDG_SESSION_TYPE") == "wayland" or (
-        bool(environment.get("WAYLAND_DISPLAY")) and not environment.get("DISPLAY"))
 
 
 def _window_class(display: xdisplay.Display, window) -> str | None:
@@ -78,6 +74,184 @@ def focused_window(display: xdisplay.Display) -> FocusedWindow | None:
     app_class = _window_class(display, window)
     is_terminal = bool(app_class) and app_class.lower() in TERMINAL_WINDOW_CLASSES
     return FocusedWindow(window_id=window.id, app_class=app_class, is_terminal=is_terminal)
+
+
+def front_app(display: xdisplay.Display, active_window_only: bool = False) -> FrontApp | None:
+    """The app in front for the skills (its class and window title). `active_window_only` on
+    Wayland: XWayland names the active window only while an X11 app is in front."""
+    root = display.screen().root
+    try:
+        active = root.get_full_property(display.intern_atom("_NET_ACTIVE_WINDOW"), X.AnyPropertyType)
+        if active and active.value and active.value[0]:
+            window = display.create_resource_object("window", int(active.value[0]))
+        elif active_window_only:
+            return None
+        else:
+            focused = focused_window(display)
+            if focused is None:
+                return None
+            window = display.create_resource_object("window", focused.window_id)
+        name = window.get_full_property(display.intern_atom("_NET_WM_NAME"), display.intern_atom("UTF8_STRING"))
+        title = name.value.decode("utf-8", "replace") if name and isinstance(name.value, bytes) else window.get_wm_name()
+    except XError:
+        return None
+    return FrontApp(window_class=_window_class(display, window), title=title if isinstance(title, str) else None)
+
+
+def keysym_for(character: str) -> int:
+    """X's keysym for a character: Latin-1 is its own code, anything else Unicode's keysym range."""
+    code = ord(character)
+    return code if 0x20 <= code <= 0x7E or 0xA0 <= code <= 0xFF else 0x01000000 | code
+
+
+def key_for(display: xdisplay.Display, character: str) -> tuple[int, bool] | None:
+    """(keycode, with shift) that types `character` in the layout in use, or None when no key on
+    the first two levels does."""
+    keysym = keysym_for(character)
+    for keycode, index in display.keysym_to_keycodes(keysym):
+        if index in (0, 1):
+            return keycode, index == 1
+    return None
+
+
+class LiveKeyboard:
+    """Live typing on X11: each character as an XTEST keystroke. Characters no key gives are typed
+    on spare keycodes mapped to them (as xdotool does), so any text types in any layout. An app
+    turns a keycode into a character only when it reads the event, so a borrowed keycode stays
+    mapped until it has gone unused for `RETURN_AFTER_SECONDS`, and is given back from a timer.
+    Its own X connection, so the timer never shares one with the main loop."""
+
+    RETURN_AFTER_SECONDS = 1.0
+
+    def __init__(self, display_name: str | None = None) -> None:
+        self._display_name = display_name
+        self._display: xdisplay.Display | None = None
+        self._lock = threading.Lock()
+        self._borrowed: dict[int, float] = {}  # keycode → when it was last typed
+
+    def type_text(self, text: str) -> bool:
+        """False when XTEST is missing, the phrase needs more spare keys than there are, or the
+        server refused."""
+        with self._lock:
+            try:
+                if self._display is None:
+                    self._display = xdisplay.Display(self._display_name)
+                display = self._display
+                if not display.has_extension("XTEST"):
+                    return False
+                return self._type(display, text)
+            except (XError, OSError):
+                return False
+
+    def _type(self, display: xdisplay.Display, text: str) -> bool:
+        shift = display.keysym_to_keycode(XK.XK_Shift_L)
+        missing = list(dict.fromkeys(character for character in text if key_for(display, character) is None))
+        spares = [keycode for keycode in _spare_keycodes(display) if keycode not in self._borrowed][:len(missing)]
+        if len(spares) < len(missing):
+            return False
+        lent = dict(zip(missing, spares))
+        for character, keycode in lent.items():
+            display.change_keyboard_mapping(keycode, [(keysym_for(character),) * 2])
+        if lent:
+            display.sync()
+            # The client side's own table, so a character typed again finds its key.
+            _refresh_keymap(display, min(lent.values()), max(lent.values()))
+            # Apps read the new mapping before the keys arrive.
+            time.sleep(0.05)
+        now = time.monotonic()
+        for character in text:
+            keycode, with_shift = (lent[character], False) if character in lent else key_for(display, character)
+            if keycode in self._borrowed or character in lent:
+                self._borrowed[keycode] = now
+            if with_shift:
+                xtest.fake_input(display, X.KeyPress, shift)
+            xtest.fake_input(display, X.KeyPress, keycode)
+            xtest.fake_input(display, X.KeyRelease, keycode)
+            if with_shift:
+                xtest.fake_input(display, X.KeyRelease, shift)
+        display.sync()
+        if lent:
+            timer = threading.Timer(self.RETURN_AFTER_SECONDS + 0.05, self._give_back)
+            timer.daemon = True
+            timer.start()
+        return True
+
+    def _give_back(self) -> None:
+        with self._lock:
+            display = self._display
+            now = time.monotonic()
+            due = [keycode for keycode, used_at in self._borrowed.items() if now - used_at >= self.RETURN_AFTER_SECONDS]
+            if display is None or not due:
+                return
+            try:
+                for keycode in due:
+                    display.change_keyboard_mapping(keycode, [(X.NoSymbol,) * 2])
+                    del self._borrowed[keycode]
+                display.sync()
+                _refresh_keymap(display, min(due), max(due))
+            except (XError, OSError):
+                pass
+
+
+def _refresh_keymap(display: xdisplay.Display, first_keycode: int, last_keycode: int) -> None:
+    """The client side's keysym table after our own change (what a MappingNotify would trigger)."""
+    display._update_keymap(first_keycode, last_keycode - first_keycode + 1)
+
+
+def _spare_keycodes(display: xdisplay.Display) -> list[int]:
+    """Keycodes with nothing on them, borrowed for characters the layout lacks."""
+    first = display.display.info.min_keycode
+    count = display.display.info.max_keycode - first + 1
+    return [first + offset for offset, keysyms in enumerate(display.get_keyboard_mapping(first, count)) if not any(keysyms)]
+
+
+MODIFIER_KEYSYMS = (XK.XK_Shift_L, XK.XK_Shift_R, XK.XK_Control_L, XK.XK_Control_R, XK.XK_Alt_L, XK.XK_Alt_R,
+                    XK.XK_Super_L, XK.XK_Super_R, XK.string_to_keysym("ISO_Level3_Shift"))
+
+
+def modifiers_held(display: xdisplay.Display) -> bool:
+    """Whether a key that merges with a typed one (shift, ctrl, alt, super, AltGr) is down now."""
+    try:
+        keymap = display.query_keymap()
+    except XError:
+        return True
+    for keysym in MODIFIER_KEYSYMS:
+        for keycode, _index in display.keysym_to_keycodes(keysym):
+            if keymap[keycode // 8] & (1 << (keycode % 8)):
+                return True
+    return False
+
+
+def mouse_position(display: xdisplay.Display) -> tuple[int, int] | None:
+    """Where the mouse is on the desktop."""
+    try:
+        pointer = display.screen().root.query_pointer()
+    except XError:
+        return None
+    return pointer.root_x, pointer.root_y
+
+
+def prompt_windows(display: xdisplay.Display) -> list[OnScreenWindow]:
+    """The password and permission prompts on screen now (`ask_lane.PROMPT_WINDOW_CLASSES`), where
+    they are on the desktop."""
+    root = display.screen().root
+    try:
+        listed = root.get_full_property(display.intern_atom("_NET_CLIENT_LIST"), X.AnyPropertyType)
+    except XError:
+        return []
+    found = []
+    for window_id in (listed.value if listed else []):
+        try:
+            window = display.create_resource_object("window", int(window_id))
+            wm_class = window.get_wm_class()
+            if not wm_class or not {name.lower() for name in wm_class if name} & PROMPT_WINDOW_CLASSES:
+                continue
+            geometry = window.get_geometry()
+            corner = root.translate_coords(window, 0, 0)
+        except XError:
+            continue
+        found.append(OnScreenWindow((wm_class[0] or wm_class[1]).lower(), corner.x, corner.y, geometry.width, geometry.height))
+    return found
 
 
 def send_paste_keystroke(display: xdisplay.Display, with_shift: bool) -> bool:
@@ -142,17 +316,18 @@ def shape_window(window_id: int, outline_rows: list[tuple[int, int, int, int]] |
 class DictationKeyListener:
     """Calls `on_dictation_key(is_down, at_seconds)`, `on_composer_key(is_down, at_seconds)` and
     `on_other_key_down(is_escape)` from its own thread for every key press and release on the X
-    server, and `on_step_input(kind)` for every left click and key press other than the dictation
-    and composer keys ("click", "step key" for Return, keypad Enter and Tab, "escape", "other key"):
-    what a guided step waits for."""
+    server, and `on_step_input(kind, position)` for every left click and key press other than the
+    dictation and composer keys ("click", "step key" for Return, keypad Enter and Tab, "escape",
+    "other key"; a click's place on the desktop, else None): what a guided step waits for."""
 
     def __init__(self, dictation_key_name: str, on_dictation_key: Callable[[bool, float], None],
                  on_other_key_down: Callable[[bool], None], display_name: str | None = None,
                  composer_key_name: str | None = "Control_L",
                  on_composer_key: Callable[[bool, float], None] = lambda _is_down, _at_seconds: None,
-                 on_step_input: Callable[[str], None] = lambda _kind: None,
+                 on_step_input: Callable[..., None] = lambda _kind, _position=None: None,
                  ask_key_name: str | None = "Alt_L",
-                 on_ask_key: Callable[[bool], None] = lambda _is_down: None) -> None:
+                 on_ask_key: Callable[[bool], None] = lambda _is_down: None,
+                 on_edit_key: Callable[[bool], None] = lambda _is_down: None) -> None:
         self._control_display = xdisplay.Display(display_name)
         self._record_display = xdisplay.Display(display_name)
         if not self._record_display.has_extension("RECORD"):
@@ -168,6 +343,10 @@ class DictationKeyListener:
         ask_keysym = XK.string_to_keysym(ask_key_name) if ask_key_name else X.NoSymbol
         self.ask_keycodes = (self._keycodes_for(ask_keysym) - self.dictation_keycodes) if ask_keysym != X.NoSymbol else set()
         self._on_ask_key = on_ask_key
+        # Either shift, held with the dictation key: the take is a Hey Clicky edit of the selection.
+        self.edit_keycodes = self._keycodes_for(XK.XK_Shift_L) | self._keycodes_for(XK.XK_Shift_R)
+        self.edit_keycodes -= self.dictation_keycodes | self.ask_keycodes
+        self._on_edit_key = on_edit_key
         self.step_keycodes = set().union(*(self._keycodes_for(keysym) for keysym in (XK.XK_Return, XK.XK_KP_Enter, XK.XK_Tab)))
         self._on_step_input = on_step_input
         # The key tapped twice for the ask box; never the dictation key itself.
@@ -234,7 +413,7 @@ class DictationKeyListener:
             if event.type == X.ButtonRelease:
                 # The left button only (1); the wheel and the other buttons are not a step.
                 if event.detail == 1:
-                    self._on_step_input("click")
+                    self._on_step_input("click", (event.root_x, event.root_y))
                 continue
             if event.type not in (X.KeyPress, X.KeyRelease):
                 continue
@@ -245,7 +424,9 @@ class DictationKeyListener:
                 self._on_composer_key(is_down, event.time / 1000.0)
             elif event.detail in self.ask_keycodes:
                 self._on_ask_key(is_down)
+            elif event.detail in self.edit_keycodes:
+                self._on_edit_key(is_down)
             elif is_down:
                 is_escape = event.detail in self.escape_keycodes
                 self._on_other_key_down(is_escape)
-                self._on_step_input("escape" if is_escape else "step key" if event.detail in self.step_keycodes else "other key")
+                self._on_step_input("escape" if is_escape else "step key" if event.detail in self.step_keycodes else "other key", None)

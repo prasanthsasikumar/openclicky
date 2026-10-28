@@ -15,7 +15,7 @@ class FakePointer:
     def show_after_screenshot(self):
         self.hidden = False
 
-    def show_caption(self, text, hold_seconds):
+    def show_caption(self, text, hold_seconds, continue_typing=False):
         self.calls.append(("caption", text, hold_seconds is not None))
 
     def dismiss_caption(self):
@@ -36,11 +36,17 @@ class FakeDesktop:
         self.timers: list = []
         self.background: list = []
         self.screenshot = Screenshot(b"png", 784, 490, 0.5)
+        self.extras: list = []
+        self.stream = False
 
-    def ask(self, question, screenshot, conversation):
+    def ask(self, question, screenshot, conversation, extras=None, on_text=lambda _piece: None):
         self.asked.append(question)
+        self.extras.append(extras)
         if isinstance(self.answer, Exception):
             raise self.answer
+        # Streamed a few letters at a time when the test asks for it, as the vendors do.
+        for start in range(0, len(self.answer), 7) if self.stream else ():
+            on_text(self.answer[start:start + 7])
         return self.answer
 
     def host(self) -> AskHost:
@@ -113,10 +119,10 @@ def test_an_empty_question_just_closes_the_box():
 
 def test_a_failure_is_said_by_the_pointer():
     desktop, pointer, asking = make()
-    desktop.answer = AskError("asking needs an anthropic or openai key, or an openclicky account. add one in settings.")
+    desktop.answer = AskError("i can answer that once you add your email for a free account, in settings, account.")
     asking.submit("hi")
     desktop.run_everything()
-    assert pointer.calls[-1] == ("caption", "asking needs an anthropic or openai key, or an openclicky account. add one in settings.", True)
+    assert pointer.calls[-1] == ("caption", "i can answer that once you add your email for a free account, in settings, account.", True)
     assert not asking.is_answering
 
 
@@ -170,7 +176,7 @@ class ScriptedModel:
         desktop.ask = self.ask  # type: ignore[method-assign]
         self.desktop = desktop
 
-    def ask(self, question, screenshot, conversation):
+    def ask(self, question, screenshot, conversation, **_streaming):
         self.desktop.asked.append(question)
         return self.answers.pop(0)
 
@@ -360,7 +366,7 @@ def test_an_answer_that_is_only_a_tag_never_leaves_an_empty_turn_in_the_conversa
 def test_an_answer_is_spoken_and_esc_or_a_new_question_stops_it():
     desktop, pointer, asking = make()
     spoken, stops, prepared = [], [], []
-    asking.host.speak = spoken.append
+    asking.host.speak_piece = spoken.append
     asking.host.stop_speaking = lambda: stops.append(True)
     asking.host.prepare_voice = lambda: prepared.append(True)
     desktop.answer = "[POINT:392,245:save] click save, top left."
@@ -378,7 +384,7 @@ def test_an_answer_is_spoken_and_esc_or_a_new_question_stops_it():
 def test_a_failure_or_an_empty_answer_is_not_spoken():
     desktop, pointer, asking = make()
     spoken = []
-    asking.host.speak = spoken.append
+    asking.host.speak_piece = spoken.append
     desktop.answer = "[POINT:10,20:save]"
     asking.submit("where?")
     desktop.run_everything()
@@ -387,3 +393,201 @@ def test_a_failure_or_an_empty_answer_is_not_spoken():
     asking.submit("again?")
     desktop.run_everything()
     assert spoken == []
+
+
+def test_on_wayland_the_screenshot_is_taken_off_the_main_thread_with_the_pointer_still_hidden():
+    desktop, pointer, asking = make()
+    desktop.answer = "[POINT:392,245:save button] click save."
+    hidden_while_the_desktop_took_it = []
+
+    def take_it_in_the_background():
+        hidden_while_the_desktop_took_it.append(pointer.hidden)
+        return [desktop.screenshot]
+    # Wayland's capture hands back a function, which goes to the background like the question does.
+    asking.host.capture_screen = lambda: take_it_in_the_background
+    asking.submit("where do i save?")
+    desktop.run_everything()
+    assert hidden_while_the_desktop_took_it == [True]
+    assert pointer.calls[0] == ("caption", THINKING_CAPTION, False)
+    assert ("fly", 784, 490) in pointer.calls
+
+
+def test_on_wayland_a_refused_screenshot_says_so_and_asks_nothing():
+    desktop, pointer, asking = make()
+
+    def refused():
+        raise RuntimeError("the desktop refused the screenshot")
+    asking.host.capture_screen = lambda: refused
+    asking.submit("where do i save?")
+    desktop.run_everything()
+    assert desktop.asked == []
+    assert not pointer.hidden
+    assert pointer.calls == [("caption", "couldn't see the screen: the desktop refused the screenshot", True)]
+
+
+def test_a_screenshot_finished_after_esc_is_dropped():
+    desktop, pointer, asking = make()
+    asking.host.capture_screen = lambda: (lambda: [desktop.screenshot])
+    asking.submit("where do i save?")
+    while desktop.timers:
+        desktop.timers.pop(0)()
+    asking.escape()
+    desktop.run_everything()
+    assert desktop.asked == []
+
+
+def test_a_streamed_answer_flies_as_soon_as_its_tag_is_complete_and_speaks_its_first_sentence_alone():
+    desktop, pointer, asking = make()
+    desktop.stream = True
+    spoken, ends = [], []
+    asking.host.speak_piece = spoken.append
+    asking.host.speak_end = lambda: ends.append(True)
+    flown_while_streaming = []
+    original = asking._stream_piece
+
+    def watch(question_id, piece, screenshot):
+        original(question_id, piece, screenshot)
+        flown_while_streaming.append(any(call[0] == "fly" for call in pointer.calls))
+    asking._stream_piece = watch
+    desktop.answer = ("[POINT:392,245:save button] click save, top left. it keeps everything you typed since the last time, "
+                      "so nothing is lost if the app closes.")
+    asking.submit("where do i save?")
+    desktop.run_everything()
+    # Flown long before the last piece arrived.
+    assert flown_while_streaming.index(True) < len(flown_while_streaming) // 2
+    assert [call for call in pointer.calls if call[0] == "fly"] == [("fly", 784, 490)]
+    assert spoken[0] == "click save, top left."
+    assert " ".join(spoken) == desktop.answer.split("] ", 1)[1]
+    assert ends == [True]
+    # The caption grew a sentence at a time and ends with the whole answer, held to be read.
+    captions = [call for call in pointer.calls if call[0] == "caption"]
+    assert captions[1] == ("caption", "click save, top left.", False)
+    assert captions[-1] == ("caption", desktop.answer.split("] ", 1)[1], True)
+
+
+# MARK: the person stays in charge (ask_lane.py)
+
+def test_with_the_pause_on_the_screen_waits_and_esc_calls_it_off_before_anything_is_captured():
+    from openclicky_linux import ask_lane
+    desktop, pointer, asking = make()
+    asking.host.pause_before_sending = lambda: True
+    captured = []
+    asking.host.capture_screen = lambda: (captured.append(True), desktop.screenshot)[1]
+    asking.submit("where do i save?")
+    assert pointer.calls == [("caption", ask_lane.SEND_PAUSE_CAPTION, False)]
+    assert not pointer.hidden
+    assert asking.escape()
+    desktop.run_everything()
+    assert captured == [] and desktop.asked == []
+    # Without esc it goes on after the pause.
+    asking.submit("where do i save?")
+    desktop.run_everything()
+    assert captured == [True] and desktop.asked == ["where do i save?"]
+
+
+def test_an_unsure_answer_never_points_and_ends_the_guide():
+    desktop, pointer, asking = make()
+    desktop.stream = True
+    desktop.answer = "[UNSURE] [POINT:392,245:save] i can't spot the save button. look for a disk icon, or tell me what you see. [NEXT]"
+    asking.submit("where do i save?")
+    desktop.run_everything()
+    assert not any(call[0] == "fly" for call in pointer.calls)
+    assert not asking.is_waiting_for_step
+    assert pointer.calls[-1] == ("caption", "i can't spot the save button. look for a disk icon, or tell me what you see.", True)
+    assert asking.conversation.exchanges[-1][1] == "i can't spot the save button. look for a disk icon, or tell me what you see."
+
+
+def test_the_question_says_where_the_mouse_is_with_a_close_up_and_when_it_was_just_asked():
+    from openclicky_linux import ask_lane
+    desktop, pointer, asking = make()
+    asking.host.mouse_position = lambda: (200, 100)
+    cut = []
+    asking.host.cut_close_up = lambda screen, at: (cut.append(at), b"close-up")[1]
+    asking.submit("what is this?")
+    desktop.run_everything()
+    extras = desktop.extras[-1]
+    # Half-size screenshot: the mouse is at half its desktop place in it.
+    assert cut == [ask_lane.PointerInCapture(100, 50, 1)]
+    assert extras.prompt_lines == (ask_lane.PointerInCapture(100, 50, 1).prompt_line,)
+    assert extras.images == ((b"close-up", ask_lane.close_up_label()),)
+    asking.submit("what's this??")
+    desktop.run_everything()
+    assert desktop.extras[-1].prompt_lines[-1] == ask_lane.REPEATED_QUESTION_LINE
+
+
+def test_a_point_on_a_password_prompt_is_not_shown():
+    from openclicky_linux.ask_lane import OnScreenWindow
+    desktop, pointer, asking = make()
+    asking.host.prompt_windows = lambda: [OnScreenWindow("gcr-prompter", 700, 450, 300, 200)]
+    desktop.answer = "[POINT:392,245:unlock] type your password here."
+    asking.submit("how do i unlock this?")
+    desktop.run_everything()
+    assert not any(call[0] == "fly" for call in pointer.calls)
+    assert ("caption", "type your password here.", True) in pointer.calls
+
+
+def test_a_click_well_away_from_the_point_says_so_and_asks_the_model_to_check():
+    from openclicky_linux import ask_lane
+    desktop, pointer, asking, timers = guided_setup([
+        "[POINT:100,40:settings] open settings first. [NEXT]",
+        "[POINT:100,40:settings] that was the wrong spot; settings is here. [NEXT]",
+        "[POINT:none] done.",
+    ])
+    asking.submit("how do i turn on dark mode?")
+    run_background(desktop, timers, only_delay=0.15)
+    # The point was (200, 80) on the desktop; the click lands 300 px to the right.
+    asking.step_input(guided.CLICK, (500, 80))
+    run_background(desktop, timers, only_delay=guided.SETTLE_SECONDS_AFTER_CLICK)
+    assert ("caption", ask_lane.OFF_TARGET_CAPTION, False) in pointer.calls
+    assert desktop.asked[1] == guided.next_step_request("how do i turn on dark mode?", 300)
+    # A click near the point is on target.
+    asking.step_input(guided.CLICK, (210, 85))
+    run_background(desktop, timers, only_delay=guided.SETTLE_SECONDS_AFTER_CLICK)
+    assert desktop.asked[2] == guided.next_step_request("how do i turn on dark mode?")
+
+
+# MARK: writing in place (writing.py)
+
+def test_a_question_about_a_text_box_carries_its_words_and_offers_the_rewrite_tool():
+    from openclicky_linux import writing
+    from openclicky_linux.accessibility import FocusedField
+    desktop, pointer, asking = make()
+    field = FocusedField("Thunderbird", "Write: hello", True, False, "hey can u send it", None, 17)
+    asking.host.read_text_context = lambda: writing.TextContext(readable=True, target=writing.target_in(field))
+    written = []
+    asking.host.write_in_place = lambda target, text: written.append((target.text, text)) or writing.REPLACED
+    asking.open_composer()
+    asking.submit("rephrase this, more polite")
+    desktop.run_everything()
+    extras = desktop.extras[-1]
+    assert extras.prompt_lines[0].startswith("The text box the user's cursor is in in Thunderbird holds this text: «hey can u send it».")
+    assert extras.instruction == writing.PROMPT_INSTRUCTION and extras.tools[0]["name"] == "write_in_place"
+    assert extras.write_in_place("Could you send it, please?") == writing.REPLACED
+    assert written == [("hey can u send it", "Could you send it, please?")]
+
+
+def test_without_a_box_to_read_the_model_is_told_not_to_read_a_rewrite_out():
+    from openclicky_linux import writing
+    desktop, pointer, asking = make()
+    asking.host.read_text_context = lambda: writing.TextContext(readable=False)
+    asking.submit("rephrase this", asked_out_loud=True)
+    desktop.run_everything()
+    assert desktop.extras[-1].instruction == writing.NO_ACCESSIBILITY_PROMPT_INSTRUCTION and desktop.extras[-1].tools == ()
+    asking.host.read_text_context = lambda: writing.TextContext(readable=True, selected_text="E = mc²")
+    asking.submit("what is this?", asked_out_loud=True)
+    desktop.run_everything()
+    assert desktop.extras[-1].instruction == writing.NO_TARGET_PROMPT_INSTRUCTION
+    assert desktop.extras[-1].prompt_lines[0].startswith("The user has selected (highlighted) this text on screen: «E = mc²».")
+
+
+def test_a_target_is_never_a_password_box_and_must_still_be_there():
+    from openclicky_linux import writing
+    from openclicky_linux.accessibility import FocusedField
+    password = FocusedField("Firefox", None, True, True, None, None, None)
+    assert writing.target_in(password) is None
+    highlighted = FocusedField("gedit", None, True, False, "one two three", (4, 7), 7)
+    target = writing.target_in(highlighted)
+    assert (target.scope, target.text) == (writing.SELECTION, "two")
+    assert target.still_matches(highlighted)
+    assert not target.still_matches(FocusedField("gedit", None, True, False, "one two three", None, 7))
+    assert writing.keeping_surrounding_space("\nold text \n", " new text ") == "\nnew text \n"

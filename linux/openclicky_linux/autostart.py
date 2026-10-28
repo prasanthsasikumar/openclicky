@@ -1,6 +1,9 @@
 """Start OpenClicky when you log in: the freedesktop autostart entry every desktop reads
 (Xfce, KDE, GNOME, MATE, Cinnamon), `$XDG_CONFIG_HOME/autostart/openclicky.desktop`. Settings
 switches it on and off; nothing else writes there.
+
+`install_launcher` puts OpenClicky in the applications menu too (`~/.local/share/applications`,
+with the pointer as its icon), as the Mac app sits in Applications: the first-run setup does it.
 """
 
 from __future__ import annotations
@@ -45,6 +48,8 @@ def desktop_entry(command: str) -> str:
         "Name=OpenClicky",
         "Comment=Dictation and a pointer that answers questions about your screen",
         f"Exec={command}",
+        "Icon=openclicky",
+        "StartupWMClass=OpenClicky",
         "Terminal=false",
         "X-GNOME-Autostart-enabled=true",
         "",
@@ -67,3 +72,32 @@ def set_enabled(enabled: bool) -> None:
         path.write_text(desktop_entry(launch_command()), encoding="utf-8")
     elif path.exists():
         path.unlink()
+
+
+def data_home() -> Path:
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+
+
+def launcher_path() -> Path:
+    return data_home() / "applications" / DESKTOP_FILE_NAME
+
+
+def icon_path() -> Path:
+    return data_home() / "icons" / "hicolor" / "256x256" / "apps" / "openclicky.png"
+
+
+def launcher_entry(command: str) -> str:
+    return desktop_entry(command).replace("X-GNOME-Autostart-enabled=true\n", "Categories=Utility;Accessibility;\n"
+                                          "Keywords=dictation;voice;assistant;pointer;\nStartupNotify=false\n")
+
+
+def install_launcher() -> None:
+    """OpenClicky in the applications menu, with its icon (drawn from the pointer's own triangle)."""
+    from .windows import pointer_icon
+
+    icon = icon_path()
+    icon.parent.mkdir(parents=True, exist_ok=True)
+    pointer_icon(256).savev(str(icon), "png", [], [])
+    path = launcher_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(launcher_entry(launch_command()), encoding="utf-8")

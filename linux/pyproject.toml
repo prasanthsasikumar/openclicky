@@ -1,6 +1,6 @@
 [project]
 name = "openclicky-linux"
-version = "0.9.3"
+version = "0.9.2"
 description = "OpenClicky for Linux (X11): dictation, the pointer, and asking about your screen."
 requires-python = ">=3.10"
 license = "MIT"
@@ -21,6 +21,11 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["openclicky_linux"]
+
+[tool.setuptools.package-data]
+# The app-teaching skills (`app_skills` links to the repository's `app-skills`; skills.py).
+# The notices the Mac recorded in its answering voice (`recorded_voice` links to its `RecordedVoice`).
+openclicky_linux = ["app_skills/*/SKILL.md", "recorded_voice/notice-*.mp3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

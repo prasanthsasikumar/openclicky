@@ -2,12 +2,19 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { screenshotArgs, captureScreen, defaultScreenshotPath } from "../src/screenshot.js";
+import { screenshotArgs, captureScreen, defaultScreenshotPath, linuxScreenshotCommands } from "../src/screenshot.js";
 
 describe("screenshot", () => {
   it("builds silent PNG screencapture args", () => {
     expect(screenshotArgs("/t/a.png")).toEqual(["-x", "-t", "png", "-m", "/t/a.png"]);
     expect(screenshotArgs("/t/a.png", { allDisplays: true })).toEqual(["-x", "-t", "png", "/t/a.png"]);
+  });
+  it("tries Wayland's screenshot tools on Wayland and X11's on X11, each writing the given path", () => {
+    expect(linuxScreenshotCommands("/t/a.png", true).map(([bin]) => bin)).toEqual(["grim", "gnome-screenshot", "spectacle"]);
+    expect(linuxScreenshotCommands("/t/a.png", false).map(([bin]) => bin)).toEqual(["scrot", "import", "gnome-screenshot"]);
+    for (const [, args] of [...linuxScreenshotCommands("/t/a.png", true), ...linuxScreenshotCommands("/t/a.png", false)]) {
+      expect(args.at(-1)).toBe("/t/a.png");
+    }
   });
   it("default path is a fresh png under the tmp dir", () => {
     const p = defaultScreenshotPath();

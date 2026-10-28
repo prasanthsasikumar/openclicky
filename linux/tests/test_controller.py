@@ -323,3 +323,121 @@ def test_the_next_take_is_dictation_again():
     desktop.finish_background_work()
     assert len(questions) == 1
     assert [text for text, _ in desktop.pasted] == ["Hello there"]
+
+
+# MARK: Hey Clicky, tones, quiet takes, failed takes, paste last (the Mac's, ported)
+
+def test_a_take_held_with_shift_edits_the_selection_read_at_the_press():
+    from openclicky_linux.gestures import EditJoined
+    desktop, controller, orb = make()
+    edits = []
+    controller.host.read_selection = lambda done: done("hey can u send it")
+    controller.host.edit_text = lambda selection, instruction, window: (edits.append((selection, instruction, window)), "Hi, could you send it?")[1]
+    desktop.transcript = "make it formal"
+    controller.handle(DictationPressed(edit=True))
+    assert orb.message == "say your edit, then let go"
+    controller.handle(DictationReleased(was_tap=False))
+    desktop.finish_background_work()
+    assert edits == [("hey can u send it", "make it formal", desktop.window)]
+    # The paste replaces the selection, which is still selected in the window from the press.
+    assert desktop.pasted == [("Hi, could you send it?", desktop.window)]
+    # With nothing selected, the last take is what is edited; shift joining a take makes it an edit.
+    controller.host.read_selection = lambda done: done(None)
+    controller.handle(DictationPressed())
+    controller.handle(EditJoined())
+    controller.handle(DictationReleased(was_tap=False))
+    desktop.finish_background_work()
+    assert edits[-1][0] == "Hi, could you send it?"
+
+
+def test_an_edit_is_refused_before_listening_when_no_model_may_see_the_text():
+    desktop, controller, orb = make()
+    tones = []
+    controller.host.play_earcon = tones.append
+    controller.host.edit_refusal = lambda: "hey clicky needs “clean up my words with ai” on (styles)"
+    controller.handle(DictationPressed(edit=True))
+    assert controller.state is TakeState.IDLE and desktop.recordings == []
+    assert orb.message.startswith("hey clicky needs") and tones == ["blocked"]
+
+
+def test_tones_mark_a_takes_start_stop_and_end():
+    desktop, controller, orb = make()
+    tones = []
+    controller.host.play_earcon = tones.append
+    controller.handle(DictationPressed())
+    controller.handle(DictationReleased(was_tap=False))
+    desktop.finish_background_work()
+    assert tones == ["start", "stop", "complete"]
+    desktop.transcript = RuntimeError("couldn't reach openai")
+    controller.handle(DictationPressed())
+    controller.handle(DictationReleased(was_tap=False))
+    desktop.finish_background_work()
+    assert tones[-1] == "error"
+
+
+def test_a_tapped_take_ends_after_minutes_of_quiet():
+    import openclicky_linux.controller as controller_module
+    desktop, controller, orb = make()
+    controller.host.quiet_minutes = lambda: 3
+    clock = [1000.0]
+    original = controller_module.time.monotonic
+    controller_module.time.monotonic = lambda: clock[0]
+    try:
+        controller.handle(DictationPressed())
+        desktop.recordings[-1].current_level = lambda: 0.01
+        controller.handle(DictationReleased(was_tap=True))
+        clock[0] += 120
+        desktop.pending_timers.pop(0)()
+        assert controller.state is TakeState.LISTENING
+        clock[0] += 61
+        desktop.pending_timers.pop(0)()
+        assert controller.state is TakeState.FINISHING
+    finally:
+        controller_module.time.monotonic = original
+
+
+def test_a_take_the_engine_could_not_finish_keeps_its_audio():
+    desktop, controller, orb = make()
+    kept = []
+    controller.host.record_failed_take = kept.append
+    desktop.transcript = RuntimeError("couldn't reach openai")
+    controller.handle(DictationPressed())
+    controller.handle(DictationReleased(was_tap=False))
+    desktop.finish_background_work()
+    assert kept[0]["reason"] == "couldn't reach openai" and kept[0]["wav"].startswith(b"RIFF")
+    assert kept[0]["window"] == desktop.window and kept[0]["mode"] == "dictate"
+    assert orb.message == "couldn't reach openai"
+
+
+def test_the_last_take_can_be_pasted_again():
+    desktop, controller, orb = make()
+    controller.paste_last_take()
+    assert orb.message == "nothing dictated yet"
+    controller.handle(DictationPressed())
+    controller.handle(DictationReleased(was_tap=False))
+    desktop.finish_background_work()
+    desktop.window = FocusedWindow(window_id=2, app_class="firefox")
+    controller.paste_last_take()
+    assert desktop.pasted[-1] == ("Hello there", desktop.window)
+
+
+def test_with_accessibility_a_password_box_is_never_typed_into_and_no_box_waits_for_one():
+    from openclicky_linux.accessibility import FocusedField
+    desktop, controller, orb = make()
+    password = FocusedField("firefox", None, True, True, None, None, None)
+    controller.host.focused_field = lambda: password
+    controller.handle(DictationPressed())
+    assert orb.message == "a password box: your words will be copied, not typed"
+    controller.handle(DictationReleased(was_tap=False))
+    desktop.finish_background_work()
+    assert desktop.pasted == [] and desktop.copied == ["Hello there"]
+    # Begun outside any text box: the box clicked into before the release takes the words.
+    fields = [FocusedField("nautilus", None, False, False, None, None, None),
+              FocusedField("gedit", None, True, False, "", None, 0)]
+    controller.host.focused_field = lambda: fields.pop(0) if len(fields) > 1 else fields[0]
+    controller.handle(DictationPressed())
+    assert orb.message == "no text box here. click into one before you let go"
+    desktop.window = FocusedWindow(window_id=2, app_class="gedit")
+    controller.handle(DictationReleased(was_tap=False))
+    desktop.finish_background_work()
+    assert desktop.pasted[-1] == ("Hello there", desktop.window)
