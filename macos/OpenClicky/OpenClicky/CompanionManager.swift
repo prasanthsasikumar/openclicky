@@ -1480,6 +1480,8 @@ final class CompanionManager: ObservableObject {
     /// Control tapped twice: the notch island opens a one-line text field.
     func openTextComposer() {
         notchHUDManager.openTextComposer()
+        // Typing takes a few seconds: time enough to warm the on-device model for the local rung.
+        if dictationSettings.answerSimpleRequestsOnThisMac { localAskRung?.model.prewarm() }
     }
 
     /// A typed request goes where a spoken one would: the Realtime session (it answers out loud,
@@ -2108,6 +2110,8 @@ final class CompanionManager: ObservableObject {
             return
         }
         guard !Task.isCancelled else { return }
+        // The outcome sentence is product copy (never the person's words), so it may be logged.
+        AppLog.append("local rung: said \"\(sentence)\"")
 
         let answerSpeaker = makeAnswerSpeaker(
             onVoiceStarts: { [weak self] in

@@ -561,6 +561,30 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         if let tourIndex = launchArguments.firstIndex(of: "--openclicky-ui-tour"), tourIndex + 1 < launchArguments.count {
             UITour(companionManager: companionManager, logPath: launchArguments[tourIndex + 1]).run()
         }
+        if let askIndex = launchArguments.firstIndex(of: "--openclicky-ask"), askIndex + 1 < launchArguments.count {
+            // Debug: one typed question through the whole ask lane (the local rung, else the cloud
+            // path with its pause and screenshot), exiting once the turn is over. For live checks
+            // of the lane without the keyboard; the log says which tier answered.
+            setvbuf(stdout, nil, _IONBF, 0)
+            let question = launchArguments[askIndex + 1]
+            let companionManager = self.companionManager
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                companionManager.submitTypedRequest(question)
+                let startedAt = Date()
+                var sawTheTurnStart = false
+                while Date().timeIntervalSince(startedAt) < 90 {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    if companionManager.isAskInFlight || companionManager.voiceState != .idle {
+                        sawTheTurnStart = true
+                    } else if sawTheTurnStart {
+                        break
+                    }
+                }
+                print("ask-smoke: done, source=\(companionManager.answeringSourceName ?? "-"), \(String(format: "%.1f", Date().timeIntervalSince(startedAt))) s")
+                exit(0)
+            }
+        }
         #endif
         // OpenClicky: launching at login is opt-in (`registerAsLoginItem` in ~/.openclicky/shell.json).
         if OpenClickyConfiguration.settings.registerAsLoginItem == true {

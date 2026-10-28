@@ -24,10 +24,14 @@ enum LocalAskDecision: Equatable {
 
 struct LocalAskRung {
 
-    /// The model's budget. Measured on an M2 Pro (2026-10-28): a warmed classification takes about
-    /// 0.9 s, a cold one 1.0–1.7 s; the pre-send pause is 1.2 s, so the budget is the longer of the
-    /// two and a command-shaped question costs the cloud path at most 0.3 s more than the pause.
-    static let defaultBudgetSeconds: TimeInterval = 1.5
+    /// The classification's budget. Measured on an M2 Pro (2026-10-28): a warmed classification
+    /// takes about 0.9 s, a cold one 1.0–1.5 s, the first of a session up to 1.7 s; the pre-send
+    /// pause is 1.2 s. Two seconds lets a cold request through, and a command-shaped question
+    /// that the model declines reaches the cloud at most 0.8 s after the pause would have ended.
+    static let defaultBudgetSeconds: TimeInterval = 2.0
+    /// A rewrite the model agreed to is a second call (0.5–1.4 s measured) and gets this much more;
+    /// the cloud's own rewrite takes three to six seconds, so the wait is still the shorter one.
+    static let rewriteBudgetSeconds: TimeInterval = 2.5
     /// The longest text the on-device model rewrites: a long email, within its 4,096-token session.
     static let maximumRewriteCharacters = 2_500
 
@@ -41,21 +45,26 @@ struct LocalAskRung {
         LocalAskGate.decide(transcript: transcript, replyLanguageCode: replyLanguageCode)
     }
 
-    /// The gate already passed. Returns within `budgetSeconds`; a model answer that arrives later is
-    /// dropped, and a caller that was cancelled (esc, a new question) gets `.cloud("cancelled")`.
-    func decide(transcript: String, writingTarget: WritingTarget?, budgetSeconds: TimeInterval) async -> LocalAskDecision {
+    /// The gate already passed. The classification returns within `budgetSeconds` and a rewrite
+    /// within `rewriteBudgetSeconds` more; a model answer that arrives later is dropped, and a
+    /// caller that was cancelled (esc, a new question) gets `.cloud("cancelled")`.
+    func decide(transcript: String, writingTarget: WritingTarget?, budgetSeconds: TimeInterval,
+                rewriteBudgetSeconds: TimeInterval = LocalAskRung.rewriteBudgetSeconds) async -> LocalAskDecision {
         let startedAt = Date()
         guard !Task.isCancelled else { return .cloud(reason: "cancelled") }
 
-        let decision = await withTaskGroup(of: LocalAskDecision.self) { group in
-            group.addTask { await self.decideWithTheModel(transcript: transcript, writingTarget: writingTarget) }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(budgetSeconds))
-                return .cloud(reason: "timed out")
+        let step = await raced(budgetSeconds: budgetSeconds, whenTimedOut: .decided(.cloud(reason: "timed out"))) {
+            await self.classifyAndMap(transcript: transcript, writingTarget: writingTarget)
+        }
+        var decision: LocalAskDecision
+        switch step {
+        case .decided(let decided):
+            decision = decided
+        case .rewrite(let instruction, let writingTarget):
+            guard !Task.isCancelled else { return .cloud(reason: "cancelled") }
+            decision = await raced(budgetSeconds: rewriteBudgetSeconds, whenTimedOut: .cloud(reason: "timed out")) {
+                await self.rewriteLeg(instruction: instruction, writingTarget: writingTarget)
             }
-            let first = await group.next() ?? .cloud(reason: "error")
-            group.cancelAll()
-            return first
         }
         guard !Task.isCancelled else { return .cloud(reason: "cancelled") }
 
@@ -69,29 +78,58 @@ struct LocalAskRung {
         return decision
     }
 
-    private func decideWithTheModel(transcript: String, writingTarget: WritingTarget?) async -> LocalAskDecision {
+    /// What the classification settled, or the rewrite still to be made.
+    private enum Step {
+        case decided(LocalAskDecision)
+        case rewrite(instruction: String, writingTarget: WritingTarget)
+    }
+
+    /// `work` against a timer: whichever finishes first wins and the other is cancelled.
+    private func raced<Result: Sendable>(budgetSeconds: TimeInterval, whenTimedOut: Result, _ work: @escaping @Sendable () async -> Result) async -> Result {
+        await withTaskGroup(of: Result.self) { group in
+            group.addTask { await work() }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(budgetSeconds))
+                return whenTimedOut
+            }
+            let first = await group.next() ?? whenTimedOut
+            group.cancelAll()
+            return first
+        }
+    }
+
+    private func classifyAndMap(transcript: String, writingTarget: WritingTarget?) async -> Step {
         do {
             let intent = try await model.classify(transcript: transcript)
             let mapping = LocalAskIntentMapper.map(intent, hasWritingTarget: writingTarget != nil, resolveApp: resolveApp)
             switch mapping {
             case .quickAction(let toolName, let arguments):
-                return .quickAction(toolName: toolName, arguments: arguments)
+                return .decided(.quickAction(toolName: toolName, arguments: arguments))
             case .cloud(let reason):
-                return .cloud(reason: reason)
+                return .decided(.cloud(reason: reason))
             case .rewrite(let instruction):
-                guard let writingTarget else { return .cloud(reason: "no text to rewrite") }
+                guard let writingTarget else { return .decided(.cloud(reason: "no text to rewrite")) }
                 // A box whose text cannot be read (Apple Mail's body) has nothing for a text-only model.
-                guard writingTarget.source != .screenOnly else { return .cloud(reason: "no readable text") }
-                guard writingTarget.text.count <= Self.maximumRewriteCharacters else { return .cloud(reason: "text too long") }
-                let rewritten = try await model.rewrite(writingTarget.text, instruction: instruction)
-                if let rejectionReason = LocalRewriteCheck.rejectionReason(original: writingTarget.text, rewritten: rewritten) {
-                    // "Fix the grammar" on text with nothing to fix comes back unchanged, and that is
-                    // the right answer; an unchanged "warmer" is the model not doing the job.
-                    if rejectionReason == "unchanged", LocalRewriteCheck.isCorrectionInstruction(instruction) { return .textAlreadyReadsWell }
-                    return .cloud(reason: "rewrite: \(rejectionReason)")
-                }
-                return .rewrite(newText: rewritten)
+                guard writingTarget.source != .screenOnly else { return .decided(.cloud(reason: "no readable text")) }
+                guard writingTarget.text.count <= Self.maximumRewriteCharacters else { return .decided(.cloud(reason: "text too long")) }
+                return .rewrite(instruction: instruction, writingTarget: writingTarget)
             }
+        } catch {
+            if !(error is CancellationError) { log("local rung: \(model.displayName) failed: \(error.localizedDescription)") }
+            return .decided(.cloud(reason: "error"))
+        }
+    }
+
+    private func rewriteLeg(instruction: String, writingTarget: WritingTarget) async -> LocalAskDecision {
+        do {
+            let rewritten = try await model.rewrite(writingTarget.text, instruction: instruction)
+            if let rejectionReason = LocalRewriteCheck.rejectionReason(original: writingTarget.text, rewritten: rewritten) {
+                // "Fix the grammar" on text with nothing to fix comes back unchanged, and that is
+                // the right answer; an unchanged "warmer" is the model not doing the job.
+                if rejectionReason == "unchanged", LocalRewriteCheck.isCorrectionInstruction(instruction) { return .textAlreadyReadsWell }
+                return .cloud(reason: "rewrite: \(rejectionReason)")
+            }
+            return .rewrite(newText: rewritten)
         } catch {
             if !(error is CancellationError) { log("local rung: \(model.displayName) failed: \(error.localizedDescription)") }
             return .cloud(reason: "error")

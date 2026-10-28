@@ -16,6 +16,7 @@ private struct FakeModel: LocalAskModel {
     var intent: LocalAskIntent = LocalAskIntent(kind: .needsCloud)
     var rewritten: String = ""
     var delaySeconds: TimeInterval = 0
+    var rewriteDelaySeconds: TimeInterval = 0
     var error: Error?
     func classify(transcript: String) async throws -> LocalAskIntent {
         if delaySeconds > 0 { try await Task.sleep(for: .seconds(delaySeconds)) }
@@ -23,6 +24,7 @@ private struct FakeModel: LocalAskModel {
         return intent
     }
     func rewrite(_ text: String, instruction: String) async throws -> String {
+        if rewriteDelaySeconds > 0 { try await Task.sleep(for: .seconds(rewriteDelaySeconds)) }
         if let error { throw error }
         return rewritten
     }
@@ -62,6 +64,21 @@ struct LocalAskRungTests {
     @Test func aRewriteIsReturnedWhenItPassesTheCheck() async {
         let model = FakeModel(intent: LocalAskIntent(kind: .rewriteText, rewriteInstruction: "shorter"), rewritten: "Hi John, could you send the report by tomorrow afternoon?")
         #expect(await rung(model).decide(transcript: "make this shorter", writingTarget: target, budgetSeconds: 2) == .rewrite(newText: "Hi John, could you send the report by tomorrow afternoon?"))
+    }
+
+    @Test func aRewriteGetsItsOwnTimeAfterTheClassification() async {
+        // Classify and rewrite are two model calls (about 0.9 s + 0.8 s warm, 2026-10-28); the budget
+        // covers the classification, and a rewrite the model agreed to gets `rewriteBudgetSeconds` more.
+        let model = FakeModel(intent: LocalAskIntent(kind: .rewriteText, rewriteInstruction: "shorter"), rewritten: "Hi John, could you send the report by tomorrow afternoon?", rewriteDelaySeconds: 0.4)
+        #expect(await rung(model).decide(transcript: "make this shorter", writingTarget: target, budgetSeconds: 0.2) == .rewrite(newText: "Hi John, could you send the report by tomorrow afternoon?"))
+    }
+
+    @Test func aRewriteThatNeverComesIsCloud() async {
+        let model = FakeModel(intent: LocalAskIntent(kind: .rewriteText, rewriteInstruction: "shorter"), rewritten: "x", rewriteDelaySeconds: 30)
+        let started = Date()
+        let decision = await rung(model).decide(transcript: "make this shorter", writingTarget: target, budgetSeconds: 0.2, rewriteBudgetSeconds: 0.3)
+        #expect(decision == .cloud(reason: "timed out"))
+        #expect(Date().timeIntervalSince(started) < 2.0)
     }
 
     @Test func aRewriteThatAnsweredIsCloud() async {
