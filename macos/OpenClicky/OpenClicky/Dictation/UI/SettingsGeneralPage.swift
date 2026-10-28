@@ -32,11 +32,6 @@ extension SettingsCatalog {
                 keywords: ["notch", "island", "hud", "side", "edge", "drawer", "hide", "hidden", "position", "placement", "shortcuts only"],
                 view: AnyView(HUDPlacementRow(companionManager: companionManager))),
             SettingsItem(
-                id: "general.islandGlass", page: .general, section: "",
-                title: "Glass level", detail: "Where the island's black melts into glass. Left is all black.",
-                keywords: ["glass", "blur", "transparent", "frosted", "black", "island", "notch", "material"],
-                view: AnyView(IslandGlassLevelRow())),
-            SettingsItem(
                 id: "general.menuBarIcon", page: .general, section: "",
                 title: "Show in menu bar", detail: "Off is fine: the island is OpenClicky’s home.",
                 keywords: ["menu bar", "status item", "icon", "tray"],
@@ -219,22 +214,6 @@ private struct HUDPlacementRow: View {
     }
 }
 
-/// Where the island's black melts into glass: 0 is all black, 1 ends the black right under the band.
-private struct IslandGlassLevelRow: View {
-    @State private var level: Double = UserDefaults.standard.object(forKey: IslandGlass.defaultsKey) as? Double ?? IslandGlass.defaultLevel
-
-    var body: some View {
-        SettingsRow(title: "Glass level", detail: "Where the island's black melts into glass. Left is all black.") {
-            Slider(value: Binding(get: { level }, set: { newValue in
-                level = newValue
-                UserDefaults.standard.set(newValue, forKey: IslandGlass.defaultsKey)
-            }), in: 0...1)
-            .controlSize(.small)
-            .frame(width: 140)
-            .accessibilityLabel("glass level")
-        }
-    }
-}
 
 /// The component the open island shows when nothing else is going on.
 

@@ -3,7 +3,7 @@
 //  OpenClicky
 //
 //  Manages the NSStatusItem (menu bar icon) and its menu: what OpenClicky is doing, agent mode,
-//  docking the pointer, the window, the welcome tour, and quit. A plain menu with checkmarks, like
+//  the window, the welcome tour, and quit. A plain menu with checkmarks, like
 //  any Mac menu bar app; there is no custom panel any more.
 //
 
@@ -52,8 +52,8 @@ final class MenuBarPanelManager: NSObject {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
-    /// The status item's menu, for either click: what OpenClicky is doing, its two quick
-    /// switches, the windows, and quit. A plain menu with checkmarks, like any Mac menu bar app.
+    /// The status item's menu, for either click: what OpenClicky is doing, agent mode, the
+    /// windows, and quit. A plain menu with checkmarks, like any Mac menu bar app.
     private func showStatusMenu() {
         guard let statusItem else { return }
         let menu = NSMenu()
@@ -64,8 +64,6 @@ final class MenuBarPanelManager: NSObject {
         menu.addItem(header)
         menu.addItem(.separator())
         addItem(to: menu, title: "Agent Mode", action: #selector(toggleAgentMode), isOn: companionManager.isAgentModeEnabled)
-        addItem(to: menu, title: companionManager.hudPlacement.isSideDrawer ? "Dock Pointer in the Drawer" : "Dock Pointer in the Island",
-                action: #selector(toggleDock), isOn: companionManager.isCursorDocked)
         menu.addItem(.separator())
         addItem(to: menu, title: "Open OpenClicky", action: #selector(openWindow))
         addItem(to: menu, title: "Open the Island", action: #selector(openIsland))
@@ -97,7 +95,6 @@ final class MenuBarPanelManager: NSObject {
     }
 
     @objc private func toggleAgentMode() { companionManager.setAgentModeEnabled(!companionManager.isAgentModeEnabled) }
-    @objc private func toggleDock() { companionManager.setCursorDocked(!companionManager.isCursorDocked) }
     @objc private func openWindow() { companionManager.showDictationWindow(section: .words) }
     @objc private func openIsland() { companionManager.notchHUDManager.openPanel() }
     @objc private func openSettings() { companionManager.showSettings() }

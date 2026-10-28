@@ -41,6 +41,13 @@ struct IslandStyleTests {
         #expect(IslandGlass.stops(level: 2, bandBottom: 40, panelHeight: 120) == full) // clamped
     }
 
+    @Test func theOpenPanelIsSolidBlackUntilSomeoneAsksForGlass() {
+        // Black reads more easily than black melting into glass (Prasanth, 2026-10-28): the open
+        // panel is solid unless openclicky.island.glassLevel is set by hand.
+        #expect(IslandGlass.defaultLevel == 0)
+        #expect(!IslandSurface(expansion: .full, width: 512, height: 120, bandBottom: 40, glassLevel: IslandGlass.defaultLevel, isSideDrawer: false).hasGlassLayer)
+    }
+
     @Test func theGlassLayerExistsOnlyWhenOpenAndLevelIsAboveZero() {
         #expect(IslandSurface(expansion: .full, width: 512, height: 120, bandBottom: 40, glassLevel: 0.6, isSideDrawer: false).hasGlassLayer)
         #expect(!IslandSurface(expansion: .full, width: 512, height: 120, bandBottom: 40, glassLevel: 0, isSideDrawer: false).hasGlassLayer)

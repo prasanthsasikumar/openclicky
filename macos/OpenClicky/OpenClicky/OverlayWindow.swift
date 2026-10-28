@@ -107,8 +107,6 @@ enum BuddyNavigationMode {
     case navigatingToTarget
     /// Buddy has arrived at the target and is pointing at it with a speech bubble
     case pointingAtTarget
-    /// Buddy is flying to the notch to dock (OpenClicky). The HUD takes over when it lands.
-    case flyingToDock
 }
 
 // SwiftUI view for the blue glowing cursor pointer.
@@ -396,9 +394,8 @@ struct BlueCursorView: View {
             let swiftUIPosition = convertScreenPointToSwiftUICoordinates(mouseLocation)
             self.cursorPosition = CGPoint(x: swiftUIPosition.x + 35, y: swiftUIPosition.y + 25)
 
-            // OpenClicky: when the buddy is leaving the notch (undock, or launching from the
-            // dock to point at something), start at the notch and fly out instead of popping
-            // in at the mouse.
+            // OpenClicky: when the buddy is introduced from the notch (the first-run tour), start
+            // at the notch and fly out instead of popping in at the mouse.
             if let launchOrigin = companionManager.cursorLaunchOriginScreenLocation, screenFrame.contains(launchOrigin) {
                 self.cursorPosition = convertScreenPointToSwiftUICoordinates(launchOrigin)
                 self.cursorOpacity = 1.0
@@ -454,12 +451,6 @@ struct BlueCursorView: View {
                 clickRippleOpacity = 0
             }
         }
-        .onChange(of: companionManager.cursorDockRequestToken) { _ in
-            // OpenClicky: the user asked the buddy to dock in the notch. The overlay that is showing
-            // the buddy starts the flight; the manager splits it at display edges if need be.
-            guard buddyIsVisibleOnThisScreen else { return }
-            companionManager.beginCursorFlight(.toDock, fromScreenFrame: screenFrame)
-        }
         .onChange(of: companionManager.cursorFlightLeg) { flightLeg in
             guard let flightLeg, flightLeg.screenFrame == screenFrame else { return }
             performFlightLeg(flightLeg)
@@ -488,18 +479,13 @@ struct BlueCursorView: View {
             if companionManager.detectedElementScreenLocation != nil {
                 return false
             }
-            // Likewise while another screen's overlay is flying the buddy (docking, or
-            // returning to a mouse that moved screens).
+            // Likewise while another screen's overlay is flying the buddy back to a mouse that
+            // moved screens.
             if let flightLeg = companionManager.cursorFlightLeg, flightLeg.screenFrame != screenFrame {
                 return false
             }
-            // Docked, the buddy lives in the notch; an overlay shown then is for a caption beside
-            // the mouse (the (i), hands-free feedback), so only the caption shows.
-            if companionManager.isCursorDocked {
-                return false
-            }
             return isCursorOnThisScreen
-        case .navigatingToTarget, .pointingAtTarget, .flyingToDock:
+        case .navigatingToTarget, .pointingAtTarget:
             return true
         }
     }
@@ -742,15 +728,8 @@ struct BlueCursorView: View {
         }
     }
 
-    /// Flies the buddy back to the current cursor position after pointing is done —
-    /// or back into the notch when it is docked there (OpenClicky).
+    /// Flies the buddy back to the current cursor position after pointing is done.
     private func startFlyingBackToCursor() {
-        if companionManager.isCursorDocked {
-            navigationBubbleText = ""
-            navigationBubbleOpacity = 0.0
-            companionManager.beginCursorFlight(.toDock, fromScreenFrame: screenFrame)
-            return
-        }
         let mouseLocation = NSEvent.mouseLocation
         if !screenFrame.contains(mouseLocation) {
             // The mouse is on another display: fly to this display's edge, then across that one.
@@ -772,11 +751,11 @@ struct BlueCursorView: View {
         }
     }
 
-    // MARK: - Docking (OpenClicky)
+    // MARK: - Flights between displays (OpenClicky)
 
-    /// Animates one leg of a buddy flight on this display (see `CursorFlightPlanner`): into the
-    /// notch, or back to a mouse that is on another display. A non-final leg ends at this
-    /// display's edge and hands over to the destination display's overlay.
+    /// Animates one leg of a buddy flight on this display (see `CursorFlightPlanner`): back to a
+    /// mouse that is on another display. A non-final leg ends at this display's edge and hands
+    /// over to the destination display's overlay.
     private func performFlightLeg(_ flightLeg: CursorFlightLeg) {
         guard !showWelcome || welcomeText.isEmpty else { return }
         navigationAnimationTimer?.invalidate()
@@ -792,55 +771,25 @@ struct BlueCursorView: View {
         cursorOpacity = 1.0
 
         var destination = convertScreenPointToSwiftUICoordinates(flightLeg.endScreenLocation)
-        switch flightLeg.purpose {
-        case .toDock:
-            buddyNavigationMode = .flyingToDock
-            isReturningToCursor = false
-        case .toMouse:
-            if flightLeg.isFinalLeg {
-                // Land where cursor following would put the buddy; a big mouse move cancels it.
-                destination = CGPoint(x: destination.x + 35, y: destination.y + 25)
-                cursorPositionWhenNavigationStarted = convertScreenPointToSwiftUICoordinates(NSEvent.mouseLocation)
-            }
-            buddyNavigationMode = .navigatingToTarget
-            isReturningToCursor = flightLeg.isFinalLeg
+        if flightLeg.isFinalLeg {
+            // Land where cursor following would put the buddy; a big mouse move cancels it.
+            destination = CGPoint(x: destination.x + 35, y: destination.y + 25)
+            cursorPositionWhenNavigationStarted = convertScreenPointToSwiftUICoordinates(NSEvent.mouseLocation)
         }
+        buddyNavigationMode = .navigatingToTarget
+        isReturningToCursor = flightLeg.isFinalLeg
 
         animateBezierFlightArc(to: destination) {
             guard self.companionManager.cursorFlightLeg == flightLeg else { return }
             if !flightLeg.isFinalLeg {
                 // Slip off this display's edge; the destination display's overlay continues.
-                switch flightLeg.purpose {
-                case .toDock:
-                    self.cursorOpacity = 0.0
-                case .toMouse:
-                    self.buddyNavigationMode = .followingCursor
-                    self.isReturningToCursor = false
-                    self.triangleRotationDegrees = -35.0
-                }
+                self.buddyNavigationMode = .followingCursor
+                self.isReturningToCursor = false
+                self.triangleRotationDegrees = -35.0
                 self.companionManager.continueCursorFlight(afterLeg: flightLeg)
                 return
             }
-            switch flightLeg.purpose {
-            case .toDock:
-                self.settleIntoDock()
-            case .toMouse:
-                self.finishNavigationAndResumeFollowing()
-            }
-        }
-    }
-
-    /// The end of the docking flight: settle tip-up under the notch, slip inside, then hand over
-    /// to the notch HUD, which shows the docked badge.
-    private func settleIntoDock() {
-        guard buddyNavigationMode == .flyingToDock else { return }
-        triangleRotationDegrees = 0
-        withAnimation(.easeIn(duration: 0.22)) {
-            cursorOpacity = 0.0
-            buddyFlightScale = 0.6
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            self.companionManager.finishDockingCursor()
+            self.finishNavigationAndResumeFollowing()
         }
     }
 

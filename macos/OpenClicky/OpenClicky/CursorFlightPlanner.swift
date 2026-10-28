@@ -3,8 +3,8 @@
 //  OpenClicky
 //
 //  Plans the cursor buddy's flights between displays. Each display has its own overlay window,
-//  so a flight whose destination is on another display (docking into the notch from an external
-//  monitor, or flying back to a mouse that moved to another screen) is split into two legs: to
+//  so a flight whose destination is on another display (flying back to a mouse that moved to
+//  another screen) is split into two legs: to
 //  the edge of the current display nearest the destination, then from the matching edge of the
 //  destination display to the destination itself. Pure geometry, unit-tested.
 //
@@ -14,9 +14,8 @@ import CoreGraphics
 /// One leg of a buddy flight, animated by the overlay whose screen is `screenFrame`.
 struct CursorFlightLeg: Equatable {
     enum Purpose: Equatable {
-        /// Into the notch HUD; the final leg ends with the buddy slipping into the notch.
-        case toDock
-        /// Back to the mouse pointer; the final leg ends with normal cursor following.
+        /// Back to the mouse pointer; the final leg ends with normal cursor following. (Flights
+        /// into the notch went with the dock option, 2026-10-28.)
         case toMouse
     }
 

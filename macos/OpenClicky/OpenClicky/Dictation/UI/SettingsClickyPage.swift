@@ -3,7 +3,7 @@
 //  OpenClicky
 //
 //  Settings → Clicky and Settings → Voice. Clicky: who answers (the source and the Claude
-//  model), the pointer (shown or not, how visible, docked in the island), and agent mode with its
+//  model), the pointer (shown or not, how visible), and agent mode with its
 //  workspace. Voice: the language Clicky speaks and listens in, who speaks the answers, and fast
 //  voice with hands-free. Voice has its own page because "where do I change the voice" is the
 //  question people come to Settings with.
@@ -42,15 +42,6 @@ extension SettingsCatalog {
                 title: "The pointer shows", detail: "Always, while the mouse moves, or after a shake.",
                 keywords: ["pointer", "cursor", "always", "while the mouse moves", "after a shake", "shake", "hide"],
                 view: AnyView(PointerPresenceOptions(companionManager: companionManager))),
-            SettingsItem(
-                id: "clicky.dock", page: .clicky, section: "Pointer",
-                title: "Dock the pointer in the island", detail: "It waits under the notch or in the drawer until Clicky needs it.",
-                keywords: ["dock", "notch", "island", "drawer", "pointer", "park"],
-                view: AnyView(CompanionSwitchRow(
-                    title: "Dock the pointer in the island", detail: "It waits under the notch or in the drawer until Clicky needs it.",
-                    publisher: companionManager.$isCursorDocked.eraseToAnyPublisher(),
-                    initialValue: companionManager.isCursorDocked,
-                    set: { [companionManager] in companionManager.setCursorDocked($0) }))),
             SettingsItem(
                 id: "clicky.agentMode", page: .clicky, section: "Agent",
                 title: "Agent mode", detail: "Clicky can hand work to Codex.",
@@ -222,7 +213,7 @@ private struct PointerPresenceOptions: View {
         switch option {
         case .always: return "Follows the mouse everywhere."
         case .whileMoving: return "Fades a few seconds after the mouse rests."
-        case .onShake: return "Hidden until you shake. A shake also releases a docked pointer."
+        case .onShake: return "Hidden until you shake, or until Clicky needs it."
         }
     }
 

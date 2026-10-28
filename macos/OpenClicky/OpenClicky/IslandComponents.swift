@@ -186,7 +186,7 @@ enum IslandComponentRegistry {
     @MainActor static var all: [any IslandComponent] { builtIns + IslandPluginRegistry.all }
 }
 
-/// Today's body row: dock or release the pointer, (i), and the shortcuts (or the engine warning).
+/// Today's body row: (i) and the shortcuts (or the engine warning).
 struct ShortcutsIslandComponent: IslandComponent {
     let id = IslandComponentRegistry.shortcutsID
     let title = "Shortcuts"
