@@ -44,6 +44,16 @@ struct LocalAskIntentMapperTests {
         #expect(map(LocalAskIntent(kind: .openWebsite, name: "spotify.com"), resolveApp: { _ in "Spotify" }) == .quickAction(toolName: "open_url", arguments: ["url": "https://spotify.com"]))
     }
 
+    @Test func aBareWebsiteWordOnlyBecomesAnAppOnAnExactOrAliasMatch() {
+        // "open google" must not open Google Chrome, nor "open amazon" Amazon Music: the resolver's
+        // one-word rule is for openApp, where the person said they want an app (review, 2026-10-28).
+        #expect(map(LocalAskIntent(kind: .openWebsite, name: "google"), resolveApp: { _ in "Google Chrome" }) == .quickAction(toolName: "open_url", arguments: ["url": "https://google.com"]))
+        #expect(map(LocalAskIntent(kind: .openWebsite, name: "amazon"), resolveApp: { _ in "Amazon Music" }) == .quickAction(toolName: "open_url", arguments: ["url": "https://amazon.com"]))
+        // An alias ("mail" → Mail) and an exact name still open the app.
+        #expect(map(LocalAskIntent(kind: .openWebsite, name: "mail"), resolveApp: { _ in "Mail" }) == .quickAction(toolName: "open_app", arguments: ["name": "Mail"]))
+        #expect(map(LocalAskIntent(kind: .openWebsite, name: "Spotify"), resolveApp: { _ in "Spotify" }) == .quickAction(toolName: "open_app", arguments: ["name": "Spotify"]))
+    }
+
     @Test func aWebsiteThatIsNotAHostGoesToTheCloud() {
         #expect(map(LocalAskIntent(kind: .openWebsite, name: "the news")) == .cloud(reason: "not a website"))
     }

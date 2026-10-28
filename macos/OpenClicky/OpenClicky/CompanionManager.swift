@@ -1737,6 +1737,8 @@ final class CompanionManager: ObservableObject {
                 // local decision does the thing, and the pause (and the screenshot) never happen.
                 var localRungOutcome: String?
                 var earlyWritingTarget: WritingTarget?
+                // Captured once: a second look costs up to 2.5 s with a Chromium app in front.
+                var writingTargetWasCaptured = false
                 var pauseAlreadyWaitedOut = false
                 if !isGuidedStepContinuation, dictationSettings.answerSimpleRequestsOnThisMac, let localAskRung {
                     switch LocalAskRung.gate(transcript: transcript, replyLanguageCode: ReplyLanguage.currentCode) {
@@ -1745,9 +1747,14 @@ final class CompanionManager: ObservableObject {
                         localRungOutcome = "gate_skipped"
                     case .tryModel(let mentionsRewriting):
                         // A rewrite needs the text now; the cloud path reuses what was captured.
-                        if mentionsRewriting { earlyWritingTarget = await WritingTarget.captureFromFrontApp() }
+                        if mentionsRewriting {
+                            earlyWritingTarget = await WritingTarget.captureFromFrontApp()
+                            writingTargetWasCaptured = true
+                        }
                         guard !Task.isCancelled else { return }
-                        let budgetSeconds = max(pauseSeconds ?? 0, LocalAskRung.defaultBudgetSeconds)
+                        // Inside the pause the model may take a little longer than the pause; with
+                        // the pause off it gets the pause's length and no more.
+                        let budgetSeconds = pauseSeconds == nil ? LocalAskRung.budgetWithoutPauseSeconds : max(pauseSeconds ?? 0, LocalAskRung.defaultBudgetSeconds)
                         let decision: LocalAskDecision
                         if let pauseSeconds {
                             // The same pause and caption as below, with the model deciding meanwhile.
@@ -1842,7 +1849,7 @@ final class CompanionManager: ObservableObject {
                 // The text a "rephrase this" would replace: the highlight, or the box the cursor is in
                 // (already captured when the local rung looked at a rewrite).
                 let writingTarget: WritingTarget?
-                if let earlyWritingTarget {
+                if writingTargetWasCaptured {
                     writingTarget = earlyWritingTarget
                 } else {
                     writingTarget = await WritingTarget.captureFromFrontApp()

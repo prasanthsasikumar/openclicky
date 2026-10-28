@@ -17,9 +17,17 @@ private struct FakeModel: LocalAskModel {
     var rewritten: String = ""
     var delaySeconds: TimeInterval = 0
     var rewriteDelaySeconds: TimeInterval = 0
+    /// A delay that ignores cancellation, the way a hung framework call would.
+    var nonCancellableDelaySeconds: TimeInterval = 0
     var error: Error?
     func classify(transcript: String) async throws -> LocalAskIntent {
         if delaySeconds > 0 { try await Task.sleep(for: .seconds(delaySeconds)) }
+        if nonCancellableDelaySeconds > 0 {
+            let seconds = nonCancellableDelaySeconds
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { continuation.resume() }
+            }
+        }
         if let error { throw error }
         return intent
     }
@@ -55,6 +63,19 @@ struct LocalAskRungTests {
         let decision = await rung(FakeModel(intent: LocalAskIntent(kind: .openApp, name: "Safari"), delaySeconds: 5)).decide(transcript: "open safari", writingTarget: nil, budgetSeconds: 0.2)
         #expect(decision == .cloud(reason: "timed out"))
         #expect(Date().timeIntervalSince(started) < 1.0)
+    }
+
+    @Test func aModelThatIgnoresCancellationStillLosesToTheBudget() async {
+        // Foundation Models under background-on-battery throttling may not return on cancellation;
+        // the cloud path must still start when the budget ends (review, 2026-10-28).
+        let started = Date()
+        let decision = await rung(FakeModel(intent: LocalAskIntent(kind: .openApp, name: "Safari"), nonCancellableDelaySeconds: 3)).decide(transcript: "open safari", writingTarget: nil, budgetSeconds: 0.2)
+        #expect(decision == .cloud(reason: "timed out"))
+        #expect(Date().timeIntervalSince(started) < 1.5)
+    }
+
+    @Test func theBudgetWithoutAPauseIsThePauseLength() {
+        #expect(LocalAskRung.budgetWithoutPauseSeconds == AskSendPause.defaultSeconds)
     }
 
     @Test func aFailingModelIsCloud() async {

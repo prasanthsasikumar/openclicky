@@ -38,8 +38,8 @@ enum LocalAskGate {
 
     /// Openers of a question or a how-to: these teach, they never act.
     nonisolated static let questionOpeners: [String] = [
-        "how do i", "how do you", "how can i", "how to", "how would i", "how should i",
-        "what", "why", "where is", "where are", "where do", "which", "who", "when",
+        "how do i", "how do you", "how can i", "how to", "how would i", "how should i", "how's", "hows", "how about",
+        "what", "what's", "whats", "why", "where is", "where are", "where do", "where's", "wheres", "which", "who", "who's", "whos", "when",
         "can you show me how", "could you show me how", "show me how", "teach me", "explain", "tell me about",
     ]
 

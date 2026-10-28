@@ -24,11 +24,15 @@ enum LocalAskDecision: Equatable {
 
 struct LocalAskRung {
 
-    /// The classification's budget. Measured on an M2 Pro (2026-10-28): a warmed classification
-    /// takes about 0.9 s, a cold one 1.0–1.5 s, the first of a session up to 1.7 s; the pre-send
-    /// pause is 1.2 s. Two seconds lets a cold request through, and a command-shaped question
-    /// that the model declines reaches the cloud at most 0.8 s after the pause would have ended.
+    /// The classification's budget with the pre-send pause on. Measured on an M2 Pro (2026-10-28):
+    /// a warmed classification takes about 0.9 s, a cold one 1.0–1.5 s, the first of a session up
+    /// to 1.7 s; the pause is 1.2 s. Two seconds lets a cold request through, and a command-shaped
+    /// question that the model declines reaches the cloud at most 0.8 s after the pause would have
+    /// ended (the person's call, recorded in the plan's ledger).
     static let defaultBudgetSeconds: TimeInterval = 2.0
+    /// With the pause off the person chose speed: the model gets the pause's length and no more,
+    /// so a cloud question is never more than 1.2 s later than today.
+    static let budgetWithoutPauseSeconds: TimeInterval = AskSendPause.defaultSeconds
     /// A rewrite the model agreed to is a second call (0.5–1.4 s measured) and gets this much more;
     /// the cloud's own rewrite takes three to six seconds, so the wait is still the shorter one.
     static let rewriteBudgetSeconds: TimeInterval = 2.5
@@ -84,18 +88,24 @@ struct LocalAskRung {
         case rewrite(instruction: String, writingTarget: WritingTarget)
     }
 
-    /// `work` against a timer: whichever finishes first wins and the other is cancelled.
+    /// `work` against a timer: whichever finishes first wins. The loser is cancelled but never
+    /// waited for: a task group would hold the result until every child returned, and a framework
+    /// call that ignores cancellation (the model throttled in the background on battery) would then
+    /// hold the cloud path hostage. The late result is dropped.
     private func raced<Result: Sendable>(budgetSeconds: TimeInterval, whenTimedOut: Result, _ work: @escaping @Sendable () async -> Result) async -> Result {
-        await withTaskGroup(of: Result.self) { group in
-            group.addTask { await work() }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(budgetSeconds))
-                return whenTimedOut
-            }
-            let first = await group.next() ?? whenTimedOut
-            group.cancelAll()
-            return first
+        let workTask = Task { await work() }
+        let timerTask = Task { () -> Result in
+            try? await Task.sleep(for: .seconds(budgetSeconds))
+            return whenTimedOut
         }
+        let finishLine = RaceFinishLine<Result>()
+        let winner = await withCheckedContinuation { (continuation: CheckedContinuation<Result, Never>) in
+            Task { await finishLine.offer(await workTask.value, to: continuation) }
+            Task { await finishLine.offer(await timerTask.value, to: continuation) }
+        }
+        workTask.cancel()
+        timerTask.cancel()
+        return winner
     }
 
     private func classifyAndMap(transcript: String, writingTarget: WritingTarget?) async -> Step {
@@ -134,5 +144,16 @@ struct LocalAskRung {
             if !(error is CancellationError) { log("local rung: \(model.displayName) failed: \(error.localizedDescription)") }
             return .cloud(reason: "error")
         }
+    }
+}
+
+/// Resumes a race's continuation exactly once, with whichever result arrives first.
+private actor RaceFinishLine<Result: Sendable> {
+    private var hasFinished = false
+
+    func offer(_ result: Result, to continuation: CheckedContinuation<Result, Never>) {
+        guard !hasFinished else { return }
+        hasFinished = true
+        continuation.resume(returning: result)
     }
 }

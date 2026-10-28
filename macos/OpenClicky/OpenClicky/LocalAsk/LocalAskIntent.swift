@@ -68,10 +68,14 @@ enum LocalAskIntentMapper {
             return .quickAction(toolName: "open_app", arguments: ["name": installedName])
 
         case .openWebsite:
-            // A bare word that names an installed app is the app: "open safari" came back as a
-            // website and would have opened safari.com. A real host (a dot, a scheme) stays a website.
+            // A bare word that *is* an installed app's name (or one of its aliases) is the app:
+            // "open safari" came back as a website and would have opened safari.com. Only an exact
+            // match counts here: "open google" must not open Google Chrome by the resolver's
+            // one-word rule, which is for openApp, where the person said they want an app. A real
+            // host (a dot, a scheme) stays a website.
             let looksLikeAHost = name.contains(".") || name.lowercased().hasPrefix("http")
-            if !looksLikeAHost, let installedName = resolveApp(name) {
+            if !looksLikeAHost, let installedName = resolveApp(name),
+               installedName.caseInsensitiveCompare(name) == .orderedSame || InstalledAppResolver.isAlias(name) {
                 return .quickAction(toolName: "open_app", arguments: ["name": installedName])
             }
             guard let url = websiteURL(spoken: name) else { return .cloud(reason: "not a website") }

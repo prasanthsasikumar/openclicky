@@ -21,7 +21,9 @@ struct LocalAskGateTests {
         #expect(LocalAskGate.decide(transcript: transcript, replyLanguageCode: "en") == .tryModel(mentionsRewriting: true))
     }
 
-    @Test(arguments: ["how do i open safari", "How can I turn the volume down?", "what is this", "where is the save button", "teach me how pythagoras works", "explain how to make a folder", "can you show me how to open mail"])
+    @Test(arguments: ["how do i open safari", "How can I turn the volume down?", "what is this", "where is the save button", "teach me how pythagoras works", "explain how to make a folder", "can you show me how to open mail",
+                      // The contracted forms every transcriber produces (review, 2026-10-28).
+                      "what's the volume at", "where's my downloads folder", "whats this", "who's playing", "how's this folder organised"])
     func questionsAndHowTosAreSkipped(transcript: String) {
         #expect(LocalAskGate.decide(transcript: transcript, replyLanguageCode: "en") == .skip(reason: "a question"))
     }

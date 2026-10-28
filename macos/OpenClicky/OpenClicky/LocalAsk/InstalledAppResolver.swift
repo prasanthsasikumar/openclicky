@@ -28,6 +28,12 @@ enum InstalledAppResolver {
     /// A word of three letters or fewer never resolves by itself ("pro" would pick Final Cut Pro).
     static let minimumDistinctiveWordLength = 4
 
+    /// Whether what was spoken is one of the alias words ("email", "browser"), after the same tidying.
+    nonisolated static func isAlias(_ spoken: String) -> Bool {
+        let phrase = normalizedWords(spoken).joined(separator: " ")
+        return phrase == browserAlias || phrase == "web browser" || aliases[phrase] != nil
+    }
+
     /// Pure: the installed app's name for what was spoken, or nil. `installedAppNames` are the apps'
     /// display names without ".app".
     nonisolated static func resolve(spoken: String, installedAppNames: [String], defaultBrowserName: String?) -> String? {
