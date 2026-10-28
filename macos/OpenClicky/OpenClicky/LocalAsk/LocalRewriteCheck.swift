@@ -23,6 +23,14 @@ enum LocalRewriteCheck {
     static let shortOriginalCharacters = 40
     static let shortOriginalAllowance = 200
 
+    /// Instructions that ask for corrections, where unchanged text means there was nothing to correct.
+    static let correctionWords = ["fix", "correct", "grammar", "spelling", "polish", "proofread", "tidy", "typo", "typos", "punctuation"]
+
+    nonisolated static func isCorrectionInstruction(_ instruction: String) -> Bool {
+        let words = instruction.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init)
+        return words.contains { correctionWords.contains($0) }
+    }
+
     /// nil when the rewrite may be pasted; otherwise why not.
     nonisolated static func rejectionReason(original: String, rewritten: String) -> String? {
         let trimmedOriginal = original.trimmingCharacters(in: .whitespacesAndNewlines)

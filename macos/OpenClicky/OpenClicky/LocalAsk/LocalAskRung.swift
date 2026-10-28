@@ -16,14 +16,18 @@ enum LocalAskDecision: Equatable {
     case quickAction(toolName: String, arguments: [String: String])
     /// Write this over the writing target, then speak the outcome.
     case rewrite(newText: String)
+    /// Asked to fix or polish text that came back word for word: nothing to paste, say so.
+    case textAlreadyReadsWell
     /// The ordinary path, with its pause and screenshot; `reason` is for the log.
     case cloud(reason: String)
 }
 
 struct LocalAskRung {
 
-    /// The model's budget when the pre-send pause is off (the pause's own length when it is on).
-    static let defaultBudgetSeconds: TimeInterval = 1.2
+    /// The model's budget. Measured on an M2 Pro (2026-10-28): a warmed classification takes about
+    /// 0.9 s, a cold one 1.0–1.7 s; the pre-send pause is 1.2 s, so the budget is the longer of the
+    /// two and a command-shaped question costs the cloud path at most 0.3 s more than the pause.
+    static let defaultBudgetSeconds: TimeInterval = 1.5
     /// The longest text the on-device model rewrites: a long email, within its 4,096-token session.
     static let maximumRewriteCharacters = 2_500
 
@@ -59,6 +63,7 @@ struct LocalAskRung {
         switch decision {
         case .quickAction(let toolName, _): log("local rung: \(toolName) in \(seconds) s")
         case .rewrite(let newText): log("local rung: rewrite \(writingTarget?.text.count ?? 0)→\(newText.count) chars in \(seconds) s")
+        case .textAlreadyReadsWell: log("local rung: rewrite unchanged, already reads well in \(seconds) s")
         case .cloud(let reason): log("local rung: cloud (\(reason)) in \(seconds) s")
         }
         return decision
@@ -80,6 +85,9 @@ struct LocalAskRung {
                 guard writingTarget.text.count <= Self.maximumRewriteCharacters else { return .cloud(reason: "text too long") }
                 let rewritten = try await model.rewrite(writingTarget.text, instruction: instruction)
                 if let rejectionReason = LocalRewriteCheck.rejectionReason(original: writingTarget.text, rewritten: rewritten) {
+                    // "Fix the grammar" on text with nothing to fix comes back unchanged, and that is
+                    // the right answer; an unchanged "warmer" is the model not doing the job.
+                    if rejectionReason == "unchanged", LocalRewriteCheck.isCorrectionInstruction(instruction) { return .textAlreadyReadsWell }
                     return .cloud(reason: "rewrite: \(rejectionReason)")
                 }
                 return .rewrite(newText: rewritten)

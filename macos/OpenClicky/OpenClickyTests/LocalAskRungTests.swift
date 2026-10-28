@@ -69,6 +69,18 @@ struct LocalAskRungTests {
         #expect(await rung(model).decide(transcript: "make this shorter", writingTarget: target, budgetSeconds: 2) == .cloud(reason: "rewrite: answered instead of rewrote"))
     }
 
+    @Test func anUnchangedCorrectionMeansTheTextAlreadyReadsWell() async {
+        // "fix the grammar" on a correct email came back word for word (live, 2026-10-28): that is the
+        // right answer, said rather than pasted or sent to the cloud.
+        let model = FakeModel(intent: LocalAskIntent(kind: .rewriteText, rewriteInstruction: "fix the grammar"), rewritten: target.text)
+        #expect(await rung(model).decide(transcript: "fix the grammar", writingTarget: target, budgetSeconds: 2) == .textAlreadyReadsWell)
+    }
+
+    @Test func anUnchangedToneChangeIsCloud() async {
+        let model = FakeModel(intent: LocalAskIntent(kind: .rewriteText, rewriteInstruction: "warmer"), rewritten: target.text)
+        #expect(await rung(model).decide(transcript: "make it warmer", writingTarget: target, budgetSeconds: 2) == .cloud(reason: "rewrite: unchanged"))
+    }
+
     @Test func aScreenOnlyTargetIsCloud() async {
         var screenOnly = target
         screenOnly.source = .screenOnly

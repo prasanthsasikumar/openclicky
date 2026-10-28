@@ -12,6 +12,13 @@ import Testing
 
 struct MacActionsTests {
 
+    @Test @MainActor func safariIsFoundWhereMacOS26KeepsIt() {
+        // Since macOS 26 Safari lives in a cryptex (/System/Cryptexes/App/System/Applications), not in
+        // /Applications: "open Safari" answered "I couldn't find an app called Safari" (2026-10-28).
+        #expect(MacActionRunner.applicationURL(named: "Safari") != nil)
+        #expect(MacActionRunner.applicationURL(named: "safari") != nil)
+    }
+
     private let homeDirectory = URL(fileURLWithPath: "/Users/tester")
     private let workspaceDirectory = URL(fileURLWithPath: "/Users/tester/OpenClicky")
 

@@ -10,7 +10,8 @@
 import Testing
 @testable import OpenClicky
 
-private func map(_ intent: LocalAskIntent, hasWritingTarget: Bool = false, resolveApp: @escaping (String) -> String? = { $0 }) -> LocalAskMapping {
+/// No app is installed unless a test says so, the way a Mac with none of the named apps would answer.
+private func map(_ intent: LocalAskIntent, hasWritingTarget: Bool = false, resolveApp: @escaping (String) -> String? = { _ in nil }) -> LocalAskMapping {
     LocalAskIntentMapper.map(intent, hasWritingTarget: hasWritingTarget, resolveApp: resolveApp)
 }
 
@@ -35,6 +36,14 @@ struct LocalAskIntentMapperTests {
         #expect(map(LocalAskIntent(kind: .openWebsite, name: spoken)) == .quickAction(toolName: "open_url", arguments: ["url": url]))
     }
 
+    @Test func aBareWebsiteWordThatIsAnInstalledAppOpensTheApp() {
+        // "open safari" came back as openWebsite "safari", which would have opened safari.com (2026-10-28).
+        let mapping = map(LocalAskIntent(kind: .openWebsite, name: "safari"), resolveApp: { $0 == "safari" ? "Safari" : nil })
+        #expect(mapping == .quickAction(toolName: "open_app", arguments: ["name": "Safari"]))
+        // A real host is a website even when an app shares its name.
+        #expect(map(LocalAskIntent(kind: .openWebsite, name: "spotify.com"), resolveApp: { _ in "Spotify" }) == .quickAction(toolName: "open_url", arguments: ["url": "https://spotify.com"]))
+    }
+
     @Test func aWebsiteThatIsNotAHostGoesToTheCloud() {
         #expect(map(LocalAskIntent(kind: .openWebsite, name: "the news")) == .cloud(reason: "not a website"))
     }
@@ -57,6 +66,12 @@ struct LocalAskIntentMapperTests {
         #expect(map(LocalAskIntent(kind: .setVolume, volumeLevel: 140)) == .cloud(reason: "no volume level"))
     }
 
+    @Test(arguments: [("thirty", 30), ("fifty percent", 50), ("mute", 0), ("full volume", 100), ("max", 100)])
+    func aSpokenVolumeLevelIsReadWhenTheModelLeftItAsWords(spoken: String, level: Int) {
+        // The model sometimes puts "thirty" in name and leaves volumeLevel at -1 (seen live 2026-10-28).
+        #expect(map(LocalAskIntent(kind: .setVolume, name: spoken, volumeLevel: -1)) == .quickAction(toolName: "set_volume", arguments: ["level": String(level)]))
+    }
+
     @Test(arguments: [("play", "playpause"), ("pause", "playpause"), ("next", "next"), ("previous", "previous")])
     func playbackMapsOntoMediaControl(spoken: String, action: String) {
         #expect(map(LocalAskIntent(kind: .playback, playback: spoken)) == .quickAction(toolName: "media_control", arguments: ["action": action]))
@@ -73,7 +88,7 @@ struct LocalAskIntentMapperTests {
 
     @Test func everyQuickActionMappingParsesInTheFastLane() {
         let mappings: [LocalAskMapping] = [
-            map(LocalAskIntent(kind: .openApp, name: "Safari")),
+            map(LocalAskIntent(kind: .openApp, name: "Safari"), resolveApp: { $0 }),
             map(LocalAskIntent(kind: .openWebsite, name: "youtube")),
             map(LocalAskIntent(kind: .createFolder, name: "Taxes", location: "desktop")),
             map(LocalAskIntent(kind: .showFolder, name: "Taxes", location: "desktop")),

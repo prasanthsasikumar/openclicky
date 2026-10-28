@@ -68,6 +68,12 @@ enum LocalAskIntentMapper {
             return .quickAction(toolName: "open_app", arguments: ["name": installedName])
 
         case .openWebsite:
+            // A bare word that names an installed app is the app: "open safari" came back as a
+            // website and would have opened safari.com. A real host (a dot, a scheme) stays a website.
+            let looksLikeAHost = name.contains(".") || name.lowercased().hasPrefix("http")
+            if !looksLikeAHost, let installedName = resolveApp(name) {
+                return .quickAction(toolName: "open_app", arguments: ["name": installedName])
+            }
             guard let url = websiteURL(spoken: name) else { return .cloud(reason: "not a website") }
             return .quickAction(toolName: "open_url", arguments: ["url": url])
 
@@ -81,8 +87,8 @@ enum LocalAskIntentMapper {
             return .quickAction(toolName: intent.kind == .createFolder ? "create_folder" : "reveal_in_finder", arguments: arguments)
 
         case .setVolume:
-            guard (0...100).contains(intent.volumeLevel) else { return .cloud(reason: "no volume level") }
-            return .quickAction(toolName: "set_volume", arguments: ["level": String(intent.volumeLevel)])
+            guard let level = volumeLevel(in: intent) else { return .cloud(reason: "no volume level") }
+            return .quickAction(toolName: "set_volume", arguments: ["level": String(level)])
 
         case .playback:
             switch intent.playback.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
@@ -99,6 +105,20 @@ enum LocalAskIntentMapper {
         case .needsCloud:
             return .cloud(reason: "model declined")
         }
+    }
+
+    /// The level the model filled in, or the one it left in words: it put "thirty" in `name` and -1
+    /// in `volumeLevel` (seen live 2026-10-28), so the spoken number is read the dictation way.
+    nonisolated static func volumeLevel(in intent: LocalAskIntent) -> Int? {
+        if (0...100).contains(intent.volumeLevel) { return intent.volumeLevel }
+        let spoken = intent.name.lowercased()
+        guard !spoken.isEmpty else { return nil }
+        if spoken.contains("mute") || spoken.contains("silen") { return 0 }
+        if spoken.contains("full") || spoken.contains("max") { return 100 }
+        for token in SpokenNumbers.digitize(spoken).split(whereSeparator: { !$0.isNumber }) {
+            if let level = Int(token), (0...100).contains(level) { return level }
+        }
+        return nil
     }
 
     /// "youtube" → https://youtube.com, "bbc.co.uk" → https://bbc.co.uk, a full http(s) URL as it

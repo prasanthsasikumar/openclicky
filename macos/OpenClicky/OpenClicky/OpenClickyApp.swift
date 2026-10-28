@@ -335,6 +335,67 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         #if DEBUG
+        if let localAskIndex = launchArguments.firstIndex(of: "--openclicky-local-ask"), localAskIndex + 1 < launchArguments.count {
+            // Debug: the local ask rung for one request (gate, Apple's classification, the mapping),
+            // each step timed, nothing performed. How the classifier prompt gets tuned.
+            setvbuf(stdout, nil, _IONBF, 0)
+            let request = launchArguments[localAskIndex + 1]
+            Task { @MainActor in
+                let gateDecision = LocalAskRung.gate(transcript: request, replyLanguageCode: ReplyLanguage.currentCode)
+                print("local-ask: gate \(gateDecision)")
+                guard case .tryModel(let mentionsRewriting) = gateDecision else { exit(0) }
+                guard let model = LocalAskModelAvailability.makeModel() else {
+                    print("local-ask: unavailable: \(LocalAskModelAvailability.unavailableReason() ?? "?")")
+                    exit(2)
+                }
+                let installedAppNames = InstalledAppResolver.installedAppNamesOnThisMac()
+                let defaultBrowserName = InstalledAppResolver.defaultBrowserNameOnThisMac()
+                let startedAt = Date()
+                do {
+                    let intent = try await model.classify(transcript: request)
+                    let classifySeconds = Date().timeIntervalSince(startedAt)
+                    print("local-ask: intent kind=\(intent.kind) name=\"\(intent.name)\" location=\"\(intent.location)\" volume=\(intent.volumeLevel) playback=\"\(intent.playback)\" rewrite=\"\(intent.rewriteInstruction)\" in \(String(format: "%.2f", classifySeconds)) s")
+                    let mapping = LocalAskIntentMapper.map(intent, hasWritingTarget: mentionsRewriting, resolveApp: { spoken in
+                        InstalledAppResolver.resolve(spoken: spoken, installedAppNames: installedAppNames, defaultBrowserName: defaultBrowserName)
+                    })
+                    print("local-ask: mapping \(mapping) (total \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s)")
+                    // The same request again on a session warmed the way the ⌃⌥ press warms it.
+                    model.prewarm()
+                    try? await Task.sleep(for: .seconds(1.5))
+                    let warmStartedAt = Date()
+                    _ = try await model.classify(transcript: request)
+                    print("local-ask: prewarmed classify in \(String(format: "%.2f", Date().timeIntervalSince(warmStartedAt))) s")
+                    exit(0)
+                } catch {
+                    print("local-ask: error \(error)")
+                    exit(1)
+                }
+            }
+            return
+        }
+        if let rewriteIndex = launchArguments.firstIndex(of: "--openclicky-local-rewrite"), rewriteIndex + 2 < launchArguments.count {
+            // Debug: one rewrite on Apple's model (instruction, then the text), timed, with the check's verdict.
+            setvbuf(stdout, nil, _IONBF, 0)
+            let instruction = launchArguments[rewriteIndex + 1]
+            let text = launchArguments[rewriteIndex + 2]
+            Task { @MainActor in
+                guard let model = LocalAskModelAvailability.makeModel() else {
+                    print("local-rewrite: unavailable: \(LocalAskModelAvailability.unavailableReason() ?? "?")")
+                    exit(2)
+                }
+                let startedAt = Date()
+                do {
+                    let rewritten = try await model.rewrite(text, instruction: instruction)
+                    print("local-rewrite: \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s, \(text.count)→\(rewritten.count) chars, check: \(LocalRewriteCheck.rejectionReason(original: text, rewritten: rewritten) ?? "ok")")
+                    print(rewritten)
+                    exit(0)
+                } catch {
+                    print("local-rewrite: error \(error)")
+                    exit(1)
+                }
+            }
+            return
+        }
         if let checkIndex = launchArguments.firstIndex(of: "--openclicky-check-source"), checkIndex + 1 < launchArguments.count {
             // Debug: what Settings → Account's Test button says for one source (AnswerSource raw value).
             setvbuf(stdout, nil, _IONBF, 0)

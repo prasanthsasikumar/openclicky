@@ -96,6 +96,8 @@ enum InstalledAppResolver {
             URL(fileURLWithPath: "/Applications"),
             URL(fileURLWithPath: "/System/Applications"),
             URL(fileURLWithPath: "/System/Applications/Utilities"),
+            // Safari's home since macOS 26 (the fast lane's finder looks here too).
+            URL(fileURLWithPath: "/System/Cryptexes/App/System/Applications"),
             fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Applications"),
         ]
         var names: [String] = []
