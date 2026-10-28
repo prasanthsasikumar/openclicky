@@ -9,6 +9,13 @@ Write for the person who sees the update prompt: what they can now do, in plain 
 per change with the gist in bold. Links, `code` and *italics* are fine; keep it to bullets and
 short paragraphs. Windows and Linux notes go in the same section when they apply.
 
+## 0.10.0
+
+- **Tell the Mac what to do.** With hands-free on (or holding ⌃⌥), a command is done and confirmed in a few words instead of taught: "minimize everything" (and "bring them back"), "search for rotary engines" or "search YouTube for lo-fi", "check my email", "draft an email to Ana saying I'll be late", "play Blinding Lights", "stop that song". A question ("how do I minimize this?") still teaches and points.
+- **Email is never sent by voice.** "Check my email" reads the unread senders and subjects from Apple Mail, or opens your Gmail inbox and reads what's on screen; "draft an email" opens a new message with the recipient and a short body filled in, for you to read and send yourself. Settings → Voice → Doing things picks the inbox (Automatic is Apple Mail when it's set up here, else Gmail).
+- **Play a song in Spotify by name.** The song is looked up on OpenClicky's Spotify app (only the words leave your Mac) and the desktop app plays it; with your own Spotify client credentials in Keys & Plans the lookup goes straight to Spotify. If the lookup can't answer, Spotify's own search opens for you to pick. "Stop that song" pauses the player itself, so it can never start something by mistake.
+- **It looks before it speaks.** After an action that changes the screen (a page opened, a search, Gmail), Clicky takes a fresh look and describes what's there now.
+
 ## 0.9.4
 
 - **"Rephrase this" rewrites in place in Apple Mail too.** With the cursor in an email body and nothing highlighted, "rephrase this so it sounds professional" rewrote nothing, because Mail's message body reports no text to Accessibility. Clicky now reads the box from the screenshot and, when you ask for a rewrite, selects it and pastes the new text. ⌘V puts the original back.
