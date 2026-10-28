@@ -82,6 +82,24 @@ enum MacActionOutcome: Equatable {
         }
     }
 
+    /// What the Realtime model is told in the tool's output. The same as the sentence unless an
+    /// outcome has more to say to the model than to the person (a list to read out, a screenshot
+    /// to look at).
+    var toolOutput: String { spokenSentence }
+
+    /// What goes in app.log. The same as the sentence unless it would carry something private
+    /// (an email body or recipient).
+    var logDescription: String { spokenSentence }
+
+    /// Whether the model should see a fresh screenshot before it speaks: true for an action that
+    /// changed what is on screen in a way worth describing (a page opened), false for the rest.
+    var thenLooksAtScreen: Bool {
+        switch self {
+        case .openedURL: return true
+        default: return false
+        }
+    }
+
     var spokenSentence: String {
         switch self {
         case .openedApp(let applicationName):

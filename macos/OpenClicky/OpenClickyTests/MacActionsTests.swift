@@ -74,6 +74,28 @@ struct MacActionsTests {
         #expect(MacActionOutcome.failed("disk full").spokenSentence == "That didn't work: disk full.")
     }
 
+    /// One of every outcome, for the checks that hold for all of them.
+    static let sampleOutcomes: [MacActionOutcome] = [
+        .openedApp("Spotify"), .appNotFound("Spotify"),
+        .createdFolder(name: "Test", location: .desktop), .folderAlreadyExists(name: "Test", location: .desktop),
+        .revealed(name: "Test", location: .desktop), .nothingToReveal(name: "Test", location: .desktop),
+        .openedURL("https://example.com"), .volumeSet(40), .mediaControlled("playpause"),
+        .invalidName, .invalidAppName, .unknownLocation("icloud"), .invalidURL, .permissionDenied(.documents), .failed("disk full"),
+    ]
+
+    @Test func everyOutcomeTellsTheModelSomethingAndLogsSomething() {
+        for outcome in Self.sampleOutcomes {
+            #expect(!outcome.toolOutput.isEmpty)
+            #expect(!outcome.logDescription.isEmpty)
+        }
+    }
+
+    @Test func onlyOpeningAPageLooksAtTheScreenAfterwardsForNow() {
+        #expect(MacActionOutcome.openedURL("https://example.com").thenLooksAtScreen)
+        #expect(!MacActionOutcome.openedApp("Spotify").thenLooksAtScreen)
+        #expect(!MacActionOutcome.volumeSet(40).thenLooksAtScreen)
+    }
+
     @Test func theSpokenLocationNameReadsNaturally() {
         #expect(MacActionLocation.desktop.spokenName == "your Desktop")
         #expect(MacActionLocation.workspace.spokenName == "your OpenClicky folder")

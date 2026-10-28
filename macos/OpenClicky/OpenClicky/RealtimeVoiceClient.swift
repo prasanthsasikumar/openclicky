@@ -1078,8 +1078,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case .action(let action):
             let startedAt = Date()
             let outcome = await onMacAction?(action) ?? .failed("OpenClicky is not available")
-            log("mac action: \(name) \(outcome.spokenSentence) in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
-            try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(outcome.spokenSentence.prefix(4000))]])
+            log("mac action: \(name) \(outcome.logDescription) in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
+            try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(outcome.toolOutput.prefix(4000))]])
             requestContinuation(after: event)
             return
         case .badArguments(let outcome):
