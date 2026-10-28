@@ -35,7 +35,7 @@ struct PlanToolProtocolTests {
 
     @Test func instructionBlockNamesEveryToolWithItsDescriptionAndSchema() {
         let block = PlanToolProtocol.instructionBlock(for: quickActionTools)
-        #expect(quickActionTools.count == 6)
+        #expect(quickActionTools.count == 12)
         for tool in quickActionTools {
             #expect(block.contains("- \(tool.name): \(tool.description)"))
             #expect(block.contains(PlanToolProtocol.compactSchemaText(from: tool.inputSchemaJSON)))

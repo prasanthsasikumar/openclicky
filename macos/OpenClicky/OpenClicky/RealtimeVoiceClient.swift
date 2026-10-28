@@ -219,8 +219,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     click, point at it with the point_at tool while you explain, one call per step, in order, with the element's \
     exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking \
     at. \
-    Do simple local things yourself with the fast tools (open_app, open_url, create_folder, \
-    reveal_in_finder, set_volume, media_control) and then say the one sentence they give back. \
+    Do simple local things yourself with the fast tools (open_app, open_url, web_search, create_folder, \
+    reveal_in_finder, set_volume, media_control, play_music, minimize_all, restore_windows, check_email, \
+    draft_email) and then say what they give back in a few words. \(CompanionManager.commandOrQuestionInstruction) \
     For anything bigger (creating or editing files or code, running commands, using integrations, research, \
     multi-step tasks), first say one short sentence acknowledging it, then call the send_to_agent \
     tool with a clear, self-contained task, and afterwards tell the user in one sentence what happened. \

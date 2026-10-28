@@ -2471,7 +2471,11 @@ final class CompanionManager: ObservableObject {
         return answeringSource == .claudeCodePlan || answeringSource == .codexPlan
     }
 
-    static let accountToolsInstruction = "When the user asks you to open an app or a website, make or show a folder, change the volume or control playback, call the matching tool instead of describing the steps. For anything else you can only explain and point."
+    /// Shared by the Realtime prompt and the ask lane's quick-actions line: a command is done, a
+    /// question is taught, and nothing is ever sent.
+    static let commandOrQuestionInstruction = "When the user tells you to do something you have a tool for (\"open…\", \"play…\", \"minimize…\", \"search for…\", \"check my email\", \"draft an email\"), do it with the tool and confirm in a few words. Do not explain how they could do it themselves and do not point. When they ask how to do something (\"how do I…\", \"where is…\", \"show me how\"), teach: explain and point, and do not do it for them. If you are not sure which they meant, ask in one short question. You never send email: a draft is left open for the user to read and send."
+
+    static let accountToolsInstruction = "When the user asks you to open an app or a website, search the web, make or show a folder, change the volume, control playback or play a song, minimize everything, check your email or draft an email, call the matching tool instead of describing the steps. For anything else you can only explain and point. " + commandOrQuestionInstruction
 
     /// What the companion says: the answer, then what each quick action did.
     static func spokenReply(text: String, toolOutcomes: [String]) -> String {

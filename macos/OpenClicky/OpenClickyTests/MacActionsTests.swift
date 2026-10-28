@@ -507,7 +507,7 @@ struct FastActionToolDefinitionTests {
 
     @Test func everyFastActionIsOfferedToTheModel() {
         let names = MacAction.realtimeToolDefinitions().compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "restore_windows", "check_email", "draft_email", "play_music"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows"])
     }
 
     @Test func createFolderDeclaresTheClosedLocationSet() throws {
@@ -524,6 +524,18 @@ struct FastActionToolDefinitionTests {
         let instructions = RealtimeVoiceClient.defaultInstructions
         #expect(instructions.contains("open_app"))
         #expect(instructions.contains("send_to_agent"))
+    }
+
+    /// A command is done, a question is taught, and email is never sent — in the Realtime prompt
+    /// and in the ask lane's quick-actions line (the plans and the free account).
+    @Test func theInstructionsDoCommandsAndTeachQuestions() {
+        let instructions = RealtimeVoiceClient.defaultInstructions
+        for tool in ["minimize_all", "web_search", "play_music", "check_email", "draft_email"] { #expect(instructions.contains(tool)) }
+        #expect(instructions.contains(CompanionManager.commandOrQuestionInstruction))
+        #expect(CompanionManager.commandOrQuestionInstruction.contains("Do not explain how they could do it themselves"))
+        #expect(CompanionManager.commandOrQuestionInstruction.contains("never send email"))
+        #expect(CompanionManager.accountToolsInstruction.contains(CompanionManager.commandOrQuestionInstruction))
+        #expect(CompanionManager.accountToolsInstruction.contains("check your email"))
     }
 
     /// Nothing else keeps the schema's argument keys and `MacAction.parse`'s argument keys in

@@ -6,7 +6,7 @@ struct ClaudeToolStreamTests {
     @Test func anthropicToolsMirrorTheRealtimeOnes() {
         let tools = MacAction.anthropicToolDefinitions()
         let names = tools.compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows"])
         #expect(tools.allSatisfy { $0["input_schema"] is [String: Any] && $0["type"] == nil })
     }
 
