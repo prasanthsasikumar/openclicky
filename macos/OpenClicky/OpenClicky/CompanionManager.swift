@@ -350,6 +350,26 @@ final class CompanionManager: ObservableObject {
     private let macActionRunner = MacActionRunner.live(
         workspaceDirectory: URL(fileURLWithPath: OpenClickyConfiguration.workspacePath)
     )
+    /// The local ask rung (`LocalAskRung`: Apple's on-device model tried before the cloud for quick
+    /// actions and rewrites). Built on first use and kept; while the Mac has no model (Intel, an
+    /// older macOS, Apple Intelligence off or still downloading) it stays nil and is tried again
+    /// at the next ask, so a model that finishes downloading is picked up without a relaunch.
+    private var builtLocalAskRung: LocalAskRung?
+    private var localAskRung: LocalAskRung? {
+        if builtLocalAskRung == nil, let model = LocalAskModelAvailability.makeModel() {
+            // The app list and the default browser are read here, on the main actor, so the rung's
+            // child task resolves a spoken name without touching AppKit.
+            let installedAppNames = InstalledAppResolver.installedAppNamesOnThisMac()
+            let defaultBrowserName = InstalledAppResolver.defaultBrowserNameOnThisMac()
+            builtLocalAskRung = LocalAskRung(model: model, resolveApp: { spokenName in
+                InstalledAppResolver.resolve(spoken: spokenName, installedAppNames: installedAppNames, defaultBrowserName: defaultBrowserName)
+            })
+            AppLog.append("local rung: ready (\(model.displayName))")
+        }
+        return builtLocalAskRung
+    }
+    static let localAnswerSourceName = "this Mac"
+    static let textAlreadyReadsWellSentence = "that already reads well, so i left it as it is."
     /// The permission cards the island shows one at a time until all four are granted.
     let permissionPromptController = PermissionPromptController()
     /// The "drag me into the Accessibility list" panel the accessibility card opens.
@@ -1037,6 +1057,11 @@ final class CompanionManager: ObservableObject {
             .sink { [weak self] state in
                 guard let self, state == .listening || state == .processing, !self.isAlwaysListening else { return }
                 KokoroVoice.shared.prepareForAnswer()
+                // The on-device model warms while the person is still speaking, so the local ask
+                // rung's decision fits inside the pause that follows the release.
+                if state == .listening, self.dictationSettings.answerSimpleRequestsOnThisMac {
+                    self.localAskRung?.model.prewarm()
+                }
             }
         // A spoken answer and a dictation that produced words each count as a use.
         $voiceState
@@ -1702,7 +1727,54 @@ final class CompanionManager: ObservableObject {
             do {
                 // Where the mouse was when they let go: what "this" points at.
                 let mouseLocationAtRelease = NSEvent.mouseLocation
-                if let pauseSeconds {
+
+                // The local ask rung: Apple's on-device model gets one short chance to recognise a
+                // quick action or a rewrite before anything is captured or sent (design:
+                // docs/superpowers/specs/2026-10-27-on-device-ask-rung-design.md). It runs inside
+                // the pause when there is one, so a cloud question is never slower than today; a
+                // local decision does the thing, and the pause (and the screenshot) never happen.
+                var localRungOutcome: String?
+                var earlyWritingTarget: WritingTarget?
+                var pauseAlreadyWaitedOut = false
+                if !isGuidedStepContinuation, dictationSettings.answerSimpleRequestsOnThisMac, let localAskRung {
+                    switch LocalAskRung.gate(transcript: transcript, replyLanguageCode: ReplyLanguage.currentCode) {
+                    case .skip(let reason):
+                        AppLog.append("local rung: gate skipped (\(reason))")
+                        localRungOutcome = "gate_skipped"
+                    case .tryModel(let mentionsRewriting):
+                        // A rewrite needs the text now; the cloud path reuses what was captured.
+                        if mentionsRewriting { earlyWritingTarget = await WritingTarget.captureFromFrontApp() }
+                        guard !Task.isCancelled else { return }
+                        let budgetSeconds = max(pauseSeconds ?? 0, LocalAskRung.defaultBudgetSeconds)
+                        let decision: LocalAskDecision
+                        if let pauseSeconds {
+                            // The same pause and caption as below, with the model deciding meanwhile.
+                            AppLog.append("ask: pausing \(pauseSeconds) s before sending the screen")
+                            askIslandStatus = AskSendPause.caption
+                            showAskCaptionAtOnce(AskSendPause.caption, holdSeconds: pauseSeconds + 1)
+                            async let pauseRanOut = AskSendPause.waitOut(seconds: pauseSeconds)
+                            decision = await localAskRung.decide(transcript: transcript, writingTarget: earlyWritingTarget, budgetSeconds: budgetSeconds)
+                            if case .cloud = decision {
+                                guard await pauseRanOut else { return }
+                                askIslandStatus = nil
+                                showAskCaption("“\(transcript)” · thinking…", holdSeconds: 30)
+                                pauseAlreadyWaitedOut = true
+                            }
+                        } else {
+                            decision = await localAskRung.decide(transcript: transcript, writingTarget: earlyWritingTarget, budgetSeconds: budgetSeconds)
+                        }
+                        if case .cloud(let reason) = decision {
+                            localRungOutcome = "cloud_" + reason.lowercased().replacingOccurrences(of: ":", with: "").split(separator: " ").joined(separator: "_")
+                        } else {
+                            guard !Task.isCancelled else { return }
+                            await performLocalDecision(decision, transcript: transcript, writingTarget: earlyWritingTarget)
+                            await finishAskTurn()
+                            return
+                        }
+                    }
+                }
+
+                if let pauseSeconds, !pauseAlreadyWaitedOut {
                     // A moment to call it off before anything leaves the Mac. Esc or a click on the
                     // island cancels this task, and nothing is captured or sent.
                     AppLog.append("ask: pausing \(pauseSeconds) s before sending the screen")
@@ -1765,8 +1837,14 @@ final class CompanionManager: ObservableObject {
                 if !isGuidedStepContinuation {
                     TeacherPlugin.startLesson(for: transcript, capture: screenCaptures.first(where: { $0.isCursorScreen }) ?? screenCaptures.first)
                 }
-                // The text a "rephrase this" would replace: the highlight, or the box the cursor is in.
-                let writingTarget = await WritingTarget.captureFromFrontApp()
+                // The text a "rephrase this" would replace: the highlight, or the box the cursor is in
+                // (already captured when the local rung looked at a rewrite).
+                let writingTarget: WritingTarget?
+                if let earlyWritingTarget {
+                    writingTarget = earlyWritingTarget
+                } else {
+                    writingTarget = await WritingTarget.captureFromFrontApp()
+                }
                 guard !Task.isCancelled else { return }
 
                 // Pass conversation history so Claude remembers prior exchanges
@@ -1908,34 +1986,11 @@ final class CompanionManager: ObservableObject {
                 // An answer spent some of the allowance: the profile store notices crossing 80%.
                 if AccountCapabilities.current().kind == .account { AccountProfileStore.shared.refresh() }
 
-                ClickyAnalytics.trackAIResponseReceived(characterCount: spokenText.count)
+                ClickyAnalytics.trackAIResponseReceived(characterCount: spokenText.count, localRung: localRungOutcome)
 
                 // Wait for the voice to finish. A question asked meanwhile cancels this task, and the
                 // cancellation is passed on to the playback.
-                do {
-                    try await withTaskCancellationHandler {
-                        try await answerPlayback.value
-                    } onCancel: {
-                        answerPlayback.cancel()
-                    }
-                } catch let failure as SpeechQueue.Failure {
-                    // 402 is the account's voice allowance (tts_budget): the system voice is the plan, not a failure.
-                    let nsError = failure.underlyingError as NSError
-                    let voiceRefusal = failure.underlyingError as? BackendHTTPError
-                    let isVoiceAllowanceSpent = voiceRefusal?.service == .voice && voiceRefusal?.status == 402
-                    if !isVoiceAllowanceSpent {
-                        ClickyAnalytics.trackTTSError(error: nsError.localizedDescription)
-                    }
-                    print("⚠️ TTS via backend failed (\(nsError.localizedDescription)); using the system voice")
-                    AppLog.append("ask: voice failed (\(nsError.code)); using the system voice")
-                    if !Task.isCancelled {
-                        // The success path dismisses "thinking…" when the voice starts; the system
-                        // voice starts here, so the caption goes now.
-                        dismissCursorCaption()
-                        speakWithSystemVoice(failure.unspokenText.joined(separator: " "))
-                        answerSpeaker.voiceFellBack()
-                    }
-                }
+                try await waitForAnswerVoice(answerPlayback: answerPlayback, answerSpeaker: answerSpeaker)
             } catch where Self.isCancellation(error) || Task.isCancelled {
                 // User spoke again — response was interrupted. Cancelling the task that reads the
                 // answer stream ends it with URLError.cancelled, not a CancellationError.
@@ -1971,13 +2026,109 @@ final class CompanionManager: ObservableObject {
                 }
             }
 
-            // A notice in the system voice is still being said: the turn is over when it ends.
-            await waitForSystemVoiceNoticeToEnd()
-            if !Task.isCancelled {
-                isAskInFlight = false
-                voiceState = .idle
-                scheduleTransientHideIfNeeded()
+            await finishAskTurn()
+        }
+    }
+
+    /// The end of an ask turn, local or cloud: a notice in the system voice is still being said, so
+    /// the turn is over when it ends; a cancelled turn (esc, a new question) was reset by its stopper.
+    private func finishAskTurn() async {
+        await waitForSystemVoiceNoticeToEnd()
+        if !Task.isCancelled {
+            isAskInFlight = false
+            voiceState = .idle
+            scheduleTransientHideIfNeeded()
+        }
+    }
+
+    /// Waits for an answer's voice to finish. A voice that fails (the account's allowance spent, a
+    /// vendor down) leaves what was not said to the system voice; a cancellation is passed on to the
+    /// playback and rethrown for the caller's own handling.
+    private func waitForAnswerVoice(answerPlayback: Task<Void, Error>, answerSpeaker: StreamingAnswerSpeaker) async throws {
+        do {
+            try await withTaskCancellationHandler {
+                try await answerPlayback.value
+            } onCancel: {
+                answerPlayback.cancel()
             }
+        } catch let failure as SpeechQueue.Failure {
+            // 402 is the account's voice allowance (tts_budget): the system voice is the plan, not a failure.
+            let nsError = failure.underlyingError as NSError
+            let voiceRefusal = failure.underlyingError as? BackendHTTPError
+            let isVoiceAllowanceSpent = voiceRefusal?.service == .voice && voiceRefusal?.status == 402
+            if !isVoiceAllowanceSpent {
+                ClickyAnalytics.trackTTSError(error: nsError.localizedDescription)
+            }
+            print("⚠️ TTS via backend failed (\(nsError.localizedDescription)); using the system voice")
+            AppLog.append("ask: voice failed (\(nsError.code)); using the system voice")
+            if !Task.isCancelled {
+                // The success path dismisses "thinking…" when the voice starts; the system
+                // voice starts here, so the caption goes now.
+                dismissCursorCaption()
+                speakWithSystemVoice(failure.unspokenText.joined(separator: " "))
+                answerSpeaker.voiceFellBack()
+            }
+        }
+    }
+
+    /// A request the local ask rung handled on this Mac: do it, say what happened in the usual
+    /// voice, remember the exchange so a cloud follow-up knows, and count it. Nothing was captured
+    /// and nothing was sent; the island says "speaking · this Mac" for the turn.
+    private func performLocalDecision(_ decision: LocalAskDecision, transcript: String, writingTarget: WritingTarget?) async {
+        askIslandStatus = nil
+        answeringSourceName = Self.localAnswerSourceName
+        showAskCaption("“\(transcript)” · on this mac", holdSeconds: 10)
+        let sentence: String
+        let outcomeForAnalytics: String
+        switch decision {
+        case .quickAction(let toolName, let arguments):
+            outcomeForAnalytics = "local_action"
+            if case .action(let action) = MacAction.parse(toolName: toolName, arguments: arguments) {
+                let outcome = await macActionRunner.perform(action)
+                if outcome.didSomething { lastSuccessfulQuickActionAt = Date() }
+                sentence = outcome.spokenSentence
+            } else {
+                // The mapper already ran the parser; this is belt and braces.
+                AppLog.append("local rung: \(toolName) did not parse after all")
+                sentence = Self.emptyAnswerSentence
+            }
+        case .rewrite(let newText):
+            outcomeForAnalytics = "local_rewrite"
+            if let writingTarget {
+                let rewrite = await WriteInPlace.replace(writingTarget, with: newText)
+                if rewrite.didReplace { lastSuccessfulQuickActionAt = Date() }
+                sentence = rewrite.spokenSentence
+            } else {
+                sentence = Self.emptyAnswerSentence
+            }
+        case .textAlreadyReadsWell:
+            outcomeForAnalytics = "local_rewrite_unchanged"
+            sentence = Self.textAlreadyReadsWellSentence
+        case .cloud:
+            return
+        }
+        guard !Task.isCancelled else { return }
+
+        let answerSpeaker = makeAnswerSpeaker(
+            onVoiceStarts: { [weak self] in
+                self?.voiceState = .responding
+                self?.dismissCursorCaption()
+                AppLog.append("ask: voice started (this mac)")
+            },
+            onPointTag: { _ in }
+        )
+        let answerPlayback = Task { @MainActor in try await answerSpeaker.play() }
+        activeAnswerSpeaker = answerSpeaker
+        activeAnswerPlayback = answerPlayback
+        answerSpeaker.receiveWholeReply(sentence)
+        rememberExchange(userTranscript: transcript, assistantResponse: sentence)
+        ClickyAnalytics.trackAIResponseReceived(characterCount: sentence.count, localRung: outcomeForAnalytics)
+        do {
+            try await waitForAnswerVoice(answerPlayback: answerPlayback, answerSpeaker: answerSpeaker)
+        } catch where Self.isCancellation(error) || Task.isCancelled {
+            // A new question or esc: the stopper reset the state.
+        } catch {
+            AppLog.append("local rung: voice failed: \((error as NSError).domain) \((error as NSError).code)")
         }
     }
 
