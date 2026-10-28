@@ -104,8 +104,8 @@ enum ClickyAnalytics {
 
     /// Claude responded and the response is being spoken via TTS. Takes only the character count,
     /// never the response text itself — verbatim AI replies must never reach PostHog.
-    static func trackAIResponseReceived(characterCount: Int) {
-        PostHogSDK.shared.capture("ai_response_received", properties: aiResponseReceivedProperties(characterCount: characterCount))
+    static func trackAIResponseReceived(characterCount: Int, localRung: String? = nil) {
+        PostHogSDK.shared.capture("ai_response_received", properties: aiResponseReceivedProperties(characterCount: characterCount, localRung: localRung))
     }
 
     /// Pulled out as a pure function (rather than inlined into the `capture` call above) so a test
@@ -115,9 +115,13 @@ enum ClickyAnalytics {
         ["character_count": characterCount]
     }
 
-    /// See `userMessageSentProperties`: same reasoning, for the AI's side of the turn.
-    static func aiResponseReceivedProperties(characterCount: Int) -> [String: Any] {
-        ["character_count": characterCount]
+    /// See `userMessageSentProperties`: same reasoning, for the AI's side of the turn. `localRung`
+    /// names which tier of the ask lane answered when the on-device rung ran (local_action,
+    /// local_rewrite, local_rewrite_unchanged, cloud_<reason>, gate_skipped); never any content.
+    static func aiResponseReceivedProperties(characterCount: Int, localRung: String? = nil) -> [String: Any] {
+        var properties: [String: Any] = ["character_count": characterCount]
+        if let localRung { properties["local_rung"] = localRung }
+        return properties
     }
 
     /// Claude's response included a [POINT:x,y:label] coordinate tag,

@@ -29,6 +29,11 @@ extension SettingsCatalog {
                 keywords: ["model", "claude", "sonnet", "opus", "smarter", "quicker"],
                 view: AnyView(ClaudeModelRow(companionManager: companionManager))),
             SettingsItem(
+                id: "clicky.onThisMac", page: .clicky, section: "Answers",
+                title: OnThisMacRow.title, detail: OnThisMacRow.detail,
+                keywords: ["apple intelligence", "on device", "local", "private", "offline", "this mac", "credits", "quick actions", "open app", "volume", "rewrite"],
+                view: AnyView(OnThisMacRow(settings: settings))),
+            SettingsItem(
                 id: "clicky.showPointer", page: .clicky, section: "Pointer",
                 title: "Show the pointer", detail: "Off: it appears only while you talk.",
                 keywords: ["pointer", "cursor", "buddy", "orange", "visible", "hide"],
@@ -248,6 +253,32 @@ private struct PointerPresenceOptions: View {
 }
 
 /// Who answers questions: automatic, or one source that is set up. Shows who is answering now.
+/// Settings → Clicky → Answers: the local ask rung's switch. The detail says what the rung does and,
+/// when Apple's model is not available on this Mac, why not (the switch is then disabled); a
+/// person whose ⌃⌥ goes to the Realtime lane is told it does not apply to them. Read when drawn,
+/// as the "Answers come from" row reads the credentials.
+struct OnThisMacRow: View {
+    @ObservedObject var settings: DictationSettings
+
+    static let title = "Simple requests stay on this Mac"
+    static let detail = "Opening apps and websites, folders, volume, playback and rewrites are understood by Apple Intelligence on this Mac: no screenshot is sent and no answer credits are used."
+    static let realtimeNote = "Not used while your OpenAI key answers out loud."
+
+    var body: some View {
+        let unavailableReason = LocalAskModelAvailability.unavailableReason()
+        let goesToRealtime = OpenClickyConfiguration.isConfigured && AccountCapabilities.current().usesRealtime
+        SettingsRow(title: Self.title, detail: Self.detailShown(unavailableReason: unavailableReason, goesToRealtime: goesToRealtime)) {
+            SettingsToggle(settings: settings, keyPath: \.answerSimpleRequestsOnThisMac)
+                .disabled(unavailableReason != nil)
+        }
+    }
+
+    static func detailShown(unavailableReason: String?, goesToRealtime: Bool) -> String {
+        if let unavailableReason { return "Not available: \(unavailableReason)." }
+        return goesToRealtime ? detail + " " + realtimeNote : detail
+    }
+}
+
 private struct AnswerSourceRow: View {
     @ObservedObject private var shellSettingsRevision = ShellSettingsRevision.shared
 

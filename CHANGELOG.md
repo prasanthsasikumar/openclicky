@@ -11,6 +11,7 @@ short paragraphs. Windows and Linux notes go in the same section when they apply
 
 ## 0.10.0
 
+- **Simple requests are done on your Mac.** "Open Safari", "set the volume to thirty", "pause the music", and "make this shorter" with text in front of you are understood by Apple Intelligence on Macs that have it (macOS 26): no screenshot is sent, no credits are used, and the answer comes in about a second. Everything else goes to Clicky as before. Settings → Clicky → Simple requests stay on this Mac.
 - **The island is solid black again when it opens.** The black melting into glass was harder to read, and its Glass level slider is gone from Settings → General.
 - **No more docking the pointer in the island.** Parking it in the notch added nothing: the pointer already rests out of sight and comes back when you shake the mouse or when Clicky needs it. The option is gone from Settings, the menu bar and the island, which also gives the island's shortcuts more room. If you had it docked, it now follows "The pointer shows" in Settings → Clicky like everyone's.
 - **Tell the Mac what to do.** With hands-free on (or holding ⌃⌥), a command is done and confirmed in a few words instead of taught: "minimize everything" (and "bring them back"), "search for rotary engines" or "search YouTube for lo-fi", "check my email", "draft an email to Ana saying I'll be late", "play Blinding Lights", "stop that song". A question ("how do I minimize this?") still teaches and points.
@@ -23,9 +24,6 @@ short paragraphs. Windows and Linux notes go in the same section when they apply
 - **Windows: no robotic voice while Kokoro downloads.** A voice that can't speak yet (Kokoro still downloading, a key that's missing) hands over to your account's free voice rather than this PC's built-in one.
 - **Windows: hovering the island only peeks.** The pointer over the island grows it a little and shows "click to open"; a click opens the panel, as on the Mac.
 - **Windows: dictation works the moment it's installed.** A small English speech model (Moonshine) now comes with the app, so the first take is heard on your PC with no download and no "turn on online speech" prompt. Parakeet still downloads after the tour and takes over; Windows speech recognition stays a choice in Settings → Dictation. If you already picked Windows speech, you stay on it. A take that starts with a long pause no longer ends in "didn't catch that" after the words showed live.
-
-## 0.9.4
-
 - **"Rephrase this" rewrites in place in Apple Mail too.** With the cursor in an email body and nothing highlighted, "rephrase this so it sounds professional" rewrote nothing, because Mail's message body reports no text to Accessibility. Clicky now reads the box from the screenshot and, when you ask for a rewrite, selects it and pastes the new text. ⌘V puts the original back.
 - **Fix: dictation that heard nothing on some Macs.** Since 0.8.1, on some Macs every take ended in "didn't catch that" and the microphone test stayed flat, though the microphone worked everywhere else. OpenClicky now leaves the Mac's default microphone alone, as it did before.
 - **Say goodbye to end hands-free.** "That's all I need, thanks", "stop listening" or "ok bye" now ends hands-free: Clicky says goodbye, closes the microphone and goes back to push-to-talk. A plain "thank you" keeps it listening.

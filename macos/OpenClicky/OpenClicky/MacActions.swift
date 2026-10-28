@@ -606,10 +606,12 @@ final class MacActionRunner {
     /// Looks for `<name>.app` in the standard application folders. LaunchServices has no display-name
     /// lookup that does not also need a bundle identifier, and asking Spotlight would be slower than
     /// the action itself.
-    private static func applicationURL(named name: String) -> URL? {
+    static func applicationURL(named name: String) -> URL? {
         let searchDirectories = [
             URL(fileURLWithPath: "/Applications"),
             URL(fileURLWithPath: "/System/Applications"),
+            // Safari (and only Safari) lives here since macOS 26, not in /Applications.
+            URL(fileURLWithPath: "/System/Cryptexes/App/System/Applications"),
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications"),
         ]
         let wanted = name.lowercased().hasSuffix(".app") ? name.lowercased() : "\(name.lowercased()).app"

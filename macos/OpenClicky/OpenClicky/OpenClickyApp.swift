@@ -335,6 +335,67 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         #if DEBUG
+        if let localAskIndex = launchArguments.firstIndex(of: "--openclicky-local-ask"), localAskIndex + 1 < launchArguments.count {
+            // Debug: the local ask rung for one request (gate, Apple's classification, the mapping),
+            // each step timed, nothing performed. How the classifier prompt gets tuned.
+            setvbuf(stdout, nil, _IONBF, 0)
+            let request = launchArguments[localAskIndex + 1]
+            Task { @MainActor in
+                let gateDecision = LocalAskRung.gate(transcript: request, replyLanguageCode: ReplyLanguage.currentCode)
+                print("local-ask: gate \(gateDecision)")
+                guard case .tryModel(let mentionsRewriting) = gateDecision else { exit(0) }
+                guard let model = LocalAskModelAvailability.makeModel() else {
+                    print("local-ask: unavailable: \(LocalAskModelAvailability.unavailableReason() ?? "?")")
+                    exit(2)
+                }
+                let installedAppNames = InstalledAppResolver.installedAppNamesOnThisMac()
+                let defaultBrowserName = InstalledAppResolver.defaultBrowserNameOnThisMac()
+                let startedAt = Date()
+                do {
+                    let intent = try await model.classify(transcript: request)
+                    let classifySeconds = Date().timeIntervalSince(startedAt)
+                    print("local-ask: intent kind=\(intent.kind) name=\"\(intent.name)\" location=\"\(intent.location)\" volume=\(intent.volumeLevel) playback=\"\(intent.playback)\" rewrite=\"\(intent.rewriteInstruction)\" in \(String(format: "%.2f", classifySeconds)) s")
+                    let mapping = LocalAskIntentMapper.map(intent, hasWritingTarget: mentionsRewriting, resolveApp: { spoken in
+                        InstalledAppResolver.resolve(spoken: spoken, installedAppNames: installedAppNames, defaultBrowserName: defaultBrowserName)
+                    })
+                    print("local-ask: mapping \(mapping) (total \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s)")
+                    // The same request again on a session warmed the way the ⌃⌥ press warms it.
+                    model.prewarm()
+                    try? await Task.sleep(for: .seconds(1.5))
+                    let warmStartedAt = Date()
+                    _ = try await model.classify(transcript: request)
+                    print("local-ask: prewarmed classify in \(String(format: "%.2f", Date().timeIntervalSince(warmStartedAt))) s")
+                    exit(0)
+                } catch {
+                    print("local-ask: error \(error)")
+                    exit(1)
+                }
+            }
+            return
+        }
+        if let rewriteIndex = launchArguments.firstIndex(of: "--openclicky-local-rewrite"), rewriteIndex + 2 < launchArguments.count {
+            // Debug: one rewrite on Apple's model (instruction, then the text), timed, with the check's verdict.
+            setvbuf(stdout, nil, _IONBF, 0)
+            let instruction = launchArguments[rewriteIndex + 1]
+            let text = launchArguments[rewriteIndex + 2]
+            Task { @MainActor in
+                guard let model = LocalAskModelAvailability.makeModel() else {
+                    print("local-rewrite: unavailable: \(LocalAskModelAvailability.unavailableReason() ?? "?")")
+                    exit(2)
+                }
+                let startedAt = Date()
+                do {
+                    let rewritten = try await model.rewrite(text, instruction: instruction)
+                    print("local-rewrite: \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s, \(text.count)→\(rewritten.count) chars, check: \(LocalRewriteCheck.rejectionReason(original: text, rewritten: rewritten) ?? "ok")")
+                    print(rewritten)
+                    exit(0)
+                } catch {
+                    print("local-rewrite: error \(error)")
+                    exit(1)
+                }
+            }
+            return
+        }
         if let checkIndex = launchArguments.firstIndex(of: "--openclicky-check-source"), checkIndex + 1 < launchArguments.count {
             // Debug: what Settings → Account's Test button says for one source (AnswerSource raw value).
             setvbuf(stdout, nil, _IONBF, 0)
@@ -499,6 +560,47 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         if let tourIndex = launchArguments.firstIndex(of: "--openclicky-ui-tour"), tourIndex + 1 < launchArguments.count {
             UITour(companionManager: companionManager, logPath: launchArguments[tourIndex + 1]).run()
+        }
+        if let pasteIndex = launchArguments.firstIndex(of: "--openclicky-paste-probe"), pasteIndex + 1 < launchArguments.count {
+            // Debug: does this build's paste land in the front app's text box? ⌘A then the text
+            // through FrontAppTextInserter, read back by PasteLanding, after 3 s for the box to be focused.
+            setvbuf(stdout, nil, _IONBF, 0)
+            let text = launchArguments[pasteIndex + 1]
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                let before = FocusedFieldReader.snapshot()
+                print("paste-probe: trusted=\(AXIsProcessTrusted()) front=\(before.appName ?? "?") role=\(before.role ?? "none") editable=\(before.isEditable)")
+                _ = WriteInPlace.postCommandKey(0) // virtual key code 0 is "a": ⌘A
+                try? await Task.sleep(for: .milliseconds(150))
+                let outcome = FrontAppTextInserter.insert(text)
+                let landing = await PasteLanding.verify(text: text, before: before)
+                print("paste-probe: insert=\(outcome) landing=\(landing)")
+                exit(0)
+            }
+        }
+        if let askIndex = launchArguments.firstIndex(of: "--openclicky-ask"), askIndex + 1 < launchArguments.count {
+            // Debug: one typed question through the whole ask lane (the local rung, else the cloud
+            // path with its pause and screenshot), exiting once the turn is over. For live checks
+            // of the lane without the keyboard; the log says which tier answered.
+            setvbuf(stdout, nil, _IONBF, 0)
+            let question = launchArguments[askIndex + 1]
+            let companionManager = self.companionManager
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                companionManager.submitTypedRequest(question)
+                let startedAt = Date()
+                var sawTheTurnStart = false
+                while Date().timeIntervalSince(startedAt) < 90 {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    if companionManager.isAskInFlight || companionManager.voiceState != .idle {
+                        sawTheTurnStart = true
+                    } else if sawTheTurnStart {
+                        break
+                    }
+                }
+                print("ask-smoke: done, source=\(companionManager.answeringSourceName ?? "-"), \(String(format: "%.1f", Date().timeIntervalSince(startedAt))) s")
+                exit(0)
+            }
         }
         #endif
         // OpenClicky: launching at login is opt-in (`registerAsLoginItem` in ~/.openclicky/shell.json).
