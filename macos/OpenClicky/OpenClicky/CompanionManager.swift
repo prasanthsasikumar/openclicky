@@ -1441,10 +1441,19 @@ final class CompanionManager: ObservableObject {
         case .escapePressed:
             // A dictation take in progress keeps esc to itself (it cancels the take, as always);
             // otherwise esc stops whatever the ask lane is doing.
-            switch AskLaneEscape.target(dictationTakeInProgress: dictationTakeController.isTakeInProgress, askLaneCanBeStopped: askLaneCanBeStopped) {
+            switch AskLaneEscape.target(dictationTakeInProgress: dictationTakeController.isTakeInProgress, askLaneCanBeStopped: askLaneCanBeStopped,
+                                        realtimeIsBusy: usesRealtimeVoice && realtimeVoiceClient.isBusy) {
             case .dictationTake: dictationTakeController.handle(shortcutEvent)
             case .askLane:
                 stopAskLane(from: "esc")
+                TeacherPlugin.clearBoard(reason: "esc")
+            case .realtime:
+                // The fast voice lane: the reply stops, and an action still working says nothing
+                // when it finishes (its output stays in the conversation for the next turn).
+                AppLog.append("realtime: stopped (esc)")
+                realtimeVoiceClient.stopSpeaking()
+                voiceState = .idle
+                showAskCaption("stopped", holdSeconds: 1.5)
                 TeacherPlugin.clearBoard(reason: "esc")
             case .nothing:
                 // Nothing else to stop: esc takes a lesson off the screen.

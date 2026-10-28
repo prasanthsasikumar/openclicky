@@ -22,6 +22,15 @@ struct AskLaneControlTests {
         #expect(AskLaneEscape.target(dictationTakeInProgress: false, askLaneCanBeStopped: false) == .nothing)
     }
 
+    /// Hands-free (Realtime) answering, speaking or still working on an action: esc stops that
+    /// too. Pressing esc while Gmail loaded did nothing, and Clicky read the inbox (2026-10-28).
+    @Test func escStopsTheRealtimeLaneWhenItIsBusy() {
+        #expect(AskLaneEscape.target(dictationTakeInProgress: false, askLaneCanBeStopped: false, realtimeIsBusy: true) == .realtime)
+        #expect(AskLaneEscape.target(dictationTakeInProgress: false, askLaneCanBeStopped: true, realtimeIsBusy: true) == .askLane)
+        #expect(AskLaneEscape.target(dictationTakeInProgress: true, askLaneCanBeStopped: false, realtimeIsBusy: true) == .dictationTake)
+        #expect(AskLaneEscape.target(dictationTakeInProgress: false, askLaneCanBeStopped: false, realtimeIsBusy: false) == .nothing)
+    }
+
     @Test func aPressStillListeningOrTranscribingCanBeStopped() {
         #expect(AskLaneEscape.canStop(pressIsSettled: false, isAskInFlight: false, guideStep: nil))
     }

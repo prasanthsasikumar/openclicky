@@ -18,12 +18,17 @@ enum EscapeTarget: Equatable {
     /// The ask lane has something under way: esc stops it.
     case askLane
     case nothing
+    /// The fast voice lane: stop its reply and drop what its actions were about to say.
+    case realtime
 }
 
 enum AskLaneEscape {
-    static func target(dictationTakeInProgress: Bool, askLaneCanBeStopped: Bool) -> EscapeTarget {
+    /// `realtimeIsBusy`: the fast voice lane is answering, speaking, or still working on an action
+    /// (a page settling before the look): esc stops that too, as it stops the ask lane.
+    static func target(dictationTakeInProgress: Bool, askLaneCanBeStopped: Bool, realtimeIsBusy: Bool = false) -> EscapeTarget {
         if dictationTakeInProgress { return .dictationTake }
-        return askLaneCanBeStopped ? .askLane : .nothing
+        if askLaneCanBeStopped { return .askLane }
+        return realtimeIsBusy ? .realtime : .nothing
     }
 
     /// Whether the ask lane has anything to stop: a ⌃⌥ press not yet settled (listening or

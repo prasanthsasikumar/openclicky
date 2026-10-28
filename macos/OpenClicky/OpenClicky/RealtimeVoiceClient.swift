@@ -103,6 +103,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// Mail script, Spotify starting, a page settling before the screen is attached) must never
     /// hold up audio, barge-in or response.done.
     private var actionChain: Task<Void, Never>?
+    /// Actions queued or running on the chain; while any is, esc has something to stop.
+    private var pendingActionCount = 0
+    /// Whether esc has anything to stop here: a reply being made or played, or an action still
+    /// working (a page settling before the look).
+    var isBusy: Bool { responseInProgress || isSpeaking || pendingActionCount > 0 }
     /// Counts the turns: bumped whenever the conversation moves on (a cancel, a barge-in, a new
     /// turn's response). An action whose turn has moved on by the time it finishes still sends its
     /// output (it belongs in the conversation) but asks for no continuation: Esc while Gmail loads
@@ -1098,7 +1103,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             let previousAction = actionChain
             let frontAppBefore = frontAppProvider?()
             let generation = turnGeneration
+            pendingActionCount += 1
             actionChain = Task { @MainActor [weak self] in
+                defer { self?.pendingActionCount -= 1 }
                 await previousAction?.value
                 guard !Task.isCancelled, let self else { return }
                 let startedAt = Date()
@@ -1336,10 +1343,14 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private func cancelActiveResponse() {
         turnGeneration += 1
         needsContinuationAfterResponse = false
+        // Only cancel what is in progress: the server answers a cancel with nothing active with
+        // an error ("no active response found"), and the generation bump above is what stops a
+        // late action from continuing.
+        let hadActiveResponse = responseInProgress
         if let activeResponseId { cancelledResponseIds.insert(activeResponseId) }
         activeResponseId = nil
         responseInProgress = false
-        try? send(["type": "response.cancel"])
+        if hadActiveResponse { try? send(["type": "response.cancel"]) }
     }
 
     /// Request the reply for a committed user turn. Any continuation queued for tool outputs of
