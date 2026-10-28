@@ -46,7 +46,9 @@ nonisolated enum BrowserTabLocator {
     /// The screenshot-pixel centre of the tab the request is about, when the request mentions a
     /// tab and a running scriptable browser has a matching tab whose button is visible in the
     /// captured screenshot. The browser need not be the app in front: a terminal over the lower
-    /// part of Chrome still leaves the tab strip showing, and that is what the user is looking at.
+    /// part of Chrome still leaves the tab strip showing, and that is what the user is looking at
+    /// — but a browser behind the front app is only pointed at when the user's own words name the
+    /// tab (see `matchTexts`).
     @MainActor
     static func locate(label: String, text: String, userRequest: String?, in capture: CompanionScreenCapture) -> (point: CGPoint, tab: BrowserTab)? {
         guard mentionsTab([label, text, userRequest]) else { return nil }
@@ -61,7 +63,7 @@ nonisolated enum BrowserTabLocator {
         for app in browsers {
             guard let bundleIdentifier = app.bundleIdentifier, let browser = scriptableBrowsers[bundleIdentifier] else { continue }
             let tabs = tabList(bundleIdentifier: bundleIdentifier, browser: browser)
-            guard let index = bestMatch(for: [label, text, userRequest], in: tabs) else { continue }
+            guard let index = bestMatch(for: matchTexts(browserIsActive: app.isActive, label: label, text: text, userRequest: userRequest), in: tabs) else { continue }
             guard let frame = frame(ofTabAt: index, in: tabButtonFrames(app: app), tabCount: tabs.count) else {
                 AppLog.append("browser tab \"\(tabs[index].title.prefix(40))\" matched but its button frame could not be read")
                 continue
@@ -104,6 +106,14 @@ nonisolated enum BrowserTabLocator {
     }
 
     // MARK: - Pure parts (unit-tested)
+
+    /// The texts a tab may be matched against. For the active browser, the model's label and text
+    /// too (it read the tab strip). For a browser behind another app, the user's words alone:
+    /// "minimize this tab" with Terminal in front sent the model to a Chrome tab it could see
+    /// behind it, and matching its own reading of that tab made the pointer follow (2026-10-27).
+    static func matchTexts(browserIsActive: Bool, label: String, text: String, userRequest: String?) -> [String?] {
+        browserIsActive ? [label, text, userRequest] : [userRequest]
+    }
 
     static func mentionsTab(_ texts: [String?]) -> Bool {
         texts.contains { text in

@@ -1145,9 +1145,16 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                         var point = guess
                         var resolution = "using the guess"
                         var resolved = false
+                        // A window's close / minimize / zoom buttons have no caption and are 12 px
+                        // across; macOS reports their exact frames.
+                        if let control = WindowControlLocator.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
+                            point = control.point
+                            resolved = true
+                            resolution = "\(control.control.name) button of \(control.appName) (\(formatted(point.x)), \(formatted(point.y)))"
+                        }
                         // A browser tab is a favicon plus a truncated title, which no screenshot model
                         // reads reliably; the browser's own tab list and Accessibility frames do.
-                        if let tab = BrowserTabLocator.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
+                        if !resolved, let tab = BrowserTabLocator.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
                             point = tab.point
                             resolved = true
                             resolution = "browser tab \"\(tab.tab.title.prefix(40))\" (\(formatted(point.x)), \(formatted(point.y)))"

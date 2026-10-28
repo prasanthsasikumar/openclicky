@@ -45,6 +45,20 @@ struct BrowserTabLocatorTests {
         #expect(BrowserTabLocator.bestMatch(for: ["settings tab", "", "where is the settings tab"], in: tabs) == nil)
     }
 
+    @Test func aBrowserBehindTheFrontAppIsOnlyPointedAtWhenTheUserNamesTheTab() {
+        // Terminal in front, Chrome behind showing "New session - Claude". The model read that
+        // title off the screenshot and passed it as the element text; the user never said it.
+        let tabsBehind = tabs + [BrowserTab(title: "New session - Claude", url: URL(string: "https://claude.ai/new"))]
+        let background = BrowserTabLocator.matchTexts(browserIsActive: false, label: "tab title", text: "New session - Claude", userRequest: "Show me how to minimize this tab.")
+        #expect(BrowserTabLocator.bestMatch(for: background, in: tabsBehind) == nil)
+        // The user naming the site still finds it behind the front app.
+        let named = BrowserTabLocator.matchTexts(browserIsActive: false, label: "tab", text: "", userRequest: "where is my claude tab")
+        #expect(BrowserTabLocator.bestMatch(for: named, in: tabsBehind) == 5)
+        // The active browser keeps the model's reading of the strip.
+        let active = BrowserTabLocator.matchTexts(browserIsActive: true, label: "tab title", text: "New session - Claude", userRequest: "point at this tab")
+        #expect(BrowserTabLocator.bestMatch(for: active, in: tabsBehind) == 5)
+    }
+
     @Test func tabFramesPairWithTabsByOrderOnly() {
         // Chrome's tab buttons come without titles; they pair with the tab list left to right and
         // only when the counts agree (a mismatch means the strip is scrolled or mid-update).
