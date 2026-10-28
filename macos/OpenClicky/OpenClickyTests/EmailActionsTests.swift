@@ -37,17 +37,41 @@ struct EmailActionsTests {
         #expect(withAddress.contains("content:\"back\\\\slash\""))
         #expect(withAddress.contains("{address:\"ana@example.com\"}"))
         #expect(withAddress.contains("visible:true"))
+        #expect(withAddress.contains("with timeout of 5 seconds"))
+        // A recipient Mail refuses must not throw the open draft away: the script reports it instead.
+        #expect(withAddress.contains("on error"))
+        #expect(withAddress.contains("return \"no-recipient\""))
         #expect(!withAddress.lowercased().contains("send"))
         let withName = MailScripts.draftSource(to: "Ana", subject: "", body: "x")
         #expect(withName.contains("{name:\"Ana\"}"))
     }
 
     @Test func theUnreadReplyParsesIntoSenderAndSubject() {
-        let reply = "Ana <ana@x.com>\u{1E}Invoice\u{1D}GitHub\u{1E}[repo] PR #4"
+        // Two lists (senders, subjects), each joined by ASCII 30, separated by ASCII 29: three Apple
+        // events in all, each under the timeout, instead of two per message.
+        let reply = "Ana <ana@x.com>\u{1E}GitHub\u{1D}Invoice\u{1E}[repo] PR #4"
         #expect(MailScripts.parseUnread(reply) == [UnreadMail(sender: "Ana <ana@x.com>", subject: "Invoice"), UnreadMail(sender: "GitHub", subject: "[repo] PR #4")])
         #expect(MailScripts.parseUnread("") == [])
-        #expect(MailScripts.unreadInboxSource(limit: 10).contains("read status is false"))
-        #expect(MailScripts.unreadInboxSource(limit: 10).contains("with timeout of 5 seconds"))
+        #expect(MailScripts.parseUnread("Ana\u{1D}") == [UnreadMail(sender: "Ana", subject: "")])
+        let source = MailScripts.unreadInboxSource(limit: 10)
+        #expect(source.contains("read status is false"))
+        #expect(source.contains("with timeout of 5 seconds"))
+        #expect(source.contains("sender of recentMessages"))
+        #expect(!source.contains("repeat"))
+    }
+
+    @Test func aSenderIsSpokenByNameNotByAddress() {
+        #expect(UnreadMail(sender: "Ana Lima <ana@x.com>", subject: "Hi").spokenSender == "Ana Lima")
+        #expect(UnreadMail(sender: "ana@x.com", subject: "Hi").spokenSender == "ana@x.com")
+        #expect(MacActionOutcome.unreadMail([UnreadMail(sender: "Ana Lima <ana@x.com>", subject: "Hi")]).spokenSentence == "1 unread: Ana Lima about Hi.")
+    }
+
+    @Test func mailFailuresNeverPutTheScriptsTextInTheLog() {
+        let failed = MacActionOutcome.mailDraftFailed(.failed("Can't make {content:\"secret body\"} into type"))
+        #expect(!failed.logDescription.contains("secret"))
+        #expect(failed.logDescription == "draft_email: mail script failed")
+        #expect(MacActionOutcome.mailUnavailable(.failed("x secret")).logDescription == "check_email: mail script failed")
+        #expect(MacActionOutcome.mailDraftFailed(.recipientNotFilled).spokenSentence == "The draft is open, but I couldn't fill in the recipient; add it yourself.")
     }
 
     @Test func gmailComposeEncodesEverythingGmailWouldOtherwiseMisread() {

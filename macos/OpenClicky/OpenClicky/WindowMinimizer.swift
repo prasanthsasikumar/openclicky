@@ -64,6 +64,11 @@ nonisolated enum WindowMinimizer {
             for accessibilityWindow in accessibilityWindows {
                 guard let frame = copyFrame(accessibilityWindow),
                       windowsOfApp.contains(where: { matches($0.bounds, frame) }) else { continue }
+                // A window already in the state asked for is not ours: a window the person
+                // minimized themselves, with the same frame as one on screen, stays theirs.
+                var minimizedValue: CFTypeRef?
+                if AXUIElementCopyAttributeValue(accessibilityWindow, kAXMinimizedAttribute as CFString, &minimizedValue) == .success,
+                   (minimizedValue as? Bool) == minimized { continue }
                 if AXUIElementSetAttributeValue(accessibilityWindow, kAXMinimizedAttribute as CFString, minimized as CFBoolean) == .success {
                     changed += 1
                 }

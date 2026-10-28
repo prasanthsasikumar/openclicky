@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { getEnv, type Env } from "./env.js";
+import { ipOf } from "./accountAuth.js";
 
 /**
  * `GET /music/search?q=…`: the song lookup behind the app's play_music action, for people with no
@@ -16,10 +17,17 @@ const QUERY_CACHE_MAX_ENTRIES = 500;
 /** The token is re-minted this long before Spotify says it expires. */
 const TOKEN_MARGIN_MS = 60_000;
 const RATE_LIMIT_PER_MINUTE = 30;
+/** Addresses remembered by the limiter at most; the oldest go first. */
+const RATE_LIMIT_MAX_ADDRESSES = 1_000;
 
 let token: { value: string; expiresAt: number } | undefined;
 const queryCache = new Map<string, { at: number; tracks: MusicTrack[] }>();
 const requestsByAddress = new Map<string, number[]>();
+
+/** How many addresses the limiter remembers (tests check it stays bounded). */
+export function musicRateLimiterEntries(): number {
+  return requestsByAddress.size;
+}
 
 export function resetMusicCaches() {
   token = undefined;
@@ -66,15 +74,21 @@ export async function searchTracks(env: Env, query: string, now = Date.now()): P
   return tracks;
 }
 
-/** True when this address has made its thirty requests this minute. */
+/** True when this address has made its thirty requests this minute. Windows that emptied are
+ *  dropped and the map is capped, so a stream of made-up addresses cannot grow memory. */
 function rateLimited(address: string, now: number): boolean {
+  for (const [other, times] of requestsByAddress) {
+    if (times.every((at) => now - at >= 60_000)) requestsByAddress.delete(other);
+  }
   const recent = (requestsByAddress.get(address) ?? []).filter((at) => now - at < 60_000);
   if (recent.length >= RATE_LIMIT_PER_MINUTE) {
     requestsByAddress.set(address, recent);
     return true;
   }
   recent.push(now);
+  requestsByAddress.delete(address);
   requestsByAddress.set(address, recent);
+  while (requestsByAddress.size > RATE_LIMIT_MAX_ADDRESSES) requestsByAddress.delete(requestsByAddress.keys().next().value!);
   return false;
 }
 
@@ -83,8 +97,9 @@ export async function musicSearchHandler(c: Context): Promise<Response> {
   const query = (c.req.query("q") ?? "").trim();
   if (!query || query.length > QUERY_MAX_CHARS) return c.json({ error: "q must be 1 to 200 characters" }, 400);
   if (!env.SPOTIFY_CLIENT_ID || !env.SPOTIFY_CLIENT_SECRET) return c.json({ error: "music search is not configured" }, 503);
-  const address = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
-  if (rateLimited(address, Date.now())) return c.json({ error: "too many searches; try again in a minute" }, 429);
+  // The proxy's forwarded address (Caddy overwrites it), the same as the sign-up limiter; never
+  // a header the client can set itself.
+  if (rateLimited(ipOf(c), Date.now())) return c.json({ error: "too many searches; try again in a minute" }, 429);
   try {
     return c.json({ tracks: await searchTracks(env, query) });
   } catch (error) {

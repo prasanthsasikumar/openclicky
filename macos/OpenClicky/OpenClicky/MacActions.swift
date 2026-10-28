@@ -81,6 +81,7 @@ enum MacActionOutcome: Equatable {
     case playingTrack(name: String, artist: String)
     case openedSpotifySearch(query: String)
     case spotifyStarting
+    case spotifyNotInstalled
     case playFailed
     case invalidName
     case invalidAppName
@@ -127,6 +128,11 @@ enum MacActionOutcome: Equatable {
             return "check_email: \(unread.count) unread in Mail"
         case .draftedEmail(let app, let recipient, let bodyLength):
             return "draft_email: \(app.rawValue), \(bodyLength)-character body, \(recipient.contains("@") ? "address" : "name") given"
+        // An AppleScript error message can quote the expression that failed, body and all.
+        case .mailDraftFailed:
+            return "draft_email: mail script failed"
+        case .mailUnavailable:
+            return "check_email: mail script failed"
         default:
             return spokenSentence
         }
@@ -174,7 +180,7 @@ enum MacActionOutcome: Equatable {
             return count == 0 ? "I hadn't minimized anything." : "Brought \(count) window\(count == 1 ? "" : "s") back."
         case .unreadMail(let unread):
             guard !unread.isEmpty else { return "No unread email in Mail." }
-            let named = unread.prefix(3).map { "\($0.sender) about \($0.subject)" }
+            let named = unread.prefix(3).map { "\($0.spokenSender) about \($0.subject)" }
             let more = unread.count - named.count
             let list = more > 0 ? named.joined(separator: ", ") + ", and \(more) more" : named.joined(separator: ", ")
             return "\(unread.count) unread: \(list)."
@@ -194,13 +200,17 @@ enum MacActionOutcome: Equatable {
             return "I couldn't look that up, so I opened Spotify's search for \(query); pick one."
         case .spotifyStarting:
             return "Spotify is starting; give it a moment and ask again."
+        case .spotifyNotInstalled:
+            return "Spotify isn't installed on this Mac."
         case .playFailed:
             return "Spotify didn't play it."
         case .mailDraftFailed(let error):
-            if case .failed(let reason) = error { return "Mail couldn't make the draft: \(reason)." }
-            return error == .notAllowed
-                ? "macOS didn't let me control Mail. Allow OpenClicky under System Settings, Privacy & Security, Automation."
-                : "Mail didn't answer in time."
+            switch error {
+            case .failed(let reason): return "Mail couldn't make the draft: \(reason)."
+            case .notAllowed: return "macOS didn't let me control Mail. Allow OpenClicky under System Settings, Privacy & Security, Automation."
+            case .timedOut: return "Mail didn't answer in time."
+            case .recipientNotFilled: return "The draft is open, but I couldn't fill in the recipient; add it yourself."
+            }
         case .invalidName:
             return "That name has characters a folder can't have."
         case .invalidAppName:
@@ -310,6 +320,7 @@ final class MacActionRunner {
         var activateMail: () -> Void
         /// The catalogue lookup for play_music; empty when nothing answered.
         var lookUpTrack: (String) async -> [MusicTrack]
+        var spotifyIsInstalled: () -> Bool
         var spotifyIsRunning: () -> Bool
         /// Opens Spotify and waits for it to answer; false when it did not in time.
         var launchSpotify: () async -> Bool
@@ -327,6 +338,7 @@ final class MacActionRunner {
             runMailDraft: @escaping (String) async -> MailScriptError? = { _ in nil },
             activateMail: @escaping () -> Void = {},
             lookUpTrack: @escaping (String) async -> [MusicTrack] = { _ in [] },
+            spotifyIsInstalled: @escaping () -> Bool = { false },
             spotifyIsRunning: @escaping () -> Bool = { false },
             launchSpotify: @escaping () async -> Bool = { false },
             playTrack: @escaping (String) async -> Bool = { _ in false },
@@ -340,6 +352,7 @@ final class MacActionRunner {
             self.runMailDraft = runMailDraft
             self.activateMail = activateMail
             self.lookUpTrack = lookUpTrack
+            self.spotifyIsInstalled = spotifyIsInstalled
             self.spotifyIsRunning = spotifyIsRunning
             self.launchSpotify = launchSpotify
             self.playTrack = playTrack
@@ -484,12 +497,15 @@ final class MacActionRunner {
             }
 
         case .playMusic(let query):
+            guard extras.spotifyIsInstalled() else { return .spotifyNotInstalled }
             if !extras.spotifyIsRunning() {
                 guard await extras.launchSpotify() else { return .spotifyStarting }
             }
             let tracks = await extras.lookUpTrack(query)
-            guard let track = MusicTrackPicker.pick(tracks, for: query) else {
-                // No lookup answered: Spotify's own search leaves the person one click away.
+            // No lookup answered, or it answered with something that is not a track (the backend
+            // is not trusted with what Spotify is told to play): Spotify's own search leaves the
+            // person one click away.
+            guard let track = MusicTrackPicker.pick(tracks, for: query), track.uri.hasPrefix("spotify:track:") else {
                 extras.openSpotifySearch(query)
                 return .openedSpotifySearch(query: query)
             }
@@ -500,6 +516,15 @@ final class MacActionRunner {
 
     /// The music lookup's route is logged when it changes (own credentials added, say), not per call.
     private static var lastLoggedMusicRoute: String?
+
+    /// Which player pause / play goes to: the one with the track (Music playing while Spotify sits
+    /// idle gets Music, not Spotify); pause with nothing playing goes nowhere; play with nothing up
+    /// goes to Spotify if it runs, else the first running player.
+    nonisolated static func playerForControl(_ command: MediaCommand, playing: MediaPlayer?, running: [MediaPlayer]) -> MediaPlayer? {
+        if let playing { return playing }
+        guard command == .play else { return nil }
+        return running.contains(.spotify) ? .spotify : running.first
+    }
 
     /// The runner the app uses: real LaunchServices, real Finder, real volume.
     static func live(workspaceDirectory: URL) -> MacActionRunner {
@@ -536,10 +561,16 @@ final class MacActionRunner {
             sendMediaKey: { action in Self.postMediaKey(action) },
             extras: Extras(
                 controlPlayer: { command in
-                    // Spotify first when both run, as the Media plugin prefers it.
                     let running = AppleScriptMediaSource.runningPlayers()
-                    guard let player = running.contains(.spotify) ? .spotify : running.first else { return false }
-                    await AppleScriptMediaSource().perform(command, on: player)
+                    guard !running.isEmpty else { return false }
+                    let source = AppleScriptMediaSource()
+                    // The player with the track: the one playing for pause, the one paused too for play.
+                    var playerWithTrack: MediaPlayer?
+                    if case .track(let snapshot) = await source.readNowPlaying(), command == .play || snapshot.isPlaying {
+                        playerWithTrack = snapshot.player
+                    }
+                    guard let player = Self.playerForControl(command, playing: playerWithTrack, running: running) else { return false }
+                    await source.perform(command, on: player)
                     return true
                 },
                 minimizeAllWindows: { minimizedWindows.minimizeEverything() },
@@ -551,8 +582,10 @@ final class MacActionRunner {
                     await MailAppleScriptRunner.run(MailScripts.unreadInboxSource()).map(MailScripts.parseUnread)
                 },
                 runMailDraft: { script in
-                    if case .failure(let error) = await MailAppleScriptRunner.run(script) { return error }
-                    return nil
+                    switch await MailAppleScriptRunner.run(script) {
+                    case .failure(let error): return error
+                    case .success(let reply): return reply == "no-recipient" ? .recipientNotFilled : nil
+                    }
                 },
                 activateMail: {
                     guard let mailURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") else { return }
@@ -561,6 +594,7 @@ final class MacActionRunner {
                     NSWorkspace.shared.openApplication(at: mailURL, configuration: configuration, completionHandler: nil)
                 },
                 lookUpTrack: { query in await musicLookup().search(query) },
+                spotifyIsInstalled: { SpotifyPlayer.isInstalled() },
                 spotifyIsRunning: { SpotifyPlayer.isRunning() },
                 launchSpotify: { await SpotifyPlayer.launchAndWait() },
                 playTrack: { uri in await SpotifyPlayer.play(uri: uri) },

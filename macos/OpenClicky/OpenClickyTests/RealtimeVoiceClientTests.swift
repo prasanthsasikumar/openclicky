@@ -265,12 +265,61 @@ struct RealtimeSessionHandshakeOrderTests {
         client.disconnect(reason: nil)
     }
 
-    @Test func theSettleWaitStopsOnceTheFrontAppChangedAndAlwaysByFourSeconds() {
-        #expect(RealtimeVoiceClient.settleDelay(frontChanged: false, elapsed: 0.5) == 0.25)
-        #expect(RealtimeVoiceClient.settleDelay(frontChanged: true, elapsed: 0.5) == 0.25)
-        #expect(RealtimeVoiceClient.settleDelay(frontChanged: true, elapsed: 1.0) == nil)
-        #expect(RealtimeVoiceClient.settleDelay(frontChanged: false, elapsed: 3.9) == 0.25)
-        #expect(RealtimeVoiceClient.settleDelay(frontChanged: false, elapsed: 4.0) == nil)
+    /// The spec's two phases: wait for another app to come to the front (1.5 s at most), then a
+    /// second for the page to paint; four seconds in all at most.
+    @Test func theSettleWaitIsAFrontChangePlusASecondAndFourSecondsAtMost() {
+        #expect(RealtimeVoiceClient.settleDelay(frontChangedAt: nil, elapsed: 0.5) == 0.25)
+        #expect(RealtimeVoiceClient.settleDelay(frontChangedAt: nil, elapsed: 2.4) == 0.25)
+        #expect(RealtimeVoiceClient.settleDelay(frontChangedAt: nil, elapsed: 2.5) == nil)
+        #expect(RealtimeVoiceClient.settleDelay(frontChangedAt: 0.5, elapsed: 1.4) == 0.25)
+        #expect(RealtimeVoiceClient.settleDelay(frontChangedAt: 0.5, elapsed: 1.5) == nil)
+        #expect(RealtimeVoiceClient.settleDelay(frontChangedAt: 3.8, elapsed: 4.0) == nil)
+    }
+
+    /// The common timing: the model's response finishes while the action still waits. Esc then
+    /// must stop the late continuation, or Clicky reads the inbox the person just cancelled.
+    @Test func escAfterTheResponseFinishedStopsTheLateContinuation() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        client.screenContextProvider = {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            return Self.screenFixture
+        }
+        let front = FrontApp()
+        client.frontAppProvider = { front.pid }
+        client.onMacAction = { _ in
+            front.pid = 2
+            return .openedURL("https://example.com")
+        }
+        await Self.deliver(#"{"type":"response.created","response":{"id":"r1"}}"#, on: socket)
+        await Self.deliver(#"{"type":"response.function_call_arguments.done","name":"open_url","call_id":"c1","response_id":"r1","arguments":"{\"url\":\"https://example.com\"}"}"#, on: socket)
+        await Self.deliver(#"{"type":"response.done","response":{"id":"r1","status":"completed"}}"#, on: socket)
+        client.stopSpeaking()
+        await Self.waitUntil { socket.sentTexts.contains { $0.contains("function_call_output") } }
+        let outputIndex = try #require(socket.sentTexts.firstIndex { $0.contains("function_call_output") })
+        #expect(!socket.sentTexts[outputIndex...].contains { $0.contains("response.create") })
+        client.disconnect(reason: nil)
+    }
+
+    @Test func speechAfterTheResponseFinishedStopsTheLateContinuation() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        client.screenContextProvider = {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            return Self.screenFixture
+        }
+        let front = FrontApp()
+        client.frontAppProvider = { front.pid }
+        client.onMacAction = { _ in
+            front.pid = 2
+            return .openedURL("https://example.com")
+        }
+        await Self.deliver(#"{"type":"response.created","response":{"id":"r1"}}"#, on: socket)
+        await Self.deliver(#"{"type":"response.function_call_arguments.done","name":"open_url","call_id":"c1","response_id":"r1","arguments":"{\"url\":\"https://example.com\"}"}"#, on: socket)
+        await Self.deliver(#"{"type":"response.done","response":{"id":"r1","status":"completed"}}"#, on: socket)
+        await Self.deliver(#"{"type":"input_audio_buffer.speech_started"}"#, on: socket)
+        await Self.waitUntil { socket.sentTexts.contains { $0.contains("function_call_output") } }
+        let outputIndex = try #require(socket.sentTexts.firstIndex { $0.contains("function_call_output") })
+        #expect(!socket.sentTexts[outputIndex...].contains { $0.contains("response.create") })
+        client.disconnect(reason: nil)
     }
 
     @Test func aTerminalLaunchIsNamedInsteadOfAnUnexplainedZero() {

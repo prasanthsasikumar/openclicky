@@ -29,7 +29,8 @@ nonisolated enum WebSearchSite: String, CaseIterable {
         case .maps: text = "https://www.google.com/maps/search/\(encodedQuery)"
         case .amazon: text = "https://www.amazon.com/s?k=\(encodedQuery)"
         }
-        // Every character outside the allowed set was encoded, so the string is always a URL.
+        // The ASCII specials are encoded above; letters outside ASCII are encoded by URL(string:)
+        // itself, so the string is always a URL.
         return URL(string: text)!
     }
 }

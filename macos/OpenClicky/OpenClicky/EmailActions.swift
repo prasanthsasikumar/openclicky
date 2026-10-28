@@ -37,12 +37,21 @@ nonisolated enum EmailApp: String {
 nonisolated struct UnreadMail: Equatable {
     let sender: String
     let subject: String
+
+    /// Mail's sender is "Name <address>"; the name is what gets said, never the address.
+    var spokenSender: String {
+        guard let bracket = sender.firstIndex(of: "<") else { return sender }
+        let name = sender[..<bracket].trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? sender : name
+    }
 }
 
 nonisolated enum MailScriptError: Error, Equatable {
     /// Apple's -1743: the person said no to "OpenClicky wants to control Mail", or was never asked.
     case notAllowed
     case timedOut
+    /// The message was made and is open, but Mail refused the recipient.
+    case recipientNotFilled
     case failed(String)
 }
 
@@ -51,47 +60,62 @@ nonisolated enum MailScripts {
     private static let fieldSeparator = "(ASCII character 30)"
     private static let recordSeparator = "(ASCII character 29)"
 
-    /// Sender and subject of the newest `limit` unread inbox messages, fields joined by ASCII 30
-    /// and records by ASCII 29. Bodies are never fetched. Capped at five seconds: Mail answers a
-    /// huge inbox slowly, and the receive loop must not wait.
+    /// Senders and subjects of the first `limit` unread inbox messages: the senders joined by
+    /// ASCII 30, then ASCII 29, then the subjects joined by ASCII 30 (the tab locator's pattern).
+    /// Three Apple events in all, each under the five-second cap, instead of two per message — the
+    /// timeout applies per event, so a loop was never really capped. Bodies are never fetched.
     static func unreadInboxSource(limit: Int = 10) -> String {
         """
         with timeout of 5 seconds
         tell application "Mail"
             set unreadMessages to (messages of inbox whose read status is false)
             set messageCount to count of unreadMessages
+            if messageCount is 0 then return ""
             if messageCount > \(limit) then set messageCount to \(limit)
-            set outputText to ""
-            repeat with messageIndex from 1 to messageCount
-                set theMessage to item messageIndex of unreadMessages
-                if messageIndex > 1 then set outputText to outputText & \(recordSeparator)
-                set outputText to outputText & (sender of theMessage) & \(fieldSeparator) & (subject of theMessage)
-            end repeat
-            return outputText
+            set recentMessages to items 1 thru messageCount of unreadMessages
+            set senderList to sender of recentMessages
+            set subjectList to subject of recentMessages
         end tell
         end timeout
+        set savedDelimiters to AppleScript's text item delimiters
+        set AppleScript's text item delimiters to \(fieldSeparator)
+        set outputText to (senderList as text) & \(recordSeparator) & (subjectList as text)
+        set AppleScript's text item delimiters to savedDelimiters
+        return outputText
         """
     }
 
     static func parseUnread(_ reply: String) -> [UnreadMail] {
-        reply.components(separatedBy: String(UnicodeScalar(29))).compactMap { record in
-            let fields = record.components(separatedBy: String(UnicodeScalar(30)))
-            guard fields.count == 2 else { return nil }
-            return UnreadMail(sender: fields[0], subject: fields[1])
+        guard !reply.isEmpty else { return [] }
+        let halves = reply.components(separatedBy: String(UnicodeScalar(29)))
+        guard halves.count == 2 else { return [] }
+        let senders = halves[0].components(separatedBy: String(UnicodeScalar(30)))
+        let subjects = halves[1].components(separatedBy: String(UnicodeScalar(30)))
+        return senders.enumerated().map { index, sender in
+            UnreadMail(sender: sender, subject: index < subjects.count ? subjects[index] : "")
         }
     }
 
     /// A new message, open and in front, with the recipient, subject and body filled in. An
     /// address goes in as an address; a name goes in as a name, and Mail offers its own contact
     /// matches when the person clicks the field (OpenClicky never reads Contacts).
+    /// Capped at five seconds (Mail launching, a first-use Automation prompt). A recipient Mail
+    /// refuses does not throw the open message away: the script answers "no-recipient" instead.
     static func draftSource(to recipient: String, subject: String, body: String) -> String {
         let recipientProperties = recipient.contains("@") ? "{address:\"\(escaped(recipient))\"}" : "{name:\"\(escaped(recipient))\"}"
         return """
+        with timeout of 5 seconds
         tell application "Mail"
             set newMessage to make new outgoing message with properties {subject:"\(escaped(subject))", content:"\(escaped(body))", visible:true}
-            tell newMessage to make new to recipient at end of to recipients with properties \(recipientProperties)
             activate
+            try
+                tell newMessage to make new to recipient at end of to recipients with properties \(recipientProperties)
+            on error
+                return "no-recipient"
+            end try
+            return "ok"
         end tell
+        end timeout
         """
     }
 
@@ -104,8 +128,9 @@ nonisolated enum MailScripts {
 nonisolated enum GmailURLs {
     static let inbox = URL(string: "https://mail.google.com/mail/u/0/#inbox")!
 
-    /// Gmail's compose window, pre-filled. Everything is percent-encoded by hand: a bare `+` is
-    /// a space to Gmail, `&` and `#` would cut the query, a newline must travel as %0A.
+    /// Gmail's compose window, pre-filled. The ASCII specials are percent-encoded by hand: a bare
+    /// `+` is a space to Gmail, `&` and `#` would cut the query, a newline must travel as %0A
+    /// (letters outside ASCII stay, and `URL(string:)` encodes those itself).
     static func compose(to recipient: String, subject: String, body: String) -> URL {
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
@@ -114,9 +139,9 @@ nonisolated enum GmailURLs {
     }
 }
 
-/// Runs a Mail script on a utility queue, one at a time, and names the way it failed.
+/// Runs a Mail script on the app's one AppleScript queue and names the way it failed.
 nonisolated enum MailAppleScriptRunner {
-    private static let queue = DispatchQueue(label: "openclicky.mail.applescript", qos: .utility)
+    private static var queue: DispatchQueue { AppleScriptQueue.shared }
     private static let notPermittedError = -1743
     private static let timedOutError = -1712
 
@@ -131,7 +156,9 @@ nonisolated enum MailAppleScriptRunner {
                 }
                 let errorNumber = (errorInfo?[NSAppleScript.errorNumber] as? NSNumber)?.intValue
                 let message = errorInfo?[NSAppleScript.errorMessage] as? String ?? "unknown"
-                AppLog.append("mail script failed (\(errorNumber ?? 0)): \(message)")
+                // Only the number: an AppleScript message can quote the expression that failed,
+                // which here would be the body or the recipient.
+                AppLog.append("mail script failed (\(errorNumber ?? 0))")
                 switch errorNumber {
                 case notPermittedError: continuation.resume(returning: .failure(.notAllowed))
                 case timedOutError: continuation.resume(returning: .failure(.timedOut))

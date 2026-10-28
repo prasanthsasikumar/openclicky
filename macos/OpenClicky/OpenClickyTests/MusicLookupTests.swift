@@ -40,6 +40,15 @@ struct MusicLookupTests {
         #expect(try MusicLookup.decodeSpotifyResults(spotify) == expected)
     }
 
+    @Test func theTokenCacheIsPerClientIdSoNewCredentialsAreReallyTested() {
+        let cache = MusicLookup.TokenCache()
+        cache.store("tok-a", clientId: "a", expiresIn: 3600)
+        #expect(cache.current(clientId: "a") == "tok-a")
+        #expect(cache.current(clientId: "b") == nil)
+        cache.store("tok-short", clientId: "c", expiresIn: 30)
+        #expect(cache.current(clientId: "c") == nil)
+    }
+
     @Test func theSpotifySearchURIIsEncoded() {
         #expect(SpotifyPlayer.searchURL(for: "c++ & more").absoluteString == "spotify:search:c%2B%2B%20%26%20more")
     }

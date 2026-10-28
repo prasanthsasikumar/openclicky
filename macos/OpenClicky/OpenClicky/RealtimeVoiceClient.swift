@@ -103,6 +103,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// Mail script, Spotify starting, a page settling before the screen is attached) must never
     /// hold up audio, barge-in or response.done.
     private var actionChain: Task<Void, Never>?
+    /// Counts the turns: bumped whenever the conversation moves on (a cancel, a barge-in, a new
+    /// turn's response). An action whose turn has moved on by the time it finishes still sends its
+    /// output (it belongs in the conversation) but asks for no continuation: Esc while Gmail loads
+    /// must not be followed by Clicky reading the inbox.
+    private var turnGeneration = 0
     /// The app in front, for "act, then look": the screen has settled once a different app is
     /// in front (a browser opened) or the wait runs out. The companion sets it.
     var frontAppProvider: (() -> pid_t?)?
@@ -1011,6 +1016,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case "input_audio_buffer.speech_started":
             log("listening…")
             flushPlayback()
+            turnGeneration += 1
             if responseInProgress { cancelActiveResponse() }
             if currentMode == .alwaysOn { refreshInstructionsIfNeeded() }
         case "conversation.item.input_audio_transcription.completed":
@@ -1091,6 +1097,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             // response.done or after a cancel.
             let previousAction = actionChain
             let frontAppBefore = frontAppProvider?()
+            let generation = turnGeneration
             actionChain = Task { @MainActor [weak self] in
                 await previousAction?.value
                 guard !Task.isCancelled, let self else { return }
@@ -1104,7 +1111,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 guard !Task.isCancelled else { return }
                 self.log("mac action: \(name) \(outcome.logDescription) in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
                 try? self.send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(outcome.toolOutput.prefix(4000))]])
-                self.requestContinuation(after: event)
+                if self.turnGeneration == generation {
+                    self.requestContinuation(after: event)
+                } else {
+                    self.log("tool output after the turn moved on (esc, speech or a new turn): no continuation")
+                }
             }
             return
         case .badArguments(let outcome):
@@ -1271,19 +1282,22 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         }
     }
 
-    /// How much longer to wait for the screen to settle after an action, or nil to stop: a second
-    /// after another app came to the front (a page needs a moment to paint), four seconds at most.
-    nonisolated static func settleDelay(frontChanged: Bool, elapsed: TimeInterval) -> TimeInterval? {
-        if frontChanged && elapsed >= 1.0 { return nil }
-        if elapsed >= 4.0 { return nil }
-        return 0.25
+    /// How much longer to wait for the screen to settle after an action, or nil to stop. Two
+    /// phases: another app coming to the front (`frontChangedAt`, waited for up to 1.5 s — a
+    /// browser already in front never changes), then a second for the page to paint; four seconds
+    /// in all at most.
+    nonisolated static func settleDelay(frontChangedAt: TimeInterval?, elapsed: TimeInterval) -> TimeInterval? {
+        let paintStartsAt = frontChangedAt ?? 1.5
+        return elapsed >= min(paintStartsAt + 1.0, 4.0) ? nil : 0.25
     }
 
     private func waitForScreenToSettle(frontAppBefore: pid_t?) async {
         let startedAt = Date()
+        var frontChangedAt: TimeInterval?
         while !Task.isCancelled {
-            let frontChanged = frontAppProvider?() != frontAppBefore
-            guard let delay = Self.settleDelay(frontChanged: frontChanged, elapsed: Date().timeIntervalSince(startedAt)) else { return }
+            let elapsed = Date().timeIntervalSince(startedAt)
+            if frontChangedAt == nil, frontAppProvider?() != frontAppBefore { frontChangedAt = elapsed }
+            guard let delay = Self.settleDelay(frontChangedAt: frontChangedAt, elapsed: elapsed) else { return }
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         }
     }
@@ -1320,6 +1334,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     }
 
     private func cancelActiveResponse() {
+        turnGeneration += 1
         needsContinuationAfterResponse = false
         if let activeResponseId { cancelledResponseIds.insert(activeResponseId) }
         activeResponseId = nil
@@ -1330,6 +1345,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// Request the reply for a committed user turn. Any continuation queued for tool outputs of
     /// the previous response is dropped: this create supersedes it (one create per turn).
     private func requestTurnResponse() {
+        turnGeneration += 1
         needsContinuationAfterResponse = false
         try? send(["type": "response.create"])
     }

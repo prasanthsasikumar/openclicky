@@ -129,6 +129,7 @@ struct MacActionRunnerTests {
         var playedURIs: [String] = []
         var playSucceeds = true
         var spotifySearches: [String] = []
+        var spotifyInstalled = true
     }
 
     private func makeRunner(root: URL, recorder: Recorder) -> MacActionRunner {
@@ -156,6 +157,7 @@ struct MacActionRunnerTests {
                 },
                 activateMail: { recorder.mailActivations += 1 },
                 lookUpTrack: { _ in recorder.tracks },
+                spotifyIsInstalled: { recorder.spotifyInstalled },
                 spotifyIsRunning: { recorder.spotifyRunning },
                 launchSpotify: { recorder.spotifyLaunches },
                 playTrack: { uri in
@@ -361,6 +363,36 @@ struct MacActionRunnerTests {
         #expect(await runner.perform(.playMusic(query: "blinding lights")) == .openedSpotifySearch(query: "blinding lights"))
         #expect(recorder.spotifySearches == ["blinding lights"])
         #expect(recorder.playedURIs.isEmpty)
+    }
+
+    @Test func spotifyNotInstalledIsSaidInsteadOfStartingForever() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.spotifyInstalled = false
+        recorder.spotifyRunning = false
+        #expect(await runner.perform(.playMusic(query: "x")) == .spotifyNotInstalled)
+        #expect(MacActionOutcome.spotifyNotInstalled.spokenSentence == "Spotify isn't installed on this Mac.")
+    }
+
+    @Test func onlyATrackURIIsEverPlayed() async throws {
+        // The lookup's answer is not trusted: anything but a spotify:track: URI goes to Spotify's search.
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.tracks = [MusicTrack(uri: "https://evil.example/x", name: "x", artists: [])]
+        #expect(await runner.perform(.playMusic(query: "x")) == .openedSpotifySearch(query: "x"))
+        #expect(recorder.playedURIs.isEmpty)
+    }
+
+    @Test func pauseGoesToThePlayerThatIsPlayingNotJustTheFirstRunning() {
+        #expect(MacActionRunner.playerForControl(.pause, playing: .music, running: [.spotify, .music]) == .music)
+        #expect(MacActionRunner.playerForControl(.pause, playing: nil, running: [.spotify, .music]) == nil)
+        #expect(MacActionRunner.playerForControl(.play, playing: nil, running: [.music, .spotify]) == .spotify)
+        #expect(MacActionRunner.playerForControl(.play, playing: .music, running: [.spotify, .music]) == .music)
+        #expect(MacActionRunner.playerForControl(.play, playing: nil, running: []) == nil)
     }
 
     @Test func spotifyNotAnsweringAfterLaunchIsSaidNotHidden() async throws {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import http from "node:http";
 import { createApp } from "../src/app.js";
 import type { Env } from "../src/env.js";
-import { resetMusicCaches } from "../src/music.js";
+import { resetMusicCaches, musicRateLimiterEntries } from "../src/music.js";
 
 // A fake Spotify: the accounts host mints tokens, the API host answers searches.
 let spotify: http.Server;
@@ -77,6 +77,19 @@ describe("GET /music/search", () => {
     expect((await app.request("/music/search", {}, env())).status).toBe(400);
     expect((await search("")).status).toBe(400);
     expect((await search("x".repeat(201))).status).toBe(400);
+  });
+
+  it("takes the address from the proxy's forwarded header, never from a header the client picks", async () => {
+    // Caddy overwrites x-forwarded-for; cf-connecting-ip would be whatever the client sent.
+    for (let i = 0; i < 30; i++) {
+      expect((await search(`q${i}`, { "x-forwarded-for": "10.0.0.9", "cf-connecting-ip": `1.2.3.${i}` })).status).toBe(200);
+    }
+    expect((await search("q31", { "x-forwarded-for": "10.0.0.9", "cf-connecting-ip": "9.9.9.9" })).status).toBe(429);
+  });
+
+  it("keeps the limiter's memory bounded however many addresses appear", async () => {
+    for (let i = 0; i < 1_100; i++) await search("same", { "x-forwarded-for": `10.1.${Math.floor(i / 256)}.${i % 256}` });
+    expect(musicRateLimiterEntries()).toBeLessThanOrEqual(1_000);
   });
 
   it("rate-limits a single address at thirty a minute", async () => {

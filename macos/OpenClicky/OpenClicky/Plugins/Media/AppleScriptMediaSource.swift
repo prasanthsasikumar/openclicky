@@ -12,7 +12,8 @@ import Foundation
 
 struct AppleScriptMediaSource: MediaSourcing {
     /// Scripts run here, off the main thread: a player can take a moment to answer.
-    private static let queue = DispatchQueue(label: "openclicky.media.applescript", qos: .utility)
+    /// The app's one AppleScript queue, shared with Mail and Spotify's play: scripts never run concurrently.
+    private static var queue: DispatchQueue { AppleScriptQueue.shared }
     /// Players whose script failed once (no permission, no dictionary): logged once, not every poll.
     nonisolated(unsafe) private static var loggedFailures: Set<MediaPlayer> = []
 

@@ -68,16 +68,18 @@ nonisolated struct MusicLookup {
     var session: URLSession = .shared
     private static let requestTimeout: TimeInterval = 4
 
-    /// The client-credentials token, kept until a minute before Spotify says it expires. One per
-    /// app: the lookup is built once in `MacActionRunner.live`.
-    private final class TokenCache: @unchecked Sendable {
+    /// The client-credentials tokens, one per client id, each kept until a minute before Spotify
+    /// says it expires. Per client id so that new credentials are really tested, not answered
+    /// from the old pair's token. Shared by every lookup (`MacActionRunner.live` builds one per
+    /// call, the Settings Test button its own).
+    final class TokenCache: @unchecked Sendable {
         private let lock = NSLock()
-        private var token: (value: String, expiresAt: Date)?
-        func current() -> String? {
-            lock.withLock { token.flatMap { Date() < $0.expiresAt.addingTimeInterval(-60) ? $0.value : nil } }
+        private var tokens: [String: (value: String, expiresAt: Date)] = [:]
+        func current(clientId: String) -> String? {
+            lock.withLock { tokens[clientId].flatMap { Date() < $0.expiresAt.addingTimeInterval(-60) ? $0.value : nil } }
         }
-        func store(_ value: String, expiresIn: TimeInterval) {
-            lock.withLock { token = (value, Date().addingTimeInterval(expiresIn)) }
+        func store(_ value: String, clientId: String, expiresIn: TimeInterval) {
+            lock.withLock { tokens[clientId] = (value, Date().addingTimeInterval(expiresIn)) }
         }
     }
     private static let tokenCache = TokenCache()
@@ -109,7 +111,7 @@ nonisolated struct MusicLookup {
     }
 
     private func spotifyToken(clientId: String, clientSecret: String) async throws -> String {
-        if let token = Self.tokenCache.current() { return token }
+        if let token = Self.tokenCache.current(clientId: clientId) { return token }
         var request = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!, timeoutInterval: Self.requestTimeout)
         request.httpMethod = "POST"
         request.setValue("Basic \(Data("\(clientId):\(clientSecret)".utf8).base64EncodedString())", forHTTPHeaderField: "Authorization")
@@ -117,7 +119,7 @@ nonisolated struct MusicLookup {
         request.httpBody = Data("grant_type=client_credentials".utf8)
         struct TokenReply: Decodable { let access_token: String; let expires_in: Double }
         let reply = try JSONDecoder().decode(TokenReply.self, from: try await data(for: request))
-        Self.tokenCache.store(reply.access_token, expiresIn: reply.expires_in)
+        Self.tokenCache.store(reply.access_token, clientId: clientId, expiresIn: reply.expires_in)
         return reply.access_token
     }
 
@@ -150,7 +152,11 @@ nonisolated struct MusicLookup {
 /// queue, one script at a time, a three-second timeout).
 nonisolated enum SpotifyPlayer {
     static let bundleIdentifier = "com.spotify.client"
-    private static let queue = DispatchQueue(label: "openclicky.spotify.applescript", qos: .utility)
+    private static var queue: DispatchQueue { AppleScriptQueue.shared }
+
+    static func isInstalled() -> Bool {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil
+    }
 
     static func isRunning() -> Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty
