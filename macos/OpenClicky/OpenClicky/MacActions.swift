@@ -70,6 +70,8 @@ enum MacActionOutcome: Equatable {
     case playerControlled(String)
     case searched(query: String, site: WebSearchSite)
     case invalidQuery
+    case minimizedWindows(Int)
+    case restoredWindows(Int)
     case invalidName
     case invalidAppName
     case unknownLocation(String)
@@ -80,7 +82,7 @@ enum MacActionOutcome: Equatable {
     /// True when the action did what was asked (the tour counts it as a task handed over).
     var didSomething: Bool {
         switch self {
-        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched: return true
+        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows: return true
         default: return false
         }
     }
@@ -136,6 +138,10 @@ enum MacActionOutcome: Equatable {
             return "Searching for \(query)."
         case .invalidQuery:
             return "I didn't catch what to search for."
+        case .minimizedWindows(let count):
+            return count == 0 ? "Nothing to minimize." : "Minimized \(count) window\(count == 1 ? "" : "s")."
+        case .restoredWindows(let count):
+            return count == 0 ? "I hadn't minimized anything." : "Brought \(count) window\(count == 1 ? "" : "s") back."
         case .invalidName:
             return "That name has characters a folder can't have."
         case .invalidAppName:
@@ -197,6 +203,8 @@ enum MacAction: Equatable {
     case setVolume(level: Int)
     case mediaControl(action: String)
     case webSearch(query: String, site: WebSearchSite)
+    case minimizeAll
+    case restoreWindows
 }
 
 /// Performs the fast-lane actions. The AppKit calls are injected so the whole runner can be tested
@@ -209,9 +217,19 @@ final class MacActionRunner {
     struct Extras {
         /// Sends pause / play to a running music player; false when no player is running.
         var controlPlayer: (MediaCommand) async -> Bool
+        /// Minimizes every ordinary window on screen; returns how many.
+        var minimizeAllWindows: () -> Int
+        /// Brings back what the last minimizeAllWindows minimized; returns how many.
+        var restoreMinimizedWindows: () -> Int
 
-        init(controlPlayer: @escaping (MediaCommand) async -> Bool = { _ in false }) {
+        init(
+            controlPlayer: @escaping (MediaCommand) async -> Bool = { _ in false },
+            minimizeAllWindows: @escaping () -> Int = { 0 },
+            restoreMinimizedWindows: @escaping () -> Int = { 0 }
+        ) {
             self.controlPlayer = controlPlayer
+            self.minimizeAllWindows = minimizeAllWindows
+            self.restoreMinimizedWindows = restoreMinimizedWindows
         }
 
         static let inert = Extras()
@@ -312,12 +330,19 @@ final class MacActionRunner {
         case .webSearch(let query, let site):
             openURL(WebSearchSite.url(for: site, query: query))
             return .searched(query: query, site: site)
+
+        case .minimizeAll:
+            return .minimizedWindows(extras.minimizeAllWindows())
+
+        case .restoreWindows:
+            return .restoredWindows(extras.restoreMinimizedWindows())
         }
     }
 
     /// The runner the app uses: real LaunchServices, real Finder, real volume.
     static func live(workspaceDirectory: URL) -> MacActionRunner {
-        MacActionRunner(
+        let minimizedWindows = MinimizedWindowsMemory()
+        return MacActionRunner(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
             workspaceDirectory: workspaceDirectory,
             findApplication: { name in
@@ -346,7 +371,9 @@ final class MacActionRunner {
                     guard let player = running.contains(.spotify) ? .spotify : running.first else { return false }
                     await AppleScriptMediaSource().perform(command, on: player)
                     return true
-                }
+                },
+                minimizeAllWindows: { minimizedWindows.minimizeEverything() },
+                restoreMinimizedWindows: { minimizedWindows.restoreLastSet() }
             )
         )
     }
@@ -480,6 +507,18 @@ extension MacAction {
                     "required": ["query"],
                 ],
             ],
+            [
+                "type": "function",
+                "name": "minimize_all",
+                "description": "Minimize every open window so the desktop is clear. For 'minimize everything', 'clear my screen', 'hide all windows'.",
+                "parameters": ["type": "object", "properties": [String: Any](), "required": [String]()],
+            ],
+            [
+                "type": "function",
+                "name": "restore_windows",
+                "description": "Bring back the windows minimize_all minimized. For 'bring them back', 'restore my windows'.",
+                "parameters": ["type": "object", "properties": [String: Any](), "required": [String]()],
+            ],
         ]
     }
 
@@ -542,6 +581,12 @@ extension MacAction {
             let site: WebSearchSite? = rawSite.isEmpty ? .web : WebSearchSite(rawValue: rawSite)
             guard let site else { return .badArguments(.invalidQuery) }
             return .action(.webSearch(query: query, site: site))
+
+        case "minimize_all":
+            return .action(.minimizeAll)
+
+        case "restore_windows":
+            return .action(.restoreWindows)
 
         default:
             return .notAFastAction

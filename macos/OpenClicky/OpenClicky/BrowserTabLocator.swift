@@ -18,12 +18,6 @@ nonisolated struct BrowserTab: Equatable {
     let url: URL?
 }
 
-/// One on-screen window as CGWindowList reports it: owner process and bounds in CG global coordinates.
-nonisolated struct OnScreenWindow: Equatable {
-    let ownerPID: pid_t
-    let bounds: CGRect
-}
-
 nonisolated enum BrowserTabLocator {
     /// Browsers whose AppleScript dictionary lists `tabs of front window` with a URL and a title.
     private static let scriptableBrowsers: [String: (tabsExpression: String, titleProperty: String)] = [
@@ -93,16 +87,7 @@ nonisolated enum BrowserTabLocator {
 
     /// Normal-level windows currently on screen, front to back (CG global coordinates).
     private static func onScreenWindows() -> [OnScreenWindow] {
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
-        return list.compactMap { info in
-            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
-                  let pid = info[kCGWindowOwnerPID as String] as? pid_t,
-                  let boundsDictionary = info[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: boundsDictionary),
-                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { return nil }
-            return OnScreenWindow(ownerPID: pid, bounds: bounds)
-        }
+        OnScreenWindows.current().filter { $0.layer == 0 }
     }
 
     // MARK: - Pure parts (unit-tested)

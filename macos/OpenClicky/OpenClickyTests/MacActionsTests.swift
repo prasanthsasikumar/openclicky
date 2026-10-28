@@ -116,6 +116,8 @@ struct MacActionRunnerTests {
         var installedApplications: [String: URL] = ["spotify": URL(fileURLWithPath: "/Applications/Spotify.app")]
         var playerCommands: [MediaCommand] = []
         var playerTakesCommands = false
+        var windowsToMinimize = 0
+        var windowsToRestore = 0
     }
 
     private func makeRunner(root: URL, recorder: Recorder) -> MacActionRunner {
@@ -132,7 +134,9 @@ struct MacActionRunnerTests {
                 controlPlayer: { command in
                     recorder.playerCommands.append(command)
                     return recorder.playerTakesCommands
-                }
+                },
+                minimizeAllWindows: { recorder.windowsToMinimize },
+                restoreMinimizedWindows: { recorder.windowsToRestore }
             )
         )
     }
@@ -241,6 +245,24 @@ struct MacActionRunnerTests {
         #expect(recorder.mediaKeys == ["play"])
     }
 
+    @Test func minimizeAllReportsTheCountAndRestoreBringsThemBack() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.windowsToMinimize = 3
+        #expect(await runner.perform(.minimizeAll) == .minimizedWindows(3))
+        #expect(MacActionOutcome.minimizedWindows(3).spokenSentence == "Minimized 3 windows.")
+        recorder.windowsToMinimize = 0
+        #expect(await runner.perform(.minimizeAll) == .minimizedWindows(0))
+        #expect(MacActionOutcome.minimizedWindows(0).spokenSentence == "Nothing to minimize.")
+        recorder.windowsToRestore = 3
+        #expect(await runner.perform(.restoreWindows) == .restoredWindows(3))
+        #expect(MacActionOutcome.restoredWindows(3).spokenSentence == "Brought 3 windows back.")
+        #expect(MacActionOutcome.restoredWindows(0).spokenSentence == "I hadn't minimized anything.")
+        #expect(!MacActionOutcome.minimizedWindows(3).thenLooksAtScreen)
+    }
+
     @Test func aWebSearchOpensTheSearchPageAndLooksAfterwards() async throws {
         let root = try makeTemporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -308,6 +330,11 @@ struct MacActionParsingTests {
         #expect(MacAction.parse(toolName: "media_control", arguments: ["action": "next"]) == .action(.mediaControl(action: "next")))
     }
 
+    @Test func minimizeAllAndRestoreParseWithNoArguments() {
+        #expect(MacAction.parse(toolName: "minimize_all", arguments: [:]) == .action(.minimizeAll))
+        #expect(MacAction.parse(toolName: "restore_windows", arguments: [:]) == .action(.restoreWindows))
+    }
+
     @Test func webSearchParsesTheSiteAndDefaultsToTheWeb() {
         #expect(MacAction.parse(toolName: "web_search", arguments: ["query": "cats"]) == .action(.webSearch(query: "cats", site: .web)))
         #expect(MacAction.parse(toolName: "web_search", arguments: ["query": "cats", "site": "YouTube"]) == .action(.webSearch(query: "cats", site: .youtube)))
@@ -356,7 +383,7 @@ struct FastActionToolDefinitionTests {
 
     @Test func everyFastActionIsOfferedToTheModel() {
         let names = MacAction.realtimeToolDefinitions().compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "restore_windows"])
     }
 
     @Test func createFolderDeclaresTheClosedLocationSet() throws {
@@ -422,6 +449,8 @@ struct FastActionToolDefinitionTests {
             case .webSearch(let query, let site):
                 #expect(query == arguments["query"] as? String)
                 #expect(site.rawValue == arguments["site"] as? String)
+            case .minimizeAll, .restoreWindows:
+                #expect(arguments.isEmpty)
             }
         }
     }
