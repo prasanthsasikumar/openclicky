@@ -72,6 +72,12 @@ enum MacActionOutcome: Equatable {
     case invalidQuery
     case minimizedWindows(Int)
     case restoredWindows(Int)
+    case unreadMail([UnreadMail])
+    case openedGmailInbox
+    case mailUnavailable(MailScriptError)
+    case draftedEmail(app: EmailApp, to: String, bodyLength: Int)
+    case invalidRecipient
+    case mailDraftFailed(MailScriptError)
     case invalidName
     case invalidAppName
     case unknownLocation(String)
@@ -82,7 +88,7 @@ enum MacActionOutcome: Equatable {
     /// True when the action did what was asked (the tour counts it as a task handed over).
     var didSomething: Bool {
         switch self {
-        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows: return true
+        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail: return true
         default: return false
         }
     }
@@ -94,6 +100,16 @@ enum MacActionOutcome: Equatable {
         switch self {
         case .searched(let query, _):
             return "The results for \(query) are on screen in the latest screenshot. Say what the first few are in one sentence."
+        case .unreadMail(let unread):
+            guard !unread.isEmpty else { return spokenSentence }
+            let lines = unread.map { "\($0.sender) — \($0.subject)" }.joined(separator: "\n")
+            return "Unread in Mail, newest first:\n\(lines)\nRead out sender and subject briefly, newest first, at most five. Never invent what the emails say."
+        case .openedGmailInbox:
+            return "Gmail's inbox is open and attached as the latest screenshot. Unread rows are in bold. Read out sender and subject of the unread ones briefly, newest first, at most five, then stop."
+        case .mailUnavailable:
+            return spokenSentence + " Mail is on screen in the latest screenshot; read the unread rows if you can see them."
+        case .draftedEmail:
+            return spokenSentence + " If they ask you to send it, say you never send email and that it is open in front of them."
         default:
             return spokenSentence
         }
@@ -101,13 +117,23 @@ enum MacActionOutcome: Equatable {
 
     /// What goes in app.log. The same as the sentence unless it would carry something private
     /// (an email body or recipient).
-    var logDescription: String { spokenSentence }
+    var logDescription: String {
+        switch self {
+        case .unreadMail(let unread):
+            return "check_email: \(unread.count) unread in Mail"
+        case .draftedEmail(let app, let recipient, let bodyLength):
+            return "draft_email: \(app.rawValue), \(bodyLength)-character body, \(recipient.contains("@") ? "address" : "name") given"
+        default:
+            return spokenSentence
+        }
+    }
 
     /// Whether the model should see a fresh screenshot before it speaks: true for an action that
     /// changed what is on screen in a way worth describing (a page opened), false for the rest.
     var thenLooksAtScreen: Bool {
         switch self {
-        case .openedURL, .searched: return true
+        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable: return true
+        case .draftedEmail(let app, _, _): return app == .gmail
         default: return false
         }
     }
@@ -142,6 +168,27 @@ enum MacActionOutcome: Equatable {
             return count == 0 ? "Nothing to minimize." : "Minimized \(count) window\(count == 1 ? "" : "s")."
         case .restoredWindows(let count):
             return count == 0 ? "I hadn't minimized anything." : "Brought \(count) window\(count == 1 ? "" : "s") back."
+        case .unreadMail(let unread):
+            guard !unread.isEmpty else { return "No unread email in Mail." }
+            let named = unread.prefix(3).map { "\($0.sender) about \($0.subject)" }
+            let more = unread.count - named.count
+            let list = more > 0 ? named.joined(separator: ", ") + ", and \(more) more" : named.joined(separator: ", ")
+            return "\(unread.count) unread: \(list)."
+        case .openedGmailInbox:
+            return "Here's your inbox."
+        case .mailUnavailable(let error):
+            return error == .notAllowed
+                ? "macOS didn't let me control Mail. Allow OpenClicky under System Settings, Privacy & Security, Automation. I opened Mail instead."
+                : "I couldn't read Mail in time, so I opened it instead."
+        case .draftedEmail(_, let recipient, _):
+            return "Drafted an email to \(recipient); it's open for you to check. I don't send email — you do."
+        case .invalidRecipient:
+            return "I didn't catch who it's for."
+        case .mailDraftFailed(let error):
+            if case .failed(let reason) = error { return "Mail couldn't make the draft: \(reason)." }
+            return error == .notAllowed
+                ? "macOS didn't let me control Mail. Allow OpenClicky under System Settings, Privacy & Security, Automation."
+                : "Mail didn't answer in time."
         case .invalidName:
             return "That name has characters a folder can't have."
         case .invalidAppName:
@@ -183,6 +230,23 @@ enum MacActionValidation {
         return trimmed
     }
 
+    /// Who an email is for: an address or a name as said, at most 80 characters, never an angle
+    /// bracket (so it can only ever land in a To field). Nil when there is nothing usable.
+    static func recipient(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 80, !trimmed.contains("<"), !trimmed.contains(">") else { return nil }
+        return trimmed
+    }
+
+    static func emailSubject(_ raw: String) -> String {
+        String(raw.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
+    }
+
+    /// Gmail's compose URL carries about this much; Mail takes the same cap so both behave alike.
+    static func emailBody(_ raw: String) -> String {
+        String(raw.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2_000))
+    }
+
     /// An http(s) URL, or nil. Other schemes are refused: `file:` reads the disk and a custom scheme
     /// launches whichever app registered it, neither of which is "open this page for me".
     static func webURL(_ raw: String) -> URL? {
@@ -205,6 +269,8 @@ enum MacAction: Equatable {
     case webSearch(query: String, site: WebSearchSite)
     case minimizeAll
     case restoreWindows
+    case checkEmail(app: String?)
+    case draftEmail(to: String, subject: String, body: String, app: String?)
 }
 
 /// Performs the fast-lane actions. The AppKit calls are injected so the whole runner can be tested
@@ -221,15 +287,31 @@ final class MacActionRunner {
         var minimizeAllWindows: () -> Int
         /// Brings back what the last minimizeAllWindows minimized; returns how many.
         var restoreMinimizedWindows: () -> Int
+        /// Which email app a check or draft goes to, given the app the person named (or nil).
+        var chooseEmailApp: (String?) -> EmailApp
+        /// Mail's unread inbox messages, newest first, or why they could not be read.
+        var readUnreadMail: () async -> Result<[UnreadMail], MailScriptError>
+        /// Runs a draft script in Mail; nil when it worked.
+        var runMailDraft: (String) async -> MailScriptError?
+        /// Brings Mail to the front (when it could not be read, so the screen shows it instead).
+        var activateMail: () -> Void
 
         init(
             controlPlayer: @escaping (MediaCommand) async -> Bool = { _ in false },
             minimizeAllWindows: @escaping () -> Int = { 0 },
-            restoreMinimizedWindows: @escaping () -> Int = { 0 }
+            restoreMinimizedWindows: @escaping () -> Int = { 0 },
+            chooseEmailApp: @escaping (String?) -> EmailApp = { _ in .gmail },
+            readUnreadMail: @escaping () async -> Result<[UnreadMail], MailScriptError> = { .success([]) },
+            runMailDraft: @escaping (String) async -> MailScriptError? = { _ in nil },
+            activateMail: @escaping () -> Void = {}
         ) {
             self.controlPlayer = controlPlayer
             self.minimizeAllWindows = minimizeAllWindows
             self.restoreMinimizedWindows = restoreMinimizedWindows
+            self.chooseEmailApp = chooseEmailApp
+            self.readUnreadMail = readUnreadMail
+            self.runMailDraft = runMailDraft
+            self.activateMail = activateMail
         }
 
         static let inert = Extras()
@@ -336,6 +418,38 @@ final class MacActionRunner {
 
         case .restoreWindows:
             return .restoredWindows(extras.restoreMinimizedWindows())
+
+        case .checkEmail(let requestedApp):
+            switch extras.chooseEmailApp(requestedApp) {
+            case .gmail:
+                openURL(GmailURLs.inbox)
+                return .openedGmailInbox
+            case .mail:
+                switch await extras.readUnreadMail() {
+                case .success(let unread):
+                    return .unreadMail(unread)
+                case .failure(let error):
+                    // The screen shows Mail instead, and the model reads what it can.
+                    extras.activateMail()
+                    return .mailUnavailable(error)
+                }
+            }
+
+        case .draftEmail(let rawRecipient, let rawSubject, let rawBody, let requestedApp):
+            guard let recipient = MacActionValidation.recipient(rawRecipient) else { return .invalidRecipient }
+            let subject = MacActionValidation.emailSubject(rawSubject)
+            let body = MacActionValidation.emailBody(rawBody)
+            guard !body.isEmpty else { return .failed("I need something to write") }
+            switch extras.chooseEmailApp(requestedApp) {
+            case .gmail:
+                openURL(GmailURLs.compose(to: recipient, subject: subject, body: body))
+                return .draftedEmail(app: .gmail, to: recipient, bodyLength: body.count)
+            case .mail:
+                if let error = await extras.runMailDraft(MailScripts.draftSource(to: recipient, subject: subject, body: body)) {
+                    return .mailDraftFailed(error)
+                }
+                return .draftedEmail(app: .mail, to: recipient, bodyLength: body.count)
+            }
         }
     }
 
@@ -373,7 +487,23 @@ final class MacActionRunner {
                     return true
                 },
                 minimizeAllWindows: { minimizedWindows.minimizeEverything() },
-                restoreMinimizedWindows: { minimizedWindows.restoreLastSet() }
+                restoreMinimizedWindows: { minimizedWindows.restoreLastSet() },
+                chooseEmailApp: { requested in
+                    EmailApp.choose(requested: requested, setting: OpenClickyConfiguration.settings.emailApp, mailHasAccounts: EmailApp.mailHasAccounts())
+                },
+                readUnreadMail: {
+                    await MailAppleScriptRunner.run(MailScripts.unreadInboxSource()).map(MailScripts.parseUnread)
+                },
+                runMailDraft: { script in
+                    if case .failure(let error) = await MailAppleScriptRunner.run(script) { return error }
+                    return nil
+                },
+                activateMail: {
+                    guard let mailURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") else { return }
+                    let configuration = NSWorkspace.OpenConfiguration()
+                    configuration.activates = true
+                    NSWorkspace.shared.openApplication(at: mailURL, configuration: configuration, completionHandler: nil)
+                }
             )
         )
     }
@@ -515,6 +645,27 @@ extension MacAction {
             ],
             [
                 "type": "function",
+                "name": "check_email",
+                "description": "Show the user's unread email. Use when they say check my email, any new mail, what's in my inbox.",
+                "parameters": ["type": "object", "properties": ["app": ["type": "string", "enum": ["mail", "gmail"], "description": "Only when they named one: 'mail' for Apple Mail, 'gmail' for Gmail."]], "required": [String]()],
+            ],
+            [
+                "type": "function",
+                "name": "draft_email",
+                "description": "Start a new email with the recipient and a short body written from what the user said, and leave it open for them to read and send themselves. Never sends.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "to": ["type": "string", "description": "The recipient's email address, or their name exactly as the user said it."],
+                        "subject": ["type": "string", "description": "A short subject. Leave it out if nothing fits."],
+                        "body": ["type": "string", "description": "The email's text, short and in the user's voice, saying what they asked you to say. No invented facts."],
+                        "app": ["type": "string", "enum": ["mail", "gmail"], "description": "Only when they named one."],
+                    ],
+                    "required": ["to", "body"],
+                ],
+            ],
+            [
+                "type": "function",
                 "name": "restore_windows",
                 "description": "Bring back the windows minimize_all minimized. For 'bring them back', 'restore my windows'.",
                 "parameters": ["type": "object", "properties": [String: Any](), "required": [String]()],
@@ -587,6 +738,17 @@ extension MacAction {
 
         case "restore_windows":
             return .action(.restoreWindows)
+
+        case "check_email":
+            let app = string("app")
+            return .action(.checkEmail(app: app.isEmpty ? nil : app))
+
+        case "draft_email":
+            guard let recipient = MacActionValidation.recipient(string("to")) else { return .badArguments(.invalidRecipient) }
+            let body = MacActionValidation.emailBody(string("body"))
+            guard !body.isEmpty else { return .badArguments(.failed("I need something to write")) }
+            let app = string("app")
+            return .action(.draftEmail(to: recipient, subject: string("subject"), body: body, app: app.isEmpty ? nil : app))
 
         default:
             return .notAFastAction

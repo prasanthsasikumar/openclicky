@@ -118,6 +118,11 @@ struct MacActionRunnerTests {
         var playerTakesCommands = false
         var windowsToMinimize = 0
         var windowsToRestore = 0
+        var emailApp: EmailApp = .mail
+        var unread: Result<[UnreadMail], MailScriptError> = .success([])
+        var mailDraftScripts: [String] = []
+        var mailDraftError: MailScriptError? = nil
+        var mailActivations = 0
     }
 
     private func makeRunner(root: URL, recorder: Recorder) -> MacActionRunner {
@@ -136,7 +141,14 @@ struct MacActionRunnerTests {
                     return recorder.playerTakesCommands
                 },
                 minimizeAllWindows: { recorder.windowsToMinimize },
-                restoreMinimizedWindows: { recorder.windowsToRestore }
+                restoreMinimizedWindows: { recorder.windowsToRestore },
+                chooseEmailApp: { _ in recorder.emailApp },
+                readUnreadMail: { recorder.unread },
+                runMailDraft: { script in
+                    recorder.mailDraftScripts.append(script)
+                    return recorder.mailDraftError
+                },
+                activateMail: { recorder.mailActivations += 1 }
             )
         )
     }
@@ -263,6 +275,52 @@ struct MacActionRunnerTests {
         #expect(!MacActionOutcome.minimizedWindows(3).thenLooksAtScreen)
     }
 
+    @Test func checkingMailReadsTheListAndGmailOpensTheInboxThenLooks() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.emailApp = .mail
+        recorder.unread = .success([UnreadMail(sender: "Ana", subject: "Hi")])
+        #expect(await runner.perform(.checkEmail(app: nil)) == .unreadMail([UnreadMail(sender: "Ana", subject: "Hi")]))
+        recorder.emailApp = .gmail
+        let gmail = await runner.perform(.checkEmail(app: nil))
+        #expect(gmail == .openedGmailInbox)
+        #expect(recorder.openedURLs.last == GmailURLs.inbox)
+        #expect(gmail.thenLooksAtScreen)
+    }
+
+    @Test func aRefusedMailScriptOpensMailAndSaysWhereToAllowIt() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.emailApp = .mail
+        recorder.unread = .failure(.notAllowed)
+        let outcome = await runner.perform(.checkEmail(app: nil))
+        #expect(outcome == .mailUnavailable(.notAllowed))
+        #expect(recorder.mailActivations == 1)
+        #expect(outcome.spokenSentence.contains("Automation"))
+    }
+
+    @Test func draftingNeverSendsAndRoutesToTheChosenApp() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.emailApp = .gmail
+        let outcome = await runner.perform(.draftEmail(to: "Ana", subject: "", body: "See you Friday", app: nil))
+        #expect(outcome == .draftedEmail(app: .gmail, to: "Ana", bodyLength: 14))
+        #expect(recorder.openedURLs.last == GmailURLs.compose(to: "Ana", subject: "", body: "See you Friday"))
+        recorder.emailApp = .mail
+        #expect(await runner.perform(.draftEmail(to: "ana@example.com", subject: "Hi", body: "x", app: "mail")) == .draftedEmail(app: .mail, to: "ana@example.com", bodyLength: 1))
+        #expect(recorder.mailDraftScripts.count == 1)
+        #expect(recorder.mailDraftScripts[0].contains("{address:\"ana@example.com\"}"))
+        #expect(await runner.perform(.draftEmail(to: "<b>", subject: "", body: "x", app: nil)) == .invalidRecipient)
+        recorder.mailDraftError = .notAllowed
+        #expect(await runner.perform(.draftEmail(to: "ana@example.com", subject: "", body: "x", app: nil)) == .mailDraftFailed(.notAllowed))
+    }
+
     @Test func aWebSearchOpensTheSearchPageAndLooksAfterwards() async throws {
         let root = try makeTemporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -335,6 +393,14 @@ struct MacActionParsingTests {
         #expect(MacAction.parse(toolName: "restore_windows", arguments: [:]) == .action(.restoreWindows))
     }
 
+    @Test func emailToolsParseTheirArguments() {
+        #expect(MacAction.parse(toolName: "check_email", arguments: [:]) == .action(.checkEmail(app: nil)))
+        #expect(MacAction.parse(toolName: "check_email", arguments: ["app": "gmail"]) == .action(.checkEmail(app: "gmail")))
+        #expect(MacAction.parse(toolName: "draft_email", arguments: ["to": "Ana", "body": "Hi"]) == .action(.draftEmail(to: "Ana", subject: "", body: "Hi", app: nil)))
+        #expect(MacAction.parse(toolName: "draft_email", arguments: ["to": "<x>", "body": "Hi"]) == .badArguments(.invalidRecipient))
+        #expect(MacAction.parse(toolName: "draft_email", arguments: ["to": "Ana", "body": ""]) == .badArguments(.failed("I need something to write")))
+    }
+
     @Test func webSearchParsesTheSiteAndDefaultsToTheWeb() {
         #expect(MacAction.parse(toolName: "web_search", arguments: ["query": "cats"]) == .action(.webSearch(query: "cats", site: .web)))
         #expect(MacAction.parse(toolName: "web_search", arguments: ["query": "cats", "site": "YouTube"]) == .action(.webSearch(query: "cats", site: .youtube)))
@@ -383,7 +449,7 @@ struct FastActionToolDefinitionTests {
 
     @Test func everyFastActionIsOfferedToTheModel() {
         let names = MacAction.realtimeToolDefinitions().compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "restore_windows"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "restore_windows", "check_email", "draft_email"])
     }
 
     @Test func createFolderDeclaresTheClosedLocationSet() throws {
@@ -451,6 +517,13 @@ struct FastActionToolDefinitionTests {
                 #expect(site.rawValue == arguments["site"] as? String)
             case .minimizeAll, .restoreWindows:
                 #expect(arguments.isEmpty)
+            case .checkEmail(let app):
+                #expect(app == arguments["app"] as? String)
+            case .draftEmail(let to, let subject, let body, let app):
+                #expect(to == arguments["to"] as? String)
+                #expect(subject == arguments["subject"] as? String)
+                #expect(body == arguments["body"] as? String)
+                #expect(app == arguments["app"] as? String)
             }
         }
     }
