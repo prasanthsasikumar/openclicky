@@ -78,6 +78,10 @@ enum MacActionOutcome: Equatable {
     case draftedEmail(app: EmailApp, to: String, bodyLength: Int)
     case invalidRecipient
     case mailDraftFailed(MailScriptError)
+    case playingTrack(name: String, artist: String)
+    case openedSpotifySearch(query: String)
+    case spotifyStarting
+    case playFailed
     case invalidName
     case invalidAppName
     case unknownLocation(String)
@@ -88,7 +92,7 @@ enum MacActionOutcome: Equatable {
     /// True when the action did what was asked (the tour counts it as a task handed over).
     var didSomething: Bool {
         switch self {
-        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail: return true
+        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail, .playingTrack, .openedSpotifySearch: return true
         default: return false
         }
     }
@@ -184,6 +188,14 @@ enum MacActionOutcome: Equatable {
             return "Drafted an email to \(recipient); it's open for you to check. I don't send email — you do."
         case .invalidRecipient:
             return "I didn't catch who it's for."
+        case .playingTrack(let name, let artist):
+            return artist.isEmpty ? "Playing \(name)." : "Playing \(name) by \(artist)."
+        case .openedSpotifySearch(let query):
+            return "I couldn't look that up, so I opened Spotify's search for \(query); pick one."
+        case .spotifyStarting:
+            return "Spotify is starting; give it a moment and ask again."
+        case .playFailed:
+            return "Spotify didn't play it."
         case .mailDraftFailed(let error):
             if case .failed(let reason) = error { return "Mail couldn't make the draft: \(reason)." }
             return error == .notAllowed
@@ -271,6 +283,7 @@ enum MacAction: Equatable {
     case restoreWindows
     case checkEmail(app: String?)
     case draftEmail(to: String, subject: String, body: String, app: String?)
+    case playMusic(query: String)
 }
 
 /// Performs the fast-lane actions. The AppKit calls are injected so the whole runner can be tested
@@ -295,6 +308,15 @@ final class MacActionRunner {
         var runMailDraft: (String) async -> MailScriptError?
         /// Brings Mail to the front (when it could not be read, so the screen shows it instead).
         var activateMail: () -> Void
+        /// The catalogue lookup for play_music; empty when nothing answered.
+        var lookUpTrack: (String) async -> [MusicTrack]
+        var spotifyIsRunning: () -> Bool
+        /// Opens Spotify and waits for it to answer; false when it did not in time.
+        var launchSpotify: () async -> Bool
+        /// Plays a track by URI; false when Spotify refused.
+        var playTrack: (String) async -> Bool
+        /// Opens Spotify's own search page for the words.
+        var openSpotifySearch: (String) -> Void
 
         init(
             controlPlayer: @escaping (MediaCommand) async -> Bool = { _ in false },
@@ -303,7 +325,12 @@ final class MacActionRunner {
             chooseEmailApp: @escaping (String?) -> EmailApp = { _ in .gmail },
             readUnreadMail: @escaping () async -> Result<[UnreadMail], MailScriptError> = { .success([]) },
             runMailDraft: @escaping (String) async -> MailScriptError? = { _ in nil },
-            activateMail: @escaping () -> Void = {}
+            activateMail: @escaping () -> Void = {},
+            lookUpTrack: @escaping (String) async -> [MusicTrack] = { _ in [] },
+            spotifyIsRunning: @escaping () -> Bool = { false },
+            launchSpotify: @escaping () async -> Bool = { false },
+            playTrack: @escaping (String) async -> Bool = { _ in false },
+            openSpotifySearch: @escaping (String) -> Void = { _ in }
         ) {
             self.controlPlayer = controlPlayer
             self.minimizeAllWindows = minimizeAllWindows
@@ -312,6 +339,11 @@ final class MacActionRunner {
             self.readUnreadMail = readUnreadMail
             self.runMailDraft = runMailDraft
             self.activateMail = activateMail
+            self.lookUpTrack = lookUpTrack
+            self.spotifyIsRunning = spotifyIsRunning
+            self.launchSpotify = launchSpotify
+            self.playTrack = playTrack
+            self.openSpotifySearch = openSpotifySearch
         }
 
         static let inert = Extras()
@@ -450,12 +482,36 @@ final class MacActionRunner {
                 }
                 return .draftedEmail(app: .mail, to: recipient, bodyLength: body.count)
             }
+
+        case .playMusic(let query):
+            if !extras.spotifyIsRunning() {
+                guard await extras.launchSpotify() else { return .spotifyStarting }
+            }
+            let tracks = await extras.lookUpTrack(query)
+            guard let track = MusicTrackPicker.pick(tracks, for: query) else {
+                // No lookup answered: Spotify's own search leaves the person one click away.
+                extras.openSpotifySearch(query)
+                return .openedSpotifySearch(query: query)
+            }
+            guard await extras.playTrack(track.uri) else { return .playFailed }
+            return .playingTrack(name: track.name, artist: track.artists.first ?? "")
         }
     }
+
+    /// The music lookup's route is logged when it changes (own credentials added, say), not per call.
+    private static var lastLoggedMusicRoute: String?
 
     /// The runner the app uses: real LaunchServices, real Finder, real volume.
     static func live(workspaceDirectory: URL) -> MacActionRunner {
         let minimizedWindows = MinimizedWindowsMemory()
+        let musicLookup = { () -> MusicLookup in
+            let route = MusicLookupRoute.route(credentials: OpenClickyConfiguration.settings.spotifyCredentials, backendURL: URL(string: OpenClickyConfiguration.settings.backendUrl))
+            if route.logName != lastLoggedMusicRoute {
+                lastLoggedMusicRoute = route.logName
+                AppLog.append("route: music lookup → \(route.logName)")
+            }
+            return MusicLookup(route: route)
+        }
         return MacActionRunner(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
             workspaceDirectory: workspaceDirectory,
@@ -503,7 +559,12 @@ final class MacActionRunner {
                     let configuration = NSWorkspace.OpenConfiguration()
                     configuration.activates = true
                     NSWorkspace.shared.openApplication(at: mailURL, configuration: configuration, completionHandler: nil)
-                }
+                },
+                lookUpTrack: { query in await musicLookup().search(query) },
+                spotifyIsRunning: { SpotifyPlayer.isRunning() },
+                launchSpotify: { await SpotifyPlayer.launchAndWait() },
+                playTrack: { uri in await SpotifyPlayer.play(uri: uri) },
+                openSpotifySearch: { query in SpotifyPlayer.openSearch(for: query) }
             )
         )
     }
@@ -666,6 +727,12 @@ extension MacAction {
             ],
             [
                 "type": "function",
+                "name": "play_music",
+                "description": "Play a specific song, album or artist in Spotify. Pass what they said, e.g. 'Blinding Lights by The Weeknd'. For pause, resume or skip use media_control.",
+                "parameters": ["type": "object", "properties": ["query": ["type": "string", "description": "The song (and artist, if said), as the user said it."]], "required": ["query"]],
+            ],
+            [
+                "type": "function",
                 "name": "restore_windows",
                 "description": "Bring back the windows minimize_all minimized. For 'bring them back', 'restore my windows'.",
                 "parameters": ["type": "object", "properties": [String: Any](), "required": [String]()],
@@ -738,6 +805,10 @@ extension MacAction {
 
         case "restore_windows":
             return .action(.restoreWindows)
+
+        case "play_music":
+            guard let query = MacActionValidation.searchQuery(string("query")) else { return .badArguments(.invalidQuery) }
+            return .action(.playMusic(query: query))
 
         case "check_email":
             let app = string("app")

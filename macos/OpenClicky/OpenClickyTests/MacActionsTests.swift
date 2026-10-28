@@ -123,6 +123,12 @@ struct MacActionRunnerTests {
         var mailDraftScripts: [String] = []
         var mailDraftError: MailScriptError? = nil
         var mailActivations = 0
+        var tracks: [MusicTrack] = []
+        var spotifyRunning = true
+        var spotifyLaunches = true
+        var playedURIs: [String] = []
+        var playSucceeds = true
+        var spotifySearches: [String] = []
     }
 
     private func makeRunner(root: URL, recorder: Recorder) -> MacActionRunner {
@@ -148,7 +154,15 @@ struct MacActionRunnerTests {
                     recorder.mailDraftScripts.append(script)
                     return recorder.mailDraftError
                 },
-                activateMail: { recorder.mailActivations += 1 }
+                activateMail: { recorder.mailActivations += 1 },
+                lookUpTrack: { _ in recorder.tracks },
+                spotifyIsRunning: { recorder.spotifyRunning },
+                launchSpotify: { recorder.spotifyLaunches },
+                playTrack: { uri in
+                    recorder.playedURIs.append(uri)
+                    return recorder.playSucceeds
+                },
+                openSpotifySearch: { query in recorder.spotifySearches.append(query) }
             )
         )
     }
@@ -321,6 +335,45 @@ struct MacActionRunnerTests {
         #expect(await runner.perform(.draftEmail(to: "ana@example.com", subject: "", body: "x", app: nil)) == .mailDraftFailed(.notAllowed))
     }
 
+    @Test func playingASongLaunchesSpotifyLooksItUpAndPlaysByURI() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.spotifyRunning = false
+        recorder.spotifyLaunches = true
+        recorder.tracks = [MusicTrack(uri: "spotify:track:1", name: "Blinding Lights", artists: ["The Weeknd"])]
+        let outcome = await runner.perform(.playMusic(query: "blinding lights"))
+        #expect(outcome == .playingTrack(name: "Blinding Lights", artist: "The Weeknd"))
+        #expect(outcome.spokenSentence == "Playing Blinding Lights by The Weeknd.")
+        #expect(recorder.playedURIs == ["spotify:track:1"])
+        recorder.playSucceeds = false
+        #expect(await runner.perform(.playMusic(query: "blinding lights")) == .playFailed)
+    }
+
+    @Test func aFailedLookupOpensSpotifysSearchInstead() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.spotifyRunning = true
+        recorder.tracks = []
+        #expect(await runner.perform(.playMusic(query: "blinding lights")) == .openedSpotifySearch(query: "blinding lights"))
+        #expect(recorder.spotifySearches == ["blinding lights"])
+        #expect(recorder.playedURIs.isEmpty)
+    }
+
+    @Test func spotifyNotAnsweringAfterLaunchIsSaidNotHidden() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.spotifyRunning = false
+        recorder.spotifyLaunches = false
+        #expect(await runner.perform(.playMusic(query: "x")) == .spotifyStarting)
+        #expect(recorder.playedURIs.isEmpty)
+    }
+
     @Test func aWebSearchOpensTheSearchPageAndLooksAfterwards() async throws {
         let root = try makeTemporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -401,6 +454,11 @@ struct MacActionParsingTests {
         #expect(MacAction.parse(toolName: "draft_email", arguments: ["to": "Ana", "body": ""]) == .badArguments(.failed("I need something to write")))
     }
 
+    @Test func playMusicParsesItsQuery() {
+        #expect(MacAction.parse(toolName: "play_music", arguments: ["query": "Blinding Lights"]) == .action(.playMusic(query: "Blinding Lights")))
+        #expect(MacAction.parse(toolName: "play_music", arguments: ["query": ""]) == .badArguments(.invalidQuery))
+    }
+
     @Test func webSearchParsesTheSiteAndDefaultsToTheWeb() {
         #expect(MacAction.parse(toolName: "web_search", arguments: ["query": "cats"]) == .action(.webSearch(query: "cats", site: .web)))
         #expect(MacAction.parse(toolName: "web_search", arguments: ["query": "cats", "site": "YouTube"]) == .action(.webSearch(query: "cats", site: .youtube)))
@@ -449,7 +507,7 @@ struct FastActionToolDefinitionTests {
 
     @Test func everyFastActionIsOfferedToTheModel() {
         let names = MacAction.realtimeToolDefinitions().compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "restore_windows", "check_email", "draft_email"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "restore_windows", "check_email", "draft_email", "play_music"])
     }
 
     @Test func createFolderDeclaresTheClosedLocationSet() throws {
@@ -524,6 +582,8 @@ struct FastActionToolDefinitionTests {
                 #expect(subject == arguments["subject"] as? String)
                 #expect(body == arguments["body"] as? String)
                 #expect(app == arguments["app"] as? String)
+            case .playMusic(let query):
+                #expect(query == arguments["query"] as? String)
             }
         }
     }

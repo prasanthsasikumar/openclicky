@@ -77,6 +77,9 @@ struct OpenClickyShellSettings: Codable {
     /// Which inbox "check my email" and "draft an email" use: "mail", "gmail", or nil for
     /// automatic (Apple Mail when it has accounts here, else Gmail). Settings → Voice.
     var emailApp: String? = nil
+    /// Own Spotify app credentials for the "play <song>" lookup, as "clientId:clientSecret";
+    /// without them the OpenClicky backend looks the song up. Settings → Keys & Plans.
+    var spotifyCredentials: String? = nil
     /// The Kokoro speaker picked in Settings (its id in the model); nil → the language's default.
     var kokoroSpeaker: Int? = nil
     /// The Mac voice picked in Settings (an AVSpeechSynthesisVoice identifier); nil → the best one
@@ -129,6 +132,7 @@ extension OpenClickyShellSettings {
         googleCloudApiKey = try container.decodeIfPresent(String.self, forKey: .googleCloudApiKey)
         amazonPollyCredentials = try container.decodeIfPresent(String.self, forKey: .amazonPollyCredentials)
         emailApp = try container.decodeIfPresent(String.self, forKey: .emailApp)
+        spotifyCredentials = try container.decodeIfPresent(String.self, forKey: .spotifyCredentials)
         kokoroSpeaker = try container.decodeIfPresent(Int.self, forKey: .kokoroSpeaker)
         refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
         tokenExpiresAt = try container.decodeIfPresent(Double.self, forKey: .tokenExpiresAt)
