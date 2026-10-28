@@ -12,6 +12,7 @@ import { requireAccount, accountSummary, ledgerUnavailable, type AccountContext 
 import { proxyAnthropicOnGrant } from "./anthropicGrant.js";
 import { polishTake } from "./polish.js";
 import { speakOnGrant } from "./tts.js";
+import { musicSearchHandler } from "./music.js";
 import type { Purpose } from "./modelPolicy.js";
 import { SupabaseSpendLedger, type SpendLedger } from "./ledger.js";
 import { handleStripeWebhook, createCheckoutSession, createPortalSession } from "./stripe.js";
@@ -95,6 +96,7 @@ export function createApp(options: AppOptions = {}) {
   };
 
   app.get("/health", (c) => c.json({ ok: true }));
+  app.get("/music/search", musicSearchHandler); // public: the play_music song lookup on OpenClicky's Spotify app (words in, catalogue out)
 
   // What a client needs to sign in with an email and a code (Supabase Auth): public by design, so an
   // installed app only has to know the backend URL. 404 when the backend has no Supabase configured.

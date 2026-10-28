@@ -41,6 +41,13 @@ export type Env = {
   ELEVENLABS_BASE_URL?: string;
   OPENAI_TTS_MODEL?: string;
   OPENAI_TTS_VOICE?: string;
+  /** `GET /music/search` (the app's play_music lookup): a Spotify app's client credentials. Without them the route answers 503. */
+  SPOTIFY_CLIENT_ID?: string;
+  SPOTIFY_CLIENT_SECRET?: string;
+  /** The market the catalogue search is for (a client-credentials token has no user); default US. */
+  SPOTIFY_MARKET?: string;
+  SPOTIFY_BASE_URL?: string;
+  SPOTIFY_ACCOUNTS_BASE_URL?: string;
   /** Native shell streaming STT (`/transcribe-token`). Optional; the shell falls back to /agent/transcribe. */
   ASSEMBLYAI_API_KEY?: string;
   ASSEMBLYAI_BASE_URL?: string;

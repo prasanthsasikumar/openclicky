@@ -10,3 +10,10 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 SESSION_TOKEN_SECRET=change-me-openssl-rand-hex-32
 SESSION_TOKEN_TTL_SECONDS=3600
+
+# GET /music/search (the app's "play <song>" lookup) runs on a Spotify app's client credentials
+# (developer.spotify.com, client credentials only, no redirect needed). Without them the route
+# answers 503 and the app opens Spotify's own search instead.
+# SPOTIFY_CLIENT_ID=
+# SPOTIFY_CLIENT_SECRET=
+# SPOTIFY_MARKET=US
