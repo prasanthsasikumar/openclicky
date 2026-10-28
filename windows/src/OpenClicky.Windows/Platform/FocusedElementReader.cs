@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows.Automation;
 using System.Windows.Automation.Text;
+using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Platform;
 using static OpenClicky.Windows.Platform.NativeMethods;
 
@@ -82,16 +83,20 @@ public sealed class FocusedElementReader : IFocusedElementReader
         var valuePattern = UiaSupport.ValuePatternOf(focused);
         var textPattern = UiaSupport.TextPatternOf(focused);
         var isEditable = IsEditable(focused, controlType, valuePattern, textPattern);
+        // A terminal reports its text area as read-only, yet it takes typing and Ctrl+V: it is a place
+        // for dictated words (2026-10-28: right Alt in Windows Terminal said "no text box").
+        var isTerminal = snapshot.AppProcessName is { } processName && LiveTypingExclusions.TerminalProcessNames.Contains(processName);
 
         snapshot = snapshot with
         {
             Role = role,
             IsSecure = isSecure,
-            IsEditable = isEditable && !isSecure,
+            IsEditable = (isEditable || isTerminal) && !isSecure,
             Name = UiaSupport.Safe(() => focused.Current.Name),
             RuntimeId = UiaSupport.RuntimeIdString(focused),
         };
-        if (!snapshot.IsEditable) return snapshot;
+        // A terminal's scrollback is not a text box's value: nothing reads it as the words to edit.
+        if (!snapshot.IsEditable || isTerminal) return snapshot;
 
         string? value = null;
         if (valuePattern is not null) value = UiaSupport.Safe(() => valuePattern.Current.Value);

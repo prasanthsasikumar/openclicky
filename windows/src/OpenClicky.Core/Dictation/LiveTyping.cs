@@ -364,7 +364,8 @@ public static class LiveTypingExclusions
     /// </summary>
     public static readonly IReadOnlySet<string> TerminalProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "WindowsTerminal.exe", "cmd.exe", "powershell.exe", "pwsh.exe", "conhost.exe", "wt.exe", "mintty.exe",
+        // OpenConsole.exe ("Windows Terminal Host") owns Windows Terminal's text area.
+        "WindowsTerminal.exe", "OpenConsole.exe", "cmd.exe", "powershell.exe", "pwsh.exe", "conhost.exe", "wt.exe", "mintty.exe",
     };
 
     public const string OwnProcessName = "OpenClicky.exe";

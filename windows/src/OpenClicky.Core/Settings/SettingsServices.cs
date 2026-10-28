@@ -405,12 +405,14 @@ public sealed class DetachedSettingsServices(IProcessRunner? processes = null) :
         var hasAccount = OpenClickyConfiguration.HasAccountToken;
         var picked = AllVoiceIds.Contains(shell.SpeechVoice) ? shell.SpeechVoice! : "automatic";
         var offered = AllVoiceIds.Where(id => id is "automatic" or "mac" or "kokoro" || id == picked || CanSpeak(id, shell, hasAccount)).ToList();
-        var candidates = picked == "automatic" ? AutomaticOrder : [picked];
+        // A picked voice that can't speak yet hands over to the free voice before this PC's (SpeechVoiceChoices.Resolve).
+        var candidates = picked == "automatic" ? AutomaticOrder : [picked, "account"];
         var speaking = candidates.FirstOrDefault(id => CanSpeak(id, shell, hasAccount)) ?? "mac";
         string sentence;
         if (picked != "automatic" && picked != speaking)
         {
-            sentence = picked == "kokoro" ? "this PC’s voice until Kokoro is downloaded." : $"this PC’s voice: {VoiceTitle(picked)} needs its key under Keys & Plans.";
+            var standIn = speaking == "account" ? "the free voice" : "this PC’s voice";
+            sentence = picked == "kokoro" ? $"{standIn} until Kokoro is downloaded." : $"{standIn}: {VoiceTitle(picked)} needs its key under Keys & Plans.";
         }
         else
         {

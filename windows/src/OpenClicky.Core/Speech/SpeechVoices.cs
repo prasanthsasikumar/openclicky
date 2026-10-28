@@ -105,8 +105,9 @@ public static class SpeechVoiceChoices
     }
 
     /// <summary>
-    /// The voice that speaks now: the one picked if it can, else this PC's (a missing key or a
-    /// Kokoro still downloading); Automatic, the first in <see cref="AutomaticOrder"/> that can. Kokoro in a
+    /// The voice that speaks now: the one picked if it can, else the account's free voice, else this
+    /// PC's (a missing key or a Kokoro still downloading: this PC's voice sounds robotic next to the
+    /// free one, 2026-10-28); Automatic, the first in <see cref="AutomaticOrder"/> that can. Kokoro in a
     /// language it doesn't speak (it became the voice on its own, then the language changed) goes
     /// on as Automatic.
     /// </summary>
@@ -114,7 +115,9 @@ public static class SpeechVoiceChoices
     {
         var picked = FromStored(settings.SpeechVoice);
         var kokoroCantSpeakLanguage = picked == SpeechVoiceChoice.Kokoro && KokoroVoice.SpeakerFor(languageCode, null) is null;
-        IReadOnlyList<SpeechVoiceChoice> candidates = picked == SpeechVoiceChoice.Automatic || kokoroCantSpeakLanguage ? AutomaticOrder : [picked];
+        IReadOnlyList<SpeechVoiceChoice> candidates = picked == SpeechVoiceChoice.Automatic || kokoroCantSpeakLanguage
+            ? AutomaticOrder
+            : [picked, SpeechVoiceChoice.Account];
         foreach (var candidate in candidates)
         {
             if (CanSpeak(candidate, settings, hasAccount, kokoroInstalled, languageCode)) return candidate;

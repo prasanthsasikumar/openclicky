@@ -88,6 +88,20 @@ public class BuddyDictationManagerTests : IDisposable
         Assert.False(harness.Capture.HasListeners);
     }
 
+    /// <summary>Moonshine showed the words live, then read the whole take as nothing (2026-10-28): the live words are the take.</summary>
+    [Fact]
+    public async Task AnEmptyFinalAfterLiveWordsKeepsTheLiveWords()
+    {
+        var harness = await StartedHarnessAsync();
+        var session = harness.Provider.Sessions.Single();
+        session.Callbacks.OnTranscriptUpdate("hello openclicky this is my first take");
+        Assert.True(await Eventually.TrueAsync(() => harness.Drafts.Count > 0));
+        await mainThread.InvokeAsync(harness.Manager.StopPushToTalkFromKeyboardShortcut);
+        session.Callbacks.OnFinalTranscriptReady("");
+        Assert.True(await Eventually.TrueAsync(() => harness.Submitted.Count == 1));
+        Assert.Equal("hello openclicky this is my first take", harness.Submitted[0]);
+    }
+
     /// <summary>A tester's PC (2026-10-14): the Windows recogniser's cancel threw on every release, the
     /// exception left the take half finished (nothing pasted, "the microphone is still busy"), and the
     /// next take failed on the same cancel. A session that throws on cancel is let go of all the same.</summary>

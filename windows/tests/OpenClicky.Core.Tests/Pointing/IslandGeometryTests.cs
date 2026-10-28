@@ -148,9 +148,11 @@ public class HUDPlacementTests
     }
 
     [Fact]
-    public void HoveringOpensThePanelButNotWhileSpeaking()
+    public void HoveringPeeksButNotWhileSpeakingAndOpensASideDrawer()
     {
-        Assert.Equal((IslandExpansion.Full, true), IslandExpansionRules.Target(new IslandExpansionInputs(IsHovering: true)));
+        Assert.Equal((IslandExpansion.Peek, true), IslandExpansionRules.Target(new IslandExpansionInputs(IsHovering: true)));
+        Assert.Equal((IslandExpansion.Full, true), IslandExpansionRules.Target(new IslandExpansionInputs(IsHovering: true, IsSideDrawer: true)));
+        Assert.Equal((IslandExpansion.Full, true), IslandExpansionRules.Target(new IslandExpansionInputs(IsHovering: true, IsPinnedOpen: true)));
         var speaking = new IslandExpansionInputs(IsHovering: true, IsSpeaking: true, IsBusy: true);
         Assert.Equal((IslandExpansion.Compact, false), IslandExpansionRules.Target(speaking));
     }

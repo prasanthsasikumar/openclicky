@@ -587,13 +587,25 @@ public sealed class FirstRunTourController
     }
 
     /// <summary>On the dictate step, another key that could dictate was held alone: the keyboard most
-    /// likely has no right Ctrl (many laptops don't), so that key dictates from now on.</summary>
+    /// likely has no right Ctrl (many laptops don't), so that key dictates from now on. Right Alt, which
+    /// the card offers, is taken on its press and that hold is already a take. Left Ctrl is not taken:
+    /// it is the hand for copy, paste and selecting, so the card points at right Alt instead.</summary>
     public void AdoptDictationKey(DictationHotkey key)
     {
         if (step != FirstRunTourStep.Dictate || companion.DictationSettings.DictationKey == key) return;
+        if (key == DictationHotkey.LeftControl)
+        {
+            AppLog.Write("tour: left Ctrl held alone on the dictate step; pointed at right Alt");
+            status = "left ctrl stays free for copy and paste. no right ctrl? hold right alt, just right of the space bar.";
+            statusIsGood = false;
+            offersMicrophoneChange = false;
+            Publish();
+            return;
+        }
         AppLog.Write($"tour: {key.RawValue()} held alone on the dictate step; it dictates now");
         companion.DictationSettings.DictationKey = key;
-        status = $"{key.KeycapLabel()} dictates now. hold it and say something.";
+        // Right Alt is already recording; any other key is told to hold it again.
+        status = key == DictationHotkey.RightAlt ? null : $"{key.KeycapLabel()} dictates now. hold it and say something.";
         statusIsGood = true;
         Publish();
     }

@@ -3,6 +3,7 @@
 
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Shortcuts;
 using OpenClicky.Core.Speech;
 
 namespace OpenClicky.Core.Tests.Speech;
@@ -86,32 +87,50 @@ public class RecordedVoiceTests
     {
         var folder = Path.Combine(Path.GetTempPath(), $"openclicky-mac-recordings-{Guid.NewGuid():N}");
         Directory.CreateDirectory(folder);
-        foreach (var file in Directory.GetFiles(AssetsFolder(), "*.mp3").Where(file => !file.EndsWith("-windows.mp3", StringComparison.Ordinal)))
+        foreach (var file in Directory.GetFiles(AssetsFolder(), "*.mp3").Where(file => !Path.GetFileName(file).Contains("-windows", StringComparison.Ordinal)))
             File.Copy(file, Path.Combine(folder, Path.GetFileName(file)));
         return folder;
     }
 
+    /// <summary>Every key someone can dictate with has its recordings, so the tour never switches to this PC's
+    /// voice halfway (a laptop with no right Ctrl moved to left Ctrl and heard "hand me a task" in another voice).</summary>
     [Fact]
-    public void TheWindowsRecordingsShipForEveryLineWithAWindowsSentence()
+    public void TheWindowsRecordingsShipForEveryLineWithAWindowsSentenceAndEveryKey()
     {
         foreach (var line in Enum.GetValues<RecordedVoice.Line>())
         {
-            if (RecordedVoice.WindowsSentence(line, "right control") is null) continue;
-            Assert.True(File.Exists(Path.Combine(AssetsFolder(), RecordedVoice.WindowsFileName(line))), $"{RecordedVoice.WindowsFileName(line)} is missing");
+            if (RecordedVoice.WindowsSentence(line, "control") is null) continue;
+            foreach (var key in DictationHotkeys.AllCases)
+            {
+                var fileName = RecordedVoice.WindowsFileName(line, key);
+                Assert.True(File.Exists(Path.Combine(AssetsFolder(), fileName)), $"{fileName} is missing");
+            }
         }
     }
 
-    /// <summary>The recordings say "right control", the default key, for dictating and as talk's Ctrl; with
-    /// another key chosen (a laptop with no right Ctrl) the sentences name the keys as they are instead.</summary>
     [Fact]
-    public async Task TheKeyRecordingsPlayOnlyWhileTheDefaultKeyIsChosen()
+    public void EachKeyPicksTheRecordingThatNamesIt()
+    {
+        Assert.Equal("tour-dictate-windows.mp3", RecordedVoice.WindowsFileName(RecordedVoice.Line.TourDictate, DictationHotkey.RightControl));
+        Assert.Equal("tour-dictate-windows-left-control.mp3", RecordedVoice.WindowsFileName(RecordedVoice.Line.TourDictate, DictationHotkey.LeftControl));
+        Assert.Equal("tour-dictate-windows-right-alt.mp3", RecordedVoice.WindowsFileName(RecordedVoice.Line.TourDictate, DictationHotkey.RightAlt));
+        Assert.Equal("tour-act-windows.mp3", RecordedVoice.WindowsFileName(RecordedVoice.Line.TourAct, DictationHotkey.RightControl));
+        Assert.Equal("tour-act-windows-left-control.mp3", RecordedVoice.WindowsFileName(RecordedVoice.Line.TourAct, DictationHotkey.LeftControl));
+        Assert.Equal("tour-act-windows-control.mp3", RecordedVoice.WindowsFileName(RecordedVoice.Line.TourAct, DictationHotkey.CapsLock));
+        Assert.Equal("right control or right alt", RecordedVoice.DictateKeySpoken(DictationHotkey.RightControl));
+        Assert.Equal("right alt", RecordedVoice.DictateKeySpoken(DictationHotkey.RightAlt));
+    }
+
+    /// <summary>With no recording for the chosen key, the sentences name the keys as they are, in this PC's voice.</summary>
+    [Fact]
+    public async Task AKeyWithNoRecordingHasItsSentenceSaid()
     {
         var player = new ControlledPlayer();
         var rendered = new List<string>();
-        var voice = new RecordedVoice(player, AssetsFolder(),
+        var voice = new RecordedVoice(player, MacRecordingsOnlyFolder(),
             windowsSentence: line => RecordedVoice.WindowsSentence(line, "right alt", "control and the windows key"),
             renderSentence: (text, _) => { rendered.Add(text); return Task.FromResult(new byte[] { 1 }); },
-            dictationKeyIsDefault: () => false);
+            dictationKey: () => DictationHotkey.RightAlt);
         Assert.True(voice.Play(RecordedVoice.Line.TourDictate));
         await Task.Delay(50);
         Assert.Contains("right alt", Assert.Single(rendered));

@@ -57,6 +57,8 @@ public sealed record IslandGeometry(ScreenRect ScreenFrame, double NotchWidth, d
 public enum IslandExpansion
 {
     Collapsed,
+    /// <summary>Hovered: a little wider and one line taller, with the pointer's status and "click to open". A click opens the panel.</summary>
+    Peek,
     Compact,
     Connect,
     /// <summary>A permission card: nothing else opens on the island until it is answered.</summary>
@@ -148,6 +150,12 @@ public sealed class IslandLayout
         _ => 0,
     };
 
+    /// <summary>Hovered: the island grows a little on each side and one line under the band (a side drawer's handle is
+    /// too small to peek: hovering it opens the drawer).</summary>
+    public double PeekWidth => Placement.IsSideDrawer() ? CollapsedWidth : Geometry.NotchWidth + 90;
+    public double PeekHeight => Placement.IsSideDrawer() ? CollapsedHeight : Geometry.NotchHeight + PeekLineHeight;
+    public const double PeekLineHeight = 30;
+
     public double CompactHeight => Geometry.NotchHeight + CompactContentHeight;
     /// <summary>Where a card's content starts: the island covers the band and the content uses that height too.</summary>
     public double CardTopInset => Geometry.HasHardwareNotch ? Geometry.NotchHeight : 8;
@@ -163,6 +171,7 @@ public sealed class IslandLayout
     public double Width => State.Expansion switch
     {
         IslandExpansion.Collapsed => CollapsedWidth,
+        IslandExpansion.Peek => PeekWidth,
         IslandExpansion.Compact => CompactWidth,
         IslandExpansion.Connect => ConnectWidth,
         IslandExpansion.Permission => PermissionWidth,
@@ -174,6 +183,7 @@ public sealed class IslandLayout
     public double Height => State.Expansion switch
     {
         IslandExpansion.Collapsed => CollapsedHeight,
+        IslandExpansion.Peek => PeekHeight,
         IslandExpansion.Compact => CompactHeight,
         IslandExpansion.Connect => ConnectHeight,
         IslandExpansion.Permission => PermissionHeight,
@@ -248,7 +258,8 @@ public sealed record IslandExpansionInputs(
     bool HasConnectPrompt = false,
     bool IsHovering = false,
     bool IsSpeaking = false,
-    bool HasCaption = false)
+    bool HasCaption = false,
+    bool IsSideDrawer = false)
 {
     /// <summary>The permission cards or the tour are up: hovering or clicking the island must not open the panel over them.</summary>
     public bool IsSetupInProgress => HasTourCard || HasPermissionPrompt;
@@ -295,12 +306,16 @@ public static class IslandExpansionRules
             // Hovering the connect card must not swap it for the full panel while the user is reaching for its buttons;
             // a click on the island still pins the full panel open.
             target = IslandExpansion.Connect;
-        else if (inputs.IsHovering && !inputs.IsSetupInProgress && !inputs.IsSpeaking)
+        else if (inputs.IsHovering && !inputs.IsSetupInProgress && !inputs.IsSpeaking && inputs.IsSideDrawer)
+            // A drawer's handle is too small to peek: hovering it opens the drawer.
             target = IslandExpansion.Full;
+        else if (inputs.IsHovering && !inputs.IsSetupInProgress && !inputs.IsSpeaking && !inputs.IsBusy && !inputs.HasCaption)
+            // Hovering only teases; a click opens the panel.
+            target = IslandExpansion.Peek;
         else
             target = RestingExpansion(inputs);
 
-        var applyNow = target is IslandExpansion.Full or IslandExpansion.Connect or IslandExpansion.Permission
+        var applyNow = target is IslandExpansion.Full or IslandExpansion.Peek or IslandExpansion.Connect or IslandExpansion.Permission
             or IslandExpansion.Composer or IslandExpansion.Tour || immediately;
         return (target, applyNow);
     }

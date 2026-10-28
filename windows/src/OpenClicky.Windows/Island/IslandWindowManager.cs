@@ -262,7 +262,7 @@ public sealed class IslandWindowManager : IDisposable
                 model.SetHovering(false);
                 continue;
             }
-            var hoverMargin = model.Expansion == IslandExpansion.Collapsed ? 6 : 14;
+            var hoverMargin = model.Expansion is IslandExpansion.Collapsed or IslandExpansion.Peek ? 6 : 14;
             var isHovering = instance.Window.IslandRectInPixels(hoverMargin).Contains(cursor);
             model.SetHovering(isHovering);
             if (instance.Window.IslandRectInPixels(0).Contains(cursor)) isInsideAnyIsland = true;

@@ -611,22 +611,49 @@ public class DictationKeyGestureMatrixTests
         Assert.False(keyboard.Recognizer.IsDictationKeyHeld);
     }
 
-    /// <summary>A laptop with no right Ctrl: on the tour's dictate step, right Alt held alone and let go
+    /// <summary>A laptop with no right Ctrl: on the tour's dictate step, right Shift held alone and let go
     /// says which key the person would hold.</summary>
     [Fact]
     public void AnotherDictationKeyHeldAloneIsReportedWhileAsked()
     {
         var keyboard = new SimulatedKeyboard(DictationHotkey.RightControl);
-        keyboard.Press(PhysicalKey.RightAlt);
+        keyboard.Press(PhysicalKey.RightShift);
         keyboard.Wait(0.8);
-        keyboard.Release(PhysicalKey.RightAlt);
+        keyboard.Release(PhysicalKey.RightShift);
         Assert.Empty(keyboard.Events);
 
         keyboard.Recognizer.ReportsOtherDictationKeys = true;
-        keyboard.Press(PhysicalKey.RightAlt);
+        keyboard.Press(PhysicalKey.RightShift);
         keyboard.Wait(0.8);
+        keyboard.Release(PhysicalKey.RightShift);
+        Assert.Equal(new[] { OtherDictationKeyHeld(DictationHotkey.RightShift) }, keyboard.Events);
+    }
+
+    /// <summary>The tour's dictate card offers right Alt to keyboards with no right Ctrl: its first press is
+    /// already a take, not a hold to teach the key.</summary>
+    [Fact]
+    public void OnTheTourRightAltDictatesFromItsFirstPress()
+    {
+        var keyboard = new SimulatedKeyboard(DictationHotkey.RightControl);
+        keyboard.Recognizer.ReportsOtherDictationKeys = true;
+        keyboard.Press(PhysicalKey.RightAlt);
+        keyboard.Wait(1);
         keyboard.Release(PhysicalKey.RightAlt);
-        Assert.Equal(new[] { OtherDictationKeyHeld(DictationHotkey.RightAlt) }, keyboard.Events);
+        Assert.Equal(new[] { OtherDictationKeyHeld(DictationHotkey.RightAlt), DictationPressed, DictationReleased(wasTap: false) }, keyboard.Events);
+        Assert.Equal(DictationHotkey.RightAlt, keyboard.Recognizer.DictationKey);
+    }
+
+    /// <summary>Left Ctrl is copy and paste's: on the tour it is reported (the card explains) but never dictates.</summary>
+    [Fact]
+    public void OnTheTourLeftControlHeldAloneIsReportedButDoesNotDictate()
+    {
+        var keyboard = new SimulatedKeyboard(DictationHotkey.RightControl);
+        keyboard.Recognizer.ReportsOtherDictationKeys = true;
+        keyboard.Press(PhysicalKey.LeftControl);
+        keyboard.Wait(0.8);
+        keyboard.Release(PhysicalKey.LeftControl);
+        Assert.Equal(new[] { OtherDictationKeyHeld(DictationHotkey.LeftControl) }, keyboard.Events);
+        Assert.Equal(DictationHotkey.RightControl, keyboard.Recognizer.DictationKey);
     }
 
     /// <summary>A quick tap, a shortcut (left Ctrl + C), another modifier joining, the dictation key itself

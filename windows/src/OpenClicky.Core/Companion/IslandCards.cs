@@ -163,9 +163,11 @@ public static class FirstRunTourCards
                     "your pointer’s new sidekick. i’ll show you three things. it takes about a minute.",
                     none, TourSymbols.Wave, null, false, null, false, null, "let’s go", "skip tour");
             case FirstRunTourStep.Dictate:
-                return new FirstRunTourCard(step, $"hold {dictationKeyLabel} and say something",
+                // Many laptops have no right Ctrl; right Alt (beside the space bar) works from its first press.
+                return new FirstRunTourCard(step,
+                    inputs.DictationKey == DictationHotkeys.Default ? "hold right ctrl or right alt and say something" : $"hold {dictationKeyLabel} and say something",
                     inputs.DictationKey == DictationHotkeys.Default
-                        ? "try “hello openclicky, this is my first take”, then let go. no right ctrl? hold right alt instead."
+                        ? "no right ctrl? right alt is just right of the space bar. try “hello openclicky, this is my first take”, then let go."
                         : "try “hello openclicky, this is my first take”, then let go.",
                     new[] { IslandTexts.ShortKeycapLabel(inputs.DictationKey) }, null, inputs.Status, inputs.StatusIsGood,
                     inputs.MicrophoneName, inputs.OffersMicrophoneChange, null,

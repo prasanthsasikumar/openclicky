@@ -114,9 +114,10 @@ public sealed class LiveSettingsServices(IModelDownload kokoro, IModelDownload p
         string sentence;
         if (picked != SpeechVoiceChoice.Automatic && picked != speaking)
         {
+            var standIn = speaking == SpeechVoiceChoice.Account ? "the free voice" : "this PC’s voice";
             sentence = picked == SpeechVoiceChoice.Kokoro
-                ? "this PC’s voice until Kokoro is downloaded."
-                : $"this PC’s voice: {picked.Title()} needs its key under Keys & Plans.";
+                ? $"{standIn} until Kokoro is downloaded."
+                : $"{standIn}: {picked.Title()} needs its key under Keys & Plans.";
         }
         else
         {

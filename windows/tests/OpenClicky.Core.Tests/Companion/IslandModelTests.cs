@@ -21,19 +21,31 @@ public class IslandModelTests
         FirstRunTourCards.Make(FirstRunTourStep.Talk, new FirstRunTourCardInputs(DictationHotkey.RightControl, CanAsk: true, UsesAgent: false, Status: status));
 
     [Fact]
-    public void HoveringOpensThePanelAtOnceAndLeavingClosesItAfterTheGrace()
+    public void HoveringPeeksAtOnceAndLeavingClosesItAfterTheGrace()
     {
         var (model, clock) = Make();
         var layoutChanges = 0;
         model.LayoutChanged += () => layoutChanges++;
         model.SetHovering(true);
-        Assert.Equal(IslandExpansion.Full, model.Expansion);
+        Assert.Equal(IslandExpansion.Peek, model.Expansion);
         Assert.Equal(1, layoutChanges);
         model.SetHovering(false);
         clock.Advance(0.39);
-        Assert.Equal(IslandExpansion.Full, model.Expansion);
+        Assert.Equal(IslandExpansion.Peek, model.Expansion);
         clock.Advance(0.02);
         Assert.Equal(IslandExpansion.Collapsed, model.Expansion);
+    }
+
+    /// <summary>Hovering only teases; a click on the peek opens the panel, and a second click goes back to the peek.</summary>
+    [Fact]
+    public void AClickOnThePeekOpensThePanel()
+    {
+        var (model, _) = Make();
+        model.SetHovering(true);
+        model.TogglePinned();
+        Assert.Equal(IslandExpansion.Full, model.Expansion);
+        model.TogglePinned();
+        Assert.Equal(IslandExpansion.Peek, model.Expansion);
     }
 
     [Fact]
@@ -45,7 +57,7 @@ public class IslandModelTests
         clock.Advance(0.2);
         model.SetHovering(true);
         clock.Advance(1);
-        Assert.Equal(IslandExpansion.Full, model.Expansion);
+        Assert.Equal(IslandExpansion.Peek, model.Expansion);
     }
 
     [Fact]
@@ -132,7 +144,7 @@ public class IslandModelTests
         Assert.Equal(IslandExpansion.Collapsed, model.Expansion);
         model.SetHovering(false);
         model.SetHovering(true);
-        Assert.Equal(IslandExpansion.Full, model.Expansion);
+        Assert.Equal(IslandExpansion.Peek, model.Expansion);
     }
 
     [Fact]

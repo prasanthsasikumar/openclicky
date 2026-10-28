@@ -54,11 +54,14 @@ public class SpeechVoicesTests
     }
 
     [Fact]
-    public void APickedVoiceThatCannotSpeakFallsBackToThisPC()
+    public void APickedVoiceThatCannotSpeakFallsBackToTheFreeVoiceThenThisPC()
     {
         var pickedGoogle = Settings(s => s.SpeechVoice = "google");
-        Assert.Equal(SpeechVoiceChoice.Mac, SpeechVoiceChoices.Resolve(pickedGoogle, true, false, "en"));
+        Assert.Equal(SpeechVoiceChoice.Account, SpeechVoiceChoices.Resolve(pickedGoogle, true, false, "en"));
+        Assert.Equal(SpeechVoiceChoice.Mac, SpeechVoiceChoices.Resolve(pickedGoogle, false, false, "en"));
         var pickedKokoro = Settings(s => s.SpeechVoice = "kokoro");
+        // Kokoro still downloading: the account's voice, not this PC's robotic one (2026-10-28).
+        Assert.Equal(SpeechVoiceChoice.Account, SpeechVoiceChoices.Resolve(pickedKokoro, true, false, "en"));
         Assert.Equal(SpeechVoiceChoice.Mac, SpeechVoiceChoices.Resolve(pickedKokoro, false, false, "en"));
         Assert.Equal(SpeechVoiceChoice.Kokoro, SpeechVoiceChoices.Resolve(pickedKokoro, false, true, "en"));
         // Kokoro doesn't speak Tamil; Sarvam does.

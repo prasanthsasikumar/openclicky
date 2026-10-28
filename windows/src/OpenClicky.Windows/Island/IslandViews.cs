@@ -70,6 +70,46 @@ internal sealed class CollapsedHandleView : Grid, IIslandContent
     public void Tick() { }
 }
 
+// MARK: - Peek
+
+/// <summary>The hover tease (NotchPeekLine): the pointer's mark and status, then "· click to open", on one line under the band.</summary>
+internal sealed class PeekLineView : Grid, IIslandContent
+{
+    private readonly IslandCompanionModel hub;
+    private readonly PointerTriangleView mark = new(10, DS.HUD.Pointer, 3);
+    private readonly TextBlock statusText;
+
+    public PeekLineView(IslandCompanionModel hub, double topInset)
+    {
+        this.hub = hub;
+        // The whole line is the island's click target: a click opens the panel.
+        IsHitTestVisible = false;
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, topInset, 10, 0),
+        };
+        var markHolder = new Grid { Width = 12, Height = 12, Margin = new Thickness(0, 0, 6, 0) };
+        markHolder.Children.Add(mark);
+        row.Children.Add(markHolder);
+        statusText = Text("", 11, DS.HUD.Text2Brush, trimming: TextTrimming.CharacterEllipsis);
+        row.Children.Add(statusText);
+        row.Children.Add(Text(" · click to open", 11, DS.HUD.Text3Brush));
+        Children.Add(row);
+        Refresh();
+    }
+
+    public void Refresh()
+    {
+        mark.IsDimmed = hub.IsCursorDocked;
+        statusText.Text = IslandTexts.PeekStatus(hub.IsCursorDocked, hub.IsClickyCursorEnabled, hub.PointerPresence, hub.IsPointerAwake);
+    }
+
+    public void Tick() { }
+}
+
 // MARK: - Badge
 
 /// <summary>The docked buddy, or the voice-state indicator while busy (NotchBuddyBadge): level bars while listening, a

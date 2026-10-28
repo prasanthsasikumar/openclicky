@@ -155,6 +155,7 @@ public sealed class IslandWindow : Window
             IslandExpansion.Permission when model.PermissionPrompt is { } permissionPrompt => new PermissionCardView(hub, permissionPrompt, topInset),
             IslandExpansion.Tour when model.TourCard is { } tourCard => new TourCardView(hub, tourCard, topInset),
             IslandExpansion.Full => new FullPanelView(hub, model),
+            IslandExpansion.Peek => new PeekLineView(hub, model.Geometry.NotchHeight),
             _ => new CollapsedHandleView(model.Placement),
         };
         // The compact strip and the composer sit under the band (on Windows the band is 0 unless a taskbar is at the top).
@@ -250,7 +251,7 @@ public sealed class IslandWindow : Window
         var targetRadius = model.Expansion switch
         {
             IslandExpansion.Collapsed => 11,
-            IslandExpansion.Compact => 18,
+            IslandExpansion.Peek or IslandExpansion.Compact => 18,
             _ => DS.HUD.IslandRadius,
         };
         bottomRadius.AnimateTo(targetRadius, 0.3, Easing.EaseInOut);

@@ -182,6 +182,7 @@ public sealed class CompanionShortcutRecognizer
     {
         var time = keyEvent.Timestamp;
         var eventKind = Classify(keyEvent);
+        var adoptedKeyEvents = AdoptRightAltOnPress(keyEvent);
         var otherKeyEvents = TrackOtherKeyHold(keyEvent, eventKind);
         if (eventKind != EventKind.ModifiersChanged)
         {
@@ -350,8 +351,22 @@ public sealed class CompanionShortcutRecognizer
         }
 
         previousCompanionFlags = companionFlags;
+        events.InsertRange(0, adoptedKeyEvents);
         events.AddRange(otherKeyEvents);
         return events;
+    }
+
+    /// <summary>On the tour's dictate step (<see cref="ReportsOtherDictationKeys"/>), with right Ctrl still the
+    /// key, right Alt pressed alone dictates from this very press: the card offers it to keyboards with no right
+    /// Ctrl, and the first hold must already be a take. AltGr also reports a left Ctrl nobody pressed.</summary>
+    private IReadOnlyList<CompanionShortcutEvent> AdoptRightAltOnPress(ShortcutKeyEvent keyEvent)
+    {
+        if (!ReportsOtherDictationKeys || dictationKey != DictationHotkey.RightControl || IsDictationKeyHeld || IsTalkHeld
+            || keyEvent.VirtualKey != VirtualKeys.RightAlt || !keyEvent.IsDown
+            || (keyEvent.Modifiers & ~PhysicalModifiers.LeftControl) != PhysicalModifiers.RightAlt)
+            return Array.Empty<CompanionShortcutEvent>();
+        DictationKey = DictationHotkey.RightAlt;
+        return new[] { CompanionShortcutEvent.OtherDictationKeyHeld(DictationHotkey.RightAlt) };
     }
 
     /// <summary>Watches for another key that could dictate (not Caps Lock, which toggles) held alone for

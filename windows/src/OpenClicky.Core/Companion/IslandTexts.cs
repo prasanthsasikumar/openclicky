@@ -81,6 +81,19 @@ public static class IslandTexts
         };
     }
 
+    /// <summary>The pointer's status in fewer words, so it fits beside "click to open" on the peek's one line.</summary>
+    public static string PeekStatus(bool isCursorDocked, bool isClickyCursorEnabled, PointerPresence presence, bool isPointerAwake)
+    {
+        if (isCursorDocked) return "pointer docked";
+        if (!isClickyCursorEnabled) return "pointer while you talk";
+        return presence switch
+        {
+            PointerPresence.Always => "pointer follows you",
+            PointerPresence.WhileMoving => "pointer while moving",
+            _ => isPointerAwake ? "pointer follows you" : "shake for the pointer",
+        };
+    }
+
     /// <summary>The panel's first button. The Mac docks "in the notch"; on Windows the island hangs from the top.</summary>
     public static string DockButtonTitle(bool isCursorDocked, HUDPlacement placement) =>
         isCursorDocked ? "release pointer" : placement.IsSideDrawer() ? "dock in the drawer" : "dock in the island";

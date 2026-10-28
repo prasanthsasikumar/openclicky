@@ -102,7 +102,8 @@ public sealed partial class IslandModel : ObservableObject
         HasConnectPrompt: ConnectPrompt is not null,
         IsHovering: isHovering,
         IsSpeaking: IsSpeaking,
-        HasCaption: CaptionText is not null);
+        HasCaption: CaptionText is not null,
+        IsSideDrawer: Placement.IsSideDrawer());
 
     public void SetHovering(bool hovering)
     {

@@ -7,12 +7,14 @@
 // The recordings that name the Mac's keys ("hold the fn key", "control and option") are not played
 // here: a tester's PC said "function" for a key it does not have (2026-10-14). For those lines the
 // sentence is said the Windows way (WindowsSentence) by this PC's voice, unless a Windows recording
-// (<line>-windows.mp3, made with the Mac's record-voice-lines.py) sits next to the Mac one.
+// (<line>-windows*.mp3, made with windows/scripts/record-windows-voice-lines.ps1) for the person's
+// dictation key sits next to the Mac one.
 //
 // Gap: the Mac plays these at volume 0.85; IAudioPlayer has no volume, so they play at full volume.
 
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Shortcuts;
 
 namespace OpenClicky.Core.Speech;
 
@@ -69,12 +71,41 @@ public sealed class RecordedVoice
 
     public static string FileName(Line line) => $"{line.RawValue()}.mp3";
 
-    /// <summary>A recording made for Windows, which wins over the spoken sentence when it ships.</summary>
-    public static string WindowsFileName(Line line) => $"{line.RawValue()}-windows.mp3";
+    /// <summary>A recording made for Windows, which wins over the spoken sentence when it ships. The lines
+    /// that name keys have one per way of saying them: the dictate line names the key (with the default,
+    /// "right control or right alt": the tour takes either, as many laptops have no right Ctrl); talk's
+    /// keys are "right control and the windows key" (the plain -windows file), "left control and…", or
+    /// "control and…" while a key other than a Ctrl dictates.</summary>
+    public static string WindowsFileName(Line line, DictationHotkey dictationKey = DictationHotkeys.Default)
+    {
+        var variant = line switch
+        {
+            Line.TourDictate => dictationKey switch
+            {
+                DictationHotkey.LeftControl => "-left-control",
+                DictationHotkey.RightAlt => "-right-alt",
+                DictationHotkey.RightShift => "-right-shift",
+                DictationHotkey.CapsLock => "-caps-lock",
+                _ => "",
+            },
+            Line.TourTalk or Line.TourAct or Line.SettingsTourShortcuts => dictationKey switch
+            {
+                DictationHotkey.RightControl => "",
+                DictationHotkey.LeftControl => "-left-control",
+                _ => "-control",
+            },
+            _ => "",
+        };
+        return $"{line.RawValue()}-windows{variant}.mp3";
+    }
+
+    /// <summary>The dictation key as the dictate line says it: with the default, right Alt too, which the tour also takes.</summary>
+    public static string DictateKeySpoken(DictationHotkey dictationKey) =>
+        dictationKey == DictationHotkey.RightControl ? "right control or right alt" : dictationKey.DisplayName();
 
     /// <summary>
     /// What a line says on Windows when its Mac recording names the Mac's keys, with the dictation
-    /// key as the person has it ("right control", "caps lock"); null for every other line, whose
+    /// key as the person has it ("right control or right alt", "caps lock"; see DictateKeySpoken); null for every other line, whose
     /// recording is right on both.
     /// </summary>
     /// <param name="talkKeysName">Talk's keys, which follow the dictation key ("control and the windows key"
@@ -92,12 +123,7 @@ public sealed class RecordedVoice
     private readonly string folder;
     private readonly Func<Line, string?>? windowsSentence;
     private readonly Func<string, CancellationToken, Task<byte[]>>? renderSentence;
-    private readonly Func<bool>? dictationKeyIsDefault;
-
-    /// <summary>The lines whose Windows recording names the dictation key (as "right control", the default),
-    /// or talk's keys, which follow it.</summary>
-    private static bool NamesTheDictationKey(Line line) =>
-        line is Line.TourDictate or Line.TourTalk or Line.TourAct or Line.SettingsTourShortcuts;
+    private readonly Func<DictationHotkey>? dictationKey;
     private readonly object stateLock = new();
     private CancellationTokenSource? currentLine;
     /// <summary>Tells whoever played the current line that it ended, exactly once.</summary>
@@ -105,18 +131,18 @@ public sealed class RecordedVoice
 
     /// <param name="windowsSentence">The Windows wording of a line, or null to play its recording.</param>
     /// <param name="renderSentence">This PC's voice, rendering a sentence to audio the player takes.</param>
-    /// <param name="dictationKeyIsDefault">Whether the dictation key is still the default the dictate
-    /// recording names; with another key the sentence (naming that key) is said instead. Null = default.</param>
+    /// <param name="dictationKey">The dictation key, which picks the Windows recording that names it; with no
+    /// recording for it the sentence (naming that key) is said instead. Null = the default.</param>
     public RecordedVoice(IAudioPlayer player, string? folder = null,
                          Func<Line, string?>? windowsSentence = null,
                          Func<string, CancellationToken, Task<byte[]>>? renderSentence = null,
-                         Func<bool>? dictationKeyIsDefault = null)
+                         Func<DictationHotkey>? dictationKey = null)
     {
         this.player = player;
         this.folder = folder ?? DefaultFolder;
         this.windowsSentence = windowsSentence;
         this.renderSentence = renderSentence;
-        this.dictationKeyIsDefault = dictationKeyIsDefault;
+        this.dictationKey = dictationKey;
     }
 
     public bool IsPlaying
@@ -131,9 +157,8 @@ public sealed class RecordedVoice
     /// </summary>
     public bool Play(Line line, Action? onFinished = null)
     {
-        var windowsRecording = Path.Combine(folder, WindowsFileName(line));
-        var windowsRecordingFits = !NamesTheDictationKey(line) || (dictationKeyIsDefault?.Invoke() ?? true);
-        if (windowsRecordingFits && File.Exists(windowsRecording) && ReadRecording(windowsRecording) is { } windowsAudio)
+        var windowsRecording = Path.Combine(folder, WindowsFileName(line, dictationKey?.Invoke() ?? DictationHotkeys.Default));
+        if (File.Exists(windowsRecording) && ReadRecording(windowsRecording) is { } windowsAudio)
         {
             StartLine(_ => Task.FromResult(windowsAudio), onFinished);
             return true;

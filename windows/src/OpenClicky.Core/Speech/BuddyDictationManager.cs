@@ -284,6 +284,13 @@ public sealed partial class BuddyDictationManager : ObservableObject, IDictation
         OnFinalTranscriptReady: transcriptText => mainThread.Post(() =>
         {
             if (ActiveSessionIdentity != sessionIdentity) return;
+            // A final read of the whole take that comes back empty after live words were shown is the
+            // engine missing them, not silence: the live words stand.
+            if (transcriptText.Trim().Length == 0 && latestRecognizedText.Trim().Length > 0)
+            {
+                AppLog.Write($"dictation: the final transcript was empty; kept the live words ({transcriptionProvider.DisplayName})");
+                transcriptText = latestRecognizedText;
+            }
             latestRecognizedText = transcriptText;
             if (IsFinalizingTranscript) FinishCurrentDictationSessionIfNeeded(shouldAutomaticallySubmitFinalDraft);
         }),

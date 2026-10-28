@@ -174,7 +174,7 @@ public class FirstRunTourCardsTests
     public void TheCardsShowTheWindowsKeys()
     {
         var dictate = FirstRunTourCards.Make(FirstRunTourStep.Dictate, Inputs);
-        Assert.Equal("hold right Ctrl and say something", dictate.Title);
+        Assert.Equal("hold right ctrl or right alt and say something", dictate.Title);
         Assert.Equal(new[] { "R Ctrl" }, dictate.Keys);
         Assert.Equal(0, dictate.PracticeIndex);
         Assert.Equal("Microphone Array", dictate.MicrophoneName);
@@ -182,7 +182,7 @@ public class FirstRunTourCardsTests
         Assert.Equal(new[] { "R Ctrl", "Win" }, talk.Keys);
         Assert.Contains("hold right ctrl + windows", talk.Detail);
         Assert.Equal("next", talk.PrimaryTitle);
-        Assert.Contains("no right ctrl? hold right alt instead.", dictate.Detail);
+        Assert.Contains("no right ctrl? right alt is just right of the space bar.", dictate.Detail);
         var rightAlt = Inputs with { DictationKey = DictationHotkey.RightAlt };
         Assert.Equal("hold right Alt and say something", FirstRunTourCards.Make(FirstRunTourStep.Dictate, rightAlt).Title);
         Assert.DoesNotContain("no right ctrl", FirstRunTourCards.Make(FirstRunTourStep.Dictate, rightAlt).Detail);
