@@ -42,7 +42,9 @@ struct IslandGlassStops: Equatable {
 /// The black-into-glass melt and its setting.
 enum IslandGlass {
     static let defaultsKey = "openclicky.island.glassLevel"
-    static let defaultLevel: Double = 0.6
+    /// Solid black: it reads more easily than the melt into glass (2026-10-28; it was 0.6). The
+    /// slider in Settings → General still brings the glass back for anyone who wants it.
+    static let defaultLevel: Double = 0
     /// The dark wash over the glass so white text keeps its contrast on a bright wallpaper.
     static let wash: Double = 0.35
 
