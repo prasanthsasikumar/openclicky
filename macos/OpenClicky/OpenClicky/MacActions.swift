@@ -67,6 +67,8 @@ enum MacActionOutcome: Equatable {
     case openedURL(String)
     case volumeSet(Int)
     case mediaControlled(String)
+    case searched(query: String, site: WebSearchSite)
+    case invalidQuery
     case invalidName
     case invalidAppName
     case unknownLocation(String)
@@ -77,7 +79,7 @@ enum MacActionOutcome: Equatable {
     /// True when the action did what was asked (the tour counts it as a task handed over).
     var didSomething: Bool {
         switch self {
-        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled: return true
+        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .searched: return true
         default: return false
         }
     }
@@ -85,7 +87,14 @@ enum MacActionOutcome: Equatable {
     /// What the Realtime model is told in the tool's output. The same as the sentence unless an
     /// outcome has more to say to the model than to the person (a list to read out, a screenshot
     /// to look at).
-    var toolOutput: String { spokenSentence }
+    var toolOutput: String {
+        switch self {
+        case .searched(let query, _):
+            return "The results for \(query) are on screen in the latest screenshot. Say what the first few are in one sentence."
+        default:
+            return spokenSentence
+        }
+    }
 
     /// What goes in app.log. The same as the sentence unless it would carry something private
     /// (an email body or recipient).
@@ -95,7 +104,7 @@ enum MacActionOutcome: Equatable {
     /// changed what is on screen in a way worth describing (a page opened), false for the rest.
     var thenLooksAtScreen: Bool {
         switch self {
-        case .openedURL: return true
+        case .openedURL, .searched: return true
         default: return false
         }
     }
@@ -120,6 +129,10 @@ enum MacActionOutcome: Equatable {
             return "Volume set to \(level) percent."
         case .mediaControlled:
             return "Done."
+        case .searched(let query, _):
+            return "Searching for \(query)."
+        case .invalidQuery:
+            return "I didn't catch what to search for."
         case .invalidName:
             return "That name has characters a folder can't have."
         case .invalidAppName:
@@ -152,6 +165,15 @@ enum MacActionValidation {
         return trimmed
     }
 
+    /// Something to search for, or nil: trimmed, at most 200 characters, and nothing a control
+    /// character (a newline, a NUL) could do to the URL or the page.
+    static func searchQuery(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 200 else { return nil }
+        guard trimmed.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && !CharacterSet.newlines.contains($0) }) else { return nil }
+        return trimmed
+    }
+
     /// An http(s) URL, or nil. Other schemes are refused: `file:` reads the disk and a custom scheme
     /// launches whichever app registered it, neither of which is "open this page for me".
     static func webURL(_ raw: String) -> URL? {
@@ -171,6 +193,7 @@ enum MacAction: Equatable {
     case revealInFinder(name: String, location: MacActionLocation)
     case setVolume(level: Int)
     case mediaControl(action: String)
+    case webSearch(query: String, site: WebSearchSite)
 }
 
 /// Performs the fast-lane actions. The AppKit calls are injected so the whole runner can be tested
@@ -259,6 +282,10 @@ final class MacActionRunner {
             }
             sendMediaKey(mediaAction)
             return .mediaControlled(mediaAction)
+
+        case .webSearch(let query, let site):
+            openURL(WebSearchSite.url(for: site, query: query))
+            return .searched(query: query, site: site)
         }
     }
 
@@ -405,6 +432,19 @@ extension MacAction {
                 "description": "Play, pause, or skip whatever is playing.",
                 "parameters": ["type": "object", "properties": ["action": ["type": "string", "enum": ["playpause", "next", "previous"]]], "required": ["action"]],
             ],
+            [
+                "type": "function",
+                "name": "web_search",
+                "description": "Search the web (or YouTube, Wikipedia, Google Maps, Amazon) for what the user said and show the results in their browser. Use for 'search for…', 'look up…', 'google…'.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "query": ["type": "string", "description": "What to search for, as the user said it."],
+                        "site": ["type": "string", "enum": WebSearchSite.allCases.map(\.rawValue), "description": "Where to search. Leave it out for the web."],
+                    ],
+                    "required": ["query"],
+                ],
+            ],
         ]
     }
 
@@ -460,6 +500,13 @@ extension MacAction {
 
         case "media_control":
             return .action(.mediaControl(action: string("action").lowercased()))
+
+        case "web_search":
+            guard let query = MacActionValidation.searchQuery(string("query")) else { return .badArguments(.invalidQuery) }
+            let rawSite = string("site").lowercased()
+            let site: WebSearchSite? = rawSite.isEmpty ? .web : WebSearchSite(rawValue: rawSite)
+            guard let site else { return .badArguments(.invalidQuery) }
+            return .action(.webSearch(query: query, site: site))
 
         default:
             return .notAFastAction

@@ -204,6 +204,19 @@ struct MacActionRunnerTests {
         #expect(recorder.volumeLevels == [100, 0])
     }
 
+    @Test func aWebSearchOpensTheSearchPageAndLooksAfterwards() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        let outcome = await runner.perform(.webSearch(query: "cats", site: .web))
+        #expect(recorder.openedURLs == [URL(string: "https://www.google.com/search?q=cats")!])
+        #expect(outcome == .searched(query: "cats", site: .web))
+        #expect(outcome.thenLooksAtScreen)
+        #expect(outcome.spokenSentence == "Searching for cats.")
+        #expect(outcome.toolOutput.contains("latest screenshot"))
+    }
+
     @Test func revealingAnExistingFolderShowsItAndReportsSuccess() async throws {
         let root = try makeTemporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -258,6 +271,13 @@ struct MacActionParsingTests {
         #expect(MacAction.parse(toolName: "media_control", arguments: ["action": "next"]) == .action(.mediaControl(action: "next")))
     }
 
+    @Test func webSearchParsesTheSiteAndDefaultsToTheWeb() {
+        #expect(MacAction.parse(toolName: "web_search", arguments: ["query": "cats"]) == .action(.webSearch(query: "cats", site: .web)))
+        #expect(MacAction.parse(toolName: "web_search", arguments: ["query": "cats", "site": "YouTube"]) == .action(.webSearch(query: "cats", site: .youtube)))
+        #expect(MacAction.parse(toolName: "web_search", arguments: ["query": "cats", "site": "bing"]) == .badArguments(.invalidQuery))
+        #expect(MacAction.parse(toolName: "web_search", arguments: ["query": ""]) == .badArguments(.invalidQuery))
+    }
+
     @Test func acceptsTheNumberOrTheNumericStringTheModelSends() {
         // The Realtime model sends integers, but occasionally quotes them.
         #expect(MacAction.parse(toolName: "set_volume", arguments: ["level": 40]) == .action(.setVolume(level: 40)))
@@ -299,7 +319,7 @@ struct FastActionToolDefinitionTests {
 
     @Test func everyFastActionIsOfferedToTheModel() {
         let names = MacAction.realtimeToolDefinitions().compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search"])
     }
 
     @Test func createFolderDeclaresTheClosedLocationSet() throws {
@@ -362,6 +382,9 @@ struct FastActionToolDefinitionTests {
                 #expect(level == arguments["level"] as? Int)
             case .mediaControl(let action):
                 #expect(action == arguments["action"] as? String)
+            case .webSearch(let query, let site):
+                #expect(query == arguments["query"] as? String)
+                #expect(site.rawValue == arguments["site"] as? String)
             }
         }
     }
