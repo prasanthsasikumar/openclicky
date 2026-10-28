@@ -108,7 +108,7 @@ enum MacActionOutcome: Equatable {
         case .unreadMail(let unread):
             guard !unread.isEmpty else { return spokenSentence }
             let lines = unread.map { "\($0.sender) — \($0.subject)" }.joined(separator: "\n")
-            return "Unread in Mail, newest first:\n\(lines)\nRead out sender and subject briefly, newest first, at most five. Never invent what the emails say."
+            return "Unread in Mail:\n\(lines)\nRead out sender and subject briefly, in this order, at most five. Never invent what the emails say."
         case .openedGmailInbox:
             return "Gmail's inbox is open and attached as the latest screenshot. Unread rows are in bold. Read out sender and subject of the unread ones briefly, newest first, at most five, then stop."
         case .mailUnavailable:
