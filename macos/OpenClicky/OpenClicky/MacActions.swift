@@ -67,6 +67,7 @@ enum MacActionOutcome: Equatable {
     case openedURL(String)
     case volumeSet(Int)
     case mediaControlled(String)
+    case playerControlled(String)
     case searched(query: String, site: WebSearchSite)
     case invalidQuery
     case invalidName
@@ -79,7 +80,7 @@ enum MacActionOutcome: Equatable {
     /// True when the action did what was asked (the tour counts it as a task handed over).
     var didSomething: Bool {
         switch self {
-        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .searched: return true
+        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched: return true
         default: return false
         }
     }
@@ -129,6 +130,8 @@ enum MacActionOutcome: Equatable {
             return "Volume set to \(level) percent."
         case .mediaControlled:
             return "Done."
+        case .playerControlled(let command):
+            return command == "pause" ? "Paused." : "Playing."
         case .searched(let query, _):
             return "Searching for \(query)."
         case .invalidQuery:
@@ -201,6 +204,19 @@ enum MacAction: Equatable {
 @MainActor
 final class MacActionRunner {
 
+    /// The system calls the newer actions need, each defaulted to "nothing happened" so a test
+    /// passes only the ones it drives. `live` fills every one of them.
+    struct Extras {
+        /// Sends pause / play to a running music player; false when no player is running.
+        var controlPlayer: (MediaCommand) async -> Bool
+
+        init(controlPlayer: @escaping (MediaCommand) async -> Bool = { _ in false }) {
+            self.controlPlayer = controlPlayer
+        }
+
+        static let inert = Extras()
+    }
+
     private let homeDirectory: URL
     private let workspaceDirectory: URL
     private let findApplication: (String) -> URL?
@@ -209,6 +225,7 @@ final class MacActionRunner {
     private let revealInFinder: (URL) -> Void
     private let setVolume: (Int) -> Void
     private let sendMediaKey: (String) -> Void
+    private let extras: Extras
 
     init(
         homeDirectory: URL,
@@ -218,7 +235,8 @@ final class MacActionRunner {
         openURL: @escaping (URL) -> Void,
         revealInFinder: @escaping (URL) -> Void,
         setVolume: @escaping (Int) -> Void,
-        sendMediaKey: @escaping (String) -> Void
+        sendMediaKey: @escaping (String) -> Void,
+        extras: Extras = .inert
     ) {
         self.homeDirectory = homeDirectory
         self.workspaceDirectory = workspaceDirectory
@@ -228,6 +246,7 @@ final class MacActionRunner {
         self.revealInFinder = revealInFinder
         self.setVolume = setVolume
         self.sendMediaKey = sendMediaKey
+        self.extras = extras
     }
 
     func perform(_ action: MacAction) async -> MacActionOutcome {
@@ -277,7 +296,14 @@ final class MacActionRunner {
             return .volumeSet(level)
 
         case .mediaControl(let mediaAction):
-            guard ["playpause", "next", "previous"].contains(mediaAction) else {
+            // "Stop that song" goes to the player itself: the play/pause key toggles, so with
+            // nothing playing it would start something.
+            if mediaAction == "pause" || mediaAction == "play" {
+                let playerTookIt = await extras.controlPlayer(mediaAction == "pause" ? .pause : .play)
+                if playerTookIt { return .playerControlled(mediaAction) }
+                if mediaAction == "pause" { return .failed("nothing is playing") }
+            }
+            guard ["playpause", "next", "previous", "play"].contains(mediaAction) else {
                 return .failed("I don't know how to \(mediaAction)")
             }
             sendMediaKey(mediaAction)
@@ -312,7 +338,16 @@ final class MacActionRunner {
                 process.arguments = ["-e", "set volume output volume \(level)"]
                 try? process.run()
             },
-            sendMediaKey: { action in Self.postMediaKey(action) }
+            sendMediaKey: { action in Self.postMediaKey(action) },
+            extras: Extras(
+                controlPlayer: { command in
+                    // Spotify first when both run, as the Media plugin prefers it.
+                    let running = AppleScriptMediaSource.runningPlayers()
+                    guard let player = running.contains(.spotify) ? .spotify : running.first else { return false }
+                    await AppleScriptMediaSource().perform(command, on: player)
+                    return true
+                }
+            )
         )
     }
 
@@ -429,8 +464,8 @@ extension MacAction {
             [
                 "type": "function",
                 "name": "media_control",
-                "description": "Play, pause, or skip whatever is playing.",
-                "parameters": ["type": "object", "properties": ["action": ["type": "string", "enum": ["playpause", "next", "previous"]]], "required": ["action"]],
+                "description": "Pause, resume, or skip whatever is playing. Use pause for 'stop', 'pause', 'be quiet'; play to resume; playpause only when they say play/pause without saying which.",
+                "parameters": ["type": "object", "properties": ["action": ["type": "string", "enum": ["playpause", "next", "previous", "pause", "play"]]], "required": ["action"]],
             ],
             [
                 "type": "function",

@@ -14,6 +14,9 @@ import Foundation
 
 enum MediaCommand: Equatable, Sendable {
     case playPause
+    /// Pause and play as themselves, for a voice "stop that song" that must never start playback.
+    case pause
+    case play
     case next
     case previous
     case seek(TimeInterval)

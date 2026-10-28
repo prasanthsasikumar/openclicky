@@ -81,6 +81,8 @@ struct AppleScriptMediaSource: MediaSourcing {
         let app = player == .music ? "Music" : "Spotify"
         switch command {
         case .playPause: return "tell application \"\(app)\" to playpause"
+        case .pause: return "tell application \"\(app)\" to pause"
+        case .play: return "tell application \"\(app)\" to play"
         case .next: return "tell application \"\(app)\" to next track"
         case .previous: return "tell application \"\(app)\" to previous track"
         case .seek(let seconds): return "tell application \"\(app)\" to set player position to \(Int(seconds.rounded()))"

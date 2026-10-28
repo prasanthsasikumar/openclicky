@@ -114,6 +114,8 @@ struct MacActionRunnerTests {
         var volumeLevels: [Int] = []
         var mediaKeys: [String] = []
         var installedApplications: [String: URL] = ["spotify": URL(fileURLWithPath: "/Applications/Spotify.app")]
+        var playerCommands: [MediaCommand] = []
+        var playerTakesCommands = false
     }
 
     private func makeRunner(root: URL, recorder: Recorder) -> MacActionRunner {
@@ -125,7 +127,13 @@ struct MacActionRunnerTests {
             openURL: { url in recorder.openedURLs.append(url) },
             revealInFinder: { url in recorder.revealedURLs.append(url) },
             setVolume: { level in recorder.volumeLevels.append(level) },
-            sendMediaKey: { action in recorder.mediaKeys.append(action) }
+            sendMediaKey: { action in recorder.mediaKeys.append(action) },
+            extras: MacActionRunner.Extras(
+                controlPlayer: { command in
+                    recorder.playerCommands.append(command)
+                    return recorder.playerTakesCommands
+                }
+            )
         )
     }
 
@@ -202,6 +210,35 @@ struct MacActionRunnerTests {
         #expect(await runner.perform(.setVolume(level: 400)) == .volumeSet(100))
         #expect(await runner.perform(.setVolume(level: -5)) == .volumeSet(0))
         #expect(recorder.volumeLevels == [100, 0])
+    }
+
+    @Test func pauseGoesToTheRunningPlayerAndNeverToThePlayPauseKey() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        recorder.playerTakesCommands = true
+        let runner = makeRunner(root: root, recorder: recorder)
+        let outcome = await runner.perform(.mediaControl(action: "pause"))
+        #expect(recorder.playerCommands == [.pause])
+        #expect(recorder.mediaKeys.isEmpty)
+        #expect(outcome == .playerControlled("pause"))
+        #expect(outcome.spokenSentence == "Paused.")
+        #expect(await runner.perform(.mediaControl(action: "play")) == .playerControlled("play"))
+        #expect(recorder.playerCommands == [.pause, .play])
+    }
+
+    @Test func pauseWithNoPlayerRunningDoesNothingAndSaysSo() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        recorder.playerTakesCommands = false
+        let runner = makeRunner(root: root, recorder: recorder)
+        let outcome = await runner.perform(.mediaControl(action: "pause"))
+        #expect(recorder.mediaKeys.isEmpty)
+        #expect(outcome == .failed("nothing is playing"))
+        // Resuming with no player is what the media key is for.
+        #expect(await runner.perform(.mediaControl(action: "play")) == .mediaControlled("play"))
+        #expect(recorder.mediaKeys == ["play"])
     }
 
     @Test func aWebSearchOpensTheSearchPageAndLooksAfterwards() async throws {

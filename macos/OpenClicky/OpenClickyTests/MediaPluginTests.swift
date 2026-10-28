@@ -91,6 +91,8 @@ struct MediaPluginTests {
         #expect(AppleScriptMediaSource.nowPlayingScript(for: .music).contains("persistent ID"))
         #expect(AppleScriptMediaSource.commandScript(.seek(42), for: .music) == "tell application \"Music\" to set player position to 42")
         #expect(AppleScriptMediaSource.commandScript(.next, for: .spotify) == "tell application \"Spotify\" to next track")
+        #expect(AppleScriptMediaSource.commandScript(.pause, for: .spotify) == "tell application \"Spotify\" to pause")
+        #expect(AppleScriptMediaSource.commandScript(.play, for: .music) == "tell application \"Music\" to play")
     }
 
     @Test func thePeekLineNamesTheTrackAfterALiveSession() {
