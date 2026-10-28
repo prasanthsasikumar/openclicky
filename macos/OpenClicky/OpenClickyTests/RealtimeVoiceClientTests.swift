@@ -202,6 +202,77 @@ struct RealtimeSessionHandshakeOrderTests {
         client.disconnect(reason: nil)
     }
 
+    private static let screenFixture = RealtimeScreenContext(
+        jpeg: Data(), caption: "Screenshot of the user's screen (1280×720 px).",
+        capture: CompanionScreenCapture(
+            imageData: Data(), label: "test", isCursorScreen: true,
+            displayWidthInPoints: 1920, displayHeightInPoints: 1080,
+            displayFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            screenshotWidthInPixels: 1280, screenshotHeightInPixels: 720))
+
+    @MainActor private final class FrontApp { var pid: pid_t = 1 }
+
+    /// Delivers one server event once the client is waiting for it.
+    private static func deliver(_ event: String, on socket: HandshakePendingSocket) async {
+        await waitUntil { socket.isWaitingToReceive }
+        socket.open(firstEvent: event)
+    }
+
+    /// An action that changed the screen (a page opened) attaches a fresh screenshot before its
+    /// output, so the model describes what it sees now, not what it saw when the person spoke.
+    @Test func anActionThatLooksAfterwardsAttachesTheScreenBeforeItsOutput() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        client.screenContextProvider = { Self.screenFixture }
+        // The browser comes to the front once the page is opened.
+        let front = FrontApp()
+        client.frontAppProvider = { front.pid }
+        client.onMacAction = { _ in
+            front.pid = 2
+            return .openedURL("https://example.com")
+        }
+        await Self.deliver(#"{"type":"response.function_call_arguments.done","name":"open_url","call_id":"c1","response_id":"r1","arguments":"{\"url\":\"https://example.com\"}"}"#, on: socket)
+        await Self.waitUntil { socket.sentTexts.contains { $0.contains("function_call_output") } }
+        let screenIndex = try #require(socket.sentTexts.firstIndex { $0.contains("[Screen context") })
+        let outputIndex = try #require(socket.sentTexts.firstIndex { $0.contains("function_call_output") })
+        #expect(screenIndex < outputIndex)
+        #expect(socket.sentTexts[outputIndex].contains("Opened it in your browser."))
+        client.disconnect(reason: nil)
+    }
+
+    /// A barge-in while the action still waits: the output goes out (it is in the conversation
+    /// for the next turn) but nothing may follow the cancel.
+    @Test func aLateOutputAfterACancelledResponseNeverAsksForAContinuation() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        client.screenContextProvider = {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            return Self.screenFixture
+        }
+        let front = FrontApp()
+        client.frontAppProvider = { front.pid }
+        client.onMacAction = { _ in
+            front.pid = 2
+            return .openedURL("https://example.com")
+        }
+        await Self.deliver(#"{"type":"response.created","response":{"id":"r1"}}"#, on: socket)
+        await Self.deliver(#"{"type":"response.function_call_arguments.done","name":"open_url","call_id":"c1","response_id":"r1","arguments":"{\"url\":\"https://example.com\"}"}"#, on: socket)
+        // The person starts talking again before the page settled.
+        await Self.deliver(#"{"type":"input_audio_buffer.speech_started"}"#, on: socket)
+        await Self.waitUntil { socket.sentTexts.contains { $0.contains("function_call_output") } }
+        let cancelIndex = try #require(socket.sentTexts.firstIndex { $0.contains("response.cancel") })
+        let outputIndex = try #require(socket.sentTexts.firstIndex { $0.contains("function_call_output") })
+        #expect(cancelIndex < outputIndex)
+        #expect(!socket.sentTexts[outputIndex...].contains { $0.contains("response.create") })
+        client.disconnect(reason: nil)
+    }
+
+    @Test func theSettleWaitStopsOnceTheFrontAppChangedAndAlwaysByFourSeconds() {
+        #expect(RealtimeVoiceClient.settleDelay(frontChanged: false, elapsed: 0.5) == 0.25)
+        #expect(RealtimeVoiceClient.settleDelay(frontChanged: true, elapsed: 0.5) == 0.25)
+        #expect(RealtimeVoiceClient.settleDelay(frontChanged: true, elapsed: 1.0) == nil)
+        #expect(RealtimeVoiceClient.settleDelay(frontChanged: false, elapsed: 3.9) == 0.25)
+        #expect(RealtimeVoiceClient.settleDelay(frontChanged: false, elapsed: 4.0) == nil)
+    }
+
     @Test func aTerminalLaunchIsNamedInsteadOfAnUnexplainedZero() {
         let line = RealtimeVoiceClient.microphoneAuthorizationDescription(captureAuthorization: .notDetermined, recordPermission: .granted)
         #expect(line.contains("not determined for this process"))

@@ -99,6 +99,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// `point_at` calls resolve one after another (OCR snap is instant; the Claude fallback for
     /// icons takes 2–4 s) so a multi-step walkthrough flies in the order the model gave.
     private var pointingChain: Task<Void, Never>?
+    /// The fast-lane actions, one after another, off the receive loop: an action that waits (a
+    /// Mail script, Spotify starting, a page settling before the screen is attached) must never
+    /// hold up audio, barge-in or response.done.
+    private var actionChain: Task<Void, Never>?
+    /// The app in front, for "act, then look": the screen has settled once a different app is
+    /// in front (a browser opened) or the wait runs out. The companion sets it.
+    var frontAppProvider: (() -> pid_t?)?
     /// The last thing the user said, given to Claude when it has to locate an icon.
     private var lastUserTranscript: String?
 
@@ -373,6 +380,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         lastServerEventAt = nil
         stopForwardingMicrophone()
         pushToTalkArmed = false
+        actionChain?.cancel()
+        actionChain = nil
         // A sign-off heard on a session that is going away belongs to that session only.
         stopListeningAfterGoodbye = false
         idlePauseTask?.cancel()
@@ -1076,11 +1085,26 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         }
         switch MacAction.parse(toolName: name, arguments: arguments) {
         case .action(let action):
-            let startedAt = Date()
-            let outcome = await onMacAction?(action) ?? .failed("OpenClicky is not available")
-            log("mac action: \(name) \(outcome.logDescription) in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
-            try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(outcome.toolOutput.prefix(4000))]])
-            requestContinuation(after: event)
+            // Off the receive loop, in order. The output and the continuation go out when the
+            // action is done; `requestContinuation` already handles one arriving after
+            // response.done or after a cancel.
+            let previousAction = actionChain
+            let frontAppBefore = frontAppProvider?()
+            actionChain = Task { @MainActor [weak self] in
+                await previousAction?.value
+                guard !Task.isCancelled, let self else { return }
+                let startedAt = Date()
+                let outcome = await self.onMacAction?(action) ?? .failed("OpenClicky is not available")
+                if outcome.thenLooksAtScreen {
+                    await self.waitForScreenToSettle(frontAppBefore: frontAppBefore)
+                    guard !Task.isCancelled else { return }
+                    await self.attachScreenContext()
+                }
+                guard !Task.isCancelled else { return }
+                self.log("mac action: \(name) \(outcome.logDescription) in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
+                try? self.send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(outcome.toolOutput.prefix(4000))]])
+                self.requestContinuation(after: event)
+            }
             return
         case .badArguments(let outcome):
             log("mac action: \(name) rejected, \(outcome.spokenSentence)")
@@ -1243,6 +1267,23 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             guard let self else { return }
             self.log("hands-free: ending after the goodbye")
             self.onStopListeningRequested?()
+        }
+    }
+
+    /// How much longer to wait for the screen to settle after an action, or nil to stop: a second
+    /// after another app came to the front (a page needs a moment to paint), four seconds at most.
+    nonisolated static func settleDelay(frontChanged: Bool, elapsed: TimeInterval) -> TimeInterval? {
+        if frontChanged && elapsed >= 1.0 { return nil }
+        if elapsed >= 4.0 { return nil }
+        return 0.25
+    }
+
+    private func waitForScreenToSettle(frontAppBefore: pid_t?) async {
+        let startedAt = Date()
+        while !Task.isCancelled {
+            let frontChanged = frontAppProvider?() != frontAppBefore
+            guard let delay = Self.settleDelay(frontChanged: frontChanged, elapsed: Date().timeIntervalSince(startedAt)) else { return }
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         }
     }
 

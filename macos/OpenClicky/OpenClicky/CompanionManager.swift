@@ -257,6 +257,7 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceClient.onStopListeningRequested = { [weak self] in
             self?.endHandsFreeBySignOff()
         }
+        realtimeVoiceClient.frontAppProvider = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
         // A socket that died under a turn used to leave voiceState on processing for good, which
         // also refused dictation. Unstick it and say why; the next press reconnects.
         realtimeVoiceClient.onTurnHeardNothing = { [weak self] in
