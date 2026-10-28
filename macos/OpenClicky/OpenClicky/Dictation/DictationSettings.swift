@@ -271,6 +271,7 @@ final class DictationSettings: ObservableObject {
         retainFailedTakeAudio = defaults.object(forKey: Keys.retainFailedTakeAudio) == nil ? true : defaults.bool(forKey: Keys.retainFailedTakeAudio)
         readNearbyText = defaults.object(forKey: Keys.readNearbyText) == nil ? true : defaults.bool(forKey: Keys.readNearbyText)
         pauseBeforeSendingScreen = defaults.object(forKey: Keys.pauseBeforeSendingScreen) == nil ? true : defaults.bool(forKey: Keys.pauseBeforeSendingScreen)
+        answerSimpleRequestsOnThisMac = defaults.object(forKey: Keys.answerSimpleRequestsOnThisMac) == nil ? true : defaults.bool(forKey: Keys.answerSimpleRequestsOnThisMac)
         hasCompletedDictationOnboarding = defaults.bool(forKey: Keys.hasCompletedDictationOnboarding)
         preferredMicrophoneUID = defaults.string(forKey: Keys.preferredMicrophoneUID)
         orbPosition = Self.decodePoint(defaults.string(forKey: Keys.orbPosition))
@@ -308,6 +309,7 @@ final class DictationSettings: ObservableObject {
         static let retainFailedTakeAudio = "dictation.retainFailedTakeAudio"
         static let readNearbyText = "dictation.readNearbyText"
         static let pauseBeforeSendingScreen = "openclicky.ask.pauseBeforeSendingScreen"
+        static let answerSimpleRequestsOnThisMac = "openclicky.ask.onThisMac"
         static let hasCompletedDictationOnboarding = "dictation.onboarded"
         static let preferredMicrophoneUID = "dictation.preferredMicrophoneUID"
         static let region = "openclicky.region"
@@ -418,6 +420,11 @@ final class DictationSettings: ObservableObject {
     /// A question to Clicky waits a moment (`AskSendPause`) before the screen is captured and sent,
     /// so esc or a click on the island can still call it off. The ⌃⌥ lane only; on by default.
     @Published var pauseBeforeSendingScreen: Bool { didSet { defaults.set(pauseBeforeSendingScreen, forKey: Keys.pauseBeforeSendingScreen) } }
+    /// The ⌃⌥ lane tries Apple's on-device model first (`LocalAskRung`) for the fast-lane actions
+    /// (open an app or a website, a folder, the volume, playback) and for rewrites of text it can
+    /// read, so those never send a screenshot or spend answer credits. English, macOS 26 with
+    /// Apple Intelligence on; elsewhere the switch does nothing. On by default.
+    @Published var answerSimpleRequestsOnThisMac: Bool { didSet { defaults.set(answerSimpleRequestsOnThisMac, forKey: Keys.answerSimpleRequestsOnThisMac) } }
     @Published var hasCompletedDictationOnboarding: Bool { didSet { defaults.set(hasCompletedDictationOnboarding, forKey: Keys.hasCompletedDictationOnboarding) } }
 
     /// Settings → general → reset, and the orb page's reset: back to a fresh install's values.

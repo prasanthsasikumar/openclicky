@@ -94,4 +94,12 @@ struct LocalAskRungTests {
         #expect(LocalAskRung.gate(transcript: "open safari", replyLanguageCode: "en") == .tryModel(mentionsRewriting: false))
         #expect(LocalAskRung.gate(transcript: "how do i open safari", replyLanguageCode: "en") == .skip(reason: "a question"))
     }
+
+    @Test @MainActor func simpleRequestsStayOnThisMacByDefault() {
+        let defaults = UserDefaults(suiteName: "local-ask-\(UUID().uuidString)")!
+        #expect(DictationSettings(defaults: defaults).answerSimpleRequestsOnThisMac)
+        DictationSettings(defaults: defaults).answerSimpleRequestsOnThisMac = false
+        #expect(defaults.bool(forKey: "openclicky.ask.onThisMac") == false)
+        #expect(DictationSettings(defaults: defaults).answerSimpleRequestsOnThisMac == false)
+    }
 }
