@@ -43,7 +43,7 @@ struct IslandStyleTests {
 
     @Test func theOpenPanelIsSolidBlackUntilSomeoneAsksForGlass() {
         // Black reads more easily than black melting into glass (Prasanth, 2026-10-28): the open
-        // panel is solid unless the glass slider in Settings → General was moved.
+        // panel is solid unless openclicky.island.glassLevel is set by hand.
         #expect(IslandGlass.defaultLevel == 0)
         #expect(!IslandSurface(expansion: .full, width: 512, height: 120, bandBottom: 40, glassLevel: IslandGlass.defaultLevel, isSideDrawer: false).hasGlassLayer)
     }

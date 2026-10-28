@@ -11,7 +11,7 @@ short paragraphs. Windows and Linux notes go in the same section when they apply
 
 ## 0.10.0
 
-- **The island is solid black again when it opens.** The black melting into glass was harder to read. Settings → General → Glass level still brings the glass back if you liked it.
+- **The island is solid black again when it opens.** The black melting into glass was harder to read, and its Glass level slider is gone from Settings → General.
 - **No more docking the pointer in the island.** Parking it in the notch added nothing: the pointer already rests out of sight and comes back when you shake the mouse or when Clicky needs it. The option is gone from Settings, the menu bar and the island, which also gives the island's shortcuts more room. If you had it docked, it now follows "The pointer shows" in Settings → Clicky like everyone's.
 - **Tell the Mac what to do.** With hands-free on (or holding ⌃⌥), a command is done and confirmed in a few words instead of taught: "minimize everything" (and "bring them back"), "search for rotary engines" or "search YouTube for lo-fi", "check my email", "draft an email to Ana saying I'll be late", "play Blinding Lights", "stop that song". A question ("how do I minimize this?") still teaches and points.
 - **Email is never sent by voice.** "Check my email" reads the unread senders and subjects from Apple Mail, or opens your Gmail inbox and reads what's on screen; "draft an email" opens a new message with the recipient and a short body filled in, for you to read and send yourself. Settings → Voice → Doing things picks the inbox (Automatic is Apple Mail when it's set up here, else Gmail).
