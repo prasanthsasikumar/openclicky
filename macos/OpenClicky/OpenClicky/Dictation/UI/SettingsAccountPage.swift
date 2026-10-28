@@ -274,8 +274,9 @@ private struct BackendEngineUsageRow: View {
 // MARK: - your keys
 
 /// A provider a key can be saved for: where it lives in shell.json and how its row reads.
-private enum KeyProvider: String, CaseIterable, Identifiable {
-    case openAI, anthropic, openRouter, gemini, groq, mistral, xai, sarvam, elevenLabs, googleCloud, amazonPolly
+/// Not private: the Spotify row's mapping is unit-tested.
+enum KeyProvider: String, CaseIterable, Identifiable {
+    case openAI, anthropic, openRouter, gemini, groq, mistral, xai, sarvam, elevenLabs, googleCloud, amazonPolly, spotify
 
     var id: String { rawValue }
 
@@ -292,6 +293,7 @@ private enum KeyProvider: String, CaseIterable, Identifiable {
         case .elevenLabs: return "ElevenLabs"
         case .googleCloud: return "Google Cloud voice"
         case .amazonPolly: return "Amazon Polly"
+        case .spotify: return "Spotify"
         }
     }
 
@@ -308,6 +310,7 @@ private enum KeyProvider: String, CaseIterable, Identifiable {
         case .elevenLabs: return "Speaks answers in ElevenLabs’ voice, on your own ElevenLabs account."
         case .googleCloud: return "Speaks answers. A Google Cloud API key with the Text-to-Speech API switched on; an AI Studio key won’t do."
         case .amazonPolly: return "Speaks answers in Amazon’s neural voices. Paste access key ID:secret key, then :region if it isn’t us-east-1."
+        case .spotify: return "Finds the song you asked for. Paste client id:client secret from developer.spotify.com; without it OpenClicky’s own lookup is used."
         }
     }
 
@@ -324,6 +327,7 @@ private enum KeyProvider: String, CaseIterable, Identifiable {
         case .elevenLabs: return "sk_…"
         case .googleCloud: return "AIza…"
         case .amazonPolly: return "AKIA…:secret"
+        case .spotify: return "id:secret"
         }
     }
 
@@ -340,6 +344,7 @@ private enum KeyProvider: String, CaseIterable, Identifiable {
         case .elevenLabs: return \.elevenLabsApiKey
         case .googleCloud: return \.googleCloudApiKey
         case .amazonPolly: return \.amazonPollyCredentials
+        case .spotify: return \.spotifyCredentials
         }
     }
 
@@ -353,7 +358,7 @@ private enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return .groq
         case .mistral: return .mistral
         case .xai: return .xai
-        case .sarvam, .elevenLabs, .googleCloud, .amazonPolly: return nil
+        case .sarvam, .elevenLabs, .googleCloud, .amazonPolly, .spotify: return nil
         }
     }
 
@@ -494,6 +499,11 @@ private struct ProviderKeysList: View {
                 } catch {
                     sentence = error.localizedDescription
                 }
+            } else if provider == .spotify {
+                // Spotify credentials are checked by looking one song up.
+                let route = MusicLookupRoute.route(credentials: provider.savedKey, backendURL: nil)
+                let tracks = await MusicLookup(route: route).search("test")
+                sentence = tracks.first.map { "✓ Works. Found \($0.name)." } ?? "✗ Spotify refused the credentials."
             } else {
                 sentence = "Saved."
             }

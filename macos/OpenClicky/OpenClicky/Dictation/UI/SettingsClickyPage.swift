@@ -118,7 +118,57 @@ extension SettingsCatalog {
                         .pointerCursor()
                 })))
         }
+        // "Check my email" and "draft an email": which inbox they go to.
+        items += [
+            SettingsItem(
+                id: "clicky.emailApp", page: .voice, section: "Doing things",
+                title: "Email", detail: "Which inbox “check my email” and “draft an email” use.",
+                keywords: ["email", "mail", "gmail", "inbox", "draft", "apple mail"],
+                view: AnyView(EmailAppRow())),
+            SettingsItem(
+                id: "clicky.emailNeverSent", page: .voice, section: "Doing things",
+                title: EmailAppRow.footerText, keywords: ["send", "email"],
+                chrome: .footer,
+                view: AnyView(Text(EmailAppRow.footerText).font(SettingsLook.caption).foregroundStyle(.secondary))),
+        ]
         return items
+    }
+}
+
+/// Which inbox "check my email" and "draft an email" use: automatic (Apple Mail when it has
+/// accounts here, else Gmail), Apple Mail, or Gmail. `emailApp` in shell.json.
+struct EmailAppRow: View {
+    static let footerText = "Nothing is ever sent by voice."
+    @ObservedObject private var shellSettingsRevision = ShellSettingsRevision.shared
+
+    /// The picker's tag for a saved setting; anything unknown shows as automatic.
+    static func tag(forSetting setting: String?) -> String {
+        guard let setting, EmailApp(rawValue: setting) != nil else { return "auto" }
+        return setting
+    }
+
+    /// The setting a picked tag saves; automatic saves nothing.
+    static func settingValue(forTag tag: String) -> String? {
+        EmailApp(rawValue: tag)?.rawValue
+    }
+
+    var body: some View {
+        let _ = shellSettingsRevision.revision
+        SettingsRow(title: "Email", detail: "Which inbox “check my email” and “draft an email” use. Automatic is Apple Mail when it’s set up, else Gmail.") {
+            Picker("", selection: Binding(
+                get: { Self.tag(forSetting: OpenClickyConfiguration.settings.emailApp) },
+                set: { tag in
+                    OpenClickyConfiguration.update { $0.emailApp = Self.settingValue(forTag: tag) }
+                    ShellSettingsRevision.shared.noteChanged()
+                }
+            )) {
+                Text("Automatic").tag("auto")
+                Text("Apple Mail").tag("mail")
+                Text("Gmail").tag("gmail")
+            }
+            .labelsHidden().fixedSize()
+            .pointerCursor()
+        }
     }
 }
 
