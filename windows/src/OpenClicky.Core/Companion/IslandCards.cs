@@ -152,8 +152,6 @@ public sealed record FirstRunTourCardInputs(
 /// island at the top). The Mac's speech-recognition and "free fn" cards have no Windows counterpart.</summary>
 public static class FirstRunTourCards
 {
-    public static readonly IReadOnlyList<string> TalkKeys = new[] { "R Ctrl", "Win" };
-
     public static FirstRunTourCard Make(FirstRunTourStep step, FirstRunTourCardInputs inputs)
     {
         var none = Array.Empty<string>();
@@ -166,7 +164,9 @@ public static class FirstRunTourCards
                     none, TourSymbols.Wave, null, false, null, false, null, "let’s go", "skip tour");
             case FirstRunTourStep.Dictate:
                 return new FirstRunTourCard(step, $"hold {dictationKeyLabel} and say something",
-                    "try “hello openclicky, this is my first take”, then let go.",
+                    inputs.DictationKey == DictationHotkeys.Default
+                        ? "try “hello openclicky, this is my first take”, then let go. no right ctrl? hold right alt instead."
+                        : "try “hello openclicky, this is my first take”, then let go.",
                     new[] { IslandTexts.ShortKeycapLabel(inputs.DictationKey) }, null, inputs.Status, inputs.StatusIsGood,
                     inputs.MicrophoneName, inputs.OffersMicrophoneChange, null,
                     inputs.SuggestsBuiltInMicrophone ? "use built-in mic" : null, "skip");
@@ -187,14 +187,14 @@ public static class FirstRunTourCards
             case FirstRunTourStep.Talk:
                 return new FirstRunTourCard(step, inputs.CanAsk ? "your turn: ask me something" : "you can ask me things too",
                     inputs.CanAsk
-                        ? "hold right ctrl + windows and ask “what’s this?” about anything on your screen. i answer out loud and point."
+                        ? $"hold {inputs.DictationKey.TalkKeysText()} and ask “what’s this?” about anything on your screen. i answer out loud and point."
                         : "about anything on your screen, out loud, and i’ll point at it. add your email to switch it on, free.",
-                    TalkKeys, null, inputs.Status, inputs.StatusIsGood, null, false, null,
+                    inputs.DictationKey.TalkKeycapLabels(), null, inputs.Status, inputs.StatusIsGood, null, false, null,
                     inputs.CanAsk ? "next" : "add email", "skip");
             case FirstRunTourStep.Act:
                 return new FirstRunTourCard(step, inputs.CanAsk ? "hand me a task" : "i can do things for you too",
-                    inputs.CanAsk ? TaskExamples(inputs.UsesAgent) : "open apps, make folders, and more, just by asking. add your email to switch it on, free.",
-                    TalkKeys, null, inputs.Status, inputs.StatusIsGood, null, false, null,
+                    inputs.CanAsk ? TaskExamples(inputs.UsesAgent, inputs.DictationKey) : "open apps, make folders, and more, just by asking. add your email to switch it on, free.",
+                    inputs.DictationKey.TalkKeycapLabels(), null, inputs.Status, inputs.StatusIsGood, null, false, null,
                     inputs.CanAsk ? "next" : "add email", "skip");
             case FirstRunTourStep.Done:
                 return new FirstRunTourCard(step, "you’re all set",
@@ -209,9 +209,9 @@ public static class FirstRunTourCards
     }
 
     /// <summary>What to try on the task step: the agent (own keys) works in apps; a free account has the quick actions.</summary>
-    public static string TaskExamples(bool usesAgent) => usesAgent
-        ? "hold right ctrl + windows and say “add a note to my notes: buy milk”, or “organize my downloads folder so it’s easier to find things”."
-        : "hold right ctrl + windows and say “make a folder on my desktop called hello clicky”, or “open notepad”.";
+    public static string TaskExamples(bool usesAgent, DictationHotkey dictationKey = DictationHotkeys.Default) => usesAgent
+        ? $"hold {dictationKey.TalkKeysText()} and say “add a note to my notes: buy milk”, or “organize my downloads folder so it’s easier to find things”."
+        : $"hold {dictationKey.TalkKeysText()} and say “make a folder on my desktop called hello clicky”, or “open notepad”.";
 
     /// <summary>The keycaps' press, pressed down together and held, then let go, every 2.4 s (KeyboardSketch.pressAmount).</summary>
     public static double PressAmount(double timeSeconds)

@@ -77,12 +77,14 @@ public sealed class RecordedVoice
     /// key as the person has it ("right control", "caps lock"); null for every other line, whose
     /// recording is right on both.
     /// </summary>
-    public static string? WindowsSentence(Line line, string dictationKeyName) => line switch
+    /// <param name="talkKeysName">Talk's keys, which follow the dictation key ("control and the windows key"
+    /// when right Alt dictates).</param>
+    public static string? WindowsSentence(Line line, string dictationKeyName, string talkKeysName = "right control and the windows key") => line switch
     {
         Line.TourDictate => $"hold {dictationKeyName}, say a sentence, then let go. your words land wherever your cursor is.",
-        Line.TourTalk => "your turn. hold right control and the windows key, and ask me about anything on your screen.",
-        Line.TourAct => "now give me a task. hold right control and the windows key, and tell me what to do.",
-        Line.SettingsTourShortcuts => "shortcuts shows every key at a glance. hold right control and the windows key to talk to me.",
+        Line.TourTalk => $"your turn. hold {talkKeysName}, and ask me about anything on your screen.",
+        Line.TourAct => $"now give me a task. hold {talkKeysName}, and tell me what to do.",
+        Line.SettingsTourShortcuts => $"shortcuts shows every key at a glance. hold {talkKeysName} to talk to me.",
         _ => null,
     };
 
@@ -92,8 +94,10 @@ public sealed class RecordedVoice
     private readonly Func<string, CancellationToken, Task<byte[]>>? renderSentence;
     private readonly Func<bool>? dictationKeyIsDefault;
 
-    /// <summary>The lines whose Windows recording names the dictation key (as "right control", the default).</summary>
-    private static bool NamesTheDictationKey(Line line) => line == Line.TourDictate;
+    /// <summary>The lines whose Windows recording names the dictation key (as "right control", the default),
+    /// or talk's keys, which follow it.</summary>
+    private static bool NamesTheDictationKey(Line line) =>
+        line is Line.TourDictate or Line.TourTalk or Line.TourAct or Line.SettingsTourShortcuts;
     private readonly object stateLock = new();
     private CancellationTokenSource? currentLine;
     /// <summary>Tells whoever played the current line that it ended, exactly once.</summary>

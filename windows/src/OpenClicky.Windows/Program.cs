@@ -1,5 +1,5 @@
 // The entry point (OpenClickyApp.swift's OpenClickyMain + CompanionAppDelegate's launch flags).
-// In order: Velopack's install/update hooks; the Kokoro and Parakeet helper processes (the same exe
+// In order: Velopack's install/update hooks; the Kokoro, Parakeet and Moonshine helper processes (the same exe
 // with a flag, before any UI); the headless smoke and demo flags; one OpenClicky per session (a
 // second launch opens the window of the first); then the WPF app with no main window, built by
 // AppComposition. Unhandled exceptions are written to app.log and the app keeps running.

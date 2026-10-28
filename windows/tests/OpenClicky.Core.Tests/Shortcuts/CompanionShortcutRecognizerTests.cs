@@ -611,6 +611,60 @@ public class DictationKeyGestureMatrixTests
         Assert.False(keyboard.Recognizer.IsDictationKeyHeld);
     }
 
+    /// <summary>A laptop with no right Ctrl: on the tour's dictate step, right Alt held alone and let go
+    /// says which key the person would hold.</summary>
+    [Fact]
+    public void AnotherDictationKeyHeldAloneIsReportedWhileAsked()
+    {
+        var keyboard = new SimulatedKeyboard(DictationHotkey.RightControl);
+        keyboard.Press(PhysicalKey.RightAlt);
+        keyboard.Wait(0.8);
+        keyboard.Release(PhysicalKey.RightAlt);
+        Assert.Empty(keyboard.Events);
+
+        keyboard.Recognizer.ReportsOtherDictationKeys = true;
+        keyboard.Press(PhysicalKey.RightAlt);
+        keyboard.Wait(0.8);
+        keyboard.Release(PhysicalKey.RightAlt);
+        Assert.Equal(new[] { OtherDictationKeyHeld(DictationHotkey.RightAlt) }, keyboard.Events);
+    }
+
+    /// <summary>A quick tap, a shortcut (left Ctrl + C), another modifier joining, the dictation key itself
+    /// and Caps Lock are no sign of a missing key.</summary>
+    [Fact]
+    public void TapsShortcutsAndTheKeyItselfAreNotAnotherKeyHeld()
+    {
+        var keyboard = new SimulatedKeyboard(DictationHotkey.RightControl);
+        keyboard.Recognizer.ReportsOtherDictationKeys = true;
+        keyboard.Press(PhysicalKey.LeftControl);
+        keyboard.Wait(0.2);
+        keyboard.Release(PhysicalKey.LeftControl);
+        keyboard.Wait(1);
+        keyboard.Press(PhysicalKey.LeftControl);
+        keyboard.Wait(0.4);
+        keyboard.TypeLetter();
+        keyboard.Wait(0.4);
+        keyboard.Release(PhysicalKey.LeftControl);
+        keyboard.Wait(1);
+        keyboard.Press(PhysicalKey.RightShift);
+        keyboard.Wait(0.3);
+        keyboard.Press(PhysicalKey.LeftAlt);
+        keyboard.Wait(0.5);
+        keyboard.Release(PhysicalKey.LeftAlt);
+        keyboard.Release(PhysicalKey.RightShift);
+        keyboard.Wait(1);
+        keyboard.Press(PhysicalKey.CapsLock);
+        keyboard.Wait(0.8);
+        keyboard.Release(PhysicalKey.CapsLock);
+        Assert.Empty(keyboard.Events);
+
+        keyboard.Wait(1);
+        keyboard.Press(PhysicalKey.RightControl);
+        keyboard.Wait(0.8);
+        keyboard.Release(PhysicalKey.RightControl);
+        Assert.Equal(new[] { DictationPressed, DictationReleased(wasTap: false) }, keyboard.Events);
+    }
+
     /// <summary>Windows repeats key-downs of a held key; a repeated dictation key changes nothing.</summary>
     [Theory, MemberData(nameof(AllKeys))]
     public void AutoRepeatedKeyDownsOfTheHeldKeyAreIgnored(DictationHotkey hotkey)

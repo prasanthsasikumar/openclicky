@@ -29,7 +29,8 @@ second time (or pick "Open OpenClicky" in the tray menu) to open its window.
 
 - `%USERPROFILE%\.openclicky\shell.json` — keys, account token, backend URL, CLI command, workspace
   (the same file the Mac app and the CLI use; watched while the app runs).
-- `%LOCALAPPDATA%\OpenClicky\` — `preferences.json`, `dictation.sqlite`, downloaded models (Kokoro, Parakeet),
+- `%LOCALAPPDATA%\OpenClicky\` — `preferences.json`, `dictation.sqlite`, downloaded models (Kokoro, Parakeet; the built-in
+  Moonshine lives next to the exe in `Assets\Models`, put there by `scripts\fetch-speech-model.ps1` before a release build, from this repository's `models` prerelease, a hash-pinned mirror of sherpa-onnx's archive),
   `Logs\app.log` (truncated past 2 MB at launch; read it first when something misbehaves).
 
 ## Debug flags
@@ -41,13 +42,13 @@ second time (or pick "Open OpenClicky" in the tray menu) to open its window.
 | `--openclicky-window-demo [--shots <folder>] [--page <page>] [--tour]` | the window over a seeded throwaway data folder |
 | `--openclicky-platform-smoke` | exercises the OS layer on this PC and prints the results |
 | `--openclicky-smoke-run "<text>"` | the agent gate + a Codex run through the `openclicky` CLI |
-| `--openclicky-smoke-transcribe <wav> [offline\|parakeet\|sarvam\|openclicky\|assemblyai]` | one dictation engine on a recording |
+| `--openclicky-smoke-transcribe <wav> [moonshine\|offline\|parakeet\|sarvam\|openclicky\|assemblyai]` | one dictation engine on a recording |
 | `--openclicky-voice-smoke <voice>` | renders two sentences in one voice (`openai`, `kokoro`, `mac`…) |
 | `--openclicky-check-source <source>` | Settings' Test button for one answer source (`anthropic`, `openai`…) |
 | `--openclicky-answer-smoke` | one real question (a red square) through the answer route |
 
 The smoke flags write to the console they were started from and exit with 0 on success. The
-`--openclicky-kokoro-helper` / `--openclicky-parakeet-helper` flags are the app's own helper processes.
+`--openclicky-kokoro-helper` / `--openclicky-parakeet-helper` / `--openclicky-moonshine-helper` flags are the app's own helper processes.
 
 ## Release
 

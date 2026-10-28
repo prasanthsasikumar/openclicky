@@ -13,6 +13,10 @@ public sealed class DictationProviderFactory(IOfflineSpeechRecognizer offlineRec
     public IBuddyTranscriptionProvider MakeOffline(string? preferredLocale) =>
         new WindowsSpeechTranscriptionProvider(offlineRecognizer, () => preferredLocale);
 
+    /// <summary>The built-in Moonshine, whose unavailable reason is the resolver's (in this build, and English or auto-detect).</summary>
+    public IBuddyTranscriptionProvider MakeMoonshine(Func<string?> bareLanguageCode) =>
+        new MoonshineTranscriptionProvider(() => DictationEngineResolver.MoonshineUnavailableReason(MoonshineFacts.IsInstalled, bareLanguageCode()));
+
     /// <summary>Parakeet, whose unavailable reason is the resolver's (downloaded, and a language it hears).</summary>
     public IBuddyTranscriptionProvider MakeParakeet(Func<string?> bareLanguageCode) =>
         new ParakeetTranscriptionProvider(() => DictationEngineResolver.ParakeetUnavailableReason(ParakeetFacts.IsInstalled, bareLanguageCode()));

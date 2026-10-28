@@ -56,6 +56,9 @@ public class IslandTextsTests
         Assert.Equal(new[] { "R Ctrl", "Ctrl" }, grid[3].Keys);
         Assert.True(grid[3].IsLive);
         Assert.Equal(new[] { "Caps", "Ctrl" }, IslandTexts.ShortcutGrid(DictationHotkey.CapsLock, false)[3].Keys);
+        // With another key dictating, either Ctrl talks (many laptops have no right Ctrl).
+        Assert.Equal(new[] { "Ctrl", "Win" }, IslandTexts.ShortcutGrid(DictationHotkey.RightAlt, false)[0].Keys);
+        Assert.Equal(new[] { "L Ctrl", "Win" }, IslandTexts.ShortcutGrid(DictationHotkey.LeftControl, false)[0].Keys);
     }
 
     [Fact]
@@ -77,8 +80,10 @@ public class IslandTextsTests
         Assert.Equal("dock in the drawer", IslandTexts.DockButtonTitle(false, HUDPlacement.Right));
         Assert.Equal("release pointer", IslandTexts.DockButtonTitle(true, HUDPlacement.Notch));
         var explanation = IslandTexts.ExplainMessage(DictationHotkey.RightAlt);
-        Assert.Contains("hold right ctrl + windows", explanation);
+        Assert.Contains("hold ctrl + windows", explanation);
+        Assert.DoesNotContain("right ctrl", explanation);
         Assert.Contains("hold right alt to dictate", explanation);
+        Assert.Contains("hold right ctrl + windows", IslandTexts.ExplainMessage(DictationHotkey.RightControl));
         Assert.DoesNotContain("option", explanation);
     }
 }
@@ -177,6 +182,12 @@ public class FirstRunTourCardsTests
         Assert.Equal(new[] { "R Ctrl", "Win" }, talk.Keys);
         Assert.Contains("hold right ctrl + windows", talk.Detail);
         Assert.Equal("next", talk.PrimaryTitle);
+        Assert.Contains("no right ctrl? hold right alt instead.", dictate.Detail);
+        var rightAlt = Inputs with { DictationKey = DictationHotkey.RightAlt };
+        Assert.Equal("hold right Alt and say something", FirstRunTourCards.Make(FirstRunTourStep.Dictate, rightAlt).Title);
+        Assert.DoesNotContain("no right ctrl", FirstRunTourCards.Make(FirstRunTourStep.Dictate, rightAlt).Detail);
+        Assert.Equal(new[] { "Ctrl", "Win" }, FirstRunTourCards.Make(FirstRunTourStep.Talk, rightAlt).Keys);
+        Assert.Contains("hold ctrl + windows", FirstRunTourCards.Make(FirstRunTourStep.Act, rightAlt).Detail);
         Assert.Contains("add a note", FirstRunTourCards.Make(FirstRunTourStep.Act, Inputs).Detail);
         Assert.Contains("open notepad", FirstRunTourCards.Make(FirstRunTourStep.Act, Inputs with { UsesAgent = false }).Detail);
         Assert.Equal("add email", FirstRunTourCards.Make(FirstRunTourStep.Talk, Inputs with { CanAsk = false }).PrimaryTitle);

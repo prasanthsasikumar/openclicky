@@ -17,6 +17,7 @@ using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Shortcuts;
 using OpenClicky.Core.Speech;
 
 namespace OpenClicky.Core.Companion;
@@ -320,6 +321,8 @@ public sealed class FirstRunTourController
         status = message;
         statusIsGood = true;
         offersMicrophoneChange = false;
+        // The key worked: another one held from here on is no sign of a missing right Ctrl.
+        companion.Shortcuts.ReportsOtherDictationKeys = false;
         if (line is { } recordedLine) companion.RecordedVoice.Play(recordedLine);
         Publish();
         ScheduleAdvance(TimeSpan.FromSeconds(2.6));
@@ -363,6 +366,7 @@ public sealed class FirstRunTourController
         advanceCancellation?.Cancel();
         step = newStep;
         companion.SetHoldsTakesOnTheIsland(newStep == FirstRunTourStep.Dictate);
+        companion.Shortcuts.ReportsOtherDictationKeys = newStep == FirstRunTourStep.Dictate;
         idleWatch?.Cancel();
         status = null;
         statusIsGood = false;
@@ -470,6 +474,7 @@ public sealed class FirstRunTourController
         advanceCancellation?.Cancel();
         idleWatch?.Cancel();
         companion.SetHoldsTakesOnTheIsland(false);
+        companion.Shortcuts.ReportsOtherDictationKeys = false;
         step = null;
         preferences.Set(DoneKey, true);
         preferences.Remove(StepKey);
@@ -579,6 +584,18 @@ public sealed class FirstRunTourController
             }
             _ = auth.StartAsync(typed);
         }
+    }
+
+    /// <summary>On the dictate step, another key that could dictate was held alone: the keyboard most
+    /// likely has no right Ctrl (many laptops don't), so that key dictates from now on.</summary>
+    public void AdoptDictationKey(DictationHotkey key)
+    {
+        if (step != FirstRunTourStep.Dictate || companion.DictationSettings.DictationKey == key) return;
+        AppLog.Write($"tour: {key.RawValue()} held alone on the dictate step; it dictates now");
+        companion.DictationSettings.DictationKey = key;
+        status = $"{key.KeycapLabel()} dictates now. hold it and say something.";
+        statusIsGood = true;
+        Publish();
     }
 
     /// <summary>The dictate step's "change microphone" link.</summary>

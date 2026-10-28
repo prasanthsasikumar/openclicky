@@ -24,6 +24,7 @@ public class ParakeetDictationTests
     public void AnAutomaticDownloadReplacesOnlyTheOldOfflineEngine()
     {
         Assert.Equal("parakeet", ParakeetDictation.EngineAfterAutomaticDownload("offline"));
+        Assert.Equal("parakeet", ParakeetDictation.EngineAfterAutomaticDownload("moonshine"));
         Assert.Equal("sarvam", ParakeetDictation.EngineAfterAutomaticDownload("sarvam"));
         Assert.Equal("openclicky", ParakeetDictation.EngineAfterAutomaticDownload("openclicky"));
     }

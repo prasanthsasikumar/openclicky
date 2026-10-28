@@ -60,6 +60,8 @@ if (-not $Version) {
 if ($Publish -and -not $GitHubToken) { throw '-Publish needs -GitHubToken or $env:GITHUB_TOKEN' }
 
 Write-Host "OpenClicky $Version for $($Runtimes -join ', ')"
+# The built-in dictation model ships in every release (hash-checked; skipped when already there).
+& (Join-Path $windowsDirectory 'scripts\fetch-speech-model.ps1')
 foreach ($runtime in $Runtimes) {
     $channel = if ($runtime -eq 'win-x64') { 'win' } else { $runtime }
     $publishDirectory = Join-Path $publishRoot $runtime
@@ -82,7 +84,7 @@ foreach ($runtime in $Runtimes) {
     Write-Host "== ${runtime}: vpk pack"
     vpk pack --packId $PackId --packVersion $Version --packDir $publishDirectory --mainExe OpenClicky.exe `
         --packTitle OpenClicky --packAuthors OpenClicky --icon $icon --runtime $runtime --channel $channel `
-        --shortcuts 'Desktop,StartMenuRoot' -o $releaseDirectory
+        --shortcuts 'Desktop,StartMenuRoot' --msi --instLocation PerMachine -o $releaseDirectory
     if ($LASTEXITCODE -ne 0) { throw "vpk pack failed for $runtime" }
 
     if ($Publish) {

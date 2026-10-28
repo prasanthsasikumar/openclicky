@@ -4,3 +4,5 @@ obj/
 .vs/
 Releases/
 publish/
+# The built-in dictation model, fetched by scripts/fetch-speech-model.ps1 (too big for git).
+src/OpenClicky.Windows/Assets/Models/

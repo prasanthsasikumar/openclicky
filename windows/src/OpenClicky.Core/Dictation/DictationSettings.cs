@@ -10,11 +10,12 @@
 //
 // Windows speech recognition is not a private engine the way Apple's is: its dictation needs
 // "Online speech recognition" switched on (Settings → Privacy & security → Speech), and then it can
-// use Microsoft's online speech service. So on Windows Parakeet is the offline engine that keeps the
-// voice on this PC, set up as on a Mac before macOS 26: once the welcome tour is done the model
-// downloads on its own (unless declined, on an unmetered network with room on the disk) and
-// replaces `offline` (ParakeetDictation.StartAutomaticSetup). `offline` stays a choice, and its
-// words say where its audio may go.
+// use Microsoft's online speech service. So a fresh install dictates with Moonshine, a small English
+// model that ships inside the app and needs no permission. Parakeet is the better offline engine,
+// set up as on a Mac before macOS 26: once the welcome tour is done its model downloads on its own
+// (unless declined, on an unmetered network with room on the disk) and replaces `moonshine` or
+// `offline` (ParakeetDictation.StartAutomaticSetup). `offline` stays a choice, and its words say
+// where its audio may go.
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using OpenClicky.Core.Configuration;
@@ -26,12 +27,15 @@ namespace OpenClicky.Core.Dictation;
 /// <summary>Which speech engine turns a take into words.</summary>
 public enum DictationEngineChoice
 {
-    /// <summary>Windows' own recogniser (Windows speech recognition). No key or account; it may use
-    /// Microsoft's online speech service when Windows' online speech recognition is on.</summary>
-    Offline,
+    /// <summary>Useful Sensors' Moonshine tiny (English) through sherpa-onnx, shipped inside the app.
+    /// Nothing leaves the PC and nothing needs switching on: the default on a fresh install.</summary>
+    Moonshine,
     /// <summary>NVIDIA's Parakeet through sherpa-onnx, downloaded once. Nothing leaves the PC: the
     /// offline default on Windows once its model is downloaded.</summary>
     Parakeet,
+    /// <summary>Windows' own recogniser (Windows speech recognition). No key or account; it may use
+    /// Microsoft's online speech service when Windows' online speech recognition is on.</summary>
+    Offline,
     /// <summary>Sarvam's Saaras, with the user's own key (`sarvamKey` in shell.json).</summary>
     Sarvam,
     /// <summary>The OpenClicky backend (an account or the user's own OpenAI key).</summary>
@@ -54,6 +58,7 @@ public static class DictationEngineChoices
 
     public static string DisplayName(this DictationEngineChoice choice) => choice switch
     {
+        DictationEngineChoice.Moonshine => "Moonshine",
         DictationEngineChoice.Offline => "Windows speech",
         DictationEngineChoice.Parakeet => "Parakeet",
         DictationEngineChoice.Sarvam => "Sarvam",
@@ -69,20 +74,21 @@ public static class DictationEngineChoices
     /// Whether the voice itself stays on the PC is <see cref="KeepsVoiceOnThisPC"/>.
     /// </summary>
     public static bool IsOnDevice(this DictationEngineChoice choice) =>
-        choice is DictationEngineChoice.Offline or DictationEngineChoice.Parakeet;
+        choice is DictationEngineChoice.Moonshine or DictationEngineChoice.Offline or DictationEngineChoice.Parakeet;
 
     /// <summary>
-    /// The engines whose audio never leaves this PC: Parakeet only. Windows speech recognition may
-    /// use Microsoft's online speech service (when Windows' online speech recognition is on), so it
+    /// The engines whose audio never leaves this PC: Moonshine and Parakeet. Windows speech recognition
+    /// may use Microsoft's online speech service (when Windows' online speech recognition is on), so it
     /// is never called private. The "private · offline" tag reads this.
     /// </summary>
-    public static bool KeepsVoiceOnThisPC(this DictationEngineChoice choice) => choice == DictationEngineChoice.Parakeet;
+    public static bool KeepsVoiceOnThisPC(this DictationEngineChoice choice) =>
+        choice is DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet;
 
     /// <summary>Who hears the voice, lower case, for the island ("this pc", "sarvam").</summary>
     public static string ListenerName(this DictationEngineChoice choice) => choice switch
     {
         DictationEngineChoice.Offline => "windows",
-        DictationEngineChoice.Parakeet => "this pc",
+        DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => "this pc",
         DictationEngineChoice.Sarvam => "sarvam",
         DictationEngineChoice.OpenClicky => "openai",
         _ => "assemblyai",
@@ -91,6 +97,7 @@ public static class DictationEngineChoices
     /// <summary>The engine's name in Settings → Dictation's "Who hears you".</summary>
     public static string SettingsTitle(this DictationEngineChoice choice) => choice switch
     {
+        DictationEngineChoice.Moonshine => "Moonshine, built in",
         DictationEngineChoice.Offline => "Windows speech recognition",
         DictationEngineChoice.Parakeet => "Parakeet, on this PC",
         DictationEngineChoice.Sarvam => "Sarvam",
@@ -110,7 +117,7 @@ public static class DictationEngineChoices
     public static string AudioDestinationTag(this DictationEngineChoice choice) => choice switch
     {
         DictationEngineChoice.Offline => "May use Microsoft online",
-        DictationEngineChoice.Parakeet => "Private · offline",
+        DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => "Private · offline",
         DictationEngineChoice.Sarvam => "Audio goes to Sarvam",
         DictationEngineChoice.OpenClicky => "Audio goes to OpenAI",
         _ => "Audio goes to AssemblyAI",
@@ -120,7 +127,7 @@ public static class DictationEngineChoices
     public static string AudioDestinationSentence(this DictationEngineChoice choice) => choice switch
     {
         DictationEngineChoice.Offline => "Windows speech recognition hears you. With Windows’ online speech recognition on, it may use Microsoft’s online speech service.",
-        DictationEngineChoice.Parakeet => "Your voice stays on this PC.",
+        DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => "Your voice stays on this PC.",
         DictationEngineChoice.Sarvam => "Audio goes to Sarvam with your key.",
         DictationEngineChoice.OpenClicky => "Audio goes to OpenAI through the OpenClicky backend.",
         _ => "Audio goes to AssemblyAI through the OpenClicky backend.",
@@ -129,6 +136,7 @@ public static class DictationEngineChoices
     /// <summary>What the engine does and what it needs, under its name in Settings.</summary>
     public static string SettingsDetail(this DictationEngineChoice choice) => choice switch
     {
+        DictationEngineChoice.Moonshine => "A small model that comes with OpenClicky. Works the moment it’s installed, and nothing leaves this PC. English only.",
         DictationEngineChoice.Offline => "Windows’ own recogniser. No key, no account. When online speech recognition is on in Windows settings (privacy & security, speech), it may use Microsoft’s online speech service.",
         DictationEngineChoice.Parakeet => ParakeetFacts.IsRecommendedForThisPC
             ? $"Far more accurate than Windows speech recognition, and nothing leaves this PC. English and 24 European languages. A {ParakeetFacts.DownloadSizeText} download."
@@ -141,6 +149,7 @@ public static class DictationEngineChoices
     /// <summary>The short note on the right of the engine in Settings while it can't be used yet.</summary>
     public static string UnavailableBadge(this DictationEngineChoice choice) => choice switch
     {
+        DictationEngineChoice.Moonshine => "Not in this build",
         DictationEngineChoice.Offline => "",
         DictationEngineChoice.Parakeet => "Not downloaded",
         DictationEngineChoice.Sarvam => "Needs a key",
@@ -157,6 +166,7 @@ public static class DictationEngineChoices
         {
             // Not "private" or "offline": it may use Microsoft's online speech service.
             DictationEngineChoice.Offline => ["local", "on device", "windows", "microsoft", "speech recognition", "online speech recognition"],
+            DictationEngineChoice.Moonshine => [.. onDeviceKeywords, "moonshine", "built in", "bundled", "model", "english"],
             DictationEngineChoice.Parakeet => [.. onDeviceKeywords, "parakeet", "nvidia", "download", "model"],
             DictationEngineChoice.Sarvam => ["sarvam", "saaras", "key", "api key", "indian", "hindi"],
             DictationEngineChoice.OpenClicky => [.. onDeviceKeywords, "openai", "openclicky", "account", "backend"],
@@ -210,6 +220,36 @@ public static class ParakeetFacts
         Speech.KokoroVoice.EngineIsAvailable() && ModelFileNames.All(name => File.Exists(Path.Combine(modelFolder, name)));
 
     /// <summary>Whether the model is installed. Replaceable (tests).</summary>
+    public static Func<bool> IsInstalledCheck { get; set; } = () => IsInstalledIn(ModelFolder);
+
+    public static bool IsInstalled => IsInstalledCheck();
+}
+
+/// <summary>
+/// The model that ships inside the app: Moonshine tiny (English, int8) from sherpa-onnx's asr-models
+/// release. windows/scripts/fetch-speech-model.ps1 puts it in Assets\Models before a release build
+/// (its hash pinned there); a build without it (a plain dev build) has no Moonshine and keeps
+/// Windows speech as the default.
+/// </summary>
+public static class MoonshineFacts
+{
+    /// <summary>The model's folder name, as sherpa-onnx's release tarball unpacks it.</summary>
+    public const string ModelFolderName = "sherpa-onnx-moonshine-tiny-en-int8";
+
+    /// <summary>Next to the exe: Assets\Models\&lt;model&gt;.</summary>
+    public static string ModelFolder => Path.Combine(AppContext.BaseDirectory, "Assets", "Models", ModelFolderName);
+
+    /// <summary>The files a working model folder has.</summary>
+    public static IReadOnlyList<string> ModelFileNames { get; } =
+        ["preprocess.onnx", "encode.int8.onnx", "uncached_decode.int8.onnx", "cached_decode.int8.onnx", "tokens.txt"];
+
+    /// <summary>Moonshine tiny hears English only.</summary>
+    public static bool Hears(string? bareLanguageCode) => bareLanguageCode is null or "en";
+
+    public static bool IsInstalledIn(string modelFolder) =>
+        Speech.KokoroVoice.EngineIsAvailable() && ModelFileNames.All(name => File.Exists(Path.Combine(modelFolder, name)));
+
+    /// <summary>Whether this build carries the model. Replaceable (tests).</summary>
     public static Func<bool> IsInstalledCheck { get; set; } = () => IsInstalledIn(ModelFolder);
 
     public static bool IsInstalled => IsInstalledCheck();
@@ -350,10 +390,15 @@ public sealed class DictationSettings : ObservableObject
         public const string Region = "openclicky.region";
     }
 
+    /// <summary>A fresh install's engine: the built-in Moonshine when this build carries it (no Windows
+    /// online-speech prompt), else Windows speech. A stored choice ("offline" included) is kept.</summary>
+    public static DictationEngineChoice DefaultEngine =>
+        MoonshineFacts.IsInstalled ? DictationEngineChoice.Moonshine : DictationEngineChoice.Offline;
+
     public DictationSettings(Preferences defaults)
     {
         this.defaults = defaults;
-        engine = defaults.GetEnum(Keys.Engine, DictationEngineChoice.Offline);
+        engine = defaults.GetEnum(Keys.Engine, DefaultEngine);
         languageCode = defaults.GetString(Keys.Language) ?? DictationLanguage.Auto.Code;
         script = defaults.GetEnum(Keys.Script, DictationScript.Native);
         // Off on a fresh install: words type straight in as you speak until "clean up my words with ai" is switched on.

@@ -17,6 +17,8 @@ public interface IDictationProviderFactory
 {
     /// <summary>Windows speech recognition, pinned to `preferredLocale` ("hi-IN") or the PC's language when null.</summary>
     IBuddyTranscriptionProvider MakeOffline(string? preferredLocale);
+    /// <summary>The built-in Moonshine; `bareLanguageCode` (null = detect) is read when a take starts, for its unavailable reason.</summary>
+    IBuddyTranscriptionProvider MakeMoonshine(Func<string?> bareLanguageCode);
     /// <summary>Parakeet; `bareLanguageCode` (null = detect) is read when a take starts, for its unavailable reason.</summary>
     IBuddyTranscriptionProvider MakeParakeet(Func<string?> bareLanguageCode);
     /// <summary>Sarvam, reading the dictation language when a take starts.</summary>
@@ -34,6 +36,7 @@ public static class DictationEngineResolver
         choice switch
         {
             DictationEngineChoice.Offline => factory.MakeOffline(settings.Language.BareCode is null ? null : settings.Language.Code),
+            DictationEngineChoice.Moonshine => factory.MakeMoonshine(() => settings.Language.BareCode),
             DictationEngineChoice.Parakeet => factory.MakeParakeet(() => settings.Language.BareCode),
             DictationEngineChoice.Sarvam => factory.MakeSarvam(() => settings.Language),
             // The styles page's language, read when a take starts; auto sends none so the model detects it.
@@ -52,12 +55,16 @@ public static class DictationEngineResolver
     /// free account's grant covers.
     /// </summary>
     public static string? UnavailableReason(DictationEngineChoice choice, AccountKind kind, bool isConfigured, bool signedIn, string? sarvamKey,
-                                            bool? parakeetInstalled = null, Func<string?>? bareLanguageCode = null)
+                                            bool? parakeetInstalled = null, Func<string?>? bareLanguageCode = null,
+                                            bool? moonshineInstalled = null)
     {
         switch (choice)
         {
             case DictationEngineChoice.Offline:
                 return null;
+            case DictationEngineChoice.Moonshine:
+                return MoonshineUnavailableReason(moonshineInstalled ?? MoonshineFacts.IsInstalled,
+                    bareLanguageCode is null ? DictationSettings.StoredLanguage().BareCode : bareLanguageCode());
             case DictationEngineChoice.Parakeet:
                 return ParakeetUnavailableReason(parakeetInstalled ?? ParakeetFacts.IsInstalled,
                     bareLanguageCode is null ? DictationSettings.StoredLanguage().BareCode : bareLanguageCode());
@@ -83,6 +90,19 @@ public static class DictationEngineResolver
 
     /// <summary>Installed but pinned to a language Parakeet does not hear: the island says this, not "download".</summary>
     public const string ParakeetLanguageNotHeardReason = "parakeet doesn't hear this language; pick auto-detect or a european language";
+
+    /// <summary>Moonshine's half of `UnavailableReason`; its provider reads the same function.</summary>
+    public static string? MoonshineUnavailableReason(bool isInstalled, string? bareLanguageCode)
+    {
+        if (!isInstalled) return MoonshineMissingReason;
+        return MoonshineFacts.Hears(bareLanguageCode) ? null : MoonshineLanguageNotHeardReason;
+    }
+
+    /// <summary>A build without the bundled model (a plain dev build).</summary>
+    public const string MoonshineMissingReason = "the built-in model isn't in this build; pick another engine";
+
+    /// <summary>Pinned to a language other than English: the island says this.</summary>
+    public const string MoonshineLanguageNotHeardReason = "moonshine only hears english; pick english, auto-detect or another engine";
 
     /// <summary>Sarvam's half of `UnavailableReason`; its provider reads the same function.</summary>
     public static string? SarvamUnavailableReason(string? sarvamKey) =>

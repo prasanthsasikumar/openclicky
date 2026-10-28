@@ -122,6 +122,12 @@ public class CompanionManagerTests
         Assert.Equal(DictationSettingsPage.Account, IslandVoiceDestination.SetupPage(DictationEngineChoice.OpenClicky, "needs an account"));
         Assert.Equal(DictationSettingsPage.Keys, IslandVoiceDestination.SetupPage(DictationEngineChoice.OpenClicky, "needs your own key"));
         Assert.Equal(DictationSettingsPage.Dictation, IslandVoiceDestination.SetupPage(DictationEngineChoice.Parakeet, "not downloaded"));
+        Assert.Equal("pick english or auto-detect ›",
+            IslandVoiceDestination.BlockedPillLabel(DictationEngineChoice.Moonshine, DictationEngineResolver.MoonshineLanguageNotHeardReason));
+        Assert.Equal("open language settings",
+            IslandVoiceDestination.ButtonTitle(DictationEngineChoice.Moonshine, DictationEngineResolver.MoonshineLanguageNotHeardReason));
+        Assert.Equal("pick another engine ›", IslandVoiceDestination.BlockedPillLabel(DictationEngineChoice.Moonshine, DictationEngineResolver.MoonshineMissingReason));
+        Assert.Equal(DictationSettingsPage.Dictation, IslandVoiceDestination.SetupPage(DictationEngineChoice.Moonshine, DictationEngineResolver.MoonshineMissingReason));
     }
 
     // MARK: seams

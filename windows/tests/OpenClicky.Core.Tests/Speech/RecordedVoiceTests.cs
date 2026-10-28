@@ -101,25 +101,27 @@ public class RecordedVoiceTests
         }
     }
 
-    /// <summary>The dictate recording says "right control", the default key; with another key chosen the
-    /// sentence names that key instead. The other three lines name Ctrl+Win, which never changes.</summary>
+    /// <summary>The recordings say "right control", the default key, for dictating and as talk's Ctrl; with
+    /// another key chosen (a laptop with no right Ctrl) the sentences name the keys as they are instead.</summary>
     [Fact]
-    public async Task TheDictateRecordingPlaysOnlyWhileTheDefaultKeyIsChosen()
+    public async Task TheKeyRecordingsPlayOnlyWhileTheDefaultKeyIsChosen()
     {
         var player = new ControlledPlayer();
         var rendered = new List<string>();
         var voice = new RecordedVoice(player, AssetsFolder(),
-            windowsSentence: line => RecordedVoice.WindowsSentence(line, "caps lock"),
+            windowsSentence: line => RecordedVoice.WindowsSentence(line, "right alt", "control and the windows key"),
             renderSentence: (text, _) => { rendered.Add(text); return Task.FromResult(new byte[] { 1 }); },
             dictationKeyIsDefault: () => false);
         Assert.True(voice.Play(RecordedVoice.Line.TourDictate));
         await Task.Delay(50);
-        Assert.Contains("caps lock", Assert.Single(rendered));
+        Assert.Contains("right alt", Assert.Single(rendered));
         player.CurrentPlayback.SetResult();
         player.CurrentPlayback = new(TaskCreationOptions.RunContinuationsAsynchronously);
         Assert.True(voice.Play(RecordedVoice.Line.TourTalk));
         await Task.Delay(50);
-        Assert.Single(rendered);
+        Assert.Equal(2, rendered.Count);
+        Assert.Contains("hold control and the windows key", rendered[1]);
+        Assert.DoesNotContain("right control", rendered[1]);
         Assert.Equal(2, player.PlayCount);
     }
 

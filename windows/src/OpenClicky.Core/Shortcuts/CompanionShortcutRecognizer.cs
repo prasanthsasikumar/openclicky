@@ -45,13 +45,18 @@ public enum CompanionShortcutEventKind
     EscapePressed,
     TextComposerRequested,
     HandsFreeToggleRequested,
+    /// <summary>Another key that could dictate (<see cref="CompanionShortcutEvent.OtherKey"/>) was held alone
+    /// and let go, as someone does whose keyboard has no right Ctrl. The first-run tour adopts it.</summary>
+    OtherDictationKeyHeld,
 }
 
 /// <summary>What the keyboard asked for.</summary>
 /// <param name="WasTap">DictationReleased only: the key came back up within the tap window with nothing else pressed.</param>
 /// <param name="KeyWasPressedDuringHold">DictationReleased only: a key went down while the dictation key was
 /// held (right Ctrl + C): the hold was a keyboard shortcut, not a take, and the take is thrown away.</param>
-public sealed record CompanionShortcutEvent(CompanionShortcutEventKind Kind, bool WasTap = false, bool KeyWasPressedDuringHold = false)
+/// <param name="OtherKey">OtherDictationKeyHeld only: the key that was held.</param>
+public sealed record CompanionShortcutEvent(CompanionShortcutEventKind Kind, bool WasTap = false, bool KeyWasPressedDuringHold = false,
+                                            DictationHotkey? OtherKey = null)
 {
     public static readonly CompanionShortcutEvent TalkPressed = new(CompanionShortcutEventKind.TalkPressed);
     public static readonly CompanionShortcutEvent TalkReleased = new(CompanionShortcutEventKind.TalkReleased);
@@ -65,6 +70,9 @@ public sealed record CompanionShortcutEvent(CompanionShortcutEventKind Kind, boo
 
     public static CompanionShortcutEvent DictationReleased(bool wasTap, bool keyWasPressedDuringHold = false) =>
         new(CompanionShortcutEventKind.DictationReleased, wasTap, keyWasPressedDuringHold);
+
+    public static CompanionShortcutEvent OtherDictationKeyHeld(DictationHotkey key) =>
+        new(CompanionShortcutEventKind.OtherDictationKeyHeld, OtherKey: key);
 }
 
 /// <summary>One event from the low-level keyboard hook.</summary>
@@ -82,6 +90,8 @@ public sealed class CompanionShortcutRecognizer
     public const double TapMaxHoldSeconds = 0.35;
     /// <summary>Two taps this close together make a double tap.</summary>
     public const double DoubleTapWindowSeconds = 0.45;
+    /// <summary>Another dictation key held alone at least this long reads as "this is the key I'd hold".</summary>
+    public const double OtherKeyHoldSeconds = 0.5;
 
     /// <summary>The modifiers that take part in the shortcuts. Caps Lock only counts when it is the
     /// dictation key; otherwise it is an ordinary key (the Mac ignores caps lock too).</summary>
@@ -101,6 +111,9 @@ public sealed class CompanionShortcutRecognizer
             ResetDictationState();
         }
     }
+
+    /// <summary>Whether OtherDictationKeyHeld is reported (off by default; the first-run tour turns it on).</summary>
+    public bool ReportsOtherDictationKeys { get; set; }
 
     public bool IsTalkHeld { get; private set; }
     public bool IsDictationKeyHeld { get; private set; }
@@ -129,6 +142,9 @@ public sealed class CompanionShortcutRecognizer
     /// <summary>A Ctrl dictating is also talk's Ctrl: this press of it went to Ctrl+Win (Win was down, or
     /// joined the hold), so it is no take until it comes back up.</summary>
     private bool dictationKeyPressIsTalk;
+    /// <summary>Another key that could dictate went down with nothing else held, and when; null once
+    /// anything else moves.</summary>
+    private (DictationHotkey Key, double StartedAt)? otherKeyHold;
 
     /// <summary>Right Ctrl (the default) or left Ctrl dictates: Ctrl+Win is then that key plus Win, so
     /// everything stays on one hand and the other Ctrl is free for copy and paste.</summary>
@@ -166,6 +182,7 @@ public sealed class CompanionShortcutRecognizer
     {
         var time = keyEvent.Timestamp;
         var eventKind = Classify(keyEvent);
+        var otherKeyEvents = TrackOtherKeyHold(keyEvent, eventKind);
         if (eventKind != EventKind.ModifiersChanged)
         {
             keyWasPressedDuringControlTap = true;
@@ -333,7 +350,37 @@ public sealed class CompanionShortcutRecognizer
         }
 
         previousCompanionFlags = companionFlags;
+        events.AddRange(otherKeyEvents);
         return events;
+    }
+
+    /// <summary>Watches for another key that could dictate (not Caps Lock, which toggles) held alone for
+    /// <see cref="OtherKeyHoldSeconds"/> and let go with nothing else having moved.</summary>
+    private IReadOnlyList<CompanionShortcutEvent> TrackOtherKeyHold(ShortcutKeyEvent keyEvent, EventKind eventKind)
+    {
+        if (ReportsOtherDictationKeys && eventKind == EventKind.ModifiersChanged)
+        {
+            foreach (var candidate in DictationHotkeys.AllCases)
+            {
+                if (candidate == dictationKey || candidate == DictationHotkey.CapsLock || candidate.VirtualKey() != keyEvent.VirtualKey) continue;
+                var own = candidate.SideBits().Own;
+                if (keyEvent.IsDown)
+                {
+                    // Auto-repeat keeps the hold; anything else held makes it a shortcut.
+                    if (otherKeyHold?.Key != candidate) otherKeyHold = keyEvent.Modifiers == own ? (candidate, keyEvent.Timestamp) : null;
+                    return Array.Empty<CompanionShortcutEvent>();
+                }
+                if (otherKeyHold is { } hold && hold.Key == candidate && keyEvent.Modifiers == PhysicalModifiers.None
+                    && keyEvent.Timestamp - hold.StartedAt >= OtherKeyHoldSeconds)
+                {
+                    otherKeyHold = null;
+                    return new[] { CompanionShortcutEvent.OtherDictationKeyHeld(candidate) };
+                }
+                break;
+            }
+        }
+        otherKeyHold = null;
+        return Array.Empty<CompanionShortcutEvent>();
     }
 
     private static bool Contains(CompanionModifiers flags, CompanionModifiers required) => (flags & required) == required;
@@ -372,6 +419,7 @@ public sealed class CompanionShortcutRecognizer
         lastControlTapCompletedAt = null;
         keyWasPressedDuringControlTap = false;
         talkHeldBackByDictation = false;
+        otherKeyHold = null;
         ResetDictationState();
     }
 }

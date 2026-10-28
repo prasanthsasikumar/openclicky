@@ -88,6 +88,9 @@ public sealed partial class CompanionManager
             case CompanionShortcutEventKind.TalkReleased:
                 // Delivered through ShortcutTransition.
                 break;
+            case CompanionShortcutEventKind.OtherDictationKeyHeld:
+                if (shortcutEvent.OtherKey is { } otherKey) FirstRunTour.AdoptDictationKey(otherKey);
+                break;
             default:
                 HandleDictationShortcut(shortcutEvent);
                 break;

@@ -66,6 +66,10 @@ jobs:
         if: matrix.runtime == 'win-x64'
         run: dotnet test windows/tests/OpenClicky.Core.Tests -c Release
 
+      - name: Fetch the built-in dictation model
+        shell: pwsh
+        run: ./windows/scripts/fetch-speech-model.ps1
+
       - name: Publish
         run: >
           dotnet publish windows/src/OpenClicky.Windows/OpenClicky.Windows.csproj -c Release

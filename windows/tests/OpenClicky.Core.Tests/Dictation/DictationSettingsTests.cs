@@ -170,10 +170,11 @@ public sealed class DictationSettingsTests
     [Fact]
     public void OnlyTheOfflineEnginesKeepTheVoiceOnThisPC()
     {
-        Assert.Equal([DictationEngineChoice.Offline, DictationEngineChoice.Parakeet], DictationEngineChoices.AllCases.Where(engine => engine.IsOnDevice()));
-        // On Windows only Parakeet is private: Windows speech recognition may use Microsoft's
-        // online speech service, so it is never tagged or described as keeping the voice here.
-        Assert.Equal([DictationEngineChoice.Parakeet], DictationEngineChoices.AllCases.Where(engine => engine.KeepsVoiceOnThisPC()));
+        Assert.Equal([DictationEngineChoice.Moonshine, DictationEngineChoice.Parakeet, DictationEngineChoice.Offline],
+            DictationEngineChoices.AllCases.Where(engine => engine.IsOnDevice()));
+        // On Windows only the sherpa-onnx models are private: Windows speech recognition may use
+        // Microsoft's online speech service, so it is never tagged or described as keeping the voice here.
+        Assert.Equal([DictationEngineChoice.Moonshine, DictationEngineChoice.Parakeet], DictationEngineChoices.AllCases.Where(engine => engine.KeepsVoiceOnThisPC()));
         foreach (var engine in DictationEngineChoices.AllCases)
         {
             Assert.Equal(engine.KeepsVoiceOnThisPC(), engine.AudioDestinationTag() == "Private · offline");
@@ -198,7 +199,9 @@ public sealed class DictationSettingsTests
     [Fact]
     public void TheEnginesKeepTheMacsRawValues()
     {
-        Assert.Equal(["offline", "parakeet", "sarvam", "openclicky", "assemblyai"], DictationEngineChoices.AllCases.Select(engine => engine.Id()));
+        Assert.Equal(["moonshine", "parakeet", "offline", "sarvam", "openclicky", "assemblyai"], DictationEngineChoices.AllCases.Select(engine => engine.Id()));
+        Assert.Equal("Moonshine, built in", DictationEngineChoice.Moonshine.SettingsTitle());
+        Assert.Equal("this pc", DictationEngineChoice.Moonshine.ListenerName());
         Assert.Equal(DictationEngineChoice.OpenClicky, DictationEngineChoices.FromRawValue("openclicky"));
         Assert.Equal("Windows speech recognition", DictationEngineChoice.Offline.SettingsTitle());
         Assert.Equal("windows", DictationEngineChoice.Offline.ListenerName());
@@ -207,6 +210,28 @@ public sealed class DictationSettingsTests
         Assert.Contains("cloud", DictationEngineChoice.OpenClicky.SearchKeywords());
         Assert.Contains("hindi", DictationEngineChoice.Sarvam.SearchKeywords());
         Assert.Equal("", DictationEngineChoice.Offline.UnavailableBadge());
+    }
+
+    /// <summary>A fresh install dictates with the built-in Moonshine when the build carries it (no Windows
+    /// online-speech prompt); a stored choice, Windows speech included, is kept.</summary>
+    [Fact]
+    public void AFreshInstallStartsOnTheBuiltInModelAndAStoredChoiceIsKept()
+    {
+        var previous = MoonshineFacts.IsInstalledCheck;
+        try
+        {
+            MoonshineFacts.IsInstalledCheck = () => true;
+            Assert.Equal(DictationEngineChoice.Moonshine, new DictationSettings(Preferences.InMemory()).Engine);
+            var stored = Preferences.InMemory();
+            stored.Set("dictation.engine", "offline");
+            Assert.Equal(DictationEngineChoice.Offline, new DictationSettings(stored).Engine);
+            MoonshineFacts.IsInstalledCheck = () => false;
+            Assert.Equal(DictationEngineChoice.Offline, new DictationSettings(Preferences.InMemory()).Engine);
+        }
+        finally
+        {
+            MoonshineFacts.IsInstalledCheck = previous;
+        }
     }
 
     [Fact]
@@ -224,10 +249,14 @@ public sealed class DictationSettingsTests
     public void EachEngineSaysWhatItIsMissing()
     {
         string? Reason(DictationEngineChoice engine, AccountKind kind = AccountKind.OwnKeys, bool isConfigured = true, bool signedIn = true,
-                       string? sarvamKey = "k", bool parakeetInstalled = true, string? bareLanguage = null) =>
-            DictationEngineResolver.UnavailableReason(engine, kind, isConfigured, signedIn, sarvamKey, parakeetInstalled, () => bareLanguage);
+                       string? sarvamKey = "k", bool parakeetInstalled = true, string? bareLanguage = null, bool moonshineInstalled = true) =>
+            DictationEngineResolver.UnavailableReason(engine, kind, isConfigured, signedIn, sarvamKey, parakeetInstalled, () => bareLanguage, moonshineInstalled);
 
         Assert.Null(Reason(DictationEngineChoice.Offline, isConfigured: false));
+        Assert.Null(Reason(DictationEngineChoice.Moonshine, isConfigured: false));
+        Assert.Null(Reason(DictationEngineChoice.Moonshine, bareLanguage: "en"));
+        Assert.Equal(DictationEngineResolver.MoonshineLanguageNotHeardReason, Reason(DictationEngineChoice.Moonshine, bareLanguage: "de"));
+        Assert.Equal(DictationEngineResolver.MoonshineMissingReason, Reason(DictationEngineChoice.Moonshine, moonshineInstalled: false));
         Assert.Equal("needs its 465 MB download", Reason(DictationEngineChoice.Parakeet, parakeetInstalled: false));
         Assert.Equal(DictationEngineResolver.ParakeetLanguageNotHeardReason, Reason(DictationEngineChoice.Parakeet, bareLanguage: "hi"));
         Assert.Null(Reason(DictationEngineChoice.Parakeet, bareLanguage: "de"));
@@ -256,12 +285,14 @@ public sealed class DictationSettingsTests
     private sealed class RecordingFactory : IDictationProviderFactory
     {
         public string? OfflineLocale { get; private set; }
+        public Func<string?>? MoonshineLanguage { get; private set; }
         public Func<string?>? ParakeetLanguage { get; private set; }
         public Func<DictationLanguage>? SarvamLanguage { get; private set; }
         public Func<string?>? OpenClickyLanguage { get; private set; }
         public Func<string?>? AssemblyAILanguage { get; private set; }
 
         public IBuddyTranscriptionProvider MakeOffline(string? preferredLocale) { OfflineLocale = preferredLocale; return new NamedTranscriptionProvider("offline"); }
+        public IBuddyTranscriptionProvider MakeMoonshine(Func<string?> bareLanguageCode) { MoonshineLanguage = bareLanguageCode; return new NamedTranscriptionProvider("moonshine"); }
         public IBuddyTranscriptionProvider MakeParakeet(Func<string?> bareLanguageCode) { ParakeetLanguage = bareLanguageCode; return new NamedTranscriptionProvider("parakeet"); }
         public IBuddyTranscriptionProvider MakeSarvam(Func<DictationLanguage> language) { SarvamLanguage = language; return new NamedTranscriptionProvider("sarvam"); }
         public IBuddyTranscriptionProvider MakeOpenClicky(Func<string?> bareLanguageCode) { OpenClickyLanguage = bareLanguageCode; return new NamedTranscriptionProvider("openclicky"); }
@@ -278,6 +309,7 @@ public sealed class DictationSettingsTests
             Assert.Equal(engine.Id(), DictationEngineResolver.MakeProvider(engine, settings, factory).DisplayName);
         }
         Assert.Equal("hi-IN", factory.OfflineLocale);
+        Assert.Equal("hi", factory.MoonshineLanguage!());
         Assert.Equal("hi", factory.ParakeetLanguage!());
         Assert.Equal("hi", factory.OpenClickyLanguage!());
         Assert.Equal("hi", factory.AssemblyAILanguage!());

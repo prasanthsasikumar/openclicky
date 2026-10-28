@@ -19,6 +19,9 @@ public static class IslandVoiceDestination
             DictationEngineChoice.Parakeet => unavailableReason == DictationEngineResolver.ParakeetLanguageNotHeardReason
                 ? "pick a language parakeet hears ›"
                 : "download parakeet ›",
+            DictationEngineChoice.Moonshine => unavailableReason == DictationEngineResolver.MoonshineLanguageNotHeardReason
+                ? "pick english or auto-detect ›"
+                : "pick another engine ›",
             _ => "set up backend ›",
         };
     }
@@ -29,7 +32,8 @@ public static class IslandVoiceDestination
     public static SetupDestination Destination(DictationEngineChoice engine, string? unavailableReason)
     {
         if (unavailableReason is null) return SetupDestination.DictationSettings;
-        if (unavailableReason == DictationEngineResolver.ParakeetLanguageNotHeardReason) return SetupDestination.LanguageSettings;
+        if (unavailableReason is DictationEngineResolver.ParakeetLanguageNotHeardReason or DictationEngineResolver.MoonshineLanguageNotHeardReason)
+            return SetupDestination.LanguageSettings;
         if (engine.IsOnDevice()) return SetupDestination.DictationSettings;
         // A missing key is added on Keys & Plans; a missing sign-in on Account.
         if (engine == DictationEngineChoice.Sarvam || unavailableReason == "needs your own key") return SetupDestination.KeySettings;

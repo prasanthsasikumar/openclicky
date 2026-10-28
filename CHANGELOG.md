@@ -15,6 +15,8 @@ short paragraphs. Windows and Linux notes go in the same section when they apply
 - **Email is never sent by voice.** "Check my email" reads the unread senders and subjects from Apple Mail, or opens your Gmail inbox and reads what's on screen; "draft an email" opens a new message with the recipient and a short body filled in, for you to read and send yourself. Settings → Voice → Doing things picks the inbox (Automatic is Apple Mail when it's set up here, else Gmail).
 - **Play a song in Spotify by name.** The song is looked up on OpenClicky's Spotify app (only the words leave your Mac) and the desktop app plays it; with your own Spotify client credentials in Keys & Plans the lookup goes straight to Spotify. If the lookup can't answer, Spotify's own search opens for you to pick. "Stop that song" pauses the player itself, so it can never start something by mistake.
 - **It looks before it speaks.** After an action that changes the screen (a page opened, a search, Gmail), Clicky takes a fresh look and describes what's there now.
+- **Windows: laptops with no right Ctrl.** On the tour's first step, hold the key you'd rather use (right Alt, left Ctrl or right Shift) and it becomes the dictation key. With a key other than right Ctrl dictating, the shortcuts, cards and tour voice say "Ctrl + Win" for talking to Clicky, and either Ctrl works for it.
+- **Windows: dictation works the moment it's installed.** A small English speech model (Moonshine) now comes with the app, so the first take is heard on your PC with no download and no "turn on online speech" prompt. Parakeet still downloads after the tour and takes over; Windows speech recognition stays a choice in Settings → Dictation. If you already picked Windows speech, you stay on it.
 
 ## 0.9.4
 

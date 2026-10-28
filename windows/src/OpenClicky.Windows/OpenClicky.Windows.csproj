@@ -29,6 +29,8 @@
     <!-- RecordedVoice: the fixed lines recorded in the answering voice (copied from the Mac bundle). -->
     <Content Include="Assets\RecordedVoice\*.mp3" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\OpenClicky.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The built-in dictation model (Moonshine tiny), put here by scripts\fetch-speech-model.ps1; absent in a plain dev build. -->
+    <Content Include="Assets\Models\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

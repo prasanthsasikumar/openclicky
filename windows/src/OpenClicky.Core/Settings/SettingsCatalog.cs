@@ -297,7 +297,7 @@ public sealed class SettingsCatalog
             "keyboard.dictate" => new([key], "hold"),
             "keyboard.edit" => new([key, "Ctrl"], "hold"),
             "keyboard.cancel" => new(["Esc"], $"or {key} twice"),
-            "keyboard.talk" => new(["R Ctrl", "Win"], "hold"),
+            "keyboard.talk" => new(dictationKey.TalkKeycapLabels(), "hold"),
             "keyboard.type" => new(["Ctrl"], "tap twice"),
             "keyboard.handsFree" => new([key, "Ctrl"], "tap twice"),
             _ => new([], null),

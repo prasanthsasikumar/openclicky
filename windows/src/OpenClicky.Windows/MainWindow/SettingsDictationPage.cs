@@ -132,10 +132,13 @@ internal sealed partial class SettingsRowFactory
         }, Changes.Of(Settings, nameof(DictationSettings.Engine), nameof(DictationSettings.LanguageCode)), Changes.Shell, Changes.Of(parakeet));
     }
 
+    /// <summary>The engine Parakeet takes over from: the built-in Moonshine, or Windows speech in a build without it.</summary>
+    private static string FallbackEngineName => MoonshineFacts.IsInstalled ? "the built-in Moonshine" : "Windows speech recognition";
+
     private static string ParakeetCaption(ModelDownloadState state) => state.Kind switch
     {
-        ModelDownloadState.Stage.NotInstalled => "Not downloaded yet. Takes stay with Windows speech recognition until it is.",
-        ModelDownloadState.Stage.Downloading => $"Downloading, {(int)Math.Round(state.Fraction * 100)}%. Takes stay with Windows speech recognition until it’s ready.",
+        ModelDownloadState.Stage.NotInstalled => $"Not downloaded yet. Takes stay with {FallbackEngineName} until it is.",
+        ModelDownloadState.Stage.Downloading => $"Downloading, {(int)Math.Round(state.Fraction * 100)}%. Takes stay with {FallbackEngineName} until it’s ready.",
         ModelDownloadState.Stage.Unpacking => "Unpacking. Almost there.",
         ModelDownloadState.Stage.Failed => state.Message ?? "The download failed.",
         _ => "Downloaded. It loads while you speak, so takes start straight away.",

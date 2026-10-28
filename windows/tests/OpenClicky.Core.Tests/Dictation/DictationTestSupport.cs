@@ -47,6 +47,7 @@ internal sealed class FakeProviderFactory : IDictationProviderFactory
     }
 
     public IBuddyTranscriptionProvider MakeOffline(string? preferredLocale) => Make("offline");
+    public IBuddyTranscriptionProvider MakeMoonshine(Func<string?> bareLanguageCode) => Make("moonshine");
     public IBuddyTranscriptionProvider MakeParakeet(Func<string?> bareLanguageCode) => Make("parakeet");
     public IBuddyTranscriptionProvider MakeSarvam(Func<DictationLanguage> language) => Make("sarvam");
     public IBuddyTranscriptionProvider MakeOpenClicky(Func<string?> bareLanguageCode) => Make("openclicky");

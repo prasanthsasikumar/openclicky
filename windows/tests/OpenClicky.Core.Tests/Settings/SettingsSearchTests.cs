@@ -179,6 +179,7 @@ public sealed class SettingsSearchTests
     public void TheShortcutsShowTheWindowsKeys()
     {
         Assert.Equal(["R Ctrl", "Win"], SettingsCatalog.KeysFor("keyboard.talk", DictationHotkey.RightControl).Keys);
+        Assert.Equal(["Ctrl", "Win"], SettingsCatalog.KeysFor("keyboard.talk", DictationHotkey.RightAlt).Keys);
         Assert.Equal(["right Alt", "Ctrl"], SettingsCatalog.KeysFor("keyboard.edit", DictationHotkey.RightAlt).Keys);
         Assert.Equal("or right Ctrl twice", SettingsCatalog.KeysFor("keyboard.cancel", DictationHotkey.RightControl).Gesture);
         Assert.Contains("left Ctrl", SettingsCatalog.DictationKeyDetail(DictationHotkey.RightControl), StringComparison.Ordinal);

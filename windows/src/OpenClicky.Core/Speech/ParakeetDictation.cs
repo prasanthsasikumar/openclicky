@@ -64,7 +64,11 @@ public sealed partial class ParakeetDictation : ObservableObject
 
     /// <summary>The dictation engine raw values (DictationEngineChoice's).</summary>
     public const string OfflineEngineRawValue = "offline";
+    public const string MoonshineEngineRawValue = "moonshine";
     public const string ParakeetEngineRawValue = "parakeet";
+
+    /// <summary>The engines Parakeet replaces on its own once downloaded: Windows speech and the built-in Moonshine.</summary>
+    public static bool IsReplaceableEngine(string rawValue) => rawValue is OfflineEngineRawValue or MoonshineEngineRawValue;
 
     /// <summary>The engine picked in Settings → Dictation, as its raw value (DictationSettings.Shared unless replaced).</summary>
     public Func<string>? CurrentDictationEngine { get; set; } = () => DictationSettings.Shared.Engine.Id();
@@ -182,14 +186,14 @@ public sealed partial class ParakeetDictation : ObservableObject
     public void StartAutomaticSetup(bool tourIsFinished, DictationSettings settings) =>
         StartAutomaticSetup(tourIsFinished, settings.Engine.Id(), settings.Language.BareCode);
 
-    /// <summary>At launch and when the welcome tour ends: on a PC whose dictation is on the offline engine,
-    /// the model downloads in the background and takes over when it is ready.</summary>
+    /// <summary>At launch and when the welcome tour ends: on a PC whose dictation is on Windows speech or
+    /// the built-in Moonshine, the model downloads in the background and takes over when it is ready.</summary>
     public void StartAutomaticSetup(bool tourIsFinished, string currentEngineRawValue, string? bareLanguageCode)
     {
         bool downloading;
         lock (taskLock) downloading = downloadCancellation is not null;
         if (!IsRecommendedForThisPC || IsInstalled || !tourIsFinished || downloading
-            || currentEngineRawValue != OfflineEngineRawValue || !Hears(bareLanguageCode)
+            || !IsReplaceableEngine(currentEngineRawValue) || !Hears(bareLanguageCode)
             || preferences.GetBool(DeclinedKey)
             || ModelDownload.FreeSpace() < ModelDownload.AutomaticDownloadFreeSpace) return;
         if (ModelDownload.NetworkIsExpensiveOrConstrained(network))
@@ -201,10 +205,14 @@ public sealed partial class ParakeetDictation : ObservableObject
         Download(isAutomatic: true);
     }
 
-    /// <summary>The engine once an automatic download finishes: Parakeet replaces the old offline
-    /// recogniser; an engine the person moved to themselves is left alone.</summary>
+    /// <summary>The engine once an automatic download finishes: Parakeet replaces Windows speech and the
+    /// built-in Moonshine; an engine the person moved to themselves is left alone.</summary>
     public static string EngineAfterAutomaticDownload(string current) =>
-        current == OfflineEngineRawValue ? ParakeetEngineRawValue : current;
+        IsReplaceableEngine(current) ? ParakeetEngineRawValue : current;
+
+    /// <summary>The engine dictation falls back to when Parakeet goes: the built-in Moonshine when this
+    /// build has it, else Windows speech.</summary>
+    public static string EngineAfterRemoval => MoonshineFacts.IsInstalled ? MoonshineEngineRawValue : OfflineEngineRawValue;
 
     // MARK: Download
 
@@ -274,7 +282,7 @@ public sealed partial class ParakeetDictation : ObservableObject
         lock (taskLock) downloadCancellation?.Cancel();
     }
 
-    /// <summary>Deletes the model and ends the helper; dictation goes back to the Windows recogniser.</summary>
+    /// <summary>Deletes the model and ends the helper; dictation goes back to Moonshine (or Windows speech).</summary>
     public async Task RemoveAsync()
     {
         preferences.Set(DeclinedKey, true);
@@ -286,6 +294,6 @@ public sealed partial class ParakeetDictation : ObservableObject
             AppLog.Write($"parakeet: could not remove the model: {error.Message}");
         }
         SetState(ModelInstallState.NotInstalled);
-        if (CurrentDictationEngine?.Invoke() == ParakeetEngineRawValue) SetDictationEngine?.Invoke(OfflineEngineRawValue);
+        if (CurrentDictationEngine?.Invoke() == ParakeetEngineRawValue) SetDictationEngine?.Invoke(EngineAfterRemoval);
     }
 }

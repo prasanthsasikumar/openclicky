@@ -3,7 +3,7 @@
 //
 //   --openclicky-platform-smoke                    the OS layer on this PC (Platform/PlatformSmoke)
 //   --openclicky-smoke-run "<text>"                gate + agent run through the openclicky CLI
-//   --openclicky-smoke-transcribe <wav> [engine]   one dictation engine on a recording (offline, parakeet, sarvam, openclicky, assemblyai)
+//   --openclicky-smoke-transcribe <wav> [engine]   one dictation engine on a recording (moonshine, offline, parakeet, sarvam, openclicky, assemblyai)
 //   --openclicky-voice-smoke <voice> [--play]      two sentences rendered in one voice (SpeechVoiceChoice raw value); --play plays them
 //   --openclicky-mic-smoke <seconds> [engine]      records the microphone, prints its level, saves a WAV and transcribes it
 //   --openclicky-check-source <source>             Settings' Test button for one answer source

@@ -115,12 +115,13 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         memoryWatch = new DispatcherTimer(TimeSpan.FromSeconds(30), DispatcherPriority.Background, (_, _) => CheckMemory(), dispatcher);
     }
 
-    /// <summary>KokoroVoice.Shared and ParakeetDictation.Shared, run by this exe's helper flags.</summary>
+    /// <summary>KokoroVoice.Shared, ParakeetDictation.Shared and MoonshineDictation.Shared, run by this exe's helper flags.</summary>
     public static void RegisterLocalModels(IProcessRunner processes, INetworkReachability network, Preferences preferences, IMainThread? mainThread,
                                            DictationSettings? dictationSettings = null)
     {
         var helperPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "OpenClicky.exe");
         KokoroVoice.Shared ??= new KokoroVoice(processes, network, preferences, helperPath, mainThread);
+        MoonshineDictation.Shared ??= new MoonshineDictation(processes, helperPath);
         if (ParakeetDictation.Shared is null)
         {
             var parakeet = new ParakeetDictation(processes, network, preferences, helperPath, mainThread);

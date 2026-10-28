@@ -33,6 +33,10 @@ public interface ICompanionShortcutSource
     /// <summary>The key that dictates (Settings → Shortcuts). Takes effect on the next press.</summary>
     DictationHotkey DictationKey { get; set; }
 
+    /// <summary>Report another key that could dictate held alone (OtherDictationKeyHeld): on only while the
+    /// first-run tour waits for the first take, so a keyboard without the default key can say so.</summary>
+    bool ReportsOtherDictationKeys { get; set; }
+
     bool IsRunning { get; }
 
     /// <summary>Starts listening; idempotent (a running monitor keeps its press in progress).</summary>

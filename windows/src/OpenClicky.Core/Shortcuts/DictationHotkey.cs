@@ -165,6 +165,31 @@ public static class DictationHotkeys
         _ => "right control",
     };
 
+    /// <summary>Talk's keycaps (Ctrl + Win). A Ctrl dictating is talk's Ctrl too, so it is named by its side;
+    /// with any other dictation key either Ctrl works (many laptops have no right Ctrl at all).</summary>
+    public static IReadOnlyList<string> TalkKeycapLabels(this DictationHotkey hotkey) => hotkey switch
+    {
+        DictationHotkey.RightControl => new[] { "R Ctrl", "Win" },
+        DictationHotkey.LeftControl => new[] { "L Ctrl", "Win" },
+        _ => new[] { "Ctrl", "Win" },
+    };
+
+    /// <summary>Talk's keys written out ("right ctrl + windows").</summary>
+    public static string TalkKeysText(this DictationHotkey hotkey) => hotkey switch
+    {
+        DictationHotkey.RightControl => "right ctrl + windows",
+        DictationHotkey.LeftControl => "left ctrl + windows",
+        _ => "ctrl + windows",
+    };
+
+    /// <summary>Talk's keys as the voice says them ("right control and the windows key").</summary>
+    public static string TalkKeysSpoken(this DictationHotkey hotkey) => hotkey switch
+    {
+        DictationHotkey.RightControl => "right control and the windows key",
+        DictationHotkey.LeftControl => "left control and the windows key",
+        _ => "control and the windows key",
+    };
+
     /// <summary>Whether a modifier event with this virtual key and this modifier state means the key
     /// went down; null when it was another key.</summary>
     public static bool? IsDown(this DictationHotkey hotkey, int virtualKey, PhysicalModifiers modifiers)

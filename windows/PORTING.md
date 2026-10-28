@@ -89,7 +89,7 @@ in `OpenClicky.Core/Platform/` implemented in `OpenClicky.Windows/Platform/`.
 | AVAudioPlayer | NAudio `WaveOutEvent` / `WasapiOut` |
 | Realtime echo cancellation (voice processing) | WASAPI communications capture (`AudioCategory_Communications`) when available, plain capture as fallback |
 | Apple Speech (offline engine) | `Windows.Media.SpeechRecognition` (continuous dictation, needs the language pack) |
-| Parakeet / Kokoro via sherpa-onnx dylib | sherpa-onnx's .NET package (`org.k2fsa.sherpa.onnx`), in the same helper-process design: the exe re-launched with `--openclicky-kokoro-helper` / `--openclicky-parakeet-helper`, one JSON line each way |
+| Parakeet / Kokoro via sherpa-onnx dylib | sherpa-onnx's .NET package (`org.k2fsa.sherpa.onnx`), in the same helper-process design: the exe re-launched with `--openclicky-kokoro-helper` / `--openclicky-parakeet-helper` / `--openclicky-moonshine-helper`, one JSON line each way. Moonshine tiny (English) ships inside the app (`Assets\Models`, fetched by `scripts/fetch-speech-model.ps1`) and is the default dictation engine until Parakeet downloads |
 | Apple Foundation Models polish | none on Windows: skip that rung of the polish ladder |
 | AVSpeechSynthesizer ("this Mac" voice) | `Windows.Media.SpeechSynthesis.SpeechSynthesizer` (OneCore voices) rendered to a WAV stream → same SpeechQueue — called "this PC" |
 | Sparkle updates | Velopack (`UpdateManager` against GitHub Releases) |

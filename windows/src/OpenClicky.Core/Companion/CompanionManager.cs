@@ -179,7 +179,9 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         systemVoice = new SystemVoice(services.SystemVoice);
         // The lines whose Mac recording names Mac keys are said the Windows way by this PC's voice.
         RecordedVoice = new RecordedVoice(services.CreateAudioPlayer(),
-            windowsSentence: line => Speech.RecordedVoice.WindowsSentence(line, global::OpenClicky.Core.Shortcuts.DictationHotkeys.DisplayName(DictationSettings.DictationKey)),
+            windowsSentence: line => Speech.RecordedVoice.WindowsSentence(line,
+                global::OpenClicky.Core.Shortcuts.DictationHotkeys.DisplayName(DictationSettings.DictationKey),
+                global::OpenClicky.Core.Shortcuts.DictationHotkeys.TalkKeysSpoken(DictationSettings.DictationKey)),
             renderSentence: (sentence, cancellationToken) => systemVoice.AudioAsync(sentence, cancellationToken: cancellationToken),
             dictationKeyIsDefault: () => DictationSettings.DictationKey == global::OpenClicky.Core.Shortcuts.DictationHotkeys.Default);
         BuddyDictationManager = new BuddyDictationManager(
@@ -542,6 +544,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         AppLog.Write("memory: low; unloading the local models");
         KokoroVoice.Shared?.UnloadForMemoryPressure();
         ParakeetDictation.Shared?.UnloadForMemoryPressure();
+        MoonshineDictation.Shared?.UnloadForMemoryPressure();
     }
 
     /// <summary>The PC woke up: a socket can look open and be dead, so the next press checks it first.</summary>

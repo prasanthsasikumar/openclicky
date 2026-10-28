@@ -43,6 +43,12 @@ public sealed class GlobalShortcutMonitor : ICompanionShortcutSource, IDisposabl
         }
     }
 
+    public bool ReportsOtherDictationKeys
+    {
+        get { lock (recognizerLock) return recognizer.ReportsOtherDictationKeys; }
+        set { lock (recognizerLock) recognizer.ReportsOtherDictationKeys = value; }
+    }
+
     public bool IsRunning => keyboardMonitor.IsRunning;
 
     public void Start()

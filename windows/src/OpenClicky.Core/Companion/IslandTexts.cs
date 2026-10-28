@@ -94,7 +94,7 @@ public static class IslandTexts
         var dictationKeyLabel = ShortKeycapLabel(dictationKey);
         return new[]
         {
-            new IslandShortcut("talk", new[] { "R Ctrl", "Win" }, "hold", false),
+            new IslandShortcut("talk", dictationKey.TalkKeycapLabels(), "hold", false),
             new IslandShortcut("type", new[] { "Ctrl" }, "tap ×2", false),
             new IslandShortcut("dictate", new[] { dictationKeyLabel }, "hold", false),
             new IslandShortcut("hands-free", new[] { dictationKeyLabel, "Ctrl" }, "tap ×2", isAlwaysListening),
@@ -116,7 +116,7 @@ public static class IslandTexts
     /// <summary>The (i): what OpenClicky does, typed out beside the pointer (CompanionManager.explainWhatOpenClickyDoes,
     /// with the Windows keys).</summary>
     public static string ExplainMessage(DictationHotkey dictationKey) =>
-        "hi, i'm openclicky. hold right ctrl + windows and ask about anything on your screen. "
+        $"hi, i'm openclicky. hold {dictationKey.TalkKeysText()} and ask about anything on your screen. "
         + "i'll answer out loud and point at what you need. tap control twice to type instead, "
         + $"hold {dictationKey.DisplayName()} to dictate into any app, and real work goes to the agent.";
 
