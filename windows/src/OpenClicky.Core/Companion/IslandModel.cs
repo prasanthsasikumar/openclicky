@@ -60,11 +60,68 @@ public sealed partial class IslandModel : ObservableObject
     public bool IsHovering => isHovering;
     public bool IsPinnedOpen => isPinnedOpen;
 
-    public IslandModel(IslandGeometry geometry, HUDPlacement placement = HUDPlacement.Notch, Func<TimeSpan, CancellationToken, Task>? delay = null)
+    /// <param name="componentSettings">The user's default component, order and plugins; none: every plugin off.</param>
+    public IslandModel(IslandGeometry geometry, HUDPlacement placement = HUDPlacement.Notch, Func<TimeSpan, CancellationToken, Task>? delay = null,
+                       IslandComponentSettings? componentSettings = null, IReadOnlyList<IslandComponent>? registry = null)
     {
         this.geometry = geometry;
         this.placement = placement;
         this.delay = delay ?? Task.Delay;
+        this.componentSettings = componentSettings ?? new IslandComponentSettings(Configuration.Preferences.InMemory());
+        Registry = registry ?? IslandComponentRegistry.All;
+        Selection = ComputeSelection();
+    }
+
+    // MARK: - The slot
+
+    private readonly IslandComponentSettings componentSettings;
+    /// <summary>What the island knows about the moment.</summary>
+    private IslandContext context = IslandContext.Idle;
+    /// <summary>The user's flip in the capsule; cleared when the moment changes.</summary>
+    private string? componentOverride;
+
+    /// <summary>The components the slot can show: the built-ins, then the plugins.</summary>
+    public IReadOnlyList<IslandComponent> Registry { get; }
+
+    /// <summary>The active component and the ones the capsule can flip to.</summary>
+    public IslandComponentSelection Selection { get; private set; }
+
+    public IslandComponent ActiveComponent => Registry.FirstOrDefault(component => component.Id == Selection.Active) ?? Registry[0];
+
+    /// <summary>The capsule shows in the band only when there is something to flip to.</summary>
+    public bool ShowsCapsule => Selection.Available.Count > 1;
+
+    public void SetContext(IslandContext newContext)
+    {
+        // The drag is this monitor's own; the shared context never carries it.
+        newContext = newContext with { IsDragHovering = context.IsDragHovering };
+        if (context == newContext) return;
+        if (newContext.ContextualKey != context.ContextualKey) componentOverride = null;
+        context = newContext;
+        RecomputeSelection();
+    }
+
+    /// <summary>The capsule: show this component until the moment changes.</summary>
+    public void SelectComponent(string id)
+    {
+        componentOverride = id;
+        RecomputeSelection();
+    }
+
+    /// <summary>A plugin, the default or the order changed in Settings: pick again.</summary>
+    public void RefreshComponentSettings() => RecomputeSelection();
+
+    private IslandComponentSelection ComputeSelection() => IslandComponentSelector.Select(
+        Registry, componentSettings.Order, componentSettings.DefaultId, componentOverride, context, componentSettings.EnabledIds(Registry));
+
+    private void RecomputeSelection()
+    {
+        var selection = ComputeSelection();
+        if (selection == Selection) return;
+        var heightBefore = Layout.FullHeight;
+        Selection = selection;
+        OnPropertyChanged(nameof(Selection));
+        if (Expansion == IslandExpansion.Full && Layout.FullHeight != heightBefore) LayoutChanged?.Invoke();
     }
 
     /// <summary>The permission cards or the tour are up: hovering or clicking must not open the panel over them.</summary>
@@ -81,7 +138,9 @@ public sealed partial class IslandModel : ObservableObject
         PermissionOffersTrustReset: PermissionPrompt?.OffersAccessibilityTrustReset == true,
         TourHasStatus: TourCard?.Status is not null,
         TourHasMicrophoneName: TourCard?.MicrophoneName is not null,
-        TourHasField: TourCard?.Field is not null);
+        TourHasField: TourCard?.Field is not null,
+        // The shortcuts keep the panel's own body height (45, or 92 in a side drawer).
+        SlotHeight: Selection.Active == IslandComponentRegistry.ShortcutsId ? null : ActiveComponent.PreferredHeight);
 
     /// <summary>Sizes and frames for the current state.</summary>
     public IslandLayout Layout => new(Geometry, Placement, ContentState);

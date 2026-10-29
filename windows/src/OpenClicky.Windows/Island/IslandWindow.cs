@@ -111,6 +111,7 @@ public sealed class IslandWindow : Window
             case nameof(IslandModel.PermissionPrompt):
             case nameof(IslandModel.TourCard):
             case nameof(IslandModel.Expansion):
+            case nameof(IslandModel.Selection):
                 RebuildContentIfNeeded();
                 break;
             case nameof(IslandModel.IsSettlingGracefully):
@@ -134,7 +135,8 @@ public sealed class IslandWindow : Window
             IslandExpansion.Connect => "connect:" + model.ConnectPrompt?.GetHashCode() + model.ConnectPrompt?.Stage,
             IslandExpansion.Permission => "permission:" + model.PermissionPrompt?.Stage + model.PermissionPrompt?.Status,
             IslandExpansion.Tour => "tour:" + model.TourCard?.GetHashCode() + model.TourCard?.Status + model.TourCard?.Field + model.TourCard?.PrimaryTitle,
-            IslandExpansion.Full => "full:" + model.Placement,
+            // The slot's component and the capsule's buttons are part of the panel.
+            IslandExpansion.Full => "full:" + model.Placement + ":" + model.Selection.Active + ":" + string.Join(",", model.Selection.Available),
             _ => model.Expansion + ":" + model.Placement,
         };
     }

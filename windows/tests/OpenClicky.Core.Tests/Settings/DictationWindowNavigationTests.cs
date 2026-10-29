@@ -76,15 +76,15 @@ public sealed class DictationWindowNavigationTests
     public void TheSidebarListsYourPagesAfterVoiceAndBeforeTheOrb()
     {
         Assert.Equal(
-            ["General", "Dictation", "Clicky", "Voice", "Your words", "How it writes", "The Orb", "Shortcuts", "Keys & Plans", "Account", "Privacy & Security", "About"],
+            ["General", "Dictation", "Clicky", "Voice", "Your words", "How it writes", "The Orb", "Plugins", "Shortcuts", "Keys & Plans", "Account", "Privacy & Security", "About"],
             DictationDestination.SidebarOrder.Select(destination => destination.Title));
     }
 
     [Fact]
-    public void ThereAreTenSettingsPages()
+    public void ThereAreElevenSettingsPages()
     {
         Assert.Equal(
-            ["General", "Dictation", "Clicky", "Voice", "The Orb", "Shortcuts", "Keys & Plans", "Account", "Privacy & Security", "About"],
+            ["General", "Dictation", "Clicky", "Voice", "The Orb", "Plugins", "Shortcuts", "Keys & Plans", "Account", "Privacy & Security", "About"],
             DictationSettingsPages.AllCases.Select(page => page.Title()));
     }
 

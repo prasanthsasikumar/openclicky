@@ -29,6 +29,9 @@ public sealed class IslandWindowManager : IDisposable
     private readonly Preferences? preferences;
     private readonly Dispatcher dispatcher;
     private readonly List<Instance> instances = new();
+    /// <summary>The island's default component, order and plugins (none without preferences: every plugin off).</summary>
+    private readonly IslandComponentSettings? componentSettings;
+    private readonly List<IDisposable> componentSettingsObservations = [];
     private readonly DispatcherTimer hoverPollTimer;
     private bool isShown;
     private bool wasMouseButtonDown;
@@ -54,6 +57,18 @@ public sealed class IslandWindowManager : IDisposable
         hub.FocusTourFieldRequested += FocusTourField;
         hub.PlacementChangeRequested += SetPlacement;
         screens.DisplaysChanged += OnDisplaysChanged;
+        // A plugin switched on, or the default or order changed in Settings: every island picks again.
+        if (preferences is not null)
+        {
+            componentSettings = new IslandComponentSettings(preferences);
+            foreach (var key in IslandComponentSettings.Keys)
+            {
+                componentSettingsObservations.Add(preferences.Observe(key, () => dispatcher.BeginInvoke(() =>
+                {
+                    foreach (var instance in instances) instance.Model.RefreshComponentSettings();
+                })));
+            }
+        }
         if (overlayModel is not null)
         {
             overlayModel.DockTarget = () => (DockPoint, DockScreenFrame);
@@ -196,7 +211,7 @@ public sealed class IslandWindowManager : IDisposable
                 existing.Window.UpdateScreen(screen);
                 continue;
             }
-            var model = new IslandModel(geometry, placement) { HostsDockedCursor = screen.DeviceName == primary?.DeviceName };
+            var model = new IslandModel(geometry, placement, componentSettings: componentSettings) { HostsDockedCursor = screen.DeviceName == primary?.DeviceName };
             model.SetBusy(hub.IsBusy);
             model.SetSpeaking(hub.IsSpeaking);
             model.SetCompactDetailLine(hub.HasCompactDetailLine);
@@ -308,6 +323,8 @@ public sealed class IslandWindowManager : IDisposable
     public void Dispose()
     {
         hoverPollTimer.Stop();
+        foreach (var observation in componentSettingsObservations) observation.Dispose();
+        componentSettingsObservations.Clear();
         hub.PropertyChanged -= OnHubPropertyChanged;
         hub.OpenComposerRequested -= OpenTextComposer;
         hub.CloseComposerRequested -= CloseTextComposer;

@@ -61,6 +61,8 @@ public enum DictationSettingsPage
     Clicky,
     Voice,
     Orb,
+    /// <summary>The island's optional extras (System, â€¦), its default component and order.</summary>
+    Plugins,
     /// <summary>"Shortcuts" (the Mac's `keyboard` case).</summary>
     Keyboard,
     /// <summary>"Keys & Plans".</summary>
@@ -82,6 +84,7 @@ public static class DictationSettingsPages
         DictationSettingsPage.Clicky => "clicky",
         DictationSettingsPage.Voice => "voice",
         DictationSettingsPage.Orb => "orb",
+        DictationSettingsPage.Plugins => "plugins",
         DictationSettingsPage.Keyboard => "keyboard",
         DictationSettingsPage.Keys => "keys",
         DictationSettingsPage.Account => "account",
@@ -107,6 +110,7 @@ public static class DictationSettingsPages
         DictationSettingsPage.Clicky => "Clicky",
         DictationSettingsPage.Voice => "Voice",
         DictationSettingsPage.Orb => "The Orb",
+        DictationSettingsPage.Plugins => "Plugins",
         DictationSettingsPage.Keyboard => "Shortcuts",
         DictationSettingsPage.Keys => "Keys & Plans",
         DictationSettingsPage.Account => "Account",
@@ -122,6 +126,8 @@ public static class DictationSettingsPages
         DictationSettingsPage.Clicky => "",
         DictationSettingsPage.Voice => "",
         DictationSettingsPage.Orb => "",
+        // A puzzle piece, as the Mac's puzzlepiece.extension.
+        DictationSettingsPage.Plugins => "",
         DictationSettingsPage.Keyboard => "",
         DictationSettingsPage.Keys => "",
         DictationSettingsPage.Account => "",
@@ -137,6 +143,7 @@ public static class DictationSettingsPages
         DictationSettingsPage.Clicky => "#FF9500",
         DictationSettingsPage.Voice => "#FE2D55",
         DictationSettingsPage.Orb => "#1C1C1E",
+        DictationSettingsPage.Plugins => "#B052DE",
         DictationSettingsPage.Keyboard => "#636366",
         DictationSettingsPage.Keys => "#8B6B00",
         DictationSettingsPage.Account => "#34C759",

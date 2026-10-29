@@ -112,7 +112,7 @@ internal sealed partial class SettingsRowFactory
         {
             case "about.app":
                 var icon = new Image { Source = OpenClickyMarkDrawing.AppIconImage(), Width = 44, Height = 44 };
-                var text = new StackPanel { Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
                 text.Children.Add(Ui.Text("OpenClicky", 15, SettingsLook.TextPrimary, FontWeights.SemiBold));
                 var version = new TextBox
                 {
@@ -121,13 +121,16 @@ internal sealed partial class SettingsRowFactory
                     BorderThickness = new Thickness(0),
                     Background = Brushes.Transparent,
                     Padding = new Thickness(0),
+                    // A TextBox insets its text 2 px on its own; pulled back so it lines up under the name.
+                    Margin = new Thickness(-2, 0, 0, 0),
                     FontSize = SettingsLook.CaptionSize,
                     Style = null,
                     Template = PlainTextBoxTemplate(),
                 };
                 version.SetResourceReference(Control.ForegroundProperty, SettingsLook.TextSecondary);
                 text.Children.Add(version);
-                return Ui.Card(Ui.HStack(0, icon, text), new Thickness(16, 14, 16, 14));
+                // HStack sets each later child's left margin to its spacing: the gap is given here.
+                return Ui.Card(Ui.HStack(14, icon, text), new Thickness(16, 14, 16, 14));
             case "about.source":
                 return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("GitHub ↗", () => Ui.OpenExternal(AppVersion.SourceUrl))));
             case "about.reportBug":

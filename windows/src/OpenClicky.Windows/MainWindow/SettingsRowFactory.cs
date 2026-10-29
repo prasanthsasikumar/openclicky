@@ -45,6 +45,7 @@ internal sealed partial class SettingsRowFactory(MainWindowServices services, IM
             DictationSettingsPage.Clicky => ClickyRow(item, query),
             DictationSettingsPage.Voice => VoiceRow(item, query),
             DictationSettingsPage.Orb => OrbRow(item, query),
+            DictationSettingsPage.Plugins => PluginsRow(item, query),
             DictationSettingsPage.Keyboard => KeyboardRow(item, query),
             DictationSettingsPage.Keys => KeysRow(item, query),
             DictationSettingsPage.Account => AccountRow(item, query),

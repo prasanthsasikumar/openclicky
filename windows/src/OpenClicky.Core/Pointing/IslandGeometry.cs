@@ -79,7 +79,8 @@ public sealed record IslandContentState(
     bool PermissionOffersTrustReset = false,
     bool TourHasStatus = false,
     bool TourHasMicrophoneName = false,
-    bool TourHasField = false);
+    bool TourHasField = false,
+    double? SlotHeight = null);
 
 /// <summary>The island's sizes and frames for one monitor, placement and state. Sizes from the refinement sheet: every
 /// card and the open panel are 512 wide (360 in a side drawer); heights include the band the island hangs from.</summary>
@@ -164,9 +165,9 @@ public sealed class IslandLayout
     /// <summary>The stale-row escape hatch adds a line under the card's row.</summary>
     public double PermissionHeight => CardTopInset + (State.PermissionOffersTrustReset ? 118 : 96);
     public double ComposerHeight => Geometry.NotchHeight + ComposerContentHeight;
-    /// <summary>The band, then one row: at most 88 at the top (Claude Design's "max 88pt"); a side drawer stacks the dock
-    /// button over the shortcut grid.</summary>
-    public double FullHeight => BandRowHeight + (Placement.IsSideDrawer() ? 92 : 45);
+    /// <summary>The band, then the slot: the shortcuts row (at most 88 at the top, Claude Design's "max 88pt"; a side
+    /// drawer stacks the dock button over the shortcut grid), or the active component's own height.</summary>
+    public double FullHeight => BandRowHeight + (State.SlotHeight ?? (Placement.IsSideDrawer() ? 92 : 45));
 
     public double Width => State.Expansion switch
     {

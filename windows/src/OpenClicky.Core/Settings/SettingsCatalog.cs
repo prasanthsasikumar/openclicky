@@ -6,6 +6,7 @@
 
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
+using OpenClicky.Core.Plugins;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
 
@@ -50,6 +51,7 @@ public sealed class SettingsCatalog
         DictationSettingsPage.Clicky => ClickyItems(),
         DictationSettingsPage.Voice => VoiceItems(),
         DictationSettingsPage.Orb => OrbItems(),
+        DictationSettingsPage.Plugins => PluginsItems(),
         DictationSettingsPage.Keyboard => KeyboardItems(),
         DictationSettingsPage.Keys => KeysItems(),
         DictationSettingsPage.Account => AccountItems(),
@@ -253,6 +255,35 @@ public sealed class SettingsCatalog
                 ["realtime", "voice", "fast", "hands-free", "always listening", "openai", "key"]));
         }
         return items;
+    }
+
+    // MARK: - Plugins (SettingsPluginsPage.swift)
+
+    /// <summary>A row with a switch per plugin, then how the island picks between its components.</summary>
+    public IReadOnlyList<SettingsItem> PluginsItems()
+    {
+        var pluginRows = IslandPluginRegistry.All.Select(plugin => new SettingsItem
+        {
+            Id = $"plugins.{plugin.Id}", Page = DictationSettingsPage.Plugins, Section = "",
+            Title = plugin.Title, Detail = plugin.SettingsDetail ?? "",
+            Keywords = ["plugin", "plugins", "island", "extra", plugin.Title.ToLowerInvariant(), plugin.Id],
+        });
+        return
+        [
+            .. pluginRows,
+            new SettingsItem
+            {
+                Id = "plugins.islandDefault", Page = DictationSettingsPage.Plugins, Section = "On the island",
+                Title = "Default component", Detail = "What the open island shows when nothing else is going on.",
+                Keywords = ["island", "component", "panel", "shortcuts", "default", "slot"],
+            },
+            new SettingsItem
+            {
+                Id = "plugins.islandOrder", Page = DictationSettingsPage.Plugins, Section = "On the island",
+                Title = "Component order", Detail = "The order of the island's buttons when there is more than one to flip to.",
+                Keywords = ["island", "component", "order", "capsule", "arrange", "reorder"],
+            },
+        ];
     }
 
     // MARK: - The Orb (SettingsOrbPage.swift)

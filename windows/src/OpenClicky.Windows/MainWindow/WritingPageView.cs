@@ -106,8 +106,8 @@ internal sealed class WritingPageView : ScrollViewer
         plus.FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
         plus.VerticalAlignment = VerticalAlignment.Center;
         var label = Ui.Text(title, SettingsLook.RowTitleSize, SettingsLook.Accent, wrap: false);
-        label.Margin = new Thickness(10, 0, 0, 0);
-        var content = Ui.Card(Ui.HStack(0, plus, label), new Thickness(16, 12, 16, 12));
+        // HStack sets each later child's left margin to its spacing: the gap is given here.
+        var content = Ui.Card(Ui.HStack(10, plus, label), new Thickness(16, 12, 16, 12));
         var button = new Button { Content = content, Template = Ui.TransparentButtonTemplate(), Cursor = Cursors.Hand, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         button.Click += (_, _) => onClick();
         return button;

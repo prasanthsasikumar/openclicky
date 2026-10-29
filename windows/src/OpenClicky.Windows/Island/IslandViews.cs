@@ -831,10 +831,26 @@ internal sealed class FullPanelView : Grid, IIslandContent
             body = row;
         }
         body.Margin = new Thickness(DS.HUD.BodySidePadding, isSideDrawer ? 6 : 2, DS.HUD.BodySidePadding, 0);
+        // The slot: the shortcuts row above, or the component the island picked (a plugin) in its place.
+        if (IslandComponentViews.Make(model.ActiveComponent) is { } componentView)
+        {
+            slotContent = componentView as IIslandContent;
+            body = componentView;
+            body.Margin = new Thickness(DS.HUD.BodySidePadding, 0, DS.HUD.BodySidePadding, 6);
+        }
         SetRow(body, 1);
         Children.Add(body);
+        // More than one component to show: the capsule takes the status line's place in the band.
+        if (model.ShowsCapsule)
+        {
+            status.Children.Remove(statusText);
+            status.Children.Add(IslandComponentViews.Capsule(model));
+        }
         Refresh();
     }
+
+    /// <summary>The component in the slot when it is not the shortcuts row.</summary>
+    private readonly IIslandContent? slotContent;
 
     public void Refresh()
     {
@@ -848,6 +864,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
         voicePillHost.Children.Clear();
         voicePillHost.Children.Add(VoicePill());
         shortcutsOrWarning.Content = hub.EngineWarning is { } warning ? EngineWarningView(warning) : ShortcutGrid();
+        slotContent?.Refresh();
     }
 
     /// <summary>Where dictated words go: a green microphone while the engine can run, an orange "!" when it can't.</summary>
@@ -933,5 +950,5 @@ internal sealed class FullPanelView : Grid, IIslandContent
         return row;
     }
 
-    public void Tick() { }
+    public void Tick() => slotContent?.Tick();
 }
