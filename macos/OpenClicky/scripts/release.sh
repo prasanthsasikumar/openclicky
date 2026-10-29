@@ -221,7 +221,7 @@ if [[ -x "$SPARKLE_BIN/generate_appcast" ]] && { [[ -f "$SPARKLE_KEY_FILE" ]] ||
   # renders in the update dialog.
   RELEASE_NOTES="$APPCAST_DIR/$APP_NAME-$VERSION.html"
   if [[ $HAVE_NOTES -eq 1 ]]; then
-    node "$NOTES_SCRIPT" html "$VERSION" > "$RELEASE_NOTES"
+    node "$NOTES_SCRIPT" html "$VERSION" --platform mac > "$RELEASE_NOTES"
   else
     printf '<html><body><h2>OpenClicky %s</h2><p>Build %s (%s).</p></body></html>\n' "$VERSION" "$BUILD_NUMBER" "$COMMIT" > "$RELEASE_NOTES"
   fi
@@ -258,24 +258,17 @@ if [[ $PUBLISH -eq 1 ]]; then
     git -C "$REPO_DIR" tag -a "$TAG" -m "OpenClicky $VERSION"
     git -C "$REPO_DIR" push -q origin "$TAG"
   fi
+  # The page lists what's new by platform and a downloads table. Only the Mac is attached here; the
+  # windows-release and linux-release workflows rebuild the page when they attach theirs.
   NOTES_FILE="$EXPORT_DIR/notes.md"
-  {
-    echo "## What's new"
-    echo
-    node "$NOTES_SCRIPT" markdown "$VERSION"
-    echo
-    echo "## Mac"
-    echo
-    echo "OpenClicky $VERSION (build $BUILD_NUMBER, $COMMIT)."
-    echo
-    if [[ "$SIGN_IDENTITY" == Apple\ Development* ]]; then
-      echo "Signed with an Apple Development certificate and not notarized: on another Mac, right-click the app → Open the first time."
-    else
-      echo "Signed with Developer ID${NOTARY_PROFILE:+ and notarized}."
-    fi
-    echo
-    echo "Requires macOS 14.2+ (Apple Silicon or Intel). Open the dmg and click **Move to Applications** when OpenClicky offers. Dictation works offline out of the box; add a Sarvam key under Settings → engine for Indian languages, or type your email during setup for a free openclicky account (polished dictation and spoken answers, no key needed). The agent lane needs the \`openclicky\` CLI and Codex installed (see README). Updates arrive through the app (Sparkle, from this release's appcast)."
-  } > "$NOTES_FILE"
+  if [[ "$SIGN_IDENTITY" == Apple\ Development* ]]; then
+    MAC_SIGNING="development"
+  elif [[ -n "$NOTARY_PROFILE" ]]; then
+    MAC_SIGNING="notarized"
+  else
+    MAC_SIGNING="developer-id"
+  fi
+  node "$NOTES_SCRIPT" github "$VERSION" --platforms mac --mac-signing "$MAC_SIGNING" --repo "$GITHUB_REPO" > "$NOTES_FILE"
   RELEASE_ASSETS=("$ZIP_PATH" "$DMG_PATH")
   [[ -n "$APPCAST_PATH" ]] && RELEASE_ASSETS+=("$APPCAST_PATH")
   if gh release view "$TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then

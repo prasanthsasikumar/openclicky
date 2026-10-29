@@ -159,3 +159,21 @@ jobs:
         with:
           name: release-${{ matrix.runtime }}
           path: ${{ env.RELEASE_DIR }}
+
+  release-page:
+    # The page lists what's new by platform and a row per download; rebuild it now that these files
+    # are attached. From the default branch: older tags have no update-release-page.sh.
+    needs: windows
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Rebuild the release page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/update-release-page.sh '${{ inputs.tag }}'${{ vars.SIGNPATH_ORGANIZATION_ID != '' && ' --windows-signed' || '' }}
