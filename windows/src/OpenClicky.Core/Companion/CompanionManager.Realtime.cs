@@ -112,6 +112,11 @@ public sealed partial class CompanionManager
         };
         client.ScreenContextProvider = CaptureCursorScreenContextAsync;
         client.SelectedTextProvider = ReadSelectedTextAsync;
+        // "rephrase this" on fast voice: the turn quotes the highlight or the text box, and write_in_place
+        // writes over it, as on the ask lane.
+        client.WritingTargetProvider = () => WritingTarget.CaptureFromFrontAppAsync(services.WriteInPlace, AppLog.Write);
+        client.WriteInPlaceHost = services.WriteInPlace;
+        client.OnWroteInPlace = () => LastSuccessfulQuickActionAt = DateTimeOffset.Now;
         client.InstructionsProvider = () =>
             AskLanePrompts.ComposeTalkInstructions(AskLanePrompts.WithReplyLanguage(client.BaseInstructions), TalkSkillsBlock());
         client.OnPointAt = (screenshotPoint, label, capture) => PointAt(screenshotPoint, label, capture);

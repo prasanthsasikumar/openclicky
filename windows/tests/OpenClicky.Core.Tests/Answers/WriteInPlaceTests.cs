@@ -3,6 +3,7 @@
 // theQuestionCarriesTheExactWords (CompanionManager.askUserPrompt) is in AskLaneTests.cs (AskLanePrompts.AskUserPrompt).
 
 using OpenClicky.Core.Answers;
+using OpenClicky.Core.Speech;
 
 namespace OpenClicky.Core.Tests.Answers;
 
@@ -206,6 +207,19 @@ public class WriteInPlaceTests
         Assert.Equal(new[] { "insert Hello", "copy Hello" }, host.Steps);
     }
 
+    /// <summary>A terminal takes dictation, so it reads as editable, but Ctrl+C there interrupts what runs:
+    /// fast voice captures a target on every turn, so a terminal is never copied from.</summary>
+    [Fact]
+    public async Task ATerminalIsNeverCopiedFrom()
+    {
+        var terminal = new WritingFieldSnapshot("WindowsTerminal.exe", "Terminal", "Document", true, false, null, null);
+        Assert.False(WritingTarget.CopyIsWorthTrying(terminal, ownProcessName: "x"));
+        Assert.False(WritingTarget.CopyIsWorthTrying(terminal with { AppProcessName = "pwsh" }, ownProcessName: "x"));
+        var host = new FakeHost { Snapshot = terminal, CopiedSelection = "^C" };
+        Assert.Null(await WritingTarget.CaptureFromFrontAppAsync(host, delay: _ => Task.CompletedTask));
+        Assert.DoesNotContain("copy selection", host.Steps);
+    }
+
     // From HUDPlacementTests.swift: everyGoodbyeSaysHowToComeBackOrIsShort (Windows wording).
     [Fact]
     public void EveryGoodbyeSaysHowToComeBackOrIsShort()
@@ -216,5 +230,41 @@ public class WriteInPlaceTests
             Assert.True(farewell.Text.Length <= 90, farewell.Text);
         }
         Assert.Contains(Farewell.Random(), Farewell.All);
+    }
+}
+
+/// <summary>The fast voice lane rewrites in place too. It never had the tool: with an own key the question goes to
+/// fast voice, and "rephrase this" in a Gmail draft was read out (the Mac, 2026-10-23).</summary>
+public class RealtimeWriteInPlaceTests
+{
+    [Fact]
+    public void TheRealtimeSessionGetsTheTool()
+    {
+        var tool = WriteInPlace.RealtimeToolDefinition();
+        Assert.Equal("function", tool["type"]!.GetValue<string>());
+        Assert.Equal(WriteInPlace.ToolName, tool["name"]!.GetValue<string>());
+        Assert.Equal(["text"], tool["parameters"]!["required"]!.AsArray().Select(node => node!.GetValue<string>()));
+        var names = RealtimeVoiceClient.BuildSessionUpdate(RealtimeTurnMode.PushToTalk, "x", null, "en")["session"]!["tools"]!
+            .AsArray().Select(node => node!["name"]!.GetValue<string>());
+        Assert.Contains(WriteInPlace.ToolName, names);
+    }
+
+    [Fact]
+    public void TheTurnCarriesTheTextToWriteOver()
+    {
+        var target = new WritingTarget(WritingScope.Selection, "hey can u send it", "chrome.exe", "Google Chrome");
+        var caption = RealtimeVoiceClient.ScreenCaption("Screenshot of the screen.", target, "ignored");
+        Assert.Contains("«hey can u send it»", caption);
+        Assert.Contains("write_in_place", caption);
+        Assert.DoesNotContain("ignored", caption);
+        Assert.Equal("Screenshot of the screen.", RealtimeVoiceClient.ScreenCaption("Screenshot of the screen.", null, null));
+        Assert.Contains("«this»", RealtimeVoiceClient.ScreenCaption("Screenshot.", null, "this"));
+    }
+
+    [Fact]
+    public void DoingItAndExplainingHowAreToldApart()
+    {
+        Assert.Contains("write_in_place", RealtimeVoiceClient.DefaultInstructions);
+        Assert.Contains("how to rephrase", RealtimeVoiceClient.DefaultInstructions);
     }
 }

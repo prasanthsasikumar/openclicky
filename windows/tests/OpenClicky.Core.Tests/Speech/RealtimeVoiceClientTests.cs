@@ -4,6 +4,7 @@
 // — the push-to-talk turn and a point_at call snapped to the screenshot's text.
 
 using System.Text.Json.Nodes;
+using OpenClicky.Core.Answers;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Pointing;
@@ -160,7 +161,7 @@ public class RealtimeSessionUpdateTests
         var openApp = new JsonObject { ["type"] = "function", ["name"] = "open_app" };
         var update = RealtimeVoiceClient.BuildSessionUpdate(RealtimeTurnMode.PushToTalk, "x", null, "en", [openApp]);
         var names = update["session"]!["tools"]!.AsArray().Select(tool => tool!["name"]!.GetValue<string>()).ToList();
-        Assert.Equal(["send_to_agent", "point_at", "open_app"], names);
+        Assert.Equal(["send_to_agent", "point_at", "write_in_place", "open_app"], names);
         Assert.Equal("auto", update["session"]!["tool_choice"]!.GetValue<string>());
         Assert.Equal("session.update", update["type"]!.GetValue<string>());
         var pointRequired = update["session"]!["tools"]![1]!["parameters"]!["required"]!.AsArray().Select(node => node!.GetValue<string>());
@@ -456,6 +457,40 @@ public class RealtimeTurnTests : IDisposable
         Assert.DoesNotContain("response.create", SentTypes(socket));
         Assert.Equal(0, screensAttached);
         Assert.False(await mainThread.InvokeAsync(() => client.IsBusy));
+    }
+
+    /// <summary>"rephrase this" on fast voice: the turn quotes the text box, and write_in_place writes over it
+    /// instead of the rewrite being read out (the Mac, 2026-10-23).</summary>
+    [Fact]
+    public async Task ARephraseIsWrittenOverTheTextTheTurnQuoted()
+    {
+        var (client, socket, _) = await ConnectedClientAsync();
+        var host = new RecordingWriteInPlaceHost(new WritingFieldSnapshot("chrome.exe", "Google Chrome", "Edit", true, false, "hey can u send it", null));
+        await mainThread.InvokeAsync(() =>
+        {
+            client.ScreenContextProvider = () => Task.FromResult<RealtimeScreenContext?>(new RealtimeScreenContext([1], "screen", Capture()));
+            client.WritingTargetProvider = () => WritingTarget.CaptureFromFrontAppAsync(host, delay: _ => Task.CompletedTask);
+            client.WriteInPlaceHost = host;
+        });
+        await mainThread.RunAsync(() => client.SendTextTurnAsync("make this sound professional"));
+        Assert.Contains(socket.SentTexts, text => text.Contains("«hey can u send it»"));
+        socket.Receive("""{"type":"response.function_call_arguments.done","call_id":"w","name":"write_in_place","arguments":"{\"text\":\"Could you send it, please?\"}"}""");
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("function_call_output"))));
+        Assert.Equal(["select all", "insert Could you send it, please?", "copy hey can u send it"], host.Steps);
+        Assert.Contains(socket.SentTexts, text => text.Contains("it's in place") && text.Contains("never read the new text out"));
+    }
+
+    private sealed class RecordingWriteInPlaceHost(WritingFieldSnapshot snapshot) : IWriteInPlaceHost
+    {
+        public List<string> Steps { get; } = [];
+        public bool CanReadFocusedFields => true;
+        public bool IsOwnProcessInFront() => false;
+        public WritingFieldSnapshot SnapshotFocusedField() => snapshot;
+        public void SelectAllInFocusedField() => Steps.Add("select all");
+        public void Insert(string text) => Steps.Add("insert " + text);
+        public Task<WriteInPlaceLanding> VerifyLandingAsync(string text, WritingFieldSnapshot before) => Task.FromResult(WriteInPlaceLanding.Verified);
+        public void CopyToClipboard(string text) => Steps.Add("copy " + text);
+        public Task<string?> CopySelectionAsync() => Task.FromResult<string?>(null);
     }
 
     /// <summary>Push-to-talk listens only while the keys are held, so it has nothing to end.</summary>

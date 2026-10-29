@@ -21,6 +21,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CommunityToolkit.Mvvm.ComponentModel;
+using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Pointing;
@@ -123,7 +124,12 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         + "For anything bigger (creating or editing files or code, running commands, using integrations, research, "
         + "multi-step tasks), first say one short sentence acknowledging it, then call the send_to_agent "
         + "tool with a clear, self-contained task, and afterwards tell the user in one sentence what happened. "
-        + "Never pretend work was done without the tool. Do not read file paths aloud character by character.";
+        + "Never pretend work was done without the tool. Do not read file paths aloud character by character. "
+        + "When the screen context quotes text they highlighted or the text box they are in, and they ask you to rephrase, "
+        + "rewrite, shorten, fix, polish or translate it (\"rephrase this\", \"make this sound professional\", \"do that for me\"), "
+        + "call write_in_place with the complete new text, then say only a few words about what you changed; never read the "
+        + "new text out. If they ask how to rephrase it or for suggestions, answer in words and change nothing. "
+        + "If no text was quoted, ask them to highlight it and ask again.";
 
     // MARK: - Connection rules (pure, tested)
 
@@ -250,6 +256,15 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public Func<Task<RealtimeScreenContext?>>? ScreenContextProvider { get; set; }
     /// <summary>The highlighted text in the app in front (IFocusedElementReader.SelectedTextAsync).</summary>
     public Func<Task<string?>>? SelectedTextProvider { get; set; }
+    /// <summary>Reads the text a "rephrase this" would replace (the highlight, or the focused text box) when a
+    /// turn's screen is attached; the turn quotes it and `write_in_place` writes over it.</summary>
+    public Func<Task<WritingTarget?>>? WritingTargetProvider { get; set; }
+    /// <summary>The OS side of `write_in_place` (UI Automation, the clipboard, SendInput); null → the tool says it cannot.</summary>
+    public IWriteInPlaceHost? WriteInPlaceHost { get; set; }
+    /// <summary>A rewrite landed in place (the ask lane counts it as a successful quick action too).</summary>
+    public Action? OnWroteInPlace { get; set; }
+    /// <summary>The text to write over for the turn in flight, captured with its screen.</summary>
+    public WritingTarget? LastWritingTarget { get; private set; }
     /// <summary>A `point_at` call resolved: screenshot pixels, the model's label, and the capture they refer to.</summary>
     public Action<ScreenPoint, string, CompanionScreenCapture>? OnPointAt { get; set; }
     /// <summary>Builds the session instructions for the next turn: the base prompt plus the skills that
@@ -876,6 +891,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 },
             },
         };
+        tools.Add(WriteInPlace.RealtimeToolDefinition());
         foreach (var tool in extraTools ?? []) tools.Add(tool.DeepClone());
         // Ending hands-free by voice only makes sense while hands-free is on.
         if (mode == RealtimeTurnMode.AlwaysOn) tools.Add(StopListeningToolDefinition());
@@ -1094,6 +1110,15 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         Log("always-on listening resumed after dictation");
     }
 
+    /// <summary>The turn's caption: the screenshot's own, then the text a rewrite would replace (quoted in
+    /// full) or, without one, the highlighted text as context for "what does this mean".</summary>
+    public static string ScreenCaption(string caption, WritingTarget? writingTarget, string? selectedText)
+    {
+        if (writingTarget is not null) return caption + " " + writingTarget.ContextLine;
+        if (!string.IsNullOrEmpty(selectedText)) return caption + " " + SelectedTextContextLine(selectedText);
+        return caption;
+    }
+
     /// <summary>Adds the current screen to the conversation so the model can answer "what is this?".</summary>
     private async Task AttachScreenContextAsync()
     {
@@ -1114,14 +1139,19 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             Log("no screen context (screen capture failed?)");
             return;
         }
-        var caption = context.Caption;
-        if (SelectedTextProvider is { } selectedTextProvider)
+        LastWritingTarget = null;
+        if (WritingTargetProvider is { } writingTargetProvider)
         {
-            string? selectedText = null;
+            try { LastWritingTarget = await writingTargetProvider(); }
+            catch (Exception error) { Log($"write in place: target unreadable ({error.GetType().Name})"); }
+        }
+        string? selectedText = null;
+        if (LastWritingTarget is null && SelectedTextProvider is { } selectedTextProvider)
+        {
             try { selectedText = await selectedTextProvider(); }
             catch (Exception) { }
-            if (!string.IsNullOrEmpty(selectedText)) caption += " " + SelectedTextContextLine(selectedText);
         }
+        var caption = ScreenCaption(context.Caption, LastWritingTarget, selectedText);
         TrySend(new JsonObject
         {
             ["type"] = "conversation.item.create",
@@ -1441,7 +1471,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         // The turn this call belongs to: Esc, the person speaking or a new turn moves it on while an
         // action (or the agent) is still working, and then nothing may follow its output.
         var generation = turnGeneration;
-        if (name is not ("send_to_agent" or "point_at" or StopListeningToolName) && OnDesktopAction is { } desktopAction)
+        if (name is not ("send_to_agent" or "point_at" or StopListeningToolName or WriteInPlace.ToolName) && OnDesktopAction is { } desktopAction)
         {
             var startedAt = now();
             var frontAppBefore = FrontAppProvider?.Invoke();
@@ -1487,6 +1517,23 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             case "point_at":
                 output = QueuePointAt(arguments);
                 break;
+            case WriteInPlace.ToolName:
+            {
+                var newText = SpeechJson.String(arguments["text"]) ?? "";
+                if (LastWritingTarget is { } target && WriteInPlaceHost is { } host)
+                {
+                    var outcome = await WriteInPlace.ReplaceAsync(target, newText, host, Log);
+                    Log($"write in place: {outcome}");
+                    if (outcome.DidReplace()) OnWroteInPlace?.Invoke();
+                    output = outcome.SpokenSentence() + " Say only that, in a few words; never read the new text out.";
+                }
+                else
+                {
+                    Log("write in place: no text to write over");
+                    output = "No highlighted text or text box was found, so nothing was changed. Ask them to highlight the text and ask again; do not read a rewrite out.";
+                }
+                break;
+            }
             case StopListeningToolName:
                 if (currentMode == RealtimeTurnMode.AlwaysOn)
                 {

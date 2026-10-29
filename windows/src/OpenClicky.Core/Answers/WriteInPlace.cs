@@ -13,6 +13,7 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
+using OpenClicky.Core.Dictation;
 
 namespace OpenClicky.Core.Answers;
 
@@ -89,10 +90,15 @@ public sealed record WritingTarget(WritingScope Scope, string Text, string? AppP
         return new WritingTarget(WritingScope.Selection, copiedSelection, snapshot.AppProcessName, snapshot.AppName, WritingSource.Clipboard);
     }
 
-    /// <summary>Whether copying the highlight could give a target the snapshot did not.</summary>
+    /// <summary>
+    /// Whether copying the highlight could give a target the snapshot did not. Never in a terminal: it
+    /// counts as editable (it takes dictation) but reads no text, and Ctrl+C there interrupts whatever
+    /// runs; fast voice captures on every turn, hands-free on every sentence.
+    /// </summary>
     public static bool CopyIsWorthTrying(WritingFieldSnapshot snapshot, string? ownProcessName = OwnProcessName)
     {
         if (snapshot.IsSecure || SameApp(snapshot.AppProcessName, ownProcessName)) return false;
+        if (snapshot.AppProcessName is { } processName && LiveTypingExclusions.TerminalProcessNames.Contains(NormalizedProcessName(processName))) return false;
         return snapshot.Role is null || snapshot.IsEditable;
     }
 
@@ -283,6 +289,23 @@ public static class WriteInPlace
             ["required"] = new JsonArray("text"),
         },
     };
+
+    /// <summary>
+    /// The same tool for the Realtime session (OpenAI's function shape; Gemini Live's dialect translates
+    /// it). That lane never had it: with an own key the question goes to fast voice, and "rephrase this"
+    /// in a Gmail draft was read out instead of written over (the Mac, 2026-10-23).
+    /// </summary>
+    public static JsonObject RealtimeToolDefinition()
+    {
+        var anthropic = AnthropicToolDefinition();
+        return new JsonObject
+        {
+            ["type"] = "function",
+            ["name"] = ToolName,
+            ["description"] = anthropic["description"]!.DeepClone(),
+            ["parameters"] = anthropic["input_schema"]!.DeepClone(),
+        };
+    }
 
     /// <summary>Added to the ask prompt when the tool is offered.</summary>
     public const string PromptInstruction =
