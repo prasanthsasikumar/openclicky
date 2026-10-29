@@ -19,8 +19,11 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins;
+using OpenClicky.Core.Plugins.Shelf;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Windows.Overlay;
+using OpenClicky.Windows.Plugins.Shelf;
 using OpenClicky.Windows.Theme;
 
 namespace OpenClicky.Windows.Island;
@@ -32,6 +35,10 @@ public sealed class IslandWindow : Window
     private ScreenInfo screen;
 
     private readonly Canvas root = new() { ClipToBounds = false };
+    /// <summary>Over the island's own rectangle, so a drag reaches it even collapsed (when nothing there is hit-testable):
+    /// filled only while the Shelf is on, nearly transparent, since a layered window passes fully transparent pixels through.</summary>
+    private readonly Rectangle dropCatcher = new();
+    private static readonly Brush DropCatcherFill = MakeDropCatcherFill();
     private readonly Path islandShape = new() { Fill = DS.HUD.IslandBrush };
     private readonly Grid contentHost = new();
     private FrameworkElement? currentContentElement;
@@ -65,7 +72,14 @@ public sealed class IslandWindow : Window
         Title = "OpenClicky island";
         FloatingWindowSupport.Configure(this, clickThrough: false);
         Content = root;
+        root.Children.Add(dropCatcher);
         root.Children.Add(islandShape);
+        AllowDrop = true;
+        DragEnter += OnDragOverIsland;
+        DragOver += OnDragOverIsland;
+        DragLeave += OnDragLeaveIsland;
+        Drop += OnDropOnIsland;
+        UpdateDropCatcher();
         contentHost.RenderTransform = contentScale;
         root.Children.Add(contentHost);
         islandShape.MouseLeftButtonUp += OnIslandClicked;
@@ -111,7 +125,11 @@ public sealed class IslandWindow : Window
             case nameof(IslandModel.PermissionPrompt):
             case nameof(IslandModel.TourCard):
             case nameof(IslandModel.Expansion):
+                RebuildContentIfNeeded();
+                break;
             case nameof(IslandModel.Selection):
+                // A plugin switched on or off changes the selection: the Shelf decides whether drags are caught.
+                UpdateDropCatcher();
                 RebuildContentIfNeeded();
                 break;
             case nameof(IslandModel.IsSettlingGracefully):
@@ -272,6 +290,13 @@ public sealed class IslandWindow : Window
             _ => island.MidX - frame.Left - animatedWidth / 2,
         };
         var islandTop = island.Top - frame.Top;
+        if (dropCatcher.Fill is not null)
+        {
+            dropCatcher.Width = Math.Max(1, animatedWidth);
+            dropCatcher.Height = Math.Max(1, animatedHeight);
+            Canvas.SetLeft(dropCatcher, islandLeft);
+            Canvas.SetTop(dropCatcher, islandTop);
+        }
 
         // The black: only while open on a display without a notch (collapsed, only the handle marks the spot).
         islandShape.Opacity = shapeOpacity.Value;
@@ -303,6 +328,52 @@ public sealed class IslandWindow : Window
         contentScale.ScaleY = contentScaleSpring.Value;
         contentHost.Opacity = contentOpacity.Value;
         currentContent?.Tick();
+    }
+
+    // MARK: - Drops (the Shelf plugin; IslandDrop.swift)
+
+    private bool AcceptsDrop(IDataObject data) =>
+        ShelfDragPolicy.Accepts(ShelfIsOn ? ShelfOnly : NoComponents, ShelfDataObjects.Formats(data));
+
+    private bool ShelfIsOn => model.IsComponentEnabled(IslandPluginRegistry.ShelfId);
+    private static readonly IReadOnlySet<string> ShelfOnly = new HashSet<string> { IslandPluginRegistry.ShelfId };
+    private static readonly IReadOnlySet<string> NoComponents = new HashSet<string>();
+
+    private void UpdateDropCatcher() => dropCatcher.Fill = ShelfIsOn ? DropCatcherFill : null;
+
+    /// <summary>Alpha 1/255: invisible, yet a pixel the window owns.</summary>
+    private static Brush MakeDropCatcherFill()
+    {
+        var brush = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+        brush.Freeze();
+        return brush;
+    }
+
+    /// <summary>A drag from another app unfolds the island to the shelf; the island's own tiles and anything with the
+    /// shelf off are refused.</summary>
+    private void OnDragOverIsland(object sender, DragEventArgs eventArgs)
+    {
+        var accepts = AcceptsDrop(eventArgs.Data);
+        eventArgs.Effects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
+        eventArgs.Handled = true;
+        if (accepts) model.SetDragHovering(true);
+    }
+
+    private void OnDragLeaveIsland(object sender, DragEventArgs eventArgs)
+    {
+        // WPF also raises a leave when the drag crosses from one element to another inside the window.
+        if (new Rect(RenderSize).Contains(eventArgs.GetPosition(this))) return;
+        model.SetDragHovering(false);
+    }
+
+    /// <summary>A drop adds what was dragged, and the island stays open a moment so the new tile is seen.</summary>
+    private void OnDropOnIsland(object sender, DragEventArgs eventArgs)
+    {
+        eventArgs.Handled = true;
+        var added = AcceptsDrop(eventArgs.Data) ? ShelfIslandView.Store.Add(ShelfDataObjects.Read(eventArgs.Data)) : [];
+        model.SetDragHovering(false);
+        eventArgs.Effects = added.Count > 0 ? DragDropEffects.Copy : DragDropEffects.None;
+        if (added.Count > 0) model.HoldOpenAfterDrop();
     }
 
     // MARK: - Clicks

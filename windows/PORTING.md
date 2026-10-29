@@ -138,7 +138,7 @@ What the Mac gained after the port (git log da71df7..HEAD -- macos), and where W
 | Island: components in the panel's slot, a capsule to flip them, Settings → Plugins (default, order) | Done (framework; `Core/Companion/IslandComponents.cs`) |
 | Plugin: System (CPU, memory, disk, battery rings) | Done (`Core/Plugins/SystemStats`, `Windows/Plugins/SystemStats`) |
 | Island: transcript and agent components (the moment picks them), "follow up" on an agent thread | Done (`CompanionManager.IslandContext.cs`) |
-| Plugin: Shelf (drop on the island, drag out, copy) | Not yet |
+| Plugin: Shelf (drop on the island, drag out, copy) | Done (`Core/Plugins/Shelf`, `Windows/Plugins/Shelf`; the collapsed island catches drags with an alpha-1 rectangle only while the Shelf is on) |
 | Plugin: Coding agents (Claude Code / Codex sessions, plan limits) | Not yet |
 | Plugin: Now playing (artwork, progress, controls) | Not yet: Windows' media session API covers every player |
 | Plugin: Teacher (draws lessons on screen) | Not yet |

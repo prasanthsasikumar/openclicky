@@ -158,7 +158,8 @@ public sealed partial class IslandModel : ObservableObject
         IsHovering: isHovering,
         IsSpeaking: IsSpeaking,
         HasCaption: CaptionText is not null,
-        IsSideDrawer: Placement.IsSideDrawer());
+        IsSideDrawer: Placement.IsSideDrawer(),
+        HoldsOpenForShelf: isDragHovering || isDraggingOut || isHoldingAfterDrop);
 
     public void SetHovering(bool hovering)
     {
@@ -169,6 +170,75 @@ public sealed partial class IslandModel : ObservableObject
         }
         if (isHovering == hovering) return;
         isHovering = hovering;
+        // A drop's hold lasts while the pointer stays; it ends when the pointer leaves.
+        if (!hovering && isHoldingAfterDrop)
+        {
+            holdAfterDropCancellation?.Cancel();
+            isHoldingAfterDrop = false;
+        }
+        Reconcile();
+    }
+
+    // MARK: - Drags (the Shelf plugin)
+
+    private bool isDragHovering;
+    /// <summary>A tile is being dragged out of the shelf: the pointer leaves, the island must not close.</summary>
+    private bool isDraggingOut;
+    /// <summary>A drop just landed: the island stays open a moment so the new tile is seen.</summary>
+    private bool isHoldingAfterDrop;
+    private CancellationTokenSource? holdAfterDropCancellation;
+
+    /// <summary>A drag from another app is over this island.</summary>
+    public bool IsDragHovering => isDragHovering;
+    public bool IsDraggingOut => isDraggingOut;
+
+    /// <summary>Whether a component is on: a built-in always, a plugin when the user turned it on.</summary>
+    public bool IsComponentEnabled(string id) => componentSettings.IsEnabled(id, Registry);
+
+    /// <summary>A drag from another app entered or left this island. Only with the shelf on: without it the island
+    /// does not react to drags at all.</summary>
+    public void SetDragHovering(bool hovering)
+    {
+        if (hovering && !IsComponentEnabled(Plugins.IslandPluginRegistry.ShelfId)) return;
+        if (isDragHovering == hovering) return;
+        isDragHovering = hovering;
+        // The hover poll lags a drag by a tick; a drag that just left must not read as a hover.
+        if (!hovering) isHovering = false;
+        var newContext = context with { IsDragHovering = hovering };
+        if (newContext.ContextualKey != context.ContextualKey) componentOverride = null;
+        context = newContext;
+        RecomputeSelection();
+        OnPropertyChanged(nameof(IsDragHovering));
+        Reconcile(immediately: true);
+    }
+
+    public void SetDragOut(bool dragging)
+    {
+        if (isDraggingOut == dragging) return;
+        isDraggingOut = dragging;
+        Reconcile(immediately: true);
+    }
+
+    /// <summary>Keeps the island open 1.5 s after a drop with the shelf in front (so the new tile is seen), longer
+    /// while the pointer stays on it; the hold ends when the pointer leaves.</summary>
+    public void HoldOpenAfterDrop()
+    {
+        holdAfterDropCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        holdAfterDropCancellation = cancellation;
+        isHoldingAfterDrop = true;
+        componentOverride = Plugins.IslandPluginRegistry.ShelfId;
+        RecomputeSelection();
+        Reconcile(immediately: true);
+        _ = EndHoldAfterDropAsync(cancellation.Token);
+    }
+
+    private async Task EndHoldAfterDropAsync(CancellationToken cancellationToken)
+    {
+        try { await delay(TimeSpan.FromSeconds(1.5), cancellationToken); }
+        catch (OperationCanceledException) { return; }
+        if (cancellationToken.IsCancellationRequested || isHovering) return;
+        isHoldingAfterDrop = false;
         Reconcile();
     }
 

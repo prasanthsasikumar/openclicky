@@ -276,6 +276,13 @@ public sealed class IslandWindowManager : IDisposable
                 model.SetHovering(false);
                 continue;
             }
+            // A drag that ended without telling the island (a cancelled drag, a torn-down destination) must not leave it
+            // open: no button down means no drag.
+            if ((model.IsDragHovering || model.IsDraggingOut) && !FloatingWindowSupport.IsAnyMouseButtonDown())
+            {
+                model.SetDragHovering(false);
+                model.SetDragOut(false);
+            }
             var hoverMargin = model.Expansion is IslandExpansion.Collapsed or IslandExpansion.Peek ? 6 : 14;
             var isHovering = instance.Window.IslandRectInPixels(hoverMargin).Contains(cursor);
             model.SetHovering(isHovering);

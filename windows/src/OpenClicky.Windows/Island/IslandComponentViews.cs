@@ -12,6 +12,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Plugins;
+using OpenClicky.Windows.Plugins.Shelf;
 using OpenClicky.Windows.Plugins.SystemStats;
 using OpenClicky.Windows.Theme;
 using static OpenClicky.Windows.Island.IslandUi;
@@ -26,6 +27,7 @@ internal static class IslandComponentViews
         IslandComponentRegistry.TranscriptId => new TranscriptIslandView(hub),
         IslandComponentRegistry.AgentId => new AgentIslandView(hub, model),
         IslandPluginRegistry.SystemId => new SystemIslandView(),
+        IslandPluginRegistry.ShelfId => new ShelfIslandView(model),
         _ => null,
     };
 
