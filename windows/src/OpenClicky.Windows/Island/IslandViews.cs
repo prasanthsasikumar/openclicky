@@ -85,8 +85,8 @@ internal sealed class PeekLineView : Grid, IIslandContent
         this.hub = hub;
         // The whole line is the island's click target: a click opens the panel.
         IsHitTestVisible = false;
-        Loaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed += OnMediaChanged;
-        Unloaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed -= OnMediaChanged;
+        Loaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed += OnPluginLineChanged;
+        Unloaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed -= OnPluginLineChanged;
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -103,10 +103,14 @@ internal sealed class PeekLineView : Grid, IIslandContent
         row.Children.Add(statusText);
         row.Children.Add(Text(" · click to open", 11, DS.HUD.Text3Brush));
         Children.Add(row);
+        // A coding session starting or stopping changes the line while it shows.
+        Loaded += (_, _) => Plugins.CodingAgents.AgentsIslandView.Sessions.Changed += OnPluginLineChanged;
+        Unloaded += (_, _) => Plugins.CodingAgents.AgentsIslandView.Sessions.Changed -= OnPluginLineChanged;
         Refresh();
     }
 
-    private void OnMediaChanged()
+    /// <summary>A coding session or the track changed: the line follows while it shows.</summary>
+    private void OnPluginLineChanged()
     {
         if (Dispatcher.CheckAccess()) Refresh();
         else Dispatcher.BeginInvoke(Refresh);
@@ -114,8 +118,11 @@ internal sealed class PeekLineView : Grid, IIslandContent
 
     public void Refresh()
     {
+        var sessions = Plugins.CodingAgents.AgentsIslandView.Sessions;
+        // The watcher only runs while the Coding agents plugin is on, so its line is null otherwise.
+        var agentLine = sessions.IsEnabled ? sessions.PeekLine : null;
         statusText.Text = IslandTexts.PeekText(IslandTexts.PeekStatus(hub.IsClickyCursorEnabled, hub.PointerPresence, hub.IsPointerAwake),
-            agentLine: null, mediaLine: Plugins.Media.MediaIslandView.Store.NowPlayingLine);
+            agentLine, mediaLine: Plugins.Media.MediaIslandView.Store.NowPlayingLine);
     }
 
     public void Tick() { }

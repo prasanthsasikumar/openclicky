@@ -76,7 +76,7 @@ public class IslandComponentsTests
     public void TheOrderDropsUnknownIdsAndAppendsMissingOnes()
     {
         var settings = new IslandComponentSettings(Preferences.InMemory()) { Order = ["system", "gone"] };
-        Assert.Equal(["system", "shortcuts", "transcript", "agent", "shelf", "media"], settings.ResolvedOrder(IslandComponentRegistry.All));
+        Assert.Equal(["system", "shortcuts", "transcript", "agent", "shelf", "agents", "media"], settings.ResolvedOrder(IslandComponentRegistry.All));
     }
 
     [Fact]

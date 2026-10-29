@@ -14,8 +14,10 @@ using System.Windows.Threading;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Windows.Overlay;
+using OpenClicky.Windows.Plugins.CodingAgents;
 using OpenClicky.Windows.Plugins.Media;
 
 namespace OpenClicky.Windows.Island;
@@ -67,13 +69,13 @@ public sealed class IslandWindowManager : IDisposable
                 componentSettingsObservations.Add(preferences.Observe(key, () => dispatcher.BeginInvoke(() =>
                 {
                     foreach (var instance in instances) instance.Model.RefreshComponentSettings();
-                    SyncOptionalComponents();
+                    SyncPluginStores();
                 })));
             }
         }
         // The playing track is a moment of its own (Now playing on and something plays).
         MediaIslandView.Store.Changed += OnMediaChanged;
-        SyncOptionalComponents();
+        SyncPluginStores();
         if (overlayModel is not null)
         {
             overlayModel.DockTarget = () => (DockPoint, DockScreenFrame);
@@ -331,15 +333,19 @@ public sealed class IslandWindowManager : IDisposable
         if (PrimaryInstance is { } primaryInstance && primaryInstance.Model.Expansion == IslandExpansion.Tour) primaryInstance.Window.FocusTourField();
     }
 
+    /// <summary>The plugins that read something in the background follow their switches (NotchHUDManager.syncOptionalComponents):
+    /// the Coding agents' slow poll feeds the peek line, and Now playing asks the media sessions only while it is on.</summary>
+    private void SyncPluginStores()
+    {
+        var enabled = componentSettings?.EnabledPlugins ?? [];
+        AgentsIslandView.SetEnabled(enabled.Contains(IslandPluginRegistry.AgentsId));
+        MediaIslandView.Store.SetEnabled(enabled.Contains(IslandPluginRegistry.MediaId));
+    }
+
     // MARK: - The slot's moment
 
     /// <summary>Ticks once a second while a landed take's transcript window runs, so it ends on time.</summary>
     private DispatcherTimer? landedTranscriptTimer;
-
-    /// <summary>The plugins that read something in the background follow their switches: Now playing asks the media
-    /// sessions only while it is on (NotchHUDManager.syncOptionalComponents).</summary>
-    private void SyncOptionalComponents() =>
-        MediaIslandView.Store.SetEnabled(componentSettings?.EnabledPlugins.Contains(Core.Plugins.IslandPluginRegistry.MediaId) ?? false);
 
     private bool isMediaPlaying;
 

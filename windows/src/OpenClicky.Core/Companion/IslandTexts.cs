@@ -82,7 +82,7 @@ public static class IslandTexts
 
     /// <summary>The peek line's words: a live coding session, then the playing track (each when its plugin is on), outrank
     /// the pointer's status (NotchPeekLine.peekText).</summary>
-    public static string PeekText(string status, string? agentLine, string? mediaLine) => agentLine ?? mediaLine ?? status;
+    public static string PeekText(string status, string? agentLine, string? mediaLine = null) => agentLine ?? mediaLine ?? status;
 
     /// <summary>The pointer's status in fewer words, so it fits beside "click to open" on the peek's one line.</summary>
     public static string PeekStatus(bool isClickyCursorEnabled, PointerPresence presence, bool isPointerAwake)
@@ -95,7 +95,6 @@ public static class IslandTexts
             _ => isPointerAwake ? "pointer follows you" : "shake for the pointer",
         };
     }
-
 
     /// <summary>The four shortcuts CompanionShortcutRecognizer knows, with the Windows keys (PORTING.md).</summary>
     public static IReadOnlyList<IslandShortcut> ShortcutGrid(DictationHotkey dictationKey, bool isAlwaysListening)

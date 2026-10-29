@@ -139,7 +139,7 @@ What the Mac gained after the port (git log da71df7..HEAD -- macos), and where W
 | Plugin: System (CPU, memory, disk, battery rings) | Done (`Core/Plugins/SystemStats`, `Windows/Plugins/SystemStats`) |
 | Island: transcript and agent components (the moment picks them), "follow up" on an agent thread | Done (`CompanionManager.IslandContext.cs`) |
 | Plugin: Shelf (drop on the island, drag out, copy) | Done (`Core/Plugins/Shelf`, `Windows/Plugins/Shelf`; the collapsed island catches drags with an alpha-1 rectangle only while the Shelf is on) |
-| Plugin: Coding agents (Claude Code / Codex sessions, plan limits) | Not yet |
+| Plugin: Coding agents (Claude Code / Codex sessions, plan limits) | Done (`Core/Plugins/CodingAgents`, `Windows/Plugins/CodingAgents`): logs under `%USERPROFILE%\.claude\projects` and `.codex\sessions`; plan limits from Claude Code's `.credentials.json` (the Mac's Keychain item); the peek line names a live session |
 | Plugin: Now playing (artwork, progress, controls) | Done: Windows' media sessions, so every player that reports to Windows (`Core/Plugins/Media`, `Windows/Plugins/Media`) |
 | Plugin: Teacher (draws lessons on screen) | Not yet |
 | Island: glass under the open panel | Not needed: the Mac went back to solid black (f0abb80) |
