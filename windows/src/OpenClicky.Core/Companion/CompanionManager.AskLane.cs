@@ -334,12 +334,17 @@ public sealed partial class CompanionManager
 
     // MARK: - Speaking
 
-    private StreamingAnswerSpeaker MakeAnswerSpeaker(Action onVoiceStarts, Action<string> onPointTag) =>
-        new(new SpeechQueue(
-                (pieceText, cancellationToken) => answerVoicePlayer.FetchAudioAsync(pieceText, cancellationToken),
+    private StreamingAnswerSpeaker MakeAnswerSpeaker(Action onVoiceStarts, Action<string> onPointTag)
+    {
+        // One session per answer, so a late or failed free voice hands the rest of this answer to the local voice
+        // and the next answer tries again (AccountVoiceGuard.cs).
+        var answerVoiceSession = answerVoicePlayer.MakeAnswerSession();
+        return new(new SpeechQueue(
+                answerVoiceSession.AudioAsync,
                 (audio, cancellationToken) => answerVoicePlayer.PlayToCompletionAsync(audio, cancellationToken)),
             onVoiceStarts: () => services.MainThread.Post(onVoiceStarts),
             onPointTag: pointTag => services.MainThread.Post(() => onPointTag(pointTag)));
+    }
 
     /// <summary>
     /// Speaks a reply that is already whole (the agent's result) in pieces through SpeechQueue,

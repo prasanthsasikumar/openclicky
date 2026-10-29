@@ -34,11 +34,11 @@ public sealed class AnswerVoicePlayer(IAudioPlayer audioPlayer, Func<string> cur
     public Func<SpeechVoiceChoice> CurrentVoice { get; init; } = () => SpeechVoiceChoices.Current(services);
 
     /// <summary>
-    /// The audio for <paramref name="text"/>, without playing it, in the voice <see cref="CurrentVoice"/> names;
-    /// the free voice comes from the backend's /tts. Used by SpeechQueue to fetch the next piece of an
-    /// answer while the current one plays.
+    /// The voice for one answer, in the voice <see cref="CurrentVoice"/> names when the answer starts. The account's free
+    /// voice comes from the backend's /tts behind AnswerVoiceSession's deadlines: a late or failed piece, and the rest of
+    /// that answer, are spoken by the fastest local voice (#23). Its AudioAsync is SpeechQueue's fetch step.
     /// </summary>
-    public async Task<byte[]> FetchAudioAsync(string text, CancellationToken cancellationToken = default)
+    public AnswerVoiceSession MakeAnswerSession()
     {
         var voice = CurrentVoice();
         lock (voiceLogLock)
@@ -49,10 +49,44 @@ public sealed class AnswerVoicePlayer(IAudioPlayer audioPlayer, Func<string> cur
                 lastLoggedVoice = voice;
             }
         }
-        if (voice != SpeechVoiceChoice.Account)
-        {
-            return await CloudVoiceSpeaker.AudioAsync(text, voice, services: services, cancellationToken: cancellationToken).ConfigureAwait(false);
-        }
+        var speaksWithAccountVoice = voice == SpeechVoiceChoice.Account;
+        var fallbackVoice = speaksWithAccountVoice
+            ? SpeechVoiceChoices.FastestLocalVoice((services ?? SpeechVoiceServices.Current)?.KokoroIsInstalled() ?? false, ReplyLanguage.CurrentCode)
+            : voice;
+        return new AnswerVoiceSession(
+            speaksWithAccountVoice,
+            FetchAccountAudioAsync,
+            (pieceText, cancellationToken) => CloudVoiceSpeaker.AudioAsync(pieceText, fallbackVoice, services: services, cancellationToken: cancellationToken),
+            onFirstAccountAudio: waited => AppLog.Write($"voice: account first sound in {waited.TotalSeconds:0.0} s"),
+            onAccountTrouble: trouble =>
+            {
+                switch (trouble)
+                {
+                    case AnswerVoiceSession.AccountTrouble.TooSlow tooSlow:
+                        AppLog.Write($"voice: account piece {tooSlow.PieceNumber + 1} not back in {tooSlow.Waited.TotalSeconds:0.0} s; {fallbackVoice.RawValue()} speaks the rest");
+                        break;
+                    case AnswerVoiceSession.AccountTrouble.Failed failed:
+                        // 402 is the account's voice allowance (tts_budget): the plan, not a failure.
+                        var isVoiceAllowanceSpent = failed.Error is BackendHttpException { Service: BackendHttpException.ServiceKind.Voice, Status: 402 };
+                        if (!isVoiceAllowanceSpent) ClickyAnalytics.TrackTTSError(failed.Error.Message);
+                        AppLog.Write($"voice: account piece {failed.PieceNumber + 1} failed ({failed.Error.GetType().Name}); {fallbackVoice.RawValue()} speaks the rest");
+                        break;
+                }
+            },
+            onAnswerOnTime: AccountVoiceRest.RecordAnswerOnTime,
+            onTroubledAnswer: AccountVoiceRest.RecordTroubledAnswer);
+    }
+
+    /// <summary>
+    /// The audio for <paramref name="text"/> as a one-piece answer, without playing it, in the voice <see cref="CurrentVoice"/>
+    /// names (a pointing caption, the voice preview).
+    /// </summary>
+    public Task<byte[]> FetchAudioAsync(string text, CancellationToken cancellationToken = default) =>
+        MakeAnswerSession().AudioAsync(text, cancellationToken);
+
+    /// <summary>One piece from the backend's /tts, the account's free ElevenLabs voice.</summary>
+    private async Task<byte[]> FetchAccountAudioAsync(string text, CancellationToken cancellationToken)
+    {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ResourceTimeout);
         var request = new HttpRequestMessage(HttpMethod.Post, ProxyUrl);

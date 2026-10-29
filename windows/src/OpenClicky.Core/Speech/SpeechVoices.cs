@@ -60,15 +60,14 @@ public static class SpeechVoiceChoices
     };
 
     /// <summary>
-    /// Automatic's order: own keys first (the person chose to pay for them), then Kokoro once it is
-    /// downloaded (free, offline, and it saves the free ElevenLabs characters for those without
-    /// it), then the free voice, then this PC. Gemini comes last of the keys: its voice takes about
-    /// four seconds a sentence.
+    /// Automatic's order: own keys first (the person chose to pay for them), then the account's ElevenLabs
+    /// voice (FlowsXR's grant pays for it, with a generous monthly allowance; #23), then Kokoro if someone
+    /// downloaded it, then this PC. Gemini comes last of the keys: its voice takes about four seconds a sentence.
     /// </summary>
     public static IReadOnlyList<SpeechVoiceChoice> AutomaticOrder { get; } =
     [
         SpeechVoiceChoice.OpenAI, SpeechVoiceChoice.ElevenLabs, SpeechVoiceChoice.Google, SpeechVoiceChoice.Polly,
-        SpeechVoiceChoice.Sarvam, SpeechVoiceChoice.Gemini, SpeechVoiceChoice.Kokoro, SpeechVoiceChoice.Account, SpeechVoiceChoice.Mac,
+        SpeechVoiceChoice.Sarvam, SpeechVoiceChoice.Gemini, SpeechVoiceChoice.Account, SpeechVoiceChoice.Kokoro, SpeechVoiceChoice.Mac,
     ];
 
     private static bool Has(string? key) => !string.IsNullOrWhiteSpace(key);
@@ -109,14 +108,17 @@ public static class SpeechVoiceChoices
     /// PC's (a missing key or a Kokoro still downloading: this PC's voice sounds robotic next to the
     /// free one, 2026-10-28); Automatic, the first in <see cref="AutomaticOrder"/> that can. Kokoro in a
     /// language it doesn't speak (it became the voice on its own, then the language changed) goes
-    /// on as Automatic.
+    /// on as Automatic. While the account voice rests (<see cref="AccountVoiceRest"/>: two slow or failed
+    /// answers in a row) Automatic passes it by; a voice picked by hand is never passed by.
     /// </summary>
-    public static SpeechVoiceChoice Resolve(OpenClickyShellSettings settings, bool hasAccount, bool kokoroInstalled, string languageCode)
+    public static SpeechVoiceChoice Resolve(OpenClickyShellSettings settings, bool hasAccount, bool kokoroInstalled, string languageCode,
+                                            bool accountVoiceIsResting = false)
     {
         var picked = FromStored(settings.SpeechVoice);
         var kokoroCantSpeakLanguage = picked == SpeechVoiceChoice.Kokoro && KokoroVoice.SpeakerFor(languageCode, null) is null;
+        var automaticCandidates = accountVoiceIsResting ? AutomaticOrder.Where(choice => choice != SpeechVoiceChoice.Account).ToList() : AutomaticOrder;
         IReadOnlyList<SpeechVoiceChoice> candidates = picked == SpeechVoiceChoice.Automatic || kokoroCantSpeakLanguage
-            ? AutomaticOrder
+            ? automaticCandidates
             : [picked, SpeechVoiceChoice.Account];
         foreach (var candidate in candidates)
         {
@@ -128,7 +130,15 @@ public static class SpeechVoiceChoices
     /// <summary><see cref="Resolve"/> with this PC's settings.</summary>
     public static SpeechVoiceChoice Current(SpeechVoiceServices? services = null) =>
         Resolve(OpenClickyConfiguration.Settings, OpenClickyConfiguration.HasAccountToken,
-                (services ?? SpeechVoiceServices.Current)?.KokoroIsInstalled() ?? false, ReplyLanguage.CurrentCode);
+                (services ?? SpeechVoiceServices.Current)?.KokoroIsInstalled() ?? false, ReplyLanguage.CurrentCode,
+                AccountVoiceRest.IsResting);
+
+    /// <summary>The voice that takes over when the account voice is late or fails: Kokoro when it is downloaded and speaks
+    /// the language (offline, under a second a sentence once loaded), else this PC.</summary>
+    public static SpeechVoiceChoice FastestLocalVoice(bool kokoroInstalled, string languageCode) =>
+        CanSpeak(SpeechVoiceChoice.Kokoro, new OpenClickyShellSettings(), hasAccount: false, kokoroInstalled, languageCode)
+            ? SpeechVoiceChoice.Kokoro
+            : SpeechVoiceChoice.Mac;
 }
 
 /// <summary>
