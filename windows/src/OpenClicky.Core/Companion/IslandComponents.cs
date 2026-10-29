@@ -8,9 +8,8 @@
 //  OpenClicky.Windows/Island (the built-ins) and OpenClicky.Windows/Plugins (the plugins), looked up
 //  by the component's id.
 //
-//  Ported so far: the built-ins (shortcuts, transcript, agent) and the System plugin. The Mac's
-//  Shelf, Coding agents, Now playing and Teacher plugins are not yet; the context already carries
-//  what they will read.
+//  Ported: the built-ins (shortcuts, transcript, agent) and every Mac plugin (System, Shelf, Coding
+//  agents, Now playing, Teacher).
 //
 
 using OpenClicky.Core.Configuration;
