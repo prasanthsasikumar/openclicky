@@ -241,9 +241,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking \
     at. \
     Do simple local things yourself with the fast tools (open_app, open_url, web_search, create_folder, \
-    reveal_in_finder, set_volume, media_control, play_music, minimize_all, restore_windows, check_email, \
-    draft_email) and then say what they give back in a few words. You cannot know live facts (the weather, news, \
+    reveal_in_finder, open_folder, find_files, find_on_page, scroll, set_volume, media_control, play_music, minimize_all, \
+    restore_windows, check_email, draft_email) and then say what they give back in a few words. You cannot know live facts (the weather, news, \
     scores, prices, opening hours): call web_search for them and answer from the results, never say you cannot check. \
+    When they tell you to click, open or press something on screen ("click the first link", "open that video"), call \
+    click with the element's on-screen text; do not point at it or explain instead. "Scroll down", "go back to the top" \
+    is the scroll tool. "Look for" a file is find_files; "look for" words on this page is find_on_page. \
     \(CompanionManager.commandOrQuestionInstruction) \
     For anything bigger (creating or editing files or code, running commands, using integrations, research, \
     multi-step tasks), first say one short sentence acknowledging it, then call the send_to_agent \
@@ -690,6 +693,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 "required": ["x", "y", "label", "text"],
             ],
         ]
+        let clickTool: [String: Any] = [
+            "type": "function",
+            "name": Self.clickToolName,
+            "description": "Click a link, button, tab or field on screen for the user, the way they would with the mouse. Use it when they tell you to click or open something they can see ('click the first link', 'open that video', 'press Sign in'); point_at is for teaching instead. Same arguments as point_at: always pass the element's visible text. It never presses anything that sends, buys, pays, deletes or confirms; those it points at for them to click.",
+            "parameters": pointTool["parameters"] ?? [:],
+        ]
         // Ending hands-free by voice only makes sense while hands-free is on.
         let handsFreeTools = mode == .alwaysOn ? [Self.stopListeningToolDefinition()] : []
         return [
@@ -697,7 +706,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             "session": [
                 "type": "realtime",
                 "instructions": text,
-                "tools": [tool, pointTool, WriteInPlace.realtimeToolDefinition()] + MacAction.realtimeToolDefinitions() + handsFreeTools + (pluginToolsProvider?() ?? []),
+                "tools": [tool, pointTool, clickTool, WriteInPlace.realtimeToolDefinition()] + MacAction.realtimeToolDefinitions() + handsFreeTools + (pluginToolsProvider?() ?? []),
                 "tool_choice": "auto",
                 "audio": ["input": input, "output": output],
             ],
@@ -705,6 +714,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     }
 
     static let stopListeningToolName = "stop_listening"
+    static let clickToolName = "click"
 
     /// The model decides what counts as a sign-off, since people end in many ways; fixed words
     /// would also fire on "how do I quit Photoshop". A missed sign-off costs one key press, a
@@ -1318,73 +1328,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                     pointingChain = Task { [weak self] in
                         await previousPointing?.value
                         guard !Task.isCancelled, let self else { return }
-                        let formatted = { (value: CGFloat) in String(format: "%.0f", value) }
-                        var point = guess
-                        var resolution = "using the guess"
-                        var resolved = false
-                        // A window's close / minimize / zoom buttons have no caption and are 12 px
-                        // across; macOS reports their exact frames.
-                        if let control = WindowControlLocator.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
-                            point = control.point
-                            resolved = true
-                            resolution = "\(control.control.name) button of \(control.appName) (\(formatted(point.x)), \(formatted(point.y)))"
-                        }
-                        // A browser tab is a favicon plus a truncated title, which no screenshot model
-                        // reads reliably; the browser's own tab list and Accessibility frames do.
-                        if !resolved, let tab = BrowserTabLocator.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
-                            point = tab.point
-                            resolved = true
-                            resolution = "browser tab \"\(tab.tab.title.prefix(40))\" (\(formatted(point.x)), \(formatted(point.y)))"
-                        }
-                        let radius = CGFloat(capture.screenshotWidthInPixels) * 0.3
-                        // Repeated captions ("Edit" on every row) are the case snapping gets wrong:
-                        // two candidates closer together than the model's own 30–100 px error cannot
-                        // be told apart by distance, so a locator that only knows pixels reports
-                        // nothing rather than guessing between them.
-                        let ambiguityMargin = CGFloat(capture.screenshotWidthInPixels) * 0.1
-                        if !resolved, !elementText.isEmpty, let lines = await screenText?.value, !lines.isEmpty {
-                            if let match = ScreenTextLocator.locate(elementText, near: guess, in: lines, maxDistance: radius, ambiguityMargin: ambiguityMargin) {
-                                point = match.center
-                                resolved = true
-                                resolution = "snapped to \"\(match.text)\" (\(formatted(point.x)), \(formatted(point.y)), \(formatted(match.distance)) px away)"
-                            }
-                        }
-                        // Accessibility knows what the pixels cannot: the control's role, and the
-                        // title of the row it sits in. That is what separates repeated captions, and
-                        // it costs nothing, so it runs before paying for a Claude round trip.
-                        if !resolved,
-                           let element = AccessibleElementLocator.locate(
-                               label: label, text: elementText, userRequest: userRequest, near: guess,
-                               in: capture, maxDistance: radius, ambiguityMargin: ambiguityMargin
-                           ) {
-                            point = element.center
-                            resolved = true
-                            let container = element.containerTitles.first.map { " in \"\($0.prefix(30))\"" } ?? ""
-                            resolution = "accessibility \"\(element.title.prefix(40))\"\(container) (\(formatted(point.x)), \(formatted(point.y)))"
-                        }
-                        if !resolved {
-                            let started = Date()
-                            if let located = await ScreenElementGrounder.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
-                                point = located.point
-                                resolution = "located by Claude (\(formatted(point.x)), \(formatted(point.y))) in \(Int(Date().timeIntervalSince(started) * 1000)) ms"
-                                // Claude picks the right element and misplaces it by up to ~150 px;
-                                // the text it named has an exact box in the OCR of the same screenshot.
-                                // Claude's point is far closer than the Realtime guess, so the snap
-                                // uses a tighter ambiguity margin than the one above.
-                                if let visibleText = located.visibleText,
-                                   let lines = await screenText?.value, !lines.isEmpty,
-                                   let match = ScreenTextLocator.locate(
-                                       visibleText, near: located.point, in: lines,
-                                       maxDistance: radius * 0.6, ambiguityMargin: ambiguityMargin * 0.5
-                                   ) {
-                                    point = match.center
-                                    resolution += ", snapped to \"\(match.text)\" (\(formatted(point.x)), \(formatted(point.y)), \(formatted(match.distance)) px from Claude's)"
-                                }
-                            } else {
-                                resolution = "Claude could not locate it; using the guess"
-                            }
-                        }
+                        let target = await self.locateElement(guess: guess, label: label, elementText: elementText, userRequest: userRequest, capture: capture, screenText: screenText)
                         guard !Task.isCancelled else { return }
+                        let formatted = { (value: CGFloat) in String(format: "%.0f", value) }
+                        let point = target.point
+                        let resolution = target.resolution
                         let location = CompanionManager.screenLocation(forScreenshotPoint: point, in: capture)
                         self.log("point_at (\(formatted(guess.x)), \(formatted(guess.y))) \"\(label)\" \(resolution) → screen (\(formatted(location.x)), \(formatted(location.y)))\(self.onPointAt == nil ? " (no handler)" : "")")
                         self.onPointAt?(point, label, capture)
@@ -1397,6 +1345,83 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             } else {
                 output = "invalid coordinates: point_at needs finite integer x and y"
             }
+        case Self.clickToolName:
+            let number = { (value: Any?) -> Double? in
+                if let n = value as? NSNumber { return n.doubleValue }
+                if let s = value as? String { return Double(s.trimmingCharacters(in: .whitespaces)) }
+                return nil
+            }
+            guard let x = number(arguments["x"]), let y = number(arguments["y"]), x.isFinite, y.isFinite else {
+                output = "invalid coordinates: click needs finite integer x and y"
+                break
+            }
+            guard let capture = lastScreenCapture else {
+                log("click ignored: no screenshot attached to this turn")
+                output = "no screenshot attached; nothing was clicked"
+                break
+            }
+            var label = (arguments["label"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if label.isEmpty { label = "it" }
+            let guess = CGPoint(x: x, y: y)
+            let elementText = (arguments["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let previousPointing = pointingChain
+            let screenText = lastScreenText
+            let userRequest = lastUserTranscript
+            let frontAppBefore = frontAppProvider?()
+            let generation = turnGeneration
+            // Esc has something to stop while the element is being found (Claude can take 4 s).
+            pendingActionCount += 1
+            pointingChain = Task { @MainActor [weak self] in
+                defer { self?.pendingActionCount -= 1 }
+                await previousPointing?.value
+                guard !Task.isCancelled, let self else { return }
+                let startedAt = Date()
+                let target = await self.locateElement(guess: guess, label: label, elementText: elementText, userRequest: userRequest, capture: capture, screenText: screenText)
+                guard !Task.isCancelled else { return }
+                let location = CompanionManager.screenLocation(forScreenshotPoint: target.point, in: capture)
+                let clickOutput: String
+                let clickLog: String
+                if ScreenNavigation.clickIsRisky(label: label, text: elementText) {
+                    // Pointed at, never pressed: a misheard "click send" must not send.
+                    self.onPointAt?(target.point, label, capture)
+                    clickLog = "refused, it could commit something"
+                    clickOutput = "Not clicked: \(label) could send, buy, delete or confirm something, so the person clicks it themselves. The pointer is on it; tell them in a few words."
+                } else if !target.isLocated {
+                    self.onPointAt?(target.point, label, capture)
+                    clickLog = "refused, not found precisely"
+                    clickOutput = "Not clicked: \(label) could not be found precisely enough to click safely. The pointer is at the best guess; ask them to click it or to say it differently."
+                } else if self.turnGeneration != generation {
+                    // Esc or new speech while Claude was still looking.
+                    clickLog = "dropped, the turn moved on"
+                    clickOutput = "Not clicked: they stopped it."
+                } else {
+                    self.onPointAt?(target.point, label, capture)
+                    switch ScreenNavigation.click(atAppKitPoint: location) {
+                    case .clicked:
+                        await self.waitForScreenToSettle(frontAppBefore: frontAppBefore)
+                        guard !Task.isCancelled else { return }
+                        await self.attachScreenContext()
+                        clickLog = "clicked"
+                        clickOutput = "Clicked \(label). The screen after the click is the latest screenshot; say in a few words what happened (which page or window opened). Do not read the page out unless asked."
+                    case .ownWindow:
+                        clickLog = "refused, OpenClicky's own window"
+                        clickOutput = "Not clicked: that spot is on OpenClicky's own window."
+                    case .notAllowed:
+                        clickLog = "refused, no Accessibility permission"
+                        clickOutput = MacActionOutcome.needsAccessibility.spokenSentence
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                let formatted = { (value: CGFloat) in String(format: "%.0f", value) }
+                self.log("click \"\(label)\" \(target.resolution) → screen (\(formatted(location.x)), \(formatted(location.y))): \(clickLog) in \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s")
+                try? self.send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": clickOutput]])
+                if self.turnGeneration == generation {
+                    self.requestContinuation(after: event)
+                } else {
+                    self.log("tool output after the turn moved on (esc, speech or a new turn): no continuation")
+                }
+            }
+            return
         default:
             if let pluginOutput = await onPluginToolCall?(name, arguments, lastScreenCapture) {
                 log("plugin tool: \(name)")
@@ -1406,6 +1431,83 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         // The output goes out immediately; the follow-up response is requested once, on response.done.
         try? send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": callId, "output": String(output.prefix(4000))]])
         requestContinuation(after: event)
+    }
+
+    /// Where an element the model named really is in `capture`. The model's guess is coarse
+    /// (30–100 px off for captions, hundreds for icons); each locator below knows something the
+    /// pixels do not, cheapest first, with Claude on the same screenshot (2–4 s) last.
+    /// `isLocated` is false only when nothing found it and the guess is all there is.
+    private func locateElement(
+        guess: CGPoint, label: String, elementText: String, userRequest: String?,
+        capture: CompanionScreenCapture, screenText: Task<[ScreenTextLine], Never>?
+    ) async -> (point: CGPoint, resolution: String, isLocated: Bool) {
+        let formatted = { (value: CGFloat) in String(format: "%.0f", value) }
+        var point = guess
+        var resolution = "using the guess"
+        var resolved = false
+        // A window's close / minimize / zoom buttons have no caption and are 12 px
+        // across; macOS reports their exact frames.
+        if let control = WindowControlLocator.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
+            point = control.point
+            resolved = true
+            resolution = "\(control.control.name) button of \(control.appName) (\(formatted(point.x)), \(formatted(point.y)))"
+        }
+        // A browser tab is a favicon plus a truncated title, which no screenshot model
+        // reads reliably; the browser's own tab list and Accessibility frames do.
+        if !resolved, let tab = BrowserTabLocator.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
+            point = tab.point
+            resolved = true
+            resolution = "browser tab \"\(tab.tab.title.prefix(40))\" (\(formatted(point.x)), \(formatted(point.y)))"
+        }
+        let radius = CGFloat(capture.screenshotWidthInPixels) * 0.3
+        // Repeated captions ("Edit" on every row) are the case snapping gets wrong:
+        // two candidates closer together than the model's own 30–100 px error cannot
+        // be told apart by distance, so a locator that only knows pixels reports
+        // nothing rather than guessing between them.
+        let ambiguityMargin = CGFloat(capture.screenshotWidthInPixels) * 0.1
+        if !resolved, !elementText.isEmpty, let lines = await screenText?.value, !lines.isEmpty {
+            if let match = ScreenTextLocator.locate(elementText, near: guess, in: lines, maxDistance: radius, ambiguityMargin: ambiguityMargin) {
+                point = match.center
+                resolved = true
+                resolution = "snapped to \"\(match.text)\" (\(formatted(point.x)), \(formatted(point.y)), \(formatted(match.distance)) px away)"
+            }
+        }
+        // Accessibility knows what the pixels cannot: the control's role, and the
+        // title of the row it sits in. That is what separates repeated captions, and
+        // it costs nothing, so it runs before paying for a Claude round trip.
+        if !resolved,
+           let element = AccessibleElementLocator.locate(
+               label: label, text: elementText, userRequest: userRequest, near: guess,
+               in: capture, maxDistance: radius, ambiguityMargin: ambiguityMargin
+           ) {
+            point = element.center
+            resolved = true
+            let container = element.containerTitles.first.map { " in \"\($0.prefix(30))\"" } ?? ""
+            resolution = "accessibility \"\(element.title.prefix(40))\"\(container) (\(formatted(point.x)), \(formatted(point.y)))"
+        }
+        if !resolved {
+            let started = Date()
+            if let located = await ScreenElementGrounder.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
+                point = located.point
+                resolution = "located by Claude (\(formatted(point.x)), \(formatted(point.y))) in \(Int(Date().timeIntervalSince(started) * 1000)) ms"
+                // Claude picks the right element and misplaces it by up to ~150 px;
+                // the text it named has an exact box in the OCR of the same screenshot.
+                // Claude's point is far closer than the Realtime guess, so the snap
+                // uses a tighter ambiguity margin than the one above.
+                if let visibleText = located.visibleText,
+                   let lines = await screenText?.value, !lines.isEmpty,
+                   let match = ScreenTextLocator.locate(
+                       visibleText, near: located.point, in: lines,
+                       maxDistance: radius * 0.6, ambiguityMargin: ambiguityMargin * 0.5
+                   ) {
+                    point = match.center
+                    resolution += ", snapped to \"\(match.text)\" (\(formatted(point.x)), \(formatted(point.y)), \(formatted(match.distance)) px from Claude's)"
+                }
+            } else {
+                resolution = "Claude could not locate it; using the guess"
+            }
+        }
+        return (point, resolution, resolved)
     }
 
     /// response.done arrives when the server has sent the goodbye, not when it has played: turning
