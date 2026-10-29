@@ -144,25 +144,29 @@ public sealed partial class CompanionManager
         }
     }
 
-    /// <summary>Dictation key + Ctrl tapped twice: always-on listening on or off (Realtime only).</summary>
+    /// <summary>Dictation key + Ctrl tapped twice: always-on listening on or off. Fast voice when it is on; otherwise
+    /// the standard lane listens on this PC and asks as Ctrl + Win would.</summary>
     public void ToggleHandsFree()
     {
-        if (!UsesRealtimeVoice)
+        if (!UsesRealtimeVoice && !OpenClickyConfiguration.IsConfigured)
         {
-            // Say the real reason: a free account cannot use realtime at all, whatever the switch says.
-            var reason = AccountCapabilities.Current().UsesRealtime
-                ? "hands-free needs fast voice. turn it on in settings, clicky."
-                : "hands-free needs your own openai or gemini key. add it in settings, account.";
-            Overlay.StreamCursorCaption(reason, holdSeconds: 6);
+            // Nothing could answer: no key, no plan and no account.
+            Overlay.StreamCursorCaption(ProviderRouter.NeedsAnthropicKeySentence, holdSeconds: 6);
             return;
         }
         SetAlwaysListening(!IsAlwaysListening);
+        AnnounceHandsFreeChange("by shortcut");
+    }
+
+    /// <summary>Says hands-free's new state by the pointer, and logs how it changed.</summary>
+    private void AnnounceHandsFreeChange(string how)
+    {
         var dictationKeyLabel = DictationSettings.DictationKey.KeycapLabel();
         var feedback = IsAlwaysListening
             ? $"hands-free is on. just talk, i'm listening. tap {dictationKeyLabel} + ctrl twice to stop."
             : $"hands-free is off. hold {TalkKeysCaption} to talk.";
         Overlay.ShowCaption(feedback, 6);
-        AppLog.Write($"hands-free {(IsAlwaysListening ? "on" : "off")}");
+        AppLog.Write($"hands-free {(IsAlwaysListening ? "on" : "off")} {how}{(UsesRealtimeVoice ? "" : " (standard lane)")}");
     }
 
     private void HandleShortcutTransition(BuddyPushToTalkShortcut.ShortcutTransition transition)

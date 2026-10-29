@@ -295,10 +295,13 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         preferences.Set(RealtimeVoiceEnabledKey, isEnabled);
         if (isEnabled) WarmUpRealtimeVoice();
         else RealtimeVoiceClient.Disconnect("realtime voice turned off");
+        // Hands-free carries on, on whichever lane is now the one.
+        ApplyHandsFreeLane();
     }
 
     private bool isAlwaysListening;
-    /// <summary>Always-on listening (server VAD, barge-in) instead of push-to-talk. Session-only.</summary>
+    /// <summary>Always-on listening instead of push-to-talk: fast voice's own turn detection when it is on, else the
+    /// standard lane listening on this PC (CompanionManager.StandardHandsFree.cs). Session-only.</summary>
     public bool IsAlwaysListening => isAlwaysListening;
 
     public void SetAlwaysListening(bool isOn)
@@ -306,6 +309,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         SetProperty(ref isAlwaysListening, isOn, nameof(IsAlwaysListening));
         Island.IsAlwaysListening = isOn;
         WarmUpRealtimeVoice();
+        ApplyHandsFreeLane();
     }
 
     private bool isTrayIconVisible;
@@ -506,6 +510,8 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         AppLog.Write("shell.json credentials changed; reconnecting realtime");
         ApplyHearingForAccount();
         if (UsesRealtimeVoice) WarmUpRealtimeVoice();
+        // A key added or removed can move hands-free between fast voice and the standard lane.
+        ApplyHandsFreeLane();
     });
 
     private void OnAccountProfileChanged() => services.MainThread.Post(ApplyHearingForAccount);
@@ -518,6 +524,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         PermissionPromptController.Dismiss();
         AppConnectPromptController.Stop();
         RealtimeVoiceClient.Disconnect(null);
+        StopStandardHandsFree();
         services.Shortcuts.Stop();
         services.Shortcuts.ShortcutTransition -= HandleShortcutTransition;
         services.Shortcuts.CompanionShortcut -= HandleCompanionShortcut;
