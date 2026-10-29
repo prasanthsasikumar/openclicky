@@ -122,6 +122,15 @@ final class CompanionManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "isOpenClickyAlwaysListening")
         return false
     }()
+    /// Hands-free on the standard lane (no realtime key): StandardHandsFree.swift.
+    let standardHandsFreeListener = StandardHandsFreeListener()
+    var isStandardHandsFreeOn = false
+    /// A heard turn being transcribed: nothing else is listened to until it is asked.
+    var isStandardHandsFreeTranscribing = false
+    /// Re-decides twice a second whether the microphone is listened to (only when Clicky is idle).
+    var standardHandsFreeGateTimer: Timer?
+    /// When Clicky last became quiet, so the tail of its own voice is not heard as a turn.
+    var standardHandsFreeQuietSince: Date?
 
     /// The menu bar icon is off by default: the notch HUD is the app's home. The onboarding panel
     /// still opens on its own for a first run; permissions are asked for on the island.
@@ -198,6 +207,8 @@ final class CompanionManager: ObservableObject {
         isRealtimeVoiceEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "isOpenClickyRealtimeVoiceEnabled")
         if enabled { warmUpRealtimeVoice() } else { realtimeVoiceClient.disconnect(reason: "realtime voice turned off") }
+        // Hands-free carries on, on whichever lane is now the one.
+        if isAlwaysListening { setAlwaysListening(true) }
     }
 
     /// Settings → Voice picked another fast voice vendor: the next connection is made with it.
@@ -207,7 +218,14 @@ final class CompanionManager: ObservableObject {
 
     func setAlwaysListening(_ enabled: Bool) {
         isAlwaysListening = enabled
-        warmUpRealtimeVoice()
+        if usesRealtimeVoice {
+            stopStandardHandsFree()
+            warmUpRealtimeVoice()
+        } else if enabled {
+            startStandardHandsFree()
+        } else {
+            stopStandardHandsFree()
+        }
     }
 
     /// Open the Realtime session now so the first key press only starts audio (HeyClicky's warm-up).
@@ -846,6 +864,8 @@ final class CompanionManager: ObservableObject {
                 AppLog.append("shell.json credentials changed; reconnecting realtime")
                 self.applyHearingForAccount()
                 if self.usesRealtimeVoice { self.warmUpRealtimeVoice() }
+                // A key added or removed can move hands-free between fast voice and the standard lane.
+                if self.isAlwaysListening { self.setAlwaysListening(true) }
             }
         }
         // The backend's /billing/me answer decides the account profile; it can arrive after launch.
@@ -1470,14 +1490,12 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    /// fn tapped twice with control held: always-on listening on or off (Realtime only).
+    /// fn tapped twice with control held: always-on listening on or off. Fast voice when it is on;
+    /// otherwise the standard lane listens on this Mac and asks as ⌃⌥ would.
     func toggleHandsFree() {
-        guard usesRealtimeVoice else {
-            // Say the real reason: a free account cannot use realtime at all, whatever the switch says.
-            let reason = AccountCapabilities.current().usesRealtime
-                ? "hands-free needs fast voice. turn it on in settings, clicky."
-                : "hands-free needs your own openai or gemini key. add it in settings, account."
-            streamCursorCaption(reason, holdSeconds: 6)
+        guard usesRealtimeVoice || OpenClickyConfiguration.isConfigured else {
+            // Nothing could answer: no key, no plan and no account.
+            streamCursorCaption(ProviderRouter.needsAnthropicKeySentence, holdSeconds: 6)
             return
         }
         setAlwaysListening(!isAlwaysListening)
@@ -3010,5 +3028,114 @@ private final class SystemSpeechFinishObserver: NSObject, AVSpeechSynthesizerDel
         watchedUtterance = nil
         onWatchedUtteranceEnded = nil
         onEnded?()
+    }
+}
+
+// MARK: - Standard hands-free
+
+extension CompanionManager {
+    func startStandardHandsFree() {
+        guard !isStandardHandsFreeOn else { return }
+        isStandardHandsFreeOn = true
+        standardHandsFreeQuietSince = Date()
+        let microphone = buddyDictationManager.preferredMicrophoneUID
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.standardHandsFreeListener.start(preferredMicrophoneUID: microphone) { [weak self] event in
+                    Task { @MainActor in self?.handleStandardHandsFreeEvent(event) }
+                }
+            } catch {
+                AppLog.append("hands-free (standard): microphone failed: \(error.localizedDescription)")
+                self.isStandardHandsFreeOn = false
+                self.isAlwaysListening = false
+                self.streamCursorCaption("hands-free couldn't open the microphone. check settings, permissions.", holdSeconds: 6)
+                return
+            }
+            guard self.isStandardHandsFreeOn else {
+                await self.standardHandsFreeListener.stop()
+                return
+            }
+            self.standardHandsFreeGateTimer?.invalidate()
+            self.standardHandsFreeGateTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.updateStandardHandsFreeGate() }
+            }
+            self.updateStandardHandsFreeGate()
+        }
+    }
+
+    func stopStandardHandsFree() {
+        guard isStandardHandsFreeOn else { return }
+        isStandardHandsFreeOn = false
+        isStandardHandsFreeTranscribing = false
+        standardHandsFreeGateTimer?.invalidate()
+        standardHandsFreeGateTimer = nil
+        standardHandsFreeListener.setAccepting(false)
+        Task { [standardHandsFreeListener] in await standardHandsFreeListener.stop() }
+        AppLog.append("hands-free (standard): off")
+    }
+
+    /// Whether a turn can be heard right now: hands-free on, and Clicky neither thinking, speaking,
+    /// transcribing, nor sharing the microphone with dictation or a held ⌃⌥, and quiet for long
+    /// enough that its own last words have died away.
+    nonisolated static func standardHandsFreeAccepts(isOn: Bool, isBusy: Bool, quietFor: TimeInterval?) -> Bool {
+        guard isOn, !isBusy, let quietFor else { return false }
+        return quietFor >= 0.6
+    }
+
+    private func updateStandardHandsFreeGate() {
+        guard isStandardHandsFreeOn else { return }
+        let isBusy = voiceState != .idle || isAskInFlight || isStandardHandsFreeTranscribing
+            || buddyDictationManager.isDictationInProgress || dictationTakeController.isTakeInProgress
+            || answerVoicePlayer.isPlaying || systemSpeechSynthesizer.isSpeaking || recordedVoice.isPlaying
+        if isBusy {
+            standardHandsFreeQuietSince = nil
+        } else if standardHandsFreeQuietSince == nil {
+            standardHandsFreeQuietSince = Date()
+        }
+        let accepts = Self.standardHandsFreeAccepts(
+            isOn: isStandardHandsFreeOn, isBusy: isBusy,
+            quietFor: standardHandsFreeQuietSince.map { Date().timeIntervalSince($0) })
+        standardHandsFreeListener.setAccepting(accepts)
+    }
+
+    private func handleStandardHandsFreeEvent(_ event: UtteranceDetector.Event) {
+        guard isStandardHandsFreeOn else { return }
+        switch event {
+        case .started:
+            AppLog.append("hands-free (standard): speech started")
+            ChromiumAccessibility.wakeFrontApp()
+            showAskCaption("listening…", holdSeconds: 30)
+        case .discarded:
+            dismissCursorCaption()
+        case .finished(let samples):
+            isStandardHandsFreeTranscribing = true
+            standardHandsFreeListener.setAccepting(false)
+            showAskCaption("transcribing…", holdSeconds: 30)
+            let seconds = Double(samples.count) / Double(UtteranceDetector.sampleRate)
+            Task { [weak self] in
+                guard let self else { return }
+                let heard = await StandardHandsFreeListener.transcribe(samples)
+                self.isStandardHandsFreeTranscribing = false
+                guard self.isStandardHandsFreeOn else { return }
+                AppLog.append("hands-free (standard): heard \(heard.count) chars from \(String(format: "%.1f", seconds)) s")
+                guard !heard.isEmpty else {
+                    self.dismissCursorCaption()
+                    return
+                }
+                if HandsFreeSignOff.isSignOff(heard) {
+                    self.setAlwaysListening(false)
+                    self.announceHandsFreeChange(how: "by voice")
+                    return
+                }
+                // From here it is a ⌃⌥ question like any other.
+                self.lastQuestionWasTyped = false
+                self.lastTranscript = heard
+                self.askOutcome = .resolved
+                ClickyAnalytics.trackUserMessageSent(characterCount: heard.count)
+                self.showAskCaption("“\(heard)” · thinking…", holdSeconds: 30)
+                self.sendTranscriptToClaudeWithScreenshot(transcript: heard)
+            }
+        }
     }
 }

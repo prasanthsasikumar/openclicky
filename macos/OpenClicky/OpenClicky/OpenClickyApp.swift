@@ -183,6 +183,74 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-smoke-handsfree-file"), argumentIndex + 1 < launchArguments.count {
+            // Standard hands-free on a recording instead of the room: a second and a half of quiet
+            // either side, cut into turns by the same detector and heard by the ask lane's engine.
+            let filePath = launchArguments[argumentIndex + 1]
+            setvbuf(stdout, nil, _IONBF, 0)
+            Task { @MainActor in
+                guard let samples = StandardHandsFreeListener.samples16k(fileURL: URL(fileURLWithPath: filePath)) else {
+                    print("smoke: cannot read \(filePath)")
+                    exit(2)
+                }
+                let quiet = [Float](repeating: 0, count: UtteranceDetector.sampleRate * 3 / 2)
+                let stream = quiet + samples + quiet + quiet
+                var detector = UtteranceDetector()
+                var offset = 0
+                while offset + UtteranceDetector.frameLength <= stream.count {
+                    let frame = Array(stream[offset..<offset + UtteranceDetector.frameLength])
+                    offset += UtteranceDetector.frameLength
+                    switch detector.process(frame: frame) {
+                    case .started?: print("smoke: ▸ speech started at \(String(format: "%.2f", Double(offset) / 16_000)) s")
+                    case .discarded?: print("smoke: ▸ too short, dropped")
+                    case .finished(let turn)?:
+                        print("smoke: ▸ turn of \(String(format: "%.1f", Double(turn.count) / 16_000)) s")
+                        let started = Date()
+                        let heard = await StandardHandsFreeListener.transcribe(turn)
+                        print("smoke: heard in \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(heard)\(HandsFreeSignOff.isSignOff(heard) ? "  [sign-off]" : "")")
+                    case nil: break
+                    }
+                }
+                exit(0)
+            }
+            return
+        }
+
+        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-smoke-handsfree"), argumentIndex + 1 < launchArguments.count {
+            // Standard hands-free's ears, headless: listen for N seconds and print each turn it cuts
+            // out of the microphone and what the ask lane's engine heard in it. Nothing is asked.
+            let seconds = Double(launchArguments[argumentIndex + 1]) ?? 20
+            setvbuf(stdout, nil, _IONBF, 0)
+            print("smoke: hands-free listening for \(Int(seconds)) s")
+            Task { @MainActor in
+                let listener = StandardHandsFreeListener()
+                do {
+                    try await listener.start(preferredMicrophoneUID: nil) { event in
+                        Task { @MainActor in
+                            switch event {
+                            case .started: print("smoke: ▸ speech started")
+                            case .discarded: print("smoke: ▸ too short, dropped")
+                            case .finished(let samples):
+                                let length = String(format: "%.1f", Double(samples.count) / Double(UtteranceDetector.sampleRate))
+                                print("smoke: ▸ turn of \(length) s")
+                                let started = Date()
+                                let heard = await StandardHandsFreeListener.transcribe(samples)
+                                print("smoke: heard in \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(heard)\(HandsFreeSignOff.isSignOff(heard) ? "  [sign-off]" : "")")
+                            }
+                        }
+                    }
+                } catch {
+                    print("smoke: error=\(error.localizedDescription)")
+                    exit(1)
+                }
+                listener.setAccepting(true)
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                await listener.stop()
+                exit(0)
+            }
+            return
+        }
+
         if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-smoke-talk"), argumentIndex + 1 < launchArguments.count {
             // Headless Realtime check: connect, greet, listen for N seconds, print transcripts, exit.
             let seconds = Double(launchArguments[argumentIndex + 1]) ?? 10
