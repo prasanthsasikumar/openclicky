@@ -3,6 +3,7 @@
 //  OpenClicky (Windows port of CompanionManager.swift: the shortcuts, push-to-talk, hands-free)
 //
 
+using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
@@ -20,6 +21,9 @@ public sealed partial class CompanionManager
     public enum AskOutcome { Resolved, Listening, Transcribing }
 
     private AskOutcome askOutcome = AskOutcome.Resolved;
+    /// <summary>The Ctrl + Win press was stopped with esc while it was still listening or transcribing:
+    /// words the session hands over after all are dropped.</summary>
+    private bool askPressWasStopped;
     private bool askLiveWordsShownSincePress;
     private CancellationTokenSource? pendingKeyboardShortcutStart;
 
@@ -82,10 +86,22 @@ public sealed partial class CompanionManager
                 ToggleHandsFree();
                 break;
             case CompanionShortcutEventKind.EscapePressed:
-                // A dictation take keeps esc to itself (it cancels the take, as always); otherwise esc
-                // stops the fast voice lane when it is answering, speaking or still working on an action.
-                if (EscStopsFastVoice(IsTakeInProgress, UsesRealtimeVoice, RealtimeVoiceClient.IsBusy)) StopFastVoiceOnEscape();
-                else HandleDictationShortcut(shortcutEvent);
+                // A dictation take in progress keeps esc to itself (it cancels the take, as always);
+                // otherwise esc stops whatever the ask lane is doing, and then the fast voice lane when
+                // it is answering, speaking or still working on an action (the Mac's order).
+                switch (AskLaneEscape.Target(IsTakeInProgress, AskLaneCanBeStopped,
+                            realtimeIsBusy: EscStopsFastVoice(IsTakeInProgress, UsesRealtimeVoice, RealtimeVoiceClient.IsBusy)))
+                {
+                    case EscapeTarget.AskLane:
+                        StopAskLane("esc");
+                        break;
+                    case EscapeTarget.Realtime:
+                        StopFastVoiceOnEscape();
+                        break;
+                    default:
+                        HandleDictationShortcut(shortcutEvent);
+                        break;
+                }
                 break;
             case CompanionShortcutEventKind.TalkPressed:
             case CompanionShortcutEventKind.TalkReleased:
@@ -204,6 +220,7 @@ public sealed partial class CompanionManager
         LastQuestionFailed = false;
         // A new press owns the outcome from here: whatever the last release was waiting for is over.
         askOutcome = AskOutcome.Listening;
+        askPressWasStopped = false;
         askLiveWordsShownSincePress = false;
         Overlay.CancelTransientHide();
         // The cursor is hidden: bring it back for this interaction.
@@ -229,6 +246,8 @@ public sealed partial class CompanionManager
             },
             submitDraftText: finalTranscript =>
             {
+                // Esc while it was still listening or transcribing: the words go nowhere.
+                if (askPressWasStopped) return;
                 LastTranscript = finalTranscript;
                 askOutcome = AskOutcome.Resolved;
                 var question = finalTranscript.Trim();

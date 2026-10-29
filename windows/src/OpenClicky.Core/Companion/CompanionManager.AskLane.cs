@@ -56,6 +56,7 @@ public sealed partial class CompanionManager
         host.StopSettingsTour();
         StopActiveAnswer();
         currentResponseCancellation?.Cancel();
+        IsAskInFlight = false;
         if (includingAgentWork) openClickyAgentClient.Cancel();
         answerVoicePlayer.StopPlayback();
         StopSystemVoice();
@@ -87,6 +88,7 @@ public sealed partial class CompanionManager
         }
         var cancellation = new CancellationTokenSource();
         currentResponseCancellation = cancellation;
+        IsAskInFlight = true;
         _ = RunAskLaneAsync(transcript, cancellation);
     }
 
@@ -111,6 +113,7 @@ public sealed partial class CompanionManager
         await WaitForSystemVoiceNoticeToEndAsync();
         if (!cancellationToken.IsCancellationRequested)
         {
+            IsAskInFlight = false;
             VoiceState = CompanionVoiceState.Idle;
             Overlay.ScheduleTransientHideIfNeeded();
         }
@@ -203,10 +206,19 @@ public sealed partial class CompanionManager
             throw;
         }
         AppLog.Write($"ask: answer {fullResponseText.Length} chars in {(DateTimeOffset.UtcNow - askStartedAt).TotalSeconds:0.0} s");
+        // Stopped (esc, the island, a new question) while the answer was coming in: nothing it asked
+        // for may run. Each call is checked too, since a rewrite or an action awaits.
+        if (cancellationToken.IsCancellationRequested)
+        {
+            answerSpeaker.Cancel();
+            playbackCancellation.Cancel();
+            return;
+        }
 
         var toolOutcomes = new List<string>();
         foreach (var call in toolCalls.Take(2))
         {
+            if (cancellationToken.IsCancellationRequested) break;
             if (call.Name == WriteInPlace.ToolName)
             {
                 if (writingTarget is null) continue;
@@ -504,13 +516,71 @@ public sealed partial class CompanionManager
             {
                 if (guidedStepWatcher != watcher) return;
                 AppLog.Write($"guide: ended ({GuidedStepWatcher.Describe(reason)}) after {guidedStepsGivenSoFar} steps");
+                // Esc means stop: the step still being said goes quiet too, as esc does anywhere else.
+                // (The global esc usually gets there first; then this watcher was already stopped.)
+                // Stopped while the watcher is still set, so the guide counts as something to stop.
+                if (reason == GuidedStepWatcher.EndReason.Escape)
+                {
+                    StopAskLane("esc during a guide");
+                    return;
+                }
                 guidedStepWatcher = null;
                 guidedStepsGivenSoFar = 0;
-                // Esc means stop: the step still being said goes quiet too.
-                if (reason == GuidedStepWatcher.EndReason.Escape) StopSpeaking();
             }));
         guidedStepWatcher = watcher;
         watcher.Start();
+    }
+
+    // MARK: - Stopping the ask lane
+
+    private bool isAskInFlight;
+    /// <summary>
+    /// From the moment the ask lane takes a question (the pause before sending included) until its
+    /// answer has been said, failed, or was stopped. Esc and a click on the island stop it.
+    /// </summary>
+    public bool IsAskInFlight
+    {
+        get => isAskInFlight;
+        private set
+        {
+            if (!SetProperty(ref isAskInFlight, value)) return;
+            Island.IsAskInFlight = value;
+        }
+    }
+
+    /// <summary>
+    /// Whether esc has anything in the ask lane to stop: a press still listening or transcribing, a
+    /// question on its way or being answered, or a guide waiting for its step to be done.
+    /// </summary>
+    public bool AskLaneCanBeStopped =>
+        AskLaneEscape.CanStop(askOutcome == AskOutcome.Resolved, IsAskInFlight, guidedStepWatcher is null ? null : guidedStepsGivenSoFar);
+
+    /// <summary>
+    /// Esc, or a click on the island while a question is on its way: what a new question does,
+    /// without the question. The request in flight is cancelled (so nothing it asked for runs), the
+    /// voice and the pointer stop, a guide ends, and the island goes back to rest. Returns false when
+    /// there was nothing to stop.
+    /// </summary>
+    public bool StopAskLane(string source)
+    {
+        if (!AskLaneCanBeStopped) return false;
+        AppLog.Write($"ask: stopped ({source})");
+        if (askOutcome != AskOutcome.Resolved)
+        {
+            askOutcome = AskOutcome.Resolved;
+            askPressWasStopped = true;
+            pendingKeyboardShortcutStart?.Cancel();
+            pendingKeyboardShortcutStart = null;
+            BuddyDictationManager.CancelCurrentDictation(preserveDraftText: false);
+        }
+        guidedStepsGivenSoFar = 0;
+        InterruptCurrentAnswer(includingAgentWork: true);
+        Overlay.ClearDetectedElementLocation();
+        // A cancelled answer skips its own reset to idle.
+        VoiceState = CompanionVoiceState.Idle;
+        ShowAskCaption("stopped", 1.5);
+        Overlay.ScheduleTransientHideIfNeeded();
+        return true;
     }
 
     private void StopWatchingForGuidedStep()

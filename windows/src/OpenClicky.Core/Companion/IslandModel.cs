@@ -429,11 +429,11 @@ public sealed partial class IslandCompanionModel : ObservableObject
     // MARK: - What the islands read (mirrored from the orchestrator)
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsBusy), nameof(IsSpeaking), nameof(CompactStatusText), nameof(DetailLine), nameof(IsIdle))]
+    [NotifyPropertyChangedFor(nameof(IsBusy), nameof(IsSpeaking), nameof(CompactStatusText), nameof(DetailLine), nameof(IsIdle), nameof(IsQuestionOnItsWay))]
     private CompanionVoiceState voiceState = CompanionVoiceState.Idle;
     [ObservableProperty] private double currentAudioPowerLevel;
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsBusy), nameof(CompactStatusText), nameof(DetailLine))]
+    [NotifyPropertyChangedFor(nameof(IsBusy), nameof(CompactStatusText), nameof(DetailLine), nameof(IsQuestionOnItsWay))]
     private string? agentActivityText;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(DetailLine))] private string? lastTranscript;
     /// <summary>Who is answering ("Claude Code", "free credits").</summary>
@@ -443,6 +443,8 @@ public sealed partial class IslandCompanionModel : ObservableObject
     private bool isAlwaysListening;
     /// <summary>The voice is a dictation into the front app, not a question.</summary>
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CompactStatusText))] private bool isDictatingToFrontApp;
+    /// <summary>The ask lane has taken a question and not finished with it (the pause before sending included).</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsQuestionOnItsWay))] private bool isAskInFlight;
 
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PointerStatusText))] private bool isClickyCursorEnabled = true;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PointerStatusText))] private PointerPresence pointerPresence = PointerPresence.Always;
@@ -485,6 +487,12 @@ public sealed partial class IslandCompanionModel : ObservableObject
 
     public bool IsBusy => VoiceState != CompanionVoiceState.Idle || AgentActivityText is not null;
     public bool IsSpeaking => VoiceState == CompanionVoiceState.Responding;
+    /// <summary>
+    /// A question on its way (the pause before sending, or the first step of a guide being looked
+    /// up): a click on the strip stops it, as esc does. An agent's work keeps the click that opens
+    /// the panel; only the ask lane's own question stops.
+    /// </summary>
+    public bool IsQuestionOnItsWay => IsAskInFlight && AgentActivityText is null && !IsSpeaking;
     public bool IsIdle => VoiceState == CompanionVoiceState.Idle;
     public string CompactStatusText => IslandTexts.CompactStatus(VoiceState, IsDictatingToFrontApp, IsAlwaysListening, AgentActivityText, AnsweringSourceName);
     public string? DetailLine => IslandTexts.DetailLine(VoiceState, AgentActivityText, LastTranscript);
@@ -543,6 +551,8 @@ public sealed partial class IslandCompanionModel : ObservableObject
     public event Action? QuitRequested;
     /// <summary>The busy strip was clicked while Clicky speaks.</summary>
     public event Action? StopSpeakingRequested;
+    /// <summary>The busy strip was clicked while a question is on its way (<see cref="IsQuestionOnItsWay"/>).</summary>
+    public event Action? StopAskRequested;
     /// <summary>The voice pill or the engine warning's button: open what the engine needs.</summary>
     public event Action? EngineSetupRequested;
     public event Action? PermissionGrantRequested;
@@ -571,6 +581,7 @@ public sealed partial class IslandCompanionModel : ObservableObject
     [RelayCommand] private void OpenSettings(IslandSettingsDestination destination) => SettingsRequested?.Invoke(destination);
     [RelayCommand] private void Quit() => QuitRequested?.Invoke();
     [RelayCommand] private void StopSpeaking() => StopSpeakingRequested?.Invoke();
+    [RelayCommand] private void StopAsk() => StopAskRequested?.Invoke();
     [RelayCommand] private void OpenEngineSetup() => EngineSetupRequested?.Invoke();
     [RelayCommand] private void GrantPermission() => PermissionGrantRequested?.Invoke();
     [RelayCommand] private void PermissionLater() => PermissionLaterRequested?.Invoke();

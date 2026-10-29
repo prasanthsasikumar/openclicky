@@ -132,6 +132,8 @@ public static class IslandTexts
     public const string ComposerSendHint = "↵ send";
     public const string ComposerEscapeHint = "esc";
     public const string StopSpeakingToolTip = "click to stop speaking";
+    /// <summary>The strip's hover text while a question is on its way (it stops it, as esc does).</summary>
+    public const string StopAskToolTip = "click to stop";
 
     public const string InfoToolTip = "what can you do?";
     public const string SettingsToolTip = "settings";

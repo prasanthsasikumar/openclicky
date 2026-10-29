@@ -387,6 +387,12 @@ public sealed class IslandWindow : Window
             hub.StopSpeakingCommand.Execute(null);
             return;
         }
+        // A question on its way (a guide's first step included) stops, as esc does.
+        if (expansion == IslandExpansion.Compact && hub.IsQuestionOnItsWay)
+        {
+            hub.StopAskCommand.Execute(null);
+            return;
+        }
         if (expansion is not (IslandExpansion.Connect or IslandExpansion.Permission or IslandExpansion.Composer or IslandExpansion.Tour)) model.TogglePinned();
     }
 

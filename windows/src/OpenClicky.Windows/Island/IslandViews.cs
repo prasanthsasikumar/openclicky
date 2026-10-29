@@ -216,8 +216,14 @@ internal sealed class CompactStatusView : Grid, IIslandContent
         SetRow(detailText, 1);
         Children.Add(detailText);
 
-        // Only while speaking, so a click on the busy strip otherwise still opens the panel.
-        stopOverlay = Clickable(new Grid(), () => hub.StopSpeakingCommand.Execute(null), IslandTexts.StopSpeakingToolTip);
+        // Only while speaking, or while a question is on its way (the pause before sending, or a
+        // guide's first step being looked up: it stops it, as esc does), so a click on the busy
+        // strip otherwise still opens the panel.
+        stopOverlay = Clickable(new Grid(), () =>
+        {
+            if (hub.IsSpeaking) hub.StopSpeakingCommand.Execute(null);
+            else hub.StopAskCommand.Execute(null);
+        }, IslandTexts.StopSpeakingToolTip);
         SetRowSpan(stopOverlay, 3);
         stopOverlay.Margin = new Thickness(-14, 0, -14, 0);
         Children.Add(stopOverlay);
@@ -228,8 +234,10 @@ internal sealed class CompactStatusView : Grid, IIslandContent
     {
         badge.Refresh();
         statusText.Text = hub.CompactStatusText;
-        stopIcon.Visibility = hub.IsSpeaking ? Visibility.Visible : Visibility.Collapsed;
-        stopOverlay.Visibility = hub.IsSpeaking ? Visibility.Visible : Visibility.Collapsed;
+        var canStop = hub.IsSpeaking || hub.IsQuestionOnItsWay;
+        stopIcon.Visibility = canStop ? Visibility.Visible : Visibility.Collapsed;
+        stopOverlay.Visibility = canStop ? Visibility.Visible : Visibility.Collapsed;
+        stopOverlay.ToolTip = hub.IsSpeaking ? IslandTexts.StopSpeakingToolTip : IslandTexts.StopAskToolTip;
         var detailLine = hub.DetailLine;
         detailText.Text = detailLine ?? "";
         detailText.Visibility = detailLine is null ? Visibility.Collapsed : Visibility.Visible;

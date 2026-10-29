@@ -245,6 +245,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         });
         Island.QuitRequested += QuitWithFarewell;
         Island.StopSpeakingRequested += StopSpeaking;
+        Island.StopAskRequested += () => StopAskLane("the island");
         Island.EngineSetupRequested += () => ShowSettings(IslandVoiceDestination.SetupPage(DictationSettings.Engine,
             DictationEngineResolver.UnavailableReason(DictationSettings.Engine)));
         Island.PermissionGrantRequested += PermissionPromptController.Grant;
