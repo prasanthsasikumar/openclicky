@@ -233,6 +233,9 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public Action<string>? OnConnectionLost { get; set; }
     /// <summary>A push-to-talk turn ended with (almost) no audio, and was not sent.</summary>
     public Action? OnTurnHeardNothing { get; set; }
+    /// <summary>Hands-free only: the person signed off by voice ("that's all, thanks"). Called once the
+    /// goodbye that answers the sign-off has finished playing; the companion turns hands-free off.</summary>
+    public Action? OnStopListeningRequested { get; set; }
     /// <summary>Runs the agent for a `send_to_agent` tool call; the returned text is spoken by the model.</summary>
     public Func<string, Task<string>>? OnAgentTask { get; set; }
     /// <summary>A desktop action (open an app, make a folder…) by tool name and arguments; null when the
@@ -318,6 +321,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// <summary>Responses we cancelled (barge-in). Their late tool calls still get an output item, but never arm a continuation.</summary>
     private readonly HashSet<string> cancelledResponseIds = [];
     private bool wasListeningContinuouslyBeforeDictation;
+    /// <summary>A sign-off was heard: hands-free ends after the goodbye response is done and has played.</summary>
+    private bool stopListeningAfterGoodbye;
 
     /// <summary>OCR of `LastScreenCapture`, started as soon as the screen is attached so it is ready by the first `point_at`.</summary>
     private Task<IReadOnlyList<ScreenTextLine>>? lastScreenText;
@@ -495,6 +500,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         lastServerEventAt = null;
         StopForwardingMicrophone();
         pushToTalkArmed = false;
+        // A sign-off heard on a session that is going away belongs to that session only.
+        stopListeningAfterGoodbye = false;
         idlePauseCancellation?.Cancel();
         FlushPlayback();
         audio.Release();
@@ -862,6 +869,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             },
         };
         foreach (var tool in extraTools ?? []) tools.Add(tool.DeepClone());
+        // Ending hands-free by voice only makes sense while hands-free is on.
+        if (mode == RealtimeTurnMode.AlwaysOn) tools.Add(StopListeningToolDefinition());
         return new JsonObject
         {
             ["type"] = "session.update",
@@ -875,6 +884,22 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             },
         };
     }
+
+    public const string StopListeningToolName = "stop_listening";
+
+    /// <summary>
+    /// The model decides what counts as a sign-off, since people end in many ways; fixed words would
+    /// also fire on "how do I quit Photoshop" (the standard lane's HandsFreeSignOff is fixed only
+    /// because a model round trip costs it seconds). A missed sign-off costs one key press, a wrong one
+    /// cuts the person off, so the description leans towards keeping on listening.
+    /// </summary>
+    public static JsonObject StopListeningToolDefinition() => new()
+    {
+        ["type"] = "function",
+        ["name"] = StopListeningToolName,
+        ["description"] = "Turn hands-free listening off and go back to push-to-talk. Call it only when the user clearly signs off from talking to you: \"that's all I need\", \"stop listening\", \"I'm done, you can stop\", \"ok bye\", \"that's it for now\". Never for thanks alone (\"thank you\", \"great, thanks\"), and never when they ask to stop or quit something else (an app, music, a task, an answer). If you are not sure, keep listening and do not call it. Call it before saying anything; its result tells you what to say.",
+        ["parameters"] = new JsonObject { ["type"] = "object", ["properties"] = new JsonObject(), ["required"] = new JsonArray() },
+    };
 
     private JsonObject SessionUpdate(RealtimeTurnMode mode, string instructionsText) =>
         BuildSessionUpdate(mode, instructionsText, voice, ReplyLanguage.CurrentCode, DesktopActionToolDefinitions?.Invoke());
@@ -1362,6 +1387,11 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                     OnResponseFinished?.Invoke();
                     ScheduleIdlePauseIfNeeded();
                     ReconnectAfterGoAwayIfQuiet();
+                    if (stopListeningAfterGoodbye)
+                    {
+                        stopListeningAfterGoodbye = false;
+                        _ = EndHandsFreeOnceTheGoodbyeHasPlayedAsync();
+                    }
                 }
                 break;
             }
@@ -1399,7 +1429,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             {
             }
         }
-        if (name is not ("send_to_agent" or "point_at") && OnDesktopAction is { } desktopAction)
+        if (name is not ("send_to_agent" or "point_at" or StopListeningToolName) && OnDesktopAction is { } desktopAction)
         {
             var startedAt = now();
             var frontAppBefore = FrontAppProvider?.Invoke();
@@ -1443,6 +1473,18 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             }
             case "point_at":
                 output = QueuePointAt(arguments);
+                break;
+            case StopListeningToolName:
+                if (currentMode == RealtimeTurnMode.AlwaysOn)
+                {
+                    Log("hands-free: sign-off heard");
+                    stopListeningAfterGoodbye = true;
+                    output = "Hands-free listening is ending. Say a short goodbye in a few words, nothing else.";
+                }
+                else
+                {
+                    output = "Hands-free is not on; nothing to stop. Do not mention it.";
+                }
                 break;
         }
         // The output goes out immediately; the follow-up response is requested once, on response.done.
@@ -1617,6 +1659,19 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         var location = capture.GlobalPoint(point.X, point.Y);
         Log($"point_at ({Formatted(guess.X)}, {Formatted(guess.Y)}) \"{label}\" {resolution} → screen ({location.X}, {location.Y}){(OnPointAt is null ? " (no handler)" : "")}");
         OnPointAt?.Invoke(point, label, capture);
+    }
+
+    /// <summary>
+    /// response.done arrives when the server has sent the goodbye, not when it has played: turning
+    /// hands-free off closes the session, which would cut it off. Waits for playback to end (at most
+    /// 8 s, in case no audio came) before asking the companion to stop.
+    /// </summary>
+    private async Task EndHandsFreeOnceTheGoodbyeHasPlayedAsync()
+    {
+        var deadline = now() + TimeSpan.FromSeconds(8);
+        while (IsSpeaking && now() < deadline) await Task.Delay(TimeSpan.FromMilliseconds(100));
+        Log("hands-free: ending after the goodbye");
+        OnStopListeningRequested?.Invoke();
     }
 
     /// <summary>Ask the model to continue after a tool output: the barge-in and ordering rules, in one place.</summary>

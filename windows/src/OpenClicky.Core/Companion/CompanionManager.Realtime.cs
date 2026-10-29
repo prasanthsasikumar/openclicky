@@ -91,6 +91,7 @@ public sealed partial class CompanionManager
             Overlay.ScheduleTransientHideIfNeeded();
         };
         client.OnEvent = line => AppLog.Write($"realtime: {line}");
+        client.OnStopListeningRequested = EndHandsFreeBySignOff;
         // A socket that died under a turn used to leave the state on processing for good, which also
         // refused dictation. Unstick it and say why; the next press reconnects.
         client.OnTurnHeardNothing = () =>
@@ -146,6 +147,15 @@ public sealed partial class CompanionManager
             if (!UsesRealtimeVoice || VoiceState != CompanionVoiceState.Listening) return;
             CurrentAudioPowerLevel = client.InputLevel;
         };
+    }
+
+    /// <summary>"that's all, thanks" while hands-free is on: the Realtime model called `stop_listening` and
+    /// its goodbye has played. Ends hands-free exactly as the shortcut does.</summary>
+    private void EndHandsFreeBySignOff()
+    {
+        if (!IsAlwaysListening) return;
+        SetAlwaysListening(false);
+        AnnounceHandsFreeChange("by voice");
     }
 
     /// <summary>The cursor's screen, with a caption that says where the pointer is in it.</summary>

@@ -165,6 +165,23 @@ public class RealtimeSessionUpdateTests
         var pointRequired = update["session"]!["tools"]![1]!["parameters"]!["required"]!.AsArray().Select(node => node!.GetValue<string>());
         Assert.Equal(["x", "y", "label", "text"], pointRequired);
     }
+
+    /// <summary>Hands-free ends by voice ("that's all, thanks"): the model gets a tool for it, but only while
+    /// hands-free is on. Push-to-talk listens only while the keys are held, so it has nothing to end.</summary>
+    [Fact]
+    public void TheSignOffToolIsOfferedOnlyInHandsFree()
+    {
+        static List<string> ToolNames(RealtimeTurnMode mode) =>
+            RealtimeVoiceClient.BuildSessionUpdate(mode, "x", null, "en")["session"]!["tools"]!.AsArray().Select(tool => tool!["name"]!.GetValue<string>()).ToList();
+        Assert.Contains(RealtimeVoiceClient.StopListeningToolName, ToolNames(RealtimeTurnMode.AlwaysOn));
+        Assert.DoesNotContain(RealtimeVoiceClient.StopListeningToolName, ToolNames(RealtimeTurnMode.PushToTalk));
+        // Thanks alone, or stopping something else, is not a sign-off.
+        var description = RealtimeVoiceClient.StopListeningToolDefinition()["description"]!.GetValue<string>();
+        Assert.Contains("Never for thanks alone", description);
+        Assert.Contains("stop or quit something else", description);
+        // Gemini refuses an object schema with no properties: it is declared without one.
+        Assert.Null(GeminiLiveDialect.FunctionDeclaration(RealtimeVoiceClient.StopListeningToolDefinition())!["parameters"]);
+    }
 }
 
 /// <summary>Issue #1: nothing may go out on the realtime socket before the server's first event.</summary>
@@ -256,14 +273,15 @@ public class RealtimeTurnTests : IDisposable
         [0xFF, 0xD8], "image/jpeg", "user's screen (cursor is here)", true, 1280, 800,
         new PixelRect(0, 0, 2560, 1600), 2.0, @"\\.\DISPLAY1", 1280, 800);
 
-    private async Task<(RealtimeVoiceClient Client, FakeSpeechWebSocket Socket, FakeAudioCapture Microphone)> ConnectedClientAsync(IScreenTextRecognizer? recognizer = null)
+    private async Task<(RealtimeVoiceClient Client, FakeSpeechWebSocket Socket, FakeAudioCapture Microphone)> ConnectedClientAsync(IScreenTextRecognizer? recognizer = null,
+                                                                                                                             RealtimeTurnMode mode = RealtimeTurnMode.PushToTalk)
     {
         var microphone = new FakeAudioCapture();
         var client = await mainThread.InvokeAsync(() =>
             new RealtimeVoiceClient(mainThread, new RealtimeAudio(() => microphone, () => new FakeStreamingPcmPlayer()), recognizer, new FakeMicrophonePermission(MicrophoneConsent.Allowed)));
         var socket = new FakeSpeechWebSocket();
         var session = mainThread.RunAsync(() => client.StartSessionAsync(socket, RealtimeVoiceClient.RealtimeSocketUrl("gpt-realtime"),
-            new Dictionary<string, string>(), "gpt-realtime", RealtimeTurnMode.PushToTalk, "be brief", () => Task.CompletedTask));
+            new Dictionary<string, string>(), "gpt-realtime", mode, "be brief", () => Task.CompletedTask));
         Assert.True(await Eventually.TrueAsync(() => socket.IsWaitingToReceive));
         socket.Open("""{"type":"session.created"}""");
         await session;
@@ -361,6 +379,39 @@ public class RealtimeTurnTests : IDisposable
         Assert.True(await Eventually.TrueAsync(() => SentTypes(socket).Contains("conversation.item.create")));
         await Task.Delay(100);
         Assert.DoesNotContain("response.create", SentTypes(socket));
+    }
+
+    /// <summary>The sign-off is answered with a goodbye, and hands-free ends only once that response is done
+    /// (and has played), so closing the session never cuts the goodbye off.</summary>
+    [Fact]
+    public async Task ASignOffEndsHandsFreeAfterTheGoodbye()
+    {
+        var (client, socket, _) = await ConnectedClientAsync(mode: RealtimeTurnMode.AlwaysOn);
+        var stopRequests = 0;
+        await mainThread.InvokeAsync(() => client.OnStopListeningRequested = () => stopRequests++);
+        socket.Receive("""{"type":"response.function_call_arguments.done","name":"stop_listening","call_id":"call_1","response_id":"resp_1","arguments":"{}"}""");
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("function_call_output") && text.Contains("call_1"))));
+        Assert.Contains(socket.SentTexts, text => text.Contains("Say a short goodbye"));
+        Assert.Equal(0, stopRequests);
+
+        socket.Receive("""{"type":"response.done","response":{"status":"completed"}}""");
+        Assert.True(await Eventually.TrueAsync(() => stopRequests > 0));
+        await Task.Delay(100);
+        Assert.Equal(1, stopRequests);
+    }
+
+    /// <summary>Push-to-talk listens only while the keys are held, so it has nothing to end.</summary>
+    [Fact]
+    public async Task ASignOffOutsideHandsFreeEndsNothing()
+    {
+        var (client, socket, _) = await ConnectedClientAsync();
+        var stopRequests = 0;
+        await mainThread.InvokeAsync(() => client.OnStopListeningRequested = () => stopRequests++);
+        socket.Receive("""{"type":"response.function_call_arguments.done","name":"stop_listening","call_id":"call_1","arguments":"{}"}""");
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("Hands-free is not on"))));
+        socket.Receive("""{"type":"response.done","response":{"status":"completed"}}""");
+        await Task.Delay(150);
+        Assert.Equal(0, stopRequests);
     }
 
     [Fact]

@@ -152,7 +152,7 @@ What the Mac gained after the port (git log da71df7..HEAD -- macos), and where W
 | Prompts: a command is done, a question is taught, email is never sent (070fbd8) | Done (`AskLanePrompts.CommandOrQuestionInstruction`) |
 | Ask lane: pause before sending, Esc stops it, mouse close-up, [UNSURE], window buttons | Not yet |
 | Hands-free without a realtime key: the standard lane listens on this PC (066eefb) | Done (`Core/Speech/StandardHandsFree.cs`, `CompanionManager.StandardHandsFree.cs`); unverified on a live microphone |
-| Hands-free ends on a goodbye | Standard lane done (fixed sign-offs); fast voice's `stop_listening` tool not yet |
+| Hands-free ends on a goodbye | Done: the standard lane by fixed sign-offs (`HandsFreeSignOff`); fast voice (OpenAI and Gemini Live) offers `stop_listening` in hands-free only, and ends after the goodbye has played (`RealtimeVoiceClient`, `CompanionManager.EndHandsFreeBySignOff`); unverified live |
 | Rephrase in place | Not yet (check) |
 
 ## Status (2026-10-14)
