@@ -66,7 +66,8 @@ public static class BrowserTabLocator
     /// <summary>The screenshot-pixel centre of the tab the request is about, when the request mentions a tab and a
     /// running browser has a matching tab whose button is visible in the captured screenshot. The browser need not be the
     /// app in front: a terminal over the lower part of Chrome still leaves the tab strip showing, and that is what the
-    /// user is looking at.</summary>
+    /// user is looking at; but a browser behind the front app is only pointed at when the user's own words name the
+    /// tab (see <see cref="MatchTexts"/>).</summary>
     public static LocatedTab? Locate(
         string label, string text, string? userRequest, ScreenCaptureGeometry capture, IBrowserTabSource source,
         int ownProcessId, Action<string>? log = null)
@@ -83,7 +84,7 @@ public static class BrowserTabLocator
         foreach (var browser in browsers)
         {
             var tabs = source.TabList(browser);
-            if (BestMatch(texts, tabs) is not { } index) continue;
+            if (BestMatch(MatchTexts(browser.IsActive, label, text, userRequest), tabs) is not { } index) continue;
             var title = Prefix(tabs[index].Title, 40);
             if (Frame(index, source.TabButtonFrames(browser), tabs.Count) is not { } frame)
             {
@@ -120,6 +121,13 @@ public static class BrowserTabLocator
     }
 
     // Pure parts (unit-tested)
+
+    /// <summary>The texts a tab may be matched against. For the active browser, the model's label and text too (it read
+    /// the tab strip). For a browser behind another app, the user's words alone: "minimize this tab" with a terminal in
+    /// front sent the model to a Chrome tab it could see behind it, and matching its own reading of that tab made the
+    /// pointer follow.</summary>
+    public static string?[] MatchTexts(bool browserIsActive, string label, string text, string? userRequest) =>
+        browserIsActive ? [label, text, userRequest] : [userRequest];
 
     public static bool MentionsTab(IEnumerable<string?> texts) =>
         texts.Any(text => Words(text ?? "").Any(word => word == "tab" || word == "tabs"));

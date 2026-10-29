@@ -201,11 +201,23 @@ public sealed partial class CompanionManager
         }
     }
 
-    /// <summary>The point_at chain's steps after the OCR snap: browser tabs, UI Automation, then Claude.</summary>
+    /// <summary>
+    /// The point_at chain's steps after the OCR snap: a window's caption buttons and browser tabs,
+    /// UI Automation, then Claude. The caption buttons ride in the browser-tab step (they run first,
+    /// as on the Mac) so RealtimeVoiceClient's chain is left as it is; its log then says
+    /// "browser tab \"close button of …\"".
+    /// </summary>
     private RealtimePointingServices MakePointingServices() => new()
     {
         LocateBrowserTab = (label, text, userRequest, capture) => Task.Run(() =>
         {
+            // A window's close / minimize / maximize buttons: the front window's own frame says
+            // exactly where they are.
+            var windowControl = WindowControlLocator.Locate(label, text, userRequest, GeometryOf(capture), FrontWindowCaptionButtons, AppLog.Write);
+            if (windowControl is not null)
+            {
+                return ((ScreenPoint Point, string Title)?)(windowControl.Point, $"{WindowControlLocator.Name(windowControl.Control)} button of {windowControl.AppName}");
+            }
             var located = BrowserTabLocator.Locate(label, text, userRequest, GeometryOf(capture), services.BrowserTabs,
                 services.WindowList.OwnProcessId, AppLog.Write);
             return located is null ? ((ScreenPoint Point, string Title)?)null : (located.Point, located.Tab.Title);
@@ -225,6 +237,13 @@ public sealed partial class CompanionManager
         GroundWithClaude = (label, text, userRequest, capture) =>
             ScreenElementGrounding.LocateAsync(label, text, userRequest, capture.ImageData, capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels),
     };
+
+    /// <summary>The caption buttons of the app in front (never OpenClicky's own window).</summary>
+    private CaptionButtonLayout? FrontWindowCaptionButtons()
+    {
+        if (services.FrontmostApp.CurrentWithoutUrl() is not { WindowHandle: not 0 } front) return null;
+        return services.WindowList.CaptionButtonLayout(front.WindowHandle, front.DisplayName ?? front.ProcessName ?? "the front app");
+    }
 
     private static ScreenCaptureGeometry GeometryOf(CompanionScreenCapture capture) =>
         new(new ScreenRect(capture.DisplayFrame.Left, capture.DisplayFrame.Top, capture.DisplayFrame.Width, capture.DisplayFrame.Height),
