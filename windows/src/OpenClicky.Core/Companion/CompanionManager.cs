@@ -18,6 +18,7 @@
 //    CompanionManager.Onboarding.cs  the welcome tour's hooks, model downloads, uses
 //    CompanionManager.Skills.cs      skills in the talk lanes, the connect card, skill drafting
 //    CompanionManager.Dictation.cs   the dictation take controller's wiring
+//    CompanionManager.Teacher.cs     the Teacher plugin's hooks (labels, clearing the board, typed questions)
 //
 //  Threading: as the Mac's @MainActor class, everything here runs on the UI thread (IMainThread);
 //  callbacks from elsewhere are posted to it.
@@ -212,6 +213,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         Overlay.WelcomeFinished += SetupOnboardingVideo;
         AgentCard.FollowUpRequested += (text, threadId) => SubmitTextToAgent(text, threadId: string.IsNullOrEmpty(threadId) ? null : threadId);
         WireIslandButtons();
+        WireTeacher();
     }
 
     private void OnOverlayPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs eventArgs)
@@ -561,6 +563,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
     public void Dispose()
     {
         Stop();
+        teacherSwitchObservation?.Dispose();
         RealtimeVoiceClient.Dispose();
         BuddyDictationManager.Dispose();
         SkillLibraryStore.Dispose();

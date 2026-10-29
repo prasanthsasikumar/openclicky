@@ -11,6 +11,7 @@ using OpenClicky.Core.Actions;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Speech;
@@ -89,6 +90,7 @@ public sealed partial class CompanionManager
         {
             guidedStepsGivenSoFar = 0;
             guidedStepGoal = transcript;
+            TeacherPlugin.ClearBoard("a new question");
         }
         guidedStepPointedLocation = null;
         var cancellation = new CancellationTokenSource();
@@ -177,6 +179,9 @@ public sealed partial class CompanionManager
             AgentActivityText = null;
         }
 
+        // A teaching question's lesson starts now, while the answer is still being asked for.
+        var cursorCapture = CursorCapture(screenCaptures);
+        if (!isGuidedStepContinuation) TeacherPlugin.StartLesson(transcript, cursorCapture);
         var labeledImages = screenCaptures.Select(ImageLabeledWithItsPixelSize).ToList();
         // The pointer's place in its screenshot goes into the question, and a close-up of what is
         // around it rides along, so "what is this?" is about the thing pointed at and not the
@@ -207,8 +212,14 @@ public sealed partial class CompanionManager
         var claudeRoute = ProviderRouter.Route(ProviderCapability.Claude, ProviderRouter.CurrentCredentials());
         // Offered wherever the agent lane doesn't run, and to a plan through PlanToolProtocol's [ACTION: …] lines.
         var offersQuickActions = AskLanePrompts.OffersQuickActionsToAskLane(agentLaneRuns, claudeRoute.AnsweringSource);
-        var askTools = AskLanePrompts.AskTools(offersQuickActions, writingTarget is not null, DesktopAction.AnthropicToolDefinitions());
-        var systemPrompt = AskLanePrompts.AskSystemPrompt(offersQuickActions, writingTarget is not null, TalkSkillsBlock());
+        var teacherIsOn = TeacherPlugin.IsEnabled;
+        IReadOnlyList<System.Text.Json.Nodes.JsonObject> askTools =
+        [
+            .. AskLanePrompts.AskTools(offersQuickActions, writingTarget is not null, DesktopAction.AnthropicToolDefinitions()),
+            .. teacherIsOn ? TeacherPlugin.AnthropicToolDefinitions() : [],
+        ];
+        var systemPrompt = AskLanePrompts.AskSystemPrompt(offersQuickActions, writingTarget is not null, TalkSkillsBlock(),
+            pluginPromptLines: TeacherPlugin.PromptLines(teacherIsOn));
 
         // Spoken while it is still being written: each finished sentence goes to the voice, and the
         // pointer moves when the voice starts (the prompt puts the tag first).
@@ -261,6 +272,12 @@ public sealed partial class CompanionManager
         foreach (var call in toolCalls.Take(2))
         {
             if (cancellationToken.IsCancellationRequested) break;
+            // The drawing is the answer's picture, not something to say: nothing is added to the spoken reply.
+            if (TeacherPlugin.ToolNames.Contains(call.Name))
+            {
+                TeacherPlugin.Perform(call.Name, call.Arguments, cursorCapture);
+                continue;
+            }
             if (call.Name == WriteInPlace.ToolName)
             {
                 if (writingTarget is null) continue;
@@ -324,6 +341,7 @@ public sealed partial class CompanionManager
         else
         {
             RememberExchange(transcript, spokenText);
+            TeacherPlugin.WriteAnswerIfTheyCannotHear(spokenText, lastQuestionWasTyped, cursorCapture);
             if (replyIsAGuidedStep) WaitForTheGuidedStepToBeDone();
         }
 

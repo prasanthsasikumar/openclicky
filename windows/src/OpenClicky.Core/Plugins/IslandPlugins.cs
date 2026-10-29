@@ -8,8 +8,9 @@
 //  depends on it. A plugin is an IslandComponent whose IsPlugin is true; the registry below is the
 //  only place that lists them.
 //
-//  Ported so far: System, Shelf, Coding agents and Now playing. The Mac's Teacher keeps its id
-//  here so the context and the preferences agree with the Mac's.
+//  Ported: System, Shelf, Coding agents, Now playing and Teacher, as on the Mac. The Teacher also
+//  changes what the voice lanes can do, so they call its one facade, TeacherPlugin, and nothing
+//  else of it.
 //
 
 using OpenClicky.Core.Companion;
@@ -17,6 +18,7 @@ using OpenClicky.Core.Plugins.CodingAgents;
 using OpenClicky.Core.Plugins.Media;
 using OpenClicky.Core.Plugins.Shelf;
 using OpenClicky.Core.Plugins.SystemStats;
+using OpenClicky.Core.Plugins.Teacher;
 
 namespace OpenClicky.Core.Plugins;
 
@@ -30,5 +32,5 @@ public static class IslandPluginRegistry
 
     /// <summary>In the order the capsule and Settings show them.</summary>
     public static IReadOnlyList<IslandComponent> All { get; } =
-        [SystemStatsPlugin.Component, ShelfPlugin.Component, CodingAgentsPlugin.Component, MediaPlugin.Component];
+        [SystemStatsPlugin.Component, ShelfPlugin.Component, CodingAgentsPlugin.Component, MediaPlugin.Component, TeacherPlugin.Component];
 }

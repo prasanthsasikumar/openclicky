@@ -13,6 +13,7 @@ using OpenClicky.Core.Actions;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
@@ -72,10 +73,12 @@ public sealed partial class CompanionManager
             {
                 LastTranscript = text;
                 AppLog.Write($"talk: you said ({text.Length} chars)");
+                TeacherPlugin.StartLesson(text, client.LastScreenCapture);
             }
             else
             {
                 AppLog.Write($"talk: openclicky said ({text.Length} chars)");
+                TeacherPlugin.WriteAnswerIfTheyCannotHear(text, lastQuestionWasTyped, client.LastScreenCapture);
                 RememberExchange(LastTranscript ?? "", text);
             }
         };
@@ -118,7 +121,10 @@ public sealed partial class CompanionManager
         client.WriteInPlaceHost = services.WriteInPlace;
         client.OnWroteInPlace = () => LastSuccessfulQuickActionAt = DateTimeOffset.Now;
         client.InstructionsProvider = () =>
-            AskLanePrompts.ComposeTalkInstructions(AskLanePrompts.WithReplyLanguage(client.BaseInstructions), TalkSkillsBlock());
+            AskLanePrompts.ComposeTalkInstructions(AskLanePrompts.WithReplyLanguage(client.BaseInstructions + PluginPromptLines()), TalkSkillsBlock());
+        client.PluginToolDefinitions = () => TeacherPlugin.IsEnabled ? TeacherPlugin.RealtimeToolDefinitions() : [];
+        client.OnPluginToolCall = (toolName, arguments, capture) =>
+            Task.FromResult(TeacherPlugin.Perform(toolName, TeacherPlugin.StringArguments(arguments), capture));
         client.OnPointAt = (screenshotPoint, label, capture) => PointAt(screenshotPoint, label, capture);
         client.OnAgentTask = async task =>
         {
@@ -256,6 +262,7 @@ public sealed partial class CompanionManager
         switch (transition)
         {
             case BuddyPushToTalkShortcut.ShortcutTransition.Pressed:
+                lastQuestionWasTyped = false;
                 if (IsDictatingToFrontApp) return;
                 LastQuestionFailed = false;
                 Overlay.DismissCursorCaption();
@@ -263,6 +270,7 @@ public sealed partial class CompanionManager
                 if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible) Overlay.ShowOverlayOnAllScreens();
                 InterruptCurrentAnswer(includingAgentWork: true);
                 Overlay.ClearDetectedElementLocation();
+                TeacherPlugin.ClearBoard("a new question");
                 VoiceState = CompanionVoiceState.Listening;
                 _ = BeginRealtimePushToTalkAsync();
                 break;

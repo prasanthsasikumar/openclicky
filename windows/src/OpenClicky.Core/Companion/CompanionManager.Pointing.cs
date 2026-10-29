@@ -45,19 +45,27 @@ public sealed partial class CompanionManager
     public void PointAt(ScreenPoint screenshotPoint, string? label, CompanionScreenCapture capture)
     {
         var location = ScreenLocation(screenshotPoint, capture);
+        if (!PointAt(location, FrameOf(capture), label)) return;
+        // A guide checks the click that finishes this step against it (the Teacher's label stops are not steps).
+        guidedStepPointedLocation = location;
+        guidedStepPointedScale = capture.DisplayScale;
+        AppLog.Write($"point: ({screenshotPoint.X:0}, {screenshotPoint.Y:0}) → \"{label?.Trim() ?? "element"}\"");
+    }
+
+    /// <summary>Fly the buddy to a place in physical screen pixels (the Teacher's labels, which it placed itself, have
+    /// no screenshot point). False when the place is on a system prompt.</summary>
+    public bool PointAt(ScreenPoint location, ScreenRect displayFrame, string? label)
+    {
         // Granting a permission is the person's choice, never a step: no pointing at Windows' prompts.
         if (SystemPromptGuard.IsOnSystemPrompt(location, OnScreenPromptWindows))
         {
             AppLog.Write("point: not shown, it was on a windows permission prompt");
-            return;
+            return false;
         }
         // The spinner (processing) hides the triangle, so the flight would be invisible.
         if (VoiceState == CompanionVoiceState.Processing) VoiceState = CompanionVoiceState.Idle;
-        Overlay.PointAt(location, FrameOf(capture), label);
-        // A guide checks the click that finishes this step against it.
-        guidedStepPointedLocation = location;
-        guidedStepPointedScale = capture.DisplayScale;
-        AppLog.Write($"point: ({screenshotPoint.X:0}, {screenshotPoint.Y:0}) → \"{label?.Trim() ?? "element"}\"");
+        Overlay.PointAt(location, displayFrame, label);
+        return true;
     }
 
     /// <summary>Moves the pointer for the ask lane's [POINT:…] tag, on the screen it names (the cursor's when none).</summary>

@@ -141,7 +141,7 @@ What the Mac gained after the port (git log da71df7..HEAD -- macos), and where W
 | Plugin: Shelf (drop on the island, drag out, copy) | Done (`Core/Plugins/Shelf`, `Windows/Plugins/Shelf`; the collapsed island catches drags with an alpha-1 rectangle only while the Shelf is on) |
 | Plugin: Coding agents (Claude Code / Codex sessions, plan limits) | Done (`Core/Plugins/CodingAgents`, `Windows/Plugins/CodingAgents`): logs under `%USERPROFILE%\.claude\projects` and `.codex\sessions`; plan limits from Claude Code's `.credentials.json` (the Mac's Keychain item); the peek line names a live session |
 | Plugin: Now playing (artwork, progress, controls) | Done: Windows' media sessions, so every player that reports to Windows (`Core/Plugins/Media`, `Windows/Plugins/Media`) |
-| Plugin: Teacher (draws lessons on screen) | Not yet |
+| Plugin: Teacher (draws lessons on screen) | Done (`Core/Plugins/Teacher`, `Windows/Plugins/Teacher`; both lanes' tools, early lessons, written answers when they cannot hear; handwriting in Ink Free; `--openclicky-teacher-smoke`) |
 | Island: glass under the open panel | Not needed: the Mac went back to solid black (f0abb80) |
 | Island: docking the pointer removed (2bf8edb) | Done: no dock button, tray item or setting; a stored dock flag is cleared once (CursorFlightPlanner still knows ToDock, unused) |
 | Ask lane: simple requests answered on the device (Apple's on-device model) | Mac only for now: no Windows equivalent chosen |

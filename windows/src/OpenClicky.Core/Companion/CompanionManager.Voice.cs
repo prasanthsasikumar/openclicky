@@ -5,6 +5,7 @@
 
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
 using OpenClicky.Core.Speech;
@@ -89,8 +90,11 @@ public sealed partial class CompanionManager
                 // A dictation take in progress keeps esc to itself (it cancels the take, as always);
                 // otherwise esc stops whatever the ask lane is doing, and then the fast voice lane when
                 // it is answering, speaking or still working on an action (the Mac's order).
-                switch (AskLaneEscape.Target(IsTakeInProgress, AskLaneCanBeStopped,
-                            realtimeIsBusy: EscStopsFastVoice(IsTakeInProgress, UsesRealtimeVoice, RealtimeVoiceClient.IsBusy)))
+                var escapeTarget = AskLaneEscape.Target(IsTakeInProgress, AskLaneCanBeStopped,
+                    realtimeIsBusy: EscStopsFastVoice(IsTakeInProgress, UsesRealtimeVoice, RealtimeVoiceClient.IsBusy));
+                // Whatever else it stops, esc takes a lesson off the screen too (never mid-take).
+                if (TeacherPlugin.EscClearsTheBoard(escapeTarget)) TeacherPlugin.ClearBoard("esc");
+                switch (escapeTarget)
                 {
                     case EscapeTarget.AskLane:
                         StopAskLane("esc");
@@ -137,6 +141,8 @@ public sealed partial class CompanionManager
         InterruptCurrentAnswer(includingAgentWork: true);
         Overlay.ClearDetectedElementLocation();
         Overlay.DismissCursorCaption();
+        TeacherPlugin.ClearBoard("a new question");
+        lastQuestionWasTyped = true;
         LastTranscript = trimmedText;
         AppLog.Write($"ask: typed request ({trimmedText.Length} chars)");
 
@@ -155,6 +161,7 @@ public sealed partial class CompanionManager
         {
             await RealtimeVoiceClient.ConnectIfNeededAsync(IsAlwaysListening ? RealtimeTurnMode.AlwaysOn : RealtimeTurnMode.PushToTalk);
             await RealtimeVoiceClient.SendTextTurnAsync(text);
+            TeacherPlugin.StartLesson(text, RealtimeVoiceClient.LastScreenCapture);
         }
         catch (Exception error)
         {
@@ -208,6 +215,7 @@ public sealed partial class CompanionManager
 
     private void TalkPressed()
     {
+        lastQuestionWasTyped = false;
         // The dictation take has its own manager: a take in progress (a tapped one keeps the
         // microphone after the key is up) is the dictation this guard means too.
         if (BuddyDictationManager.IsDictationInProgress || IsTakeInProgress)

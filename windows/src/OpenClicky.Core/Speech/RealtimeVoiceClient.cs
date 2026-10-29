@@ -252,6 +252,12 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// <summary>The process in front, for "act, then look": the screen has settled once a different app is
     /// in front (a browser opened) or the wait runs out. Null → only the wait.</summary>
     public Func<int?>? FrontAppProvider { get; set; }
+    /// <summary>Tools a plugin adds to the session while it is on (the Teacher's drawing tools). Read with every session
+    /// update; a plugin switched on or off also changes the instructions, which is what sends the update.</summary>
+    public Func<IReadOnlyList<JsonObject>>? PluginToolDefinitions { get; set; }
+    /// <summary>Runs a plugin's tool call with the screenshot the turn carried; null when no plugin owns the tool. Must
+    /// return quickly: tool calls are handled on the receive loop.</summary>
+    public Func<string, JsonObject, CompanionScreenCapture?, Task<string?>>? OnPluginToolCall { get; set; }
     /// <summary>The screen context attached to every turn; null → the turn goes out without an image.</summary>
     public Func<Task<RealtimeScreenContext?>>? ScreenContextProvider { get; set; }
     /// <summary>The highlighted text in the app in front (IFocusedElementReader.SelectedTextAsync).</summary>
@@ -926,7 +932,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     };
 
     private JsonObject SessionUpdate(RealtimeTurnMode mode, string instructionsText) =>
-        BuildSessionUpdate(mode, instructionsText, voice, ReplyLanguage.CurrentCode, DesktopActionToolDefinitions?.Invoke());
+        BuildSessionUpdate(mode, instructionsText, voice, ReplyLanguage.CurrentCode,
+            [.. DesktopActionToolDefinitions?.Invoke() ?? [], .. PluginToolDefinitions?.Invoke() ?? []]);
 
     // MARK: - Instructions (skills)
 
@@ -1544,6 +1551,13 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 else
                 {
                     output = "Hands-free is not on; nothing to stop. Do not mention it.";
+                }
+                break;
+            default:
+                if (OnPluginToolCall is { } pluginToolCall && await pluginToolCall(name, arguments, LastScreenCapture) is { } pluginOutput)
+                {
+                    Log($"plugin tool: {name}");
+                    output = pluginOutput;
                 }
                 break;
         }

@@ -145,13 +145,15 @@ public static class AskLanePrompts
     /// <summary>
     /// The ask lane's whole system prompt: the companion prompt with the reply language, the quick
     /// actions line when they are offered, the write-in-place line when there is text to write
-    /// over, then the talk skills.
+    /// over, then the talk skills. <paramref name="pluginPromptLines"/> (the Teacher's, while it is on) go
+    /// straight after the companion prompt, before the reply language.
     /// </summary>
-    public static string AskSystemPrompt(bool quickActionsOffered, bool hasWritingTarget, string skillsBlock, string? languageCode = null)
+    public static string AskSystemPrompt(bool quickActionsOffered, bool hasWritingTarget, string skillsBlock, string? languageCode = null,
+                                         string pluginPromptLines = "")
     {
         var toolsLine = quickActionsOffered ? "\n\n" + AccountToolsInstruction : "";
         var writeInPlaceLine = "\n\n" + (hasWritingTarget ? WriteInPlace.PromptInstruction : WriteInPlace.NoTargetPromptInstruction);
-        return ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt, languageCode) + toolsLine + writeInPlaceLine, skillsBlock);
+        return ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt + pluginPromptLines, languageCode) + toolsLine + writeInPlaceLine, skillsBlock);
     }
 
     /// <summary>

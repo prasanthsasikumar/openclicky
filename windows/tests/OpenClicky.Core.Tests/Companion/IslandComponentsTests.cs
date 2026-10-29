@@ -76,7 +76,7 @@ public class IslandComponentsTests
     public void TheOrderDropsUnknownIdsAndAppendsMissingOnes()
     {
         var settings = new IslandComponentSettings(Preferences.InMemory()) { Order = ["system", "gone"] };
-        Assert.Equal(["system", "shortcuts", "transcript", "agent", "shelf", "agents", "media"], settings.ResolvedOrder(IslandComponentRegistry.All));
+        Assert.Equal(["system", "shortcuts", "transcript", "agent", "shelf", "agents", "media", "teacher"], settings.ResolvedOrder(IslandComponentRegistry.All));
     }
 
     [Fact]
@@ -85,6 +85,7 @@ public class IslandComponentsTests
         Assert.Equal("shortcuts", IslandComponentRegistry.All[0].Id);
         Assert.All(IslandPluginRegistry.All, plugin => Assert.True(plugin.IsPlugin));
         Assert.Contains(IslandComponentRegistry.All, component => component.Id == IslandPluginRegistry.SystemId);
+        Assert.Contains(IslandComponentRegistry.All, component => component.Id == IslandPluginRegistry.TeacherId);
     }
 
     [Fact]

@@ -8,6 +8,8 @@
 //   --openclicky-mic-smoke <seconds> [engine]      records the microphone, prints its level, saves a WAV and transcribes it
 //   --openclicky-check-source <source>             Settings' Test button for one answer source
 //   --openclicky-answer-smoke                      one real question (a red square) through ClaudeAPI
+//   --openclicky-teacher-smoke [sketch | picture:<words> | lesson:<question>] [--shot <png>]
+//                                                  draws a Teacher lesson on the cursor's screen (Plugins/Teacher/TeacherSmoke)
 
 using System.Diagnostics;
 using System.IO;
@@ -80,6 +82,7 @@ internal static class SmokeCommands
             ConsoleAttachment.Attach();
             return Task.Run(AnswerSmokeAsync).GetAwaiter().GetResult();
         }
+        if (args.Contains(Plugins.Teacher.TeacherSmoke.Flag)) return Plugins.Teacher.TeacherSmoke.Run(args);
         return null;
     }
 

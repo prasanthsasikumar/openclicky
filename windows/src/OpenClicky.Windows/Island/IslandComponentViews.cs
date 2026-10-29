@@ -16,6 +16,7 @@ using OpenClicky.Windows.Plugins.CodingAgents;
 using OpenClicky.Windows.Plugins.Media;
 using OpenClicky.Windows.Plugins.Shelf;
 using OpenClicky.Windows.Plugins.SystemStats;
+using OpenClicky.Windows.Plugins.Teacher;
 using OpenClicky.Windows.Theme;
 using static OpenClicky.Windows.Island.IslandUi;
 
@@ -32,6 +33,7 @@ internal static class IslandComponentViews
         IslandPluginRegistry.ShelfId => new ShelfIslandView(model),
         IslandPluginRegistry.AgentsId => new AgentsIslandView(),
         IslandPluginRegistry.MediaId => new MediaIslandView(),
+        IslandPluginRegistry.TeacherId => new TeacherIslandView(),
         _ => null,
     };
 
