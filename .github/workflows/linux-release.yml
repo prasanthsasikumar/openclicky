@@ -33,3 +33,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
         run: gh release upload "$TAG" linux/dist/* --repo "${{ github.repository }}" --clobber
+
+  release-page:
+    # The page lists what's new by platform and a row per download; rebuild it now that these files
+    # are attached. From the default branch: older tags have no update-release-page.sh.
+    needs: attach-the-linux-package
+    if: github.repository == 'prasanthsasikumar/openclicky'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Rebuild the release page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/update-release-page.sh '${{ inputs.tag }}'

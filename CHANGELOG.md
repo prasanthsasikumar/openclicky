@@ -7,31 +7,45 @@ the GitHub release, so a publish refuses to run until this file has a section fo
 
 Write for the person who sees the update prompt: what they can now do, in plain words, one bullet
 per change with the gist in bold. Links, `code` and *italics* are fine; keep it to bullets and
-short paragraphs. Windows and Linux notes go in the same section when they apply.
+short paragraphs.
+
+Split a section by platform with `### All platforms`, `### Mac`, `### Windows` and `### Linux`
+(leave out the ones with nothing new). The Mac update dialog shows All platforms and Mac; the GitHub
+release page shows each platform under its own heading once that platform's files are attached
+(`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
+downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
 ## 0.10.0
 
-- **Simple requests are done on your Mac.** "Open Safari", "set the volume to thirty", "pause the music", and "make this shorter" with text in front of you are understood by Apple Intelligence on Macs that have it (macOS 26): no screenshot is sent, no credits are used, and the answer comes in about a second. Everything else goes to Clicky as before. Settings → Clicky → Simple requests stay on this Mac.
-- **The island is solid black again when it opens.** The black melting into glass was harder to read, and its Glass level slider is gone from Settings → General.
-- **No more docking the pointer in the island.** Parking it in the notch added nothing: the pointer already rests out of sight and comes back when you shake the mouse or when Clicky needs it. The option is gone from Settings, the menu bar and the island, which also gives the island's shortcuts more room. If you had it docked, it now follows "The pointer shows" in Settings → Clicky like everyone's.
+### All platforms
+
+- **Fix: the Kokoro voice downloads again.** Its download failed its check after the archive was re-packed upstream.
+
+### Mac
+
 - **Tell the Mac what to do.** With hands-free on (or holding ⌃⌥), a command is done and confirmed in a few words instead of taught: "minimize everything" (and "bring them back"), "search for rotary engines" or "search YouTube for lo-fi", "check my email", "draft an email to Ana saying I'll be late", "play Blinding Lights", "stop that song". A question ("how do I minimize this?") still teaches and points.
 - **Email is never sent by voice.** "Check my email" reads the unread senders and subjects from Apple Mail, or opens your Gmail inbox and reads what's on screen; "draft an email" opens a new message with the recipient and a short body filled in, for you to read and send yourself. Settings → Voice → Doing things picks the inbox (Automatic is Apple Mail when it's set up here, else Gmail).
 - **Play a song in Spotify by name.** The song is looked up on OpenClicky's Spotify app (only the words leave your Mac) and the desktop app plays it; with your own Spotify client credentials in Keys & Plans the lookup goes straight to Spotify. If the lookup can't answer, Spotify's own search opens for you to pick. "Stop that song" pauses the player itself, so it can never start something by mistake.
 - **It looks before it speaks.** After an action that changes the screen (a page opened, a search, Gmail), Clicky takes a fresh look and describes what's there now.
-- **Windows: laptops with no right Ctrl.** The tour's first step says "hold right ctrl or right alt", and right Alt (just right of the space bar) works from its very first press and stays the dictation key. Left Ctrl is left alone for copy, paste and selecting: holding it on that step points you at right Alt instead. With a key other than right Ctrl dictating, the shortcuts, cards and tour voice say "Ctrl + Win" for talking to Clicky, and either Ctrl works for it.
-- **Windows: the tour keeps one voice.** Whichever dictation key you have, the tour's lines are spoken in the same recorded voice as the rest, instead of switching to the PC's own voice for "hand me a task" and the other lines that name keys.
-- **Windows: dictate into a terminal.** Windows Terminal, PowerShell and Command Prompt count as a place to type, so holding the key there no longer says "no text box"; the words are pasted at the prompt.
-- **Windows: no robotic voice while Kokoro downloads.** A voice that can't speak yet (Kokoro still downloading, a key that's missing) hands over to your account's free voice rather than this PC's built-in one.
-- **Windows: hovering the island only peeks.** The pointer over the island grows it a little and shows "click to open"; a click opens the panel, as on the Mac.
-- **Windows: dictation works the moment it's installed.** A small English speech model (Moonshine) now comes with the app, so the first take is heard on your PC with no download and no "turn on online speech" prompt. Parakeet still downloads after the tour and takes over; Windows speech recognition stays a choice in Settings → Dictation. If you already picked Windows speech, you stay on it. A take that starts with a long pause no longer ends in "didn't catch that" after the words showed live.
-- **"Rephrase this" rewrites in place in Apple Mail too.** With the cursor in an email body and nothing highlighted, "rephrase this so it sounds professional" rewrote nothing, because Mail's message body reports no text to Accessibility. Clicky now reads the box from the screenshot and, when you ask for a rewrite, selects it and pastes the new text. ⌘V puts the original back.
-- **Fix: dictation that heard nothing on some Macs.** Since 0.8.1, on some Macs every take ended in "didn't catch that" and the microphone test stayed flat, though the microphone worked everywhere else. OpenClicky now leaves the Mac's default microphone alone, as it did before.
+- **Simple requests are done on your Mac.** "Open Safari", "set the volume to thirty", "pause the music", and "make this shorter" with text in front of you are understood by Apple Intelligence on Macs that have it (macOS 26): no screenshot is sent, no credits are used, and the answer comes in about a second. Everything else goes to Clicky as before. Settings → Clicky → Simple requests stay on this Mac.
 - **Say goodbye to end hands-free.** "That's all I need, thanks", "stop listening" or "ok bye" now ends hands-free: Clicky says goodbye, closes the microphone and goes back to push-to-talk. A plain "thank you" keeps it listening.
+- **"Rephrase this" rewrites in place in Apple Mail too.** With the cursor in an email body and nothing highlighted, "rephrase this so it sounds professional" rewrote nothing, because Mail's message body reports no text to Accessibility. Clicky now reads the box from the screenshot and, when you ask for a rewrite, selects it and pastes the new text. ⌘V puts the original back.
+- **The island is solid black again when it opens.** The black melting into glass was harder to read, and its Glass level slider is gone from Settings → General.
+- **No more docking the pointer in the island.** Parking it in the notch added nothing: the pointer already rests out of sight and comes back when you shake the mouse or when Clicky needs it. The option is gone from Settings, the menu bar and the island, which also gives the island's shortcuts more room. If you had it docked, it now follows "The pointer shows" in Settings → Clicky like everyone's.
+- **Fix: dictation that heard nothing on some Macs.** Since 0.8.1, on some Macs every take ended in "didn't catch that" and the microphone test stayed flat, though the microphone worked everywhere else. OpenClicky now leaves the Mac's default microphone alone, as it did before.
 - **Fix: the pointer finds a window's close, minimize and zoom buttons exactly.** Asked how to minimize the Terminal, it pointed at the menu bar; the three buttons are too small for a screenshot to place, so macOS is asked where they are instead.
 - **Fix: "this tab" means the window in front.** With a terminal in front of Chrome, "minimize this tab" sent the pointer to a Chrome tab behind it. A browser behind the front app is now only pointed at when you name the site ("my Reddit tab").
 - **Fix: the hands-free shortcut works.** Holding ⌃ and tapping fn twice did nothing on Macs with a Globe key, because macOS sends an extra Globe key event after each fn tap that cut the double tap short. The island now shows the shortcut in the right order too: hold ⌃, tap fn twice.
-- **Fix: the Kokoro voice downloads again.** Its download failed its check after the archive was re-packed upstream. On Windows and Linux too.
 - **Fix: your music stays at full volume while Clicky is idle.** With the fast voice lane, other apps' sound could stay turned down until you quit OpenClicky. The microphone is now opened only when you press the shortcut.
+
+### Windows
+
+- **Dictation works the moment it's installed.** A small English speech model (Moonshine) now comes with the app, so the first take is heard on your PC with no download and no "turn on online speech" prompt. Parakeet still downloads after the tour and takes over; Windows speech recognition stays a choice in Settings → Dictation. If you already picked Windows speech, you stay on it. A take that starts with a long pause no longer ends in "didn't catch that" after the words showed live.
+- **Works on laptops with no right Ctrl.** The tour's first step says "hold right ctrl or right alt", and right Alt (just right of the space bar) works from its very first press and stays the dictation key. Left Ctrl is left alone for copy, paste and selecting: holding it on that step points you at right Alt instead. With a key other than right Ctrl dictating, the shortcuts, cards and tour voice say "Ctrl + Win" for talking to Clicky, and either Ctrl works for it.
+- **Dictate into a terminal.** Windows Terminal, PowerShell and Command Prompt count as a place to type, so holding the key there no longer says "no text box"; the words are pasted at the prompt.
+- **The tour keeps one voice.** Whichever dictation key you have, the tour's lines are spoken in the same recorded voice as the rest, instead of switching to the PC's own voice for "hand me a task" and the other lines that name keys.
+- **No robotic voice while Kokoro downloads.** A voice that can't speak yet (Kokoro still downloading, a key that's missing) hands over to your account's free voice rather than this PC's built-in one.
+- **Hovering the island only peeks.** The pointer over the island grows it a little and shows "click to open"; a click opens the panel, as on the Mac.
 
 ## 0.9.3
 
