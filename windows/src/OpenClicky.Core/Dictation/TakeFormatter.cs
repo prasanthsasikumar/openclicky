@@ -314,7 +314,45 @@ public static class TakeFormatter
         if (rawWords <= 3) return polishedWords <= rawWords + 4;
         var ratio = (double)polishedWords / rawWords;
         if (ratio < 0.4 || ratio > 1.8) return false;
-        return ReusesTheSpokenWords(polished, raw);
+        if (AnswersASpokenQuestion(polished, raw)) return false;
+        return ReusesTheSpokenWords(polished, raw) && KeepsTheSpokenWords(polished, raw);
+    }
+
+    /// <summary>The first words of a spoken question. "When" and "where" are left out: they start ordinary sentences
+    /// too ("When I click…").</summary>
+    public static IReadOnlySet<string> QuestionOpeners { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "how", "what", "why", "who", "which", "can", "could", "would", "should", "do", "does", "did", "is", "are",
+    };
+
+    /// <summary>
+    /// A spoken question tidied is still a question. A clean-up model answered "How many files of recommendations do we
+    /// need? And how many have we gotten so far?" with "We need 10 files of recommendations. We have 10 files of
+    /// recommendations.", in the question's own words, so ReusesTheSpokenWords let it through (#24).
+    /// </summary>
+    public static bool AnswersASpokenQuestion(string polished, string raw)
+    {
+        var trimmed = raw.Trim();
+        var opener = new string(trimmed.ToLowerInvariant().SkipWhile(character => !char.IsLetter(character)).TakeWhile(char.IsLetter).ToArray());
+        var asked = trimmed.Contains('?') || QuestionOpeners.Contains(opener);
+        return asked && !polished.Contains('?');
+    }
+
+    /// <summary>
+    /// The other way round from ReusesTheSpokenWords: at least half the distinct words spoken must be in the rewrite. An
+    /// answer can be made of the question's words and still leave most of them out. Fillers, self-corrections and spoken
+    /// numbers drop some, never most, so the bar stays at a half. Takes under six words, and anything not in the latin
+    /// alphabet, are let through (#24).
+    /// </summary>
+    public static bool KeepsTheSpokenWords(string polished, string raw)
+    {
+        var polishedWords = LatinWords(polished)?.Where(word => !Fillers.Contains(word)).ToList();
+        var rawWords = LatinWords(raw)?.Where(word => !Fillers.Contains(word)).ToList();
+        if (polishedWords is null || rawWords is null || rawWords.Count < 6) return true;
+        var written = new HashSet<string>(polishedWords, StringComparer.Ordinal);
+        var spoken = new HashSet<string>(rawWords, StringComparer.Ordinal);
+        var kept = spoken.Count(written.Contains);
+        return (double)kept / spoken.Count >= 0.5;
     }
 
     /// <summary>
@@ -326,34 +364,37 @@ public static class TakeFormatter
     /// </summary>
     public static bool ReusesTheSpokenWords(string polished, string raw)
     {
-        static List<string>? Words(string text)
-        {
-            var pieces = new List<string>();
-            var current = new StringBuilder();
-            void Flush()
-            {
-                if (current.Length > 0) pieces.Add(current.ToString());
-                current.Clear();
-            }
-            foreach (var rune in text.ToLowerInvariant().EnumerateRunes())
-            {
-                var category = Rune.GetUnicodeCategory(rune);
-                var keeps = Rune.IsLetter(rune) || Rune.IsNumber(rune) || rune.Value == '\'' || rune.Value == '’'
-                    || category is UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark;
-                if (keeps) current.Append(rune.Value == '’' ? "'" : rune.ToString());
-                else Flush();
-            }
-            Flush();
-            var words = pieces.Where(piece => !piece.EnumerateRunes().Any(Rune.IsNumber)).ToList();
-            if (!words.All(word => word.All(character => character < 128))) return null;
-            return words;
-        }
-        var polishedWords = Words(polished);
-        var rawWords = Words(raw);
+        var polishedWords = LatinWords(polished);
+        var rawWords = LatinWords(raw);
         if (polishedWords is null || rawWords is null || polishedWords.Count < 3) return true;
         var spoken = new HashSet<string>(rawWords, StringComparer.Ordinal);
         var reused = polishedWords.Count(spoken.Contains);
         return (double)reused / polishedWords.Count >= 0.5;
+    }
+
+    /// <summary>The lower-cased words of <paramref name="text"/> without the ones holding digits (spoken "three hundred"
+    /// is written "300"); null when any word is outside the latin alphabet, where a script change changes every word.</summary>
+    private static List<string>? LatinWords(string text)
+    {
+        var pieces = new List<string>();
+        var current = new StringBuilder();
+        void Flush()
+        {
+            if (current.Length > 0) pieces.Add(current.ToString());
+            current.Clear();
+        }
+        foreach (var rune in text.ToLowerInvariant().EnumerateRunes())
+        {
+            var category = Rune.GetUnicodeCategory(rune);
+            var keeps = Rune.IsLetter(rune) || Rune.IsNumber(rune) || rune.Value == '\'' || rune.Value == '’'
+                || category is UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark;
+            if (keeps) current.Append(rune.Value == '’' ? "'" : rune.ToString());
+            else Flush();
+        }
+        Flush();
+        var words = pieces.Where(piece => !piece.EnumerateRunes().Any(Rune.IsNumber)).ToList();
+        if (!words.All(word => word.All(character => character < 128))) return null;
+        return words;
     }
 
     /// <summary>Runs `work`, giving up after `timeout` even if the work ignores its token.</summary>
