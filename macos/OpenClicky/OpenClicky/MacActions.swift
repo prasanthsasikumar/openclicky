@@ -105,7 +105,7 @@ enum MacActionOutcome: Equatable {
     var toolOutput: String {
         switch self {
         case .searched(let query, _):
-            return "The results for \(query) are on screen in the latest screenshot. Say what the first few are in one sentence."
+            return "The results for \(query) are on screen in the latest screenshot. If they asked for a fact (the weather, a score, a price), say that fact from the page; otherwise say what the first few results are. One sentence."
         case .unreadMail(let unread):
             guard !unread.isEmpty else { return spokenSentence }
             let lines = unread.map { "\($0.sender) — \($0.subject)" }.joined(separator: "\n")
@@ -740,7 +740,7 @@ extension MacAction {
             [
                 "type": "function",
                 "name": "web_search",
-                "description": "Search the web (or YouTube, Wikipedia, Google Maps, Amazon) for what the user said and show the results in their browser. Use for 'search for…', 'look up…', 'google…'.",
+                "description": "Search the web (or YouTube, Wikipedia, Google Maps, Amazon) for what the user said and show the results in their browser. Use for 'search for…', 'look up…', 'google…', and for live facts you cannot know: the weather, news, scores, prices, opening hours.",
                 "parameters": [
                     "type": "object",
                     "properties": [
