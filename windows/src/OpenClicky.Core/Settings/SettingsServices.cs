@@ -50,6 +50,9 @@ public interface ICompanionSettings : INotifyPropertyChanged
     bool IsAlwaysListening { get; }
     void SetAlwaysListening(bool isOn);
 
+    /// <summary>realtimeProviderChanged: shell.json's `realtimeProvider` changed, so reconnect with it.</summary>
+    void RealtimeProviderChanged();
+
     /// <summary>hudPlacement / setHUDPlacement.</summary>
     HUDPlacement HudPlacement { get; }
     void SetHudPlacement(HUDPlacement placement);
@@ -254,6 +257,8 @@ public sealed class DetachedCompanionSettings : ObservableObject, ICompanionSett
 
     public bool IsAlwaysListening => isAlwaysListening;
     public void SetAlwaysListening(bool isOn) => SetProperty(ref isAlwaysListening, isOn, nameof(IsAlwaysListening));
+
+    public void RealtimeProviderChanged() { }
 
     public HUDPlacement HudPlacement => hudPlacement;
     public void SetHudPlacement(HUDPlacement placement)

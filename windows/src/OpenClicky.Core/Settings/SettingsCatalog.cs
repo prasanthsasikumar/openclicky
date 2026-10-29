@@ -238,22 +238,40 @@ public sealed class SettingsCatalog
                 ["voice", "speech", "tts", "text to speech", "elevenlabs", "eleven labs", "kokoro", "offline", "on device",
                  "pc voice", "windows voice", "narrator", "credits", "allowance", "left"]),
         ];
-        // Fast voice and hands-free run on OpenAI Realtime, which only an own OpenAI key can use; a
-        // free account would see switches that do nothing, so it gets the way to a key instead.
+        // Fast voice and hands-free run on OpenAI Realtime or Gemini Live, which need an own OpenAI
+        // or Gemini key; a free account would see switches that do nothing, so it gets the way to
+        // a key instead.
         if (usesRealtime)
         {
-            items.Add(Item("clicky.fastVoice", "Fast voice", "Fast voice", "Talks back instantly, over OpenAI Realtime.",
-                ["realtime", "voice", "fast", "openai"]));
+            items.Add(Item("clicky.fastVoice", "Fast voice", "Fast voice", "Talks back instantly, over OpenAI Realtime or Gemini Live.",
+                ["realtime", "voice", "fast", "openai", "gemini", "live"]));
             items.Add(Item("clicky.alwaysListening", "Fast voice", "Always listening", "Hands-free: just talk, no keys. Needs fast voice.",
                 ["hands-free", "hands free", "always on", "listening"]));
+            // Only worth a choice when both can run here.
+            var credentials = ProviderCredentials.FromSettings(shellSettings());
+            if (credentials.GeminiKey is not null && (credentials.OpenAIKey is not null || credentials.AccountToken is not null))
+            {
+                items.Add(Item("clicky.realtimeProvider", "Fast voice", "Fast voice with", RealtimeProviderDetail,
+                    ["realtime", "gemini", "openai", "live", "provider", "fast voice", "hands-free"]));
+            }
         }
         else
         {
-            items.Add(Item("clicky.fastVoiceNeedsKey", "Fast voice", "Fast voice and hands-free", "Needs your own OpenAI key. A free account uses the standard voice.",
-                ["realtime", "voice", "fast", "hands-free", "always listening", "openai", "key"]));
+            items.Add(Item("clicky.fastVoiceNeedsKey", "Fast voice", "Fast voice and hands-free", "Needs your own OpenAI or Gemini key. A free account uses the standard voice.",
+                ["realtime", "voice", "fast", "hands-free", "always listening", "openai", "gemini", "key"]));
         }
         return items;
     }
+
+    public const string RealtimeProviderDetail = "Who talks back in fast voice and hands-free. Automatic is OpenAI, whose pointing is tuned best.";
+
+    /// <summary>The fast voice picker's choices (RealtimeProviderRow on the Mac): automatic, then each vendor.</summary>
+    public static IReadOnlyList<(string Id, string Title)> RealtimeProviderChoices { get; } =
+        [("auto", "Automatic"), ("openai", "OpenAI Realtime"), ("gemini", "Gemini Live")];
+
+    /// <summary>The picker's choice for a saved `realtimeProvider`; anything unknown shows as automatic.</summary>
+    public static string RealtimeProviderChoice(string? setting) =>
+        RawValues.FromRawValue<Speech.RealtimeVoiceProvider>(setting) is { } provider ? provider.RawValue() : "auto";
 
     // MARK: - The Orb (SettingsOrbPage.swift)
 
@@ -324,7 +342,7 @@ public sealed class SettingsCatalog
                 ["ctrl", "win", "windows key", "control windows", "voice", "ask", "companion"]),
             Item("keyboard.type", "Clicky", "Type to Clicky", "A one-line composer opens in the island.",
                 ["ctrl", "composer", "island", "text", "control twice"]),
-            // Hands-free runs on OpenAI Realtime, which needs an own OpenAI key: without one the key
+            // Hands-free runs on OpenAI Realtime or Gemini Live, which need an own key: without one the key
             // would do nothing, so it isn't listed (Voice says how to get it).
             Item("keyboard.handsFree", "Clicky", "Hands-free", "Always-on listening. Same keys to stop.",
                 ["always on", "realtime", "listening", "hands free"], () => usesRealtime),

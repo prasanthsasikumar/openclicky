@@ -168,9 +168,11 @@ enum OpenClickyConfiguration {
     /// token, the backend, or one of the user's own keys.
     static let credentialsChangedNotification = Notification.Name("openClickyCredentialsChanged")
 
-    /// What a live session was opened with. When this changes, the session is stale.
+    /// What a live session was opened with. When this changes, the session is stale. The Gemini
+    /// key and the fast voice pick are in it because either can move realtime to another vendor.
     nonisolated static func credentialFingerprint(of shellSettings: OpenClickyShellSettings) -> [String] {
-        [shellSettings.backendUrl, shellSettings.token, shellSettings.openaiApiKey ?? "", shellSettings.anthropicApiKey ?? ""]
+        [shellSettings.backendUrl, shellSettings.token, shellSettings.openaiApiKey ?? "", shellSettings.anthropicApiKey ?? "",
+         shellSettings.geminiApiKey ?? "", shellSettings.realtimeProvider ?? ""]
     }
 
     private static var settingsDirectoryWatcher: DispatchSourceFileSystemObject?

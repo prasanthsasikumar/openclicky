@@ -203,6 +203,10 @@ public sealed class FakeSpeechWebSocket : ISpeechWebSocket
     /// <summary>The server sends an event on an open socket.</summary>
     public void Receive(string serverEvent) => incoming.Writer.TryWrite(() => SpeechWebSocketMessage.FromText(serverEvent));
 
+    /// <summary>The server sends a binary frame of UTF-8 JSON, as Gemini Live sends every message.</summary>
+    public void ReceiveBinary(string serverMessage) =>
+        incoming.Writer.TryWrite(() => SpeechWebSocketMessage.FromBinary(System.Text.Encoding.UTF8.GetBytes(serverMessage)));
+
     /// <summary>The handshake is refused with <paramref name="statusCode"/>.</summary>
     public void Refuse(int statusCode)
     {

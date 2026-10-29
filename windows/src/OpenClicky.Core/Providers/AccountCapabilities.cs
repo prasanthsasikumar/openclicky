@@ -10,20 +10,23 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Speech;
 
 namespace OpenClicky.Core.Providers;
 
 public enum AccountKind { OwnKeys, Account, SignedOut }
 
-public sealed record AccountCapabilities(AccountKind Kind)
+/// <param name="OwnRealtimeKey">A key that runs realtime voice on its own (a Gemini key), whatever the account says.</param>
+public sealed record AccountCapabilities(AccountKind Kind, bool OwnRealtimeKey = false)
 {
     public static AccountCapabilities Current(OpenClickyShellSettings? settings = null, Preferences? preferences = null)
     {
         settings ??= OpenClickyConfiguration.Settings;
         preferences ??= Preferences.Shared;
         var signedIn = settings.Token.Trim().Length > 0;
-        return new AccountCapabilities(KindFor(
-            OpenClickyConfiguration.UsesOwnKeysFor(settings), signedIn, preferences.GetString(AccountProfileStore.PlanKey)));
+        return new AccountCapabilities(
+            KindFor(OpenClickyConfiguration.UsesOwnKeysFor(settings), signedIn, preferences.GetString(AccountProfileStore.PlanKey)),
+            RealtimeVoiceProviders.HasOwnKey(ProviderCredentials.FromSettings(settings)));
     }
 
     /// <summary>
@@ -38,7 +41,8 @@ public sealed record AccountCapabilities(AccountKind Kind)
         return plan == "grant" ? AccountKind.Account : AccountKind.OwnKeys;
     }
 
-    public bool UsesRealtime => Kind == AccountKind.OwnKeys;
+    /// <summary>Fast voice and hands-free: own keys (OpenAI, or an account on its own keys), or a Gemini key.</summary>
+    public bool UsesRealtime => Kind == AccountKind.OwnKeys || OwnRealtimeKey;
     public bool UsesAgent => Kind == AccountKind.OwnKeys;
     public bool HearsOnDevice => Kind != AccountKind.OwnKeys;
     public string PolishPath => Kind == AccountKind.OwnKeys ? "/v1/chat/completions" : "/v1/polish";

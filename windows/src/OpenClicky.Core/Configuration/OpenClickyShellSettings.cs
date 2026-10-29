@@ -69,6 +69,10 @@ public sealed class OpenClickyShellSettings
     /// <summary>Who answers questions: null or "auto" picks in ProviderRouter's order; else an AnswerSource raw value.</summary>
     [JsonPropertyName("answerSource")] public string? AnswerSource { get; set; }
 
+    /// <summary>Who runs the fast voice lane and hands-free (RealtimeVoiceProvider): null or "auto" uses
+    /// OpenAI when its key is set, else Gemini; "openai" or "gemini" picks one.</summary>
+    [JsonPropertyName("realtimeProvider")] public string? RealtimeProvider { get; set; }
+
     /// <summary>Model overrides per provider ("openrouter": "anthropic/claude-sonnet-4.6").</summary>
     [JsonPropertyName("answerModels")] public Dictionary<string, string>? AnswerModels { get; set; }
 

@@ -1,7 +1,7 @@
 // Ports Dictation/UI/SettingsClickyPage.swift: Settings → Clicky (who answers and the Claude model,
 // the pointer, agent mode and its workspace) and Settings → Voice (the language Clicky speaks and
-// listens in, who speaks the answers with Kokoro's and this PC's own rows, fast voice and
-// hands-free). The voice picker's rules come from ISettingsServices (SpeechVoiceChoice); this PC's
+// listens in, who speaks the answers with Kokoro's and this PC's own rows, fast voice, hands-free
+// and who runs them). The voice picker's rules come from ISettingsServices (SpeechVoiceChoice); this PC's
 // voice is Windows' own (ISystemVoice), the Mac voice's twin.
 
 using System.IO;
@@ -134,6 +134,14 @@ internal sealed partial class SettingsRowFactory
                 return CompanionToggle(item, query, () => companion.IsRealtimeVoiceEnabled, companion.SetRealtimeVoiceEnabled, nameof(ICompanionSettings.IsRealtimeVoiceEnabled));
             case "clicky.alwaysListening":
                 return CompanionToggle(item, query, () => companion.IsAlwaysListening, companion.SetAlwaysListening, nameof(ICompanionSettings.IsAlwaysListening));
+            case "clicky.realtimeProvider":
+                return new LiveContent(() => Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Picker(SettingsCatalog.RealtimeProviderChoices, SettingsCatalog.RealtimeProviderChoice(OpenClickyConfiguration.Settings.RealtimeProvider), choice =>
+                    {
+                        OpenClickyConfiguration.Update(shell => shell.RealtimeProvider = choice == "auto" ? null : choice);
+                        ShellSettingsRevision.NoteChanged();
+                        companion.RealtimeProviderChanged();
+                    }, 170))), Changes.Shell);
             case "clicky.fastVoiceNeedsKey":
                 return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Add Key…", () => actions.ShowSettings(DictationSettingsPage.Keys))));
             default:
