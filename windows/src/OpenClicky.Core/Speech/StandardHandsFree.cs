@@ -169,7 +169,66 @@ public static class HandsFreeSignOff
         "we're done", "that'll be all", "that will be all", "thanks that's all", "thank you that's all",
     ];
 
+    /// <summary>Politeness around a sign-off that does not change it: "okay, that's all I need for now" is "that's all
+    /// I need" (a tester's goodbye that kept hands-free on, 2026-10-29). Only whole words at either end are dropped, so
+    /// "that's all I needed to know about refraction" still is not one.</summary>
+    private static readonly string[][] LeadingFiller =
+    [
+        ["okay"], ["ok"], ["alright"], ["all", "right"], ["right"], ["cool"], ["great"], ["perfect"], ["awesome"],
+        ["thanks"], ["thank", "you"], ["so"], ["well"], ["yeah"], ["yes"], ["hey"], ["clicky"],
+    ];
+
+    private static readonly string[][] TrailingFiller =
+    [
+        ["for", "now"], ["for", "today"], ["now"], ["then"], ["thanks"], ["thank", "you"], ["clicky"], ["bye"],
+    ];
+
     public static bool IsSignOff(string transcript)
+    {
+        var words = Words(transcript);
+        if (words.Count == 0) return false;
+        if (Phrases.Contains(string.Join(' ', words))) return true;
+        // Peel filler off both ends, one piece at a time, checking after each.
+        var start = 0;
+        var end = words.Count;
+        var peeled = true;
+        while (peeled && start < end)
+        {
+            peeled = false;
+            if (StartsWith(words, start, end, LeadingFiller) is { } leading)
+            {
+                start += leading;
+                peeled = true;
+            }
+            else if (EndsWith(words, start, end, TrailingFiller) is { } trailing)
+            {
+                end -= trailing;
+                peeled = true;
+            }
+            if (peeled && start < end && Phrases.Contains(string.Join(' ', words.Skip(start).Take(end - start)))) return true;
+        }
+        return false;
+    }
+
+    private static int? StartsWith(List<string> words, int start, int end, string[][] fillers)
+    {
+        foreach (var filler in fillers)
+        {
+            if (end - start > filler.Length && words.Skip(start).Take(filler.Length).SequenceEqual(filler)) return filler.Length;
+        }
+        return null;
+    }
+
+    private static int? EndsWith(List<string> words, int start, int end, string[][] fillers)
+    {
+        foreach (var filler in fillers)
+        {
+            if (end - start > filler.Length && words.Skip(end - filler.Length).Take(filler.Length).SequenceEqual(filler)) return filler.Length;
+        }
+        return null;
+    }
+
+    private static List<string> Words(string transcript)
     {
         var words = new List<string>();
         var word = new StringBuilder();
@@ -184,6 +243,6 @@ public static class HandsFreeSignOff
             word.Clear();
         }
         if (word.Length > 0) words.Add(word.ToString());
-        return Phrases.Contains(string.Join(' ', words));
+        return words;
     }
 }

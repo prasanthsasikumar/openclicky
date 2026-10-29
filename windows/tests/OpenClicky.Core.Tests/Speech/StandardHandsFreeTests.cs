@@ -91,6 +91,22 @@ public class StandardHandsFreeTests
         Assert.False(HandsFreeSignOff.IsSignOff("that's all I needed to know about refraction, now explain lenses"));
     }
 
+    /// <summary>A tester said "Okay, that's all I need for now" and hands-free stayed on (2026-10-29): polite words
+    /// around a sign-off do not hide it, but they never turn something else into one.</summary>
+    [Fact]
+    public void PoliteWordsAroundASignOffStillEndIt()
+    {
+        Assert.True(HandsFreeSignOff.IsSignOff("Okay, that's all I need for now."));
+        Assert.True(HandsFreeSignOff.IsSignOff("Okay that's all I need now"));
+        Assert.True(HandsFreeSignOff.IsSignOff("Alright, thanks, that's it for today."));
+        Assert.True(HandsFreeSignOff.IsSignOff("Great, stop listening, Clicky."));
+        Assert.True(HandsFreeSignOff.IsSignOff("Perfect. Okay bye, thank you."));
+        Assert.False(HandsFreeSignOff.IsSignOff("Okay"));
+        Assert.False(HandsFreeSignOff.IsSignOff("Okay, thanks"));
+        Assert.False(HandsFreeSignOff.IsSignOff("Okay, stop the music for now"));
+        Assert.False(HandsFreeSignOff.IsSignOff("Okay, what's that button for now?"));
+    }
+
     [Fact]
     public void ListensOnlyWhenIdleAndQuietLongEnough()
     {
