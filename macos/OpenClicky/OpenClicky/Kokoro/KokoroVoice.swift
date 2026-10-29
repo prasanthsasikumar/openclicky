@@ -168,33 +168,6 @@ final class KokoroVoice: ObservableObject {
     }
 
 
-    // MARK: Automatic setup
-
-    /// Set when the person removed Kokoro or cancelled its download: it is never fetched again on
-    /// its own (picking it in Settings clears this).
-    nonisolated static let declinedKey = "openclicky.kokoro.declined"
-
-    /// At launch and when the welcome tour ends: once setup is done, Kokoro downloads in the
-    /// background, and when it is ready it becomes the voice (if the voice was left on Automatic),
-    /// so answers stop spending the free ElevenLabs characters. Nothing is loaded here: that waits
-    /// for the first question (`prepareForAnswer`).
-    func startAutomaticSetup(tourIsFinished: Bool) {
-        guard !Self.isInstalled else { return }
-        guard tourIsFinished, downloadTask == nil,
-              !UserDefaults.standard.bool(forKey: Self.declinedKey),
-              Self.speaker(forLanguage: ReplyLanguage.currentCode, picked: nil) != nil,
-              ModelDownload.freeSpace() >= ModelDownload.automaticDownloadFreeSpace else { return }
-        Task {
-            // Not on a phone hotspot or a metered connection: it tries again next launch.
-            if await ModelDownload.networkIsExpensiveOrConstrained() {
-                AppLog.append("kokoro: automatic download waits for an unmetered network")
-                return
-            }
-            AppLog.append("kokoro: automatic download started")
-            download(isAutomatic: true)
-        }
-    }
-
     /// Loads the model and speaks one throwaway word, so the first real answer starts at once.
     func warmUpIfSpeaking() {
         guard Self.isInstalled, SpeechVoiceChoice.current() == .kokoro else { return }
@@ -205,19 +178,12 @@ final class KokoroVoice: ObservableObject {
         }
     }
 
-    /// The decision once an automatic download finishes: Kokoro takes over from Automatic; a voice
-    /// the person picked themselves is left alone.
-    nonisolated static func voiceAfterAutomaticDownload(stored: String?, languageCode: String) -> String? {
-        guard SpeechVoiceChoice(stored: stored) == .automatic, speaker(forLanguage: languageCode, picked: nil) != nil else { return stored }
-        return SpeechVoiceChoice.kokoro.rawValue
-    }
-
     // MARK: Download
 
     /// Downloads, checks and unpacks Kokoro; does nothing while a download runs or once installed.
-    /// Picking Kokoro in Settings calls this; so does the automatic setup.
-    func download(isAutomatic: Bool = false) {
-        if !isAutomatic { UserDefaults.standard.set(false, forKey: Self.declinedKey) }
+    /// Only picking Kokoro in Settings calls this: account answers speak with ElevenLabs, so Kokoro
+    /// is never fetched on its own.
+    func download() {
         guard downloadTask == nil, !Self.isInstalled else {
             if Self.isInstalled { state = .installed }
             return
@@ -235,15 +201,6 @@ final class KokoroVoice: ObservableObject {
                 guard Self.isInstalled else { throw ModelDownloadError.unpackFailed("the files weren't where they should be") }
                 AppLog.append("kokoro: installed")
                 self?.state = .installed
-                if isAutomatic {
-                    let settings = OpenClickyConfiguration.settings
-                    let voice = Self.voiceAfterAutomaticDownload(stored: settings.speechVoice, languageCode: ReplyLanguage.currentCode)
-                    if voice != settings.speechVoice {
-                        OpenClickyConfiguration.update { $0.speechVoice = voice }
-                        ShellSettingsRevision.shared.noteChanged()
-                        AppLog.append("kokoro: now the voice")
-                    }
-                }
             } catch where error is CancellationError || (error as? URLError)?.code == .cancelled {
                 self?.state = .notInstalled
             } catch {
@@ -254,15 +211,12 @@ final class KokoroVoice: ObservableObject {
         }
     }
 
-    /// A cancelled download is a no: it isn't started again on its own.
     func cancelDownload() {
-        UserDefaults.standard.set(true, forKey: Self.declinedKey)
         downloadTask?.cancel()
     }
 
     /// Deletes the download and unloads the model.
     func remove() {
-        UserDefaults.standard.set(true, forKey: Self.declinedKey)
         downloadTask?.cancel()
         engine.unload()
         try? FileManager.default.removeItem(at: Self.folder)

@@ -50,11 +50,11 @@ enum SpeechVoiceChoice: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Automatic's order: own keys first (the person chose to pay for them), then Kokoro once it is
-    /// downloaded (free, offline, and it saves the free ElevenLabs characters for those without
-    /// it), then the free voice, then this Mac. Gemini comes last of the keys: its voice takes about
+    /// Automatic's order: own keys first (the person chose to pay for them), then the account's
+    /// ElevenLabs voice (FlowsXR's grant pays for it, with a generous monthly allowance), then Kokoro
+    /// if someone downloaded it, then this Mac. Gemini comes last of the keys: its voice takes about
     /// four seconds a sentence.
-    static let automaticOrder: [SpeechVoiceChoice] = [.openAI, .elevenLabs, .google, .polly, .sarvam, .gemini, .kokoro, .account, .mac]
+    static let automaticOrder: [SpeechVoiceChoice] = [.openAI, .elevenLabs, .google, .polly, .sarvam, .gemini, .account, .kokoro, .mac]
 
     /// Whether this voice can speak right now in `languageCode` with these settings.
     static func canSpeak(_ choice: SpeechVoiceChoice, settings: OpenClickyShellSettings, hasAccount: Bool,

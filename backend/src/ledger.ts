@@ -38,12 +38,13 @@ export function limitsFromEnv(env: Env): Limits {
     // ACCOUNT_DAILY_USD still sets one; 0 (or unset) means none.
     dailyMicro: usd(env.ACCOUNT_DAILY_USD, 0),
     globalMonthlyMicro: usd(env.GLOBAL_MONTHLY_BUDGET_USD, 1000),
-    ttsCharsMonthly: integer(env.ACCOUNT_MONTHLY_TTS_CHARS, 20_000),
+    // FlowsXR's ElevenLabs grant (33M characters to 2027-10-29) pays for the account voice, so it is
+    // generous: 200,000 characters is about three and a half hours spoken a month.
+    ttsCharsMonthly: integer(env.ACCOUNT_MONTHLY_TTS_CHARS, 200_000),
     guestTotalMicro: usd(env.GUEST_TOTAL_USD, 1),
     guestDays: integer(env.GUEST_DAYS, 14),
-    // OpenAI speaks once the shared ElevenLabs plan is used, at about $0.015 a spoken minute: 10,000
-    // characters (about ten minutes) is a few cents a guest, and 2,000 ran out within one evening.
-    guestTtsChars: integer(env.GUEST_TTS_CHARS, 10_000),
+    // Guests get about half an hour spoken before confirming; OpenAI speaks once the grant pool is used.
+    guestTtsChars: integer(env.GUEST_TTS_CHARS, 30_000),
   };
 }
 

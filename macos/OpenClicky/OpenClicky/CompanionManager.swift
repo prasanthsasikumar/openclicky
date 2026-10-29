@@ -1061,10 +1061,9 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    /// The models that download on their own once the welcome tour is done: Kokoro's voice and
-    /// Parakeet's hearing.
+    /// The model that downloads on its own once the welcome tour is done: Parakeet's hearing.
+    /// Kokoro waits to be picked: account answers speak with ElevenLabs.
     func startAutomaticModelDownloads(tourIsFinished: Bool) {
-        KokoroVoice.shared.startAutomaticSetup(tourIsFinished: tourIsFinished)
         ParakeetDictation.shared.startAutomaticSetup(tourIsFinished: tourIsFinished, engine: dictationSettings.engine,
                                                      bareLanguageCode: dictationSettings.language.bareCode)
     }

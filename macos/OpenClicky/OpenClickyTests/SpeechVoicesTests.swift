@@ -33,8 +33,8 @@ struct SpeechVoicesTests {
         }
         #expect(resolve(settings()) == .mac)
         #expect(resolve(settings(), kokoro: true) == .kokoro)
-        // Kokoro, once downloaded, saves the free voice's characters.
-        #expect(resolve(settings(), account: true, kokoro: true) == .kokoro)
+        // The account's ElevenLabs voice comes before Kokoro, even once Kokoro is downloaded.
+        #expect(resolve(settings(), account: true, kokoro: true) == .account)
         #expect(resolve(settings(), account: true) == .account)
         #expect(resolve(settings { $0.sarvamKey = "s" }, account: true) == .sarvam)
         #expect(resolve(settings { $0.geminiApiKey = "g"; $0.sarvamKey = "s" }) == .sarvam)
@@ -56,13 +56,6 @@ struct SpeechVoicesTests {
         #expect(SpeechVoiceChoice.resolve(settings: pickedSarvam, hasAccount: false, kokoroInstalled: false, languageCode: "ta") == .sarvam)
     }
 
-    @Test func anAutomaticDownloadMakesKokoroTheVoiceOnlyWhereNobodyPickedOne() {
-        #expect(KokoroVoice.voiceAfterAutomaticDownload(stored: nil, languageCode: "en") == "kokoro")
-        #expect(KokoroVoice.voiceAfterAutomaticDownload(stored: "cloud", languageCode: "en") == "kokoro")
-        #expect(KokoroVoice.voiceAfterAutomaticDownload(stored: "openai", languageCode: "en") == "openai")
-        #expect(KokoroVoice.voiceAfterAutomaticDownload(stored: "mac", languageCode: "en") == "mac")
-        #expect(KokoroVoice.voiceAfterAutomaticDownload(stored: nil, languageCode: "ta") == nil)
-    }
 
     @Test func kokoroInALanguageItDoesntSpeakCarriesOnAsAutomatic() {
         let kokoro = settings { $0.speechVoice = "kokoro" }
