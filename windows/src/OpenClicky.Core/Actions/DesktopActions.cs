@@ -143,7 +143,7 @@ public abstract record DesktopActionOutcome
     /// </summary>
     public string ToolOutput => this switch
     {
-        Searched searched => $"The results for {searched.Query} are on screen in the latest screenshot. Say what the first few are in one sentence.",
+        Searched searched => $"The results for {searched.Query} are on screen in the latest screenshot. If they asked for a fact (the weather, a score, a price), say that fact from the page; otherwise say what the first few results are. One sentence.",
         OpenedInbox inbox => $"{inbox.App.Title()}'s inbox is open and attached as the latest screenshot. Unread rows are in bold. Read out sender and subject of the unread ones briefly, newest first, at most five, then stop.",
         DraftedEmail => SpokenSentence + " If they ask you to send it, say you never send email and that it is open in front of them.",
         WindowAppNotRunning => SpokenSentence + " Call open_app if they want it opened.",
@@ -396,7 +396,7 @@ public abstract record DesktopAction
                      new JsonObject { ["action"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("playpause", "next", "previous", "pause", "play") } },
                      "action"),
             Function(WebSearchToolName,
-                     "Search the web (or YouTube, Wikipedia, Google Maps, Amazon) for what the user said and show the results in their browser. Use for 'search for…', 'look up…', 'google…'.",
+                     "Search the web (or YouTube, Wikipedia, Google Maps, Amazon) for what the user said and show the results in their browser. Use for 'search for…', 'look up…', 'google…', and for live facts you cannot know: the weather, news, scores, prices, opening hours.",
                      new JsonObject
                      {
                          ["query"] = new JsonObject { ["type"] = "string", ["description"] = "What to search for, as the user said it." },
