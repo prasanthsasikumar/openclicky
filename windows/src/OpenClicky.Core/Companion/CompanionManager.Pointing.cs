@@ -54,6 +54,9 @@ public sealed partial class CompanionManager
         // The spinner (processing) hides the triangle, so the flight would be invisible.
         if (VoiceState == CompanionVoiceState.Processing) VoiceState = CompanionVoiceState.Idle;
         Overlay.PointAt(location, FrameOf(capture), label);
+        // A guide checks the click that finishes this step against it.
+        guidedStepPointedLocation = location;
+        guidedStepPointedScale = capture.DisplayScale;
         AppLog.Write($"point: ({screenshotPoint.X:0}, {screenshotPoint.Y:0}) → \"{label?.Trim() ?? "element"}\"");
     }
 

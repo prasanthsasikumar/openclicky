@@ -7,6 +7,11 @@
 // it asks again on its own with a fresh screenshot, and the reply is the next step, until a reply
 // comes without the marker.
 //
+// The click that finishes a step is checked against where the pointer pointed for it. One far from
+// it ("off target") gets a caption at once and a different "what's next?", asking the model to
+// check the new screen and point back if need be. It is a hint, never a block: the pointed spot is
+// approximate. Return and Tab have no position, so they count as unknown.
+//
 // Clicks and keys are watched only while a guide waits for a step. On the Mac that is a
 // listen-only global NSEvent monitor; on Windows the OS side implements `IGuidedStepInputSource`
 // (low-level mouse/keyboard hooks, listen-only, ignoring OpenClicky's own windows) and maps each
@@ -14,6 +19,7 @@
 // of nothing, or the step limit end the guide.
 
 using System.Text.RegularExpressions;
+using OpenClicky.Core.Pointing;
 
 namespace OpenClicky.Core.Answers;
 
@@ -79,12 +85,67 @@ public static class GuidedStepRules
 
     /// <summary>How OpenClicky's own question starts, as the ask prompt describes it.</summary>
     public const string NextStepRequestOpening = "(i did that step. this is my screen now. what's next?";
+    /// <summary>How it starts instead when the click landed far from where the pointer pointed.</summary>
+    public const string OffTargetRequestOpening = "(i clicked about";
 
     /// <summary>
     /// The question OpenClicky asks for the person once they did a step. It repeats what they first
-    /// asked, because the conversation keeps only the last ten exchanges.
+    /// asked, because the conversation keeps only the last ten exchanges. A click that was off target
+    /// says how far off, so the model checks the new screen before going on.
     /// </summary>
-    public static string NextStepRequest(string guideGoal) => NextStepRequestOpening + " what i asked was: " + guideGoal + ")";
+    public static string NextStepRequest(string guideGoal, GuidedStepClickCheck.Verdict? clickCheck = null)
+    {
+        if (clickCheck is GuidedStepClickCheck.Verdict.OffTarget offTarget)
+        {
+            return OffTargetRequestOpening + $" {offTarget.PointsAway} points away from where you pointed. this is my screen now. "
+                + "check whether that was the right thing; if not, gently point me back. what i asked was: " + guideGoal + ")";
+        }
+        return NextStepRequestOpening + " what i asked was: " + guideGoal + ")";
+    }
+}
+
+/// <summary>
+/// Was the click that finished a step where the pointer pointed? Pointing is 30 to 100 points off
+/// at times (see ScreenTextLocator), so only a click well beyond that counts as off target, and even
+/// then it is only a hint to the model.
+/// </summary>
+public static class GuidedStepClickCheck
+{
+    /// <summary>Farther than this from the pointed spot (points: DIPs on Windows) is off target.</summary>
+    public const double OffTargetDistance = 120;
+    public const string OffTargetCaption = "that wasn't the spot i pointed at, let me look";
+
+    public abstract record Verdict
+    {
+        private Verdict() { }
+
+        /// <summary>No click (Return or Tab finished the step) or nothing was pointed at.</summary>
+        public sealed record Unknown : Verdict;
+        public sealed record OnTarget : Verdict;
+        /// <summary>About this many points away, rounded to ten.</summary>
+        public sealed record OffTarget(int PointsAway) : Verdict;
+    }
+
+    /// <summary>
+    /// Both points in the same space: global physical pixels on Windows (the Mac's were AppKit
+    /// points). <paramref name="pixelsPerPoint"/> is the scale of the monitor the pointer pointed on,
+    /// so the threshold and the distance said are in points, as on the Mac, whatever the DPI.
+    /// </summary>
+    public static Verdict Check(ScreenPoint? pointedAt, ScreenPoint? clickedAt, double pixelsPerPoint = 1, double threshold = OffTargetDistance)
+    {
+        if (pointedAt is not { } pointed || clickedAt is not { } clicked) return new Verdict.Unknown();
+        var distance = Math.Sqrt(Math.Pow(clicked.X - pointed.X, 2) + Math.Pow(clicked.Y - pointed.Y, 2)) / Math.Max(pixelsPerPoint, 0.01);
+        if (distance <= threshold) return new Verdict.OnTarget();
+        return new Verdict.OffTarget((int)Math.Round(distance / 10, MidpointRounding.AwayFromZero) * 10);
+    }
+
+    /// <summary>For the log: "on target", "off target by 180", "unknown".</summary>
+    public static string Describe(Verdict verdict) => verdict switch
+    {
+        Verdict.OnTarget => "on target",
+        Verdict.OffTarget offTarget => $"off target by {offTarget.PointsAway}",
+        _ => "unknown",
+    };
 }
 
 /// <summary>Maps Windows input to a GuidedStepInput (the Mac read NSEvent key codes 36/76/48/53).</summary>
@@ -112,8 +173,11 @@ public static class GuidedStepInputMapping
 /// </summary>
 public interface IGuidedStepInputSource
 {
-    /// <summary>Raised for each input while started; may be raised on any thread.</summary>
-    event Action<GuidedStepInput>? InputReceived;
+    /// <summary>
+    /// Raised for each input while started; may be raised on any thread. A click comes with where it
+    /// landed (global physical pixels); a key with null.
+    /// </summary>
+    event Action<GuidedStepInput, ScreenPoint?>? InputReceived;
     void Start();
     void Stop();
 }
@@ -133,15 +197,18 @@ public sealed class GuidedStepWatcher
     public static string Describe(EndReason reason) => reason == EndReason.Escape ? "escape" : "gave up";
 
     private readonly IGuidedStepInputSource inputSource;
-    private readonly Action onStepDone;
+    /// <summary>Called with where the click that finished the step landed (global physical pixels), or null when Return or Tab finished it.</summary>
+    private readonly Action<ScreenPoint?> onStepDone;
     private readonly Action<EndReason> onEnded;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly object gate = new();
     private bool isWatching;
     private CancellationTokenSource? pendingAsk;
     private CancellationTokenSource? idleTimeout;
+    /// <summary>The last click while this step waited; Return or Tab after it clears it (no position).</summary>
+    private ScreenPoint? lastClickLocation;
 
-    public GuidedStepWatcher(IGuidedStepInputSource inputSource, Action onStepDone, Action<EndReason> onEnded,
+    public GuidedStepWatcher(IGuidedStepInputSource inputSource, Action<ScreenPoint?> onStepDone, Action<EndReason> onEnded,
                              Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
         this.inputSource = inputSource;
@@ -181,7 +248,7 @@ public sealed class GuidedStepWatcher
         }
     }
 
-    private void Handle(GuidedStepInput input)
+    private void Handle(GuidedStepInput input, ScreenPoint? clickLocation)
     {
         CancellationTokenSource askToken;
         double settleSeconds;
@@ -189,6 +256,8 @@ public sealed class GuidedStepWatcher
         lock (gate)
         {
             if (!isWatching) return;
+            if (input == GuidedStepInput.Click) lastClickLocation = clickLocation;
+            else if (input == GuidedStepInput.StepKey) lastClickLocation = null;
             reaction = GuidedStepRules.Reaction(input, askIsPending: pendingAsk != null);
             switch (reaction)
             {
@@ -216,8 +285,10 @@ public sealed class GuidedStepWatcher
         }
         _ = RunAfter(TimeSpan.FromSeconds(settleSeconds), askToken.Token, () =>
         {
+            ScreenPoint? finishingClick;
+            lock (gate) finishingClick = lastClickLocation;
             Stop();
-            onStepDone();
+            onStepDone(finishingClick);
         });
     }
 

@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Pointing;
 using OpenClicky.Windows.Platform;
 using static OpenClicky.Windows.Platform.NativeMethods;
 
@@ -24,7 +25,7 @@ public sealed class GuidedStepInputSource : IGuidedStepInputSource, IDisposable
     private LowLevelKeyboardProc? mouseProcedure;
     private nint mouseHook;
 
-    public event Action<GuidedStepInput>? InputReceived;
+    public event Action<GuidedStepInput, ScreenPoint?>? InputReceived;
 
     public GuidedStepInputSource(IGlobalKeyboardMonitor keyboardMonitor)
     {
@@ -70,7 +71,9 @@ public sealed class GuidedStepInputSource : IGuidedStepInputSource, IDisposable
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 if (IsOwnWindow(WindowFromPoint(point))) return;
-                InputReceived?.Invoke(GuidedStepInputMapping.ForLeftMouseUp());
+                // The hook's point is in physical pixels (the process is per-monitor DPI aware), the
+                // space the pointer's own spot is kept in, so the two can be compared.
+                InputReceived?.Invoke(GuidedStepInputMapping.ForLeftMouseUp(), new ScreenPoint(point.X, point.Y));
             });
         }
         return CallNextHookEx(0, code, message, data);
@@ -80,7 +83,7 @@ public sealed class GuidedStepInputSource : IGuidedStepInputSource, IDisposable
     {
         if (!keyEvent.IsDown || keyEvent.IsRepeat) return;
         if (IsOwnWindow(GetForegroundWindow())) return;
-        InputReceived?.Invoke(GuidedStepInputMapping.ForKeyDown(keyEvent.VirtualKey));
+        InputReceived?.Invoke(GuidedStepInputMapping.ForKeyDown(keyEvent.VirtualKey), null);
     }
 
     private bool IsOwnWindow(nint window)

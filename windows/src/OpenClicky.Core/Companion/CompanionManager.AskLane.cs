@@ -87,6 +87,7 @@ public sealed partial class CompanionManager
             guidedStepsGivenSoFar = 0;
             guidedStepGoal = transcript;
         }
+        guidedStepPointedLocation = null;
         var cancellation = new CancellationTokenSource();
         currentResponseCancellation = cancellation;
         IsAskInFlight = true;
@@ -506,6 +507,13 @@ public sealed partial class CompanionManager
     private GuidedStepWatcher? guidedStepWatcher;
     /// <summary>What the person asked that started the guide, repeated in every "what's next?".</summary>
     private string guidedStepGoal = "";
+    /// <summary>
+    /// Where the pointer last pointed for the answer under way (global physical pixels), and the
+    /// scale of that monitor, so the click that finishes a step can be checked against it. Cleared
+    /// with each new request.
+    /// </summary>
+    private ScreenPoint? guidedStepPointedLocation;
+    private double guidedStepPointedScale = 1;
 
     /// <summary>The reply was one step of a guide: once the person does it, ask for the next on a fresh screenshot.</summary>
     private void WaitForTheGuidedStepToBeDone()
@@ -521,12 +529,14 @@ public sealed partial class CompanionManager
         GuidedStepWatcher? watcher = null;
         watcher = new GuidedStepWatcher(
             services.GuidedStepInput,
-            onStepDone: () => services.MainThread.Post(() =>
+            onStepDone: clickLocation => services.MainThread.Post(() =>
             {
                 if (guidedStepWatcher != watcher) return;
-                AppLog.Write($"guide: step {guidedStepsGivenSoFar} done, asking for the next");
+                var clickCheck = GuidedStepClickCheck.Check(guidedStepPointedLocation, clickLocation, guidedStepPointedScale);
+                AppLog.Write($"guide: step {guidedStepsGivenSoFar} done ({GuidedStepClickCheck.Describe(clickCheck)}), asking for the next");
                 guidedStepWatcher = null;
-                SendTranscriptToClaudeWithScreenshot(GuidedStepRules.NextStepRequest(guidedStepGoal), isGuidedStepContinuation: true);
+                if (clickCheck is GuidedStepClickCheck.Verdict.OffTarget) ShowAskCaption(GuidedStepClickCheck.OffTargetCaption, 4);
+                SendTranscriptToClaudeWithScreenshot(GuidedStepRules.NextStepRequest(guidedStepGoal, clickCheck), isGuidedStepContinuation: true);
             }),
             onEnded: reason => services.MainThread.Post(() =>
             {
