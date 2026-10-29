@@ -75,6 +75,18 @@ struct TakeFormatterTests {
         #expect(TakeFormatter.reusesTheSpokenWords("namaste aap kaise hain", raw: "नमस्ते आप कैसे हैं"))
     }
 
+    /// Apple's model answered dictated questions in their own words (2026-10-29, Terminal).
+    @Test func anAnswerToASpokenQuestionIsRejected() {
+        #expect(!TakeFormatter.looksLikeTheSameTake("We need 10 files of recommendations. We have 10 files of recommendations.", raw: "How many files of recommendations do we need? And how many have we gotten so far?"))
+        #expect(!TakeFormatter.looksLikeTheSameTake("We need 10 files of recommendations and we have 8. There are 2 missing.", raw: "How many files of recommendations do we need and how many do we have and how many are missing?"))
+        #expect(TakeFormatter.looksLikeTheSameTake("How many files of recommendations do we need, and how many have we gotten so far?", raw: "How many files of recommendations do we need? And how many have we gotten so far?"))
+        #expect(TakeFormatter.looksLikeTheSameTake("Why is the build failing on CI?", raw: "why is the build failing on CI"))
+        // "When" and "where" open statements as often as questions.
+        #expect(TakeFormatter.looksLikeTheSameTake("When I click the Instant Ink section, it says \"Finish printer setup\".", raw: "When I click the instant ink section it says finish printer setup"))
+        // An answer that leaves most of the spoken words out, question mark or not.
+        #expect(!TakeFormatter.keepsTheSpokenWords("We need files of recommendations.", raw: "tell me how many files of recommendations we need and how many have we gotten so far"))
+    }
+
     /// A reply cut off at the model's token limit comes back about half as long; its words can
     /// still pass the word-count check (Malayalam, or Japanese with no spaces at all) (F-39).
     @Test func aRewriteCutToHalfItsLengthIsRejected() {

@@ -7,12 +7,12 @@ const now = new Date("2026-10-08T10:00:00Z");
 
 describe("limitsFromEnv", () => {
   it("reads dollars and defaults to the spec's numbers", () => {
-    expect(limitsFromEnv({})).toEqual({ ...limits, dailyMicro: 0, guestTtsChars: 10_000 });
+    expect(limitsFromEnv({})).toEqual({ ...limits, dailyMicro: 0, ttsCharsMonthly: 200_000, guestTtsChars: 30_000 });
     expect(limitsFromEnv({ ACCOUNT_DAILY_USD: "5" }).dailyMicro).toBe(5_000_000);
   });
-  it("falls back to 20000 for invalid ACCOUNT_MONTHLY_TTS_CHARS", () => {
-    expect(limitsFromEnv({ ACCOUNT_MONTHLY_TTS_CHARS: "abc" }).ttsCharsMonthly).toBe(20_000);
-    expect(limitsFromEnv({ ACCOUNT_MONTHLY_TTS_CHARS: "" }).ttsCharsMonthly).toBe(20_000);
+  it("falls back to 200000 for invalid ACCOUNT_MONTHLY_TTS_CHARS", () => {
+    expect(limitsFromEnv({ ACCOUNT_MONTHLY_TTS_CHARS: "abc" }).ttsCharsMonthly).toBe(200_000);
+    expect(limitsFromEnv({ ACCOUNT_MONTHLY_TTS_CHARS: "" }).ttsCharsMonthly).toBe(200_000);
   });
 });
 

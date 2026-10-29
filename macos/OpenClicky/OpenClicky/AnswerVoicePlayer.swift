@@ -44,10 +44,11 @@ final class AnswerVoicePlayer {
         self.session = URLSession(configuration: configuration)
     }
 
-    /// The audio for `text`, without playing it, in the voice `SpeechVoiceChoice.current()` names;
-    /// the free voice comes from the backend's /tts. Used by `SpeechQueue` to
-    /// fetch the next piece of an answer while the current one plays.
-    func fetchAudio(for text: String) async throws -> Data {
+    /// The voice for one answer, in the voice `SpeechVoiceChoice.current()` names when the answer
+    /// starts. The account's free voice comes from the backend's /tts behind `AnswerVoiceSession`'s
+    /// deadlines: a late or failed piece, and the rest of that answer, are spoken by the fastest local
+    /// voice. Its `audio(for:)` is `SpeechQueue`'s fetch step.
+    func makeAnswerSession() -> AnswerVoiceSession {
         // Settings → Clicky → Voice: a key's voice straight from its vendor, Kokoro or this Mac;
         // only the free voice goes through the backend.
         let voice = SpeechVoiceChoice.current()
@@ -55,9 +56,49 @@ final class AnswerVoicePlayer {
             AppLog.append("voice: \(voice.rawValue)")
             lastLoggedVoice = voice
         }
-        if voice != .account {
-            return try await CloudVoiceSpeaker.audio(for: text, voice: voice, session: session)
-        }
+        let speaksWithAccountVoice = voice == .account
+        let fallbackVoice = speaksWithAccountVoice
+            ? SpeechVoiceChoice.fastestLocalVoice(kokoroInstalled: KokoroVoice.isInstalled, languageCode: ReplyLanguage.currentCode)
+            : voice
+        return AnswerVoiceSession(
+            speaksWithAccountVoice: speaksWithAccountVoice,
+            fetchAccountAudio: { [weak self] pieceText in
+                guard let self else { throw CancellationError() }
+                return try await self.fetchAccountAudio(for: pieceText)
+            },
+            fetchFallbackAudio: { [session] pieceText in
+                try await CloudVoiceSpeaker.audio(for: pieceText, voice: fallbackVoice, session: session)
+            },
+            onFirstAccountAudio: { seconds in
+                AppLog.append(String(format: "voice: account first sound in %.1f s", seconds))
+            },
+            onAccountTrouble: { trouble in
+                switch trouble {
+                case .tooSlow(let pieceNumber, let seconds):
+                    AppLog.append(String(format: "voice: account piece %d not back in %.1f s; %@ speaks the rest",
+                                         pieceNumber + 1, seconds, fallbackVoice.rawValue))
+                case .failed(let pieceNumber, let error):
+                    // 402 is the account's voice allowance (tts_budget): the plan, not a failure.
+                    let voiceRefusal = error as? BackendHTTPError
+                    let isVoiceAllowanceSpent = voiceRefusal?.service == .voice && voiceRefusal?.status == 402
+                    if !isVoiceAllowanceSpent {
+                        ClickyAnalytics.trackTTSError(error: error.localizedDescription)
+                    }
+                    AppLog.append("voice: account piece \(pieceNumber + 1) failed (\((error as NSError).code)); \(fallbackVoice.rawValue) speaks the rest")
+                }
+            },
+            onAnswerOnTime: { AccountVoiceRest.recordAnswerOnTime() },
+            onTroubledAnswer: { AccountVoiceRest.recordTroubledAnswer() }
+        )
+    }
+
+    /// The audio for `text` as a one-piece answer, without playing it.
+    func fetchAudio(for text: String) async throws -> Data {
+        try await makeAnswerSession().audio(for: text)
+    }
+
+    /// One piece from the backend's /tts, the account's free ElevenLabs voice.
+    private func fetchAccountAudio(for text: String) async throws -> Data {
         var request = URLRequest(url: proxyURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

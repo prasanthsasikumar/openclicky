@@ -1045,10 +1045,9 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    /// The models that download on their own once the welcome tour is done: Kokoro's voice and
-    /// Parakeet's hearing.
+    /// The model that downloads on its own once the welcome tour is done: Parakeet's hearing.
+    /// Kokoro waits to be picked: account answers speak with ElevenLabs.
     func startAutomaticModelDownloads(tourIsFinished: Bool) {
-        KokoroVoice.shared.startAutomaticSetup(tourIsFinished: tourIsFinished)
         ParakeetDictation.shared.startAutomaticSetup(tourIsFinished: tourIsFinished, engine: dictationSettings.engine,
                                                      bareLanguageCode: dictationSettings.language.bareCode)
     }
@@ -2374,9 +2373,12 @@ final class CompanionManager: ObservableObject {
     /// The speaker for one spoken reply: its pieces are fetched and played by the answer voice
     /// player, the next one fetched while the current one plays.
     private func makeAnswerSpeaker(onVoiceStarts: @escaping () -> Void, onPointTag: @escaping (String) -> Void) -> StreamingAnswerSpeaker {
-        StreamingAnswerSpeaker(
+        // One session per answer, so a late or failed free voice hands the rest of this answer to
+        // the local voice and the next answer tries again (AccountVoiceGuard.swift).
+        let answerVoiceSession = answerVoicePlayer.makeAnswerSession()
+        return StreamingAnswerSpeaker(
             speechQueue: SpeechQueue(
-                fetchAudio: { [answerVoicePlayer] pieceText in try await answerVoicePlayer.fetchAudio(for: pieceText) },
+                fetchAudio: { pieceText in try await answerVoiceSession.audio(for: pieceText) },
                 playAudio: { [answerVoicePlayer] audioData in try await answerVoicePlayer.playToCompletion(audioData) }
             ),
             onVoiceStarts: onVoiceStarts,

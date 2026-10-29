@@ -50,11 +50,11 @@ enum SpeechVoiceChoice: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Automatic's order: own keys first (the person chose to pay for them), then Kokoro once it is
-    /// downloaded (free, offline, and it saves the free ElevenLabs characters for those without
-    /// it), then the free voice, then this Mac. Gemini comes last of the keys: its voice takes about
+    /// Automatic's order: own keys first (the person chose to pay for them), then the account's
+    /// ElevenLabs voice (FlowsXR's grant pays for it, with a generous monthly allowance), then Kokoro
+    /// if someone downloaded it, then this Mac. Gemini comes last of the keys: its voice takes about
     /// four seconds a sentence.
-    static let automaticOrder: [SpeechVoiceChoice] = [.openAI, .elevenLabs, .google, .polly, .sarvam, .gemini, .kokoro, .account, .mac]
+    static let automaticOrder: [SpeechVoiceChoice] = [.openAI, .elevenLabs, .google, .polly, .sarvam, .gemini, .account, .kokoro, .mac]
 
     /// Whether this voice can speak right now in `languageCode` with these settings.
     static func canSpeak(_ choice: SpeechVoiceChoice, settings: OpenClickyShellSettings, hasAccount: Bool,
@@ -93,11 +93,14 @@ enum SpeechVoiceChoice: String, CaseIterable, Identifiable {
     /// The voice that speaks now: the one picked if it can, else this Mac's (a missing key or a
     /// Kokoro still downloading); Automatic, the first in `automaticOrder` that can. Kokoro in a
     /// language it doesn't speak (it became the voice on its own, then the language changed) goes
-    /// on as Automatic.
-    static func resolve(settings: OpenClickyShellSettings, hasAccount: Bool, kokoroInstalled: Bool, languageCode: String) -> SpeechVoiceChoice {
+    /// on as Automatic. While the account voice rests (`AccountVoiceRest`: two slow or failed answers
+    /// in a row) Automatic passes it by; a voice picked by hand is never passed by.
+    static func resolve(settings: OpenClickyShellSettings, hasAccount: Bool, kokoroInstalled: Bool, languageCode: String,
+                        accountVoiceIsResting: Bool = false) -> SpeechVoiceChoice {
         let picked = SpeechVoiceChoice(stored: settings.speechVoice)
         let kokoroCantSpeakLanguage = picked == .kokoro && KokoroVoice.speaker(forLanguage: languageCode, picked: nil) == nil
-        let candidates = picked == .automatic || kokoroCantSpeakLanguage ? automaticOrder : [picked]
+        let automaticCandidates = accountVoiceIsResting ? automaticOrder.filter { $0 != .account } : automaticOrder
+        let candidates = picked == .automatic || kokoroCantSpeakLanguage ? automaticCandidates : [picked]
         return candidates.first {
             canSpeak($0, settings: settings, hasAccount: hasAccount, kokoroInstalled: kokoroInstalled, languageCode: languageCode)
         } ?? .mac
@@ -106,7 +109,15 @@ enum SpeechVoiceChoice: String, CaseIterable, Identifiable {
     /// `resolve` with this Mac's settings.
     @MainActor static func current() -> SpeechVoiceChoice {
         resolve(settings: OpenClickyConfiguration.settings, hasAccount: OpenClickyConfiguration.hasAccountToken,
-                kokoroInstalled: KokoroVoice.isInstalled, languageCode: ReplyLanguage.currentCode)
+                kokoroInstalled: KokoroVoice.isInstalled, languageCode: ReplyLanguage.currentCode,
+                accountVoiceIsResting: AccountVoiceRest.isResting)
+    }
+
+    /// The voice that takes over when the account voice is late or fails: Kokoro when it is
+    /// downloaded and speaks the language (offline, under a second a sentence once loaded), else this Mac.
+    static func fastestLocalVoice(kokoroInstalled: Bool, languageCode: String) -> SpeechVoiceChoice {
+        canSpeak(.kokoro, settings: OpenClickyShellSettings(), hasAccount: false, kokoroInstalled: kokoroInstalled,
+                 languageCode: languageCode) ? .kokoro : .mac
     }
 }
 

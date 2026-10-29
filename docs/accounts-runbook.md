@@ -77,7 +77,7 @@ ACCOUNTS_OPEN=false
 ACCOUNT_MONTHLY_USD=10
 ACCOUNT_DAILY_USD=2
 GLOBAL_MONTHLY_BUDGET_USD=1000
-ACCOUNT_MONTHLY_TTS_CHARS=20000
+ACCOUNT_MONTHLY_TTS_CHARS=200000
 MAX_ACCOUNTS=100
 ACCOUNT_CONFIRM_REDIRECT_URL=https://api.openclicky.flowsxr.com/auth/confirmed
 SUPABASE_URL=https://hcmnepxtfngtrlbknumu.supabase.co
@@ -87,7 +87,7 @@ SUPABASE_JWT_SECRET=<project JWT secret>
 # guests (all optional; defaults shown)
 GUEST_TOTAL_USD=1            # pre-confirmation allowance per Mac, dollars
 GUEST_DAYS=14                # days a guest may stay unconfirmed
-GUEST_TTS_CHARS=2000         # spoken characters per Mac before confirming
+GUEST_TTS_CHARS=30000        # spoken characters per Mac before confirming
 MAX_ACCOUNTS_PER_DEVICE=2    # confirmed accounts one Mac may create
 IP_HASH_SALT=<random 32+ chars>  # optional; keys the address hashes (default: the service key, so rotating that resets the per-address caps)
 ```
