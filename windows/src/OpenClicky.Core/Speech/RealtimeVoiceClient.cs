@@ -1,8 +1,10 @@
 // Ports RealtimeVoiceClient.swift: the fast voice lane — speech in, speech out over one OpenAI
-// Realtime WebSocket, no transcribe → think → synthesize chain.
+// Realtime (or Gemini Live) WebSocket, no transcribe → think → synthesize chain.
 //
 // - The client secret comes from ProviderRouter: the person's own OpenAI key mints it at OpenAI,
 //   else the backend mints it (POST /agent/realtime/session); the real key never reaches OpenAI's socket.
+// - A Gemini key (alone, or picked in Settings) runs the same turns on Gemini Live instead: the
+//   client still speaks OpenAI's events, and GeminiLiveDialect translates them both ways.
 // - The microphone is a communications capture (echo cancellation where Windows has it), so it can
 //   stay open while OpenClicky talks (full duplex, barge-in).
 // - Push-to-talk: audio streams while the shortcut is held; on release a 400 ms tail is kept, then
@@ -125,8 +127,11 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// <summary>The keep-warm loop's period.</summary>
     public static readonly TimeSpan KeepWarmInterval = TimeSpan.FromSeconds(20);
 
-    public static bool IsTooOld(DateTimeOffset? connectedAt, DateTimeOffset now) =>
-        connectedAt is not { } connected || now - connected >= MaximumConnectionAge;
+    public static bool IsTooOld(DateTimeOffset? connectedAt, DateTimeOffset now, TimeSpan? maximumAge = null) =>
+        connectedAt is not { } connected || now - connected >= (maximumAge ?? MaximumConnectionAge);
+
+    /// <summary>How long a Gemini conversation is picked up again after its socket closed.</summary>
+    public static readonly TimeSpan GeminiResumptionLifetime = TimeSpan.FromMinutes(30);
 
     public static bool NeedsPing(DateTimeOffset? lastServerEventAt, DateTimeOffset now) =>
         lastServerEventAt is not { } last || now - last >= PingAfterSilence;
@@ -147,14 +152,18 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     }
 
     /// <summary>What a refused socket handshake means, in words a person can act on.</summary>
-    public static string HandshakeFailureDescription(int? statusCode, string underlyingError) => statusCode switch
+    public static string HandshakeFailureDescription(int? statusCode, string underlyingError, string provider = "OpenAI") => statusCode switch
     {
-        401 => "OpenAI refused the realtime session (401): the session key was rejected. Check your sign-in, or your own OpenAI key in %USERPROFILE%\\.openclicky\\shell.json.",
-        403 => "OpenAI refused the realtime session (403): this key has no access to the realtime model.",
-        429 => "OpenAI refused the realtime session (429): this key is over its rate limit or out of credit.",
-        { } status when status >= 400 => $"OpenAI refused the realtime session ({status}).",
+        401 => $"{provider} refused the realtime session (401): the session key was rejected. Check your sign-in, or your own {provider} key in Settings → Account.",
+        403 => $"{provider} refused the realtime session (403): this key has no access to the realtime model.",
+        429 => $"{provider} refused the realtime session (429): this key is over its rate limit or out of credit.",
+        { } status when status >= 400 => $"{provider} refused the realtime session ({status}).",
         _ => underlyingError,
     };
+
+    /// <summary>The server's close frame in words, with the reason it gave (Gemini explains a refused setup there).</summary>
+    public static string CloseDescription(string provider, int? status, string? reason) =>
+        $"{provider} closed the connection ({status}){(string.IsNullOrWhiteSpace(reason) ? "" : $": {reason.Trim()}")}";
 
     /// <summary>The backend's own error text where it gave one, with the status, so a rejected key reads as a rejected key rather than as JSON.</summary>
     public static string BackendRefusalDescription(int statusCode, byte[] body)
@@ -238,6 +247,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public RealtimeTurnMode TurnMode { get; private set; } = RealtimeTurnMode.PushToTalk;
     /// <summary>The prompt this client was created with; providers compose their skills block onto it.</summary>
     public string BaseInstructions => instructions;
+    /// <summary>Who the current (or last) connection talks to, for the sentences a person sees.</summary>
+    public string ProviderName => dialect.ProviderName;
 
     private readonly IMainThread mainThread;
     private readonly RealtimeAudio audio;
@@ -251,6 +262,15 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
 
     private ISpeechWebSocket? webSocket;
     private OrderedSocketSender? socketSender;
+    /// <summary>Translates the client's OpenAI-shaped events for the vendor of the current connection.</summary>
+    private IRealtimeWireDialect dialect = new OpenAIWireDialect();
+    /// <summary>Gemini's handle for the conversation, kept across connections (Gemini replaces a socket
+    /// about every ten minutes) so a new one carries on where the last stopped.</summary>
+    private (string Handle, DateTimeOffset SavedAt)? geminiResumption;
+    /// <summary>Gemini said the socket is about to close; hands-free reconnects at the next quiet moment.</summary>
+    private bool reconnectAfterGoAway;
+    /// <summary>Tool calls still running (an agent task, a desktop action): not a quiet moment to reconnect.</summary>
+    private int pendingToolCalls;
     private CancellationTokenSource? socketLifetime;
     /// <summary>True once the server's first event arrived on `webSocket`. Until then `Send` refuses:
     /// a message written while the handshake is in flight can fail and tear the socket down (issue #1).</summary>
@@ -338,7 +358,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
 
     /// <summary>
     /// Connect (or reuse the live connection). Safe to call before every push-to-talk press. A live
-    /// connection is reused only if it is still worth trusting: one close to OpenAI's 60-minute cap
+    /// connection is reused only if it is still worth trusting: one close to the vendor's cap (OpenAI's 60 minutes, Gemini's ten)
     /// is replaced before it is cut off mid-turn, and one the server has been quiet on is checked first.
     /// </summary>
     public async Task ConnectIfNeededAsync(RealtimeTurnMode mode)
@@ -346,7 +366,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         if (IsConnected && TurnMode == mode)
         {
             var currentTime = now();
-            if (!IsTooOld(connectedAt, currentTime))
+            if (!IsTooOld(connectedAt, currentTime, dialect.MaximumConnectionAge))
             {
                 if (!NeedsPing(lastServerEventAt, currentTime)) return;
                 if (await PingAsync())
@@ -383,6 +403,10 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// </summary>
     private async Task<bool> PingAsync()
     {
+        // Gemini has nothing that answers like input_audio_buffer.cleared (the Mac pings the socket
+        // itself, which ClientWebSocket cannot). Its keep-alive pings (every 20 s) have held the
+        // socket open, so only a wake from sleep, which may have killed it unseen, reconnects.
+        if (dialect is not OpenAIWireDialect) return lastServerEventAt != DateTimeOffset.MinValue;
         var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         nextServerEventSource = waiter;
         try
@@ -451,6 +475,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// <summary>Everything Disconnect does except stopping the keep-warm loop, which is what calls this when it reconnects.</summary>
     private void CloseConnection()
     {
+        if (dialect is GeminiLiveDialect gemini && gemini.ResumptionHandle is { } handle) geminiResumption = (handle, now());
+        reconnectAfterGoAway = false;
         FailPendingHandshake(new RealtimeVoiceException(RealtimeVoiceErrorKind.NotConnected));
         handshakeFailureBeforeWaiting = null;
         connectedAt = null;
@@ -493,6 +519,15 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     {
         if (!OpenClickyConfiguration.IsConfigured) throw new RealtimeVoiceException(RealtimeVoiceErrorKind.NotConfigured);
         var connectInstructions = CurrentInstructions();
+        var credentials = ProviderRouter.CurrentCredentials();
+        var provider = RealtimeVoiceProviders.Choose(credentials, OpenClickyConfiguration.PreferredRealtimeProvider);
+        if (provider == RealtimeVoiceProvider.Gemini && credentials.GeminiKey is { } geminiKey)
+        {
+            await OpenGeminiConnectionAsync(geminiKey, mode, connectInstructions);
+            return;
+        }
+        // Set before the secret is minted, so a refusal there is said in OpenAI's name.
+        dialect = new OpenAIWireDialect();
         HttpResponseMessage secretResponse;
         var route = ProviderRouter.Current(ProviderCapability.Realtime);
         switch (route.Kind)
@@ -532,14 +567,45 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         }
         var socketUrl = RealtimeSocketUrl(model);
         var headers = new Dictionary<string, string> { ["Authorization"] = $"Bearer {clientSecret}" };
-        await StartSessionAsync(makeSocket(), socketUrl, headers, model, mode, connectInstructions, async () =>
+        await StartSessionAsync(makeSocket(), socketUrl, headers, model, mode, connectInstructions, () => WarmUpAudioAsync(mode));
+    }
+
+    /// <summary>
+    /// Push-to-talk only opens the microphone while the shortcut is held; always-on keeps it open.
+    /// The audio is set up once while connecting (and paused right away) so key-down is a fast
+    /// restart. Nothing is forwarded yet: that starts with a press or StartListeningContinuously.
+    /// </summary>
+    private async Task WarmUpAudioAsync(RealtimeTurnMode mode)
+    {
+        await StartAudioIfNeededAsync();
+        if (mode == RealtimeTurnMode.PushToTalk) audio.Pause();
+    }
+
+    /// <summary>
+    /// Gemini Live on the person's own key, which goes in a header straight to Google. A resumed
+    /// conversation that Gemini no longer knows is refused at setup; then it starts afresh once.
+    /// </summary>
+    private async Task OpenGeminiConnectionAsync(string key, RealtimeTurnMode mode, string connectInstructions)
+    {
+        AppLog.Write("route: realtime → gemini, own key");
+        var handle = geminiResumption is { } saved && now() - saved.SavedAt < GeminiResumptionLifetime ? saved.Handle : null;
+        try
         {
-            // Push-to-talk only opens the microphone while the shortcut is held; always-on keeps it
-            // open. The audio is set up once here (and paused right away) so key-down is a fast
-            // restart. Nothing is forwarded yet: that starts with a press or StartListeningContinuously.
-            await StartAudioIfNeededAsync();
-            if (mode == RealtimeTurnMode.PushToTalk) audio.Pause();
-        });
+            await StartGeminiSessionAsync(key, mode, connectInstructions, handle);
+        }
+        catch (Exception error) when (handle is not null)
+        {
+            Log($"gemini did not resume the conversation ({error.Message}); starting a new one");
+            geminiResumption = null;
+            await StartGeminiSessionAsync(key, mode, connectInstructions, null);
+        }
+    }
+
+    private Task StartGeminiSessionAsync(string key, RealtimeTurnMode mode, string connectInstructions, string? resumptionHandle)
+    {
+        var gemini = new GeminiLiveDialect(RealtimeAudio.SampleRate, resumptionHandle);
+        var headers = new Dictionary<string, string> { ["x-goog-api-key"] = key };
+        return StartSessionAsync(makeSocket(), GeminiLiveDialect.SocketUrl, headers, gemini.Model, mode, connectInstructions, () => WarmUpAudioAsync(mode), gemini);
     }
 
     /// <summary>The client secret (`value`) and the model (`session.model`, else gpt-realtime) of a session answer.</summary>
@@ -563,12 +629,17 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// `session.update` used to go out while the handshake could still be in flight, and that first
     /// send failed and tore the fresh socket down (issue #1). <paramref name="whileWaitingForHandshake"/>
     /// overlaps the audio warm-up with the handshake and must not send.
+    /// A vendor that waits for the client (<see cref="IRealtimeWireDialect.ClientSpeaksFirst"/>, Gemini)
+    /// gets its setup right after the connect instead, before anything is received.
+    /// <paramref name="wireDialect"/> null is OpenAI's own protocol.
     /// </summary>
     public async Task StartSessionAsync(ISpeechWebSocket socket, Uri url, IReadOnlyDictionary<string, string> headers, string model,
-                                        RealtimeTurnMode mode, string connectInstructions, Func<Task> whileWaitingForHandshake)
+                                        RealtimeTurnMode mode, string connectInstructions, Func<Task> whileWaitingForHandshake,
+                                        IRealtimeWireDialect? wireDialect = null)
     {
         webSocket = socket;
         isSocketOpen = false;
+        dialect = wireDialect ?? new OpenAIWireDialect();
         var lifetime = new CancellationTokenSource();
         socketLifetime = lifetime;
         socketSender = new OrderedSocketSender(socket, error => mainThread.Post(() =>
@@ -576,11 +647,16 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             Log($"send failed: {error.Message}");
             // A failed send means the socket is gone; say so once, and let the next press reconnect.
             if (webSocket != socket) return;
-            MarkConnectionLost($"the connection to OpenAI dropped ({error.Message})");
+            MarkConnectionLost($"the connection to {ProviderName} dropped ({error.Message})");
         }), lifetime.Token);
-        _ = Task.Run(() => RunSocketAsync(socket, url, headers, lifetime.Token));
+        // Built here, on the main thread, because the dialect keeps what it sent; written by the
+        // socket loop the moment the connect returns.
+        IReadOnlyList<string> firstMessages = dialect.ClientSpeaksFirst
+            ? dialect.Outgoing(SessionUpdate(mode, connectInstructions)).Select(message => message.ToJsonString(SpeechJson.CompactOptions)).ToList()
+            : [];
+        _ = Task.Run(() => RunSocketAsync(socket, url, headers, firstMessages, lifetime.Token));
         currentMode = mode;
-        // Connected means OpenAI accepted the socket, not that the connect returned. A refused
+        // Connected means the vendor accepted the socket, not that the connect returned. A refused
         // handshake (a 401) fails the wait with its status, so the press says what was refused.
         try
         {
@@ -615,17 +691,21 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         _ = Task.Delay(TimeSpan.FromSeconds(10)).ContinueWith(_ => mainThread.Post(() =>
         {
             if (handshakeSource != source) return;
-            FailPendingHandshake(new RealtimeVoiceException(RealtimeVoiceErrorKind.Backend, "OpenAI did not answer the realtime connection within 10 seconds."));
+            FailPendingHandshake(new RealtimeVoiceException(RealtimeVoiceErrorKind.Backend, $"{ProviderName} did not answer the realtime connection within 10 seconds."));
         }), TaskScheduler.Default);
         await source.Task;
     }
 
     /// <summary>The connect and the receive loop, off the main thread; every result is handled on it, one after another.</summary>
-    private async Task RunSocketAsync(ISpeechWebSocket socket, Uri url, IReadOnlyDictionary<string, string> headers, CancellationToken cancellationToken)
+    private async Task RunSocketAsync(ISpeechWebSocket socket, Uri url, IReadOnlyDictionary<string, string> headers,
+                                      IReadOnlyList<string> firstMessages, CancellationToken cancellationToken)
     {
         try
         {
             await socket.ConnectAsync(url, headers, cancellationToken).ConfigureAwait(false);
+            // ClientWebSocket is open once ConnectAsync returns, so unlike URLSession (the Mac retries
+            // for ten seconds) the setup can go out at once; a failure here fails the handshake.
+            foreach (var message in firstMessages) await socket.SendTextAsync(message, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception error)
         {
@@ -651,8 +731,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             if (message.Kind == SpeechWebSocketMessageKind.Close)
             {
                 if (cancellationToken.IsCancellationRequested) return;
-                var reason = $"OpenAI closed the connection ({message.CloseStatus}){(string.IsNullOrEmpty(message.CloseReason) ? "" : $": {message.CloseReason}")}";
-                await mainThread.InvokeAsync(() => HandleSocketFailure(socket, null, reason)).ConfigureAwait(false);
+                await mainThread.InvokeAsync(() => HandleSocketFailure(socket, null, CloseDescription(ProviderName, message.CloseStatus, message.CloseReason))).ConfigureAwait(false);
                 return;
             }
             await mainThread.InvokeAsync(() => HandleSocketMessageAsync(socket, message)).ConfigureAwait(false);
@@ -662,7 +741,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     private void HandleSocketFailure(ISpeechWebSocket socket, int? statusCode, string underlyingError)
     {
         if (webSocket != socket) return;
-        var reason = HandshakeFailureDescription(statusCode, underlyingError);
+        var reason = HandshakeFailureDescription(statusCode, underlyingError, ProviderName);
         if (handshakeSource is not null)
         {
             FailPendingHandshake(new RealtimeVoiceException(RealtimeVoiceErrorKind.Backend, reason));
@@ -688,7 +767,17 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         var eventWaiter = nextServerEventSource;
         nextServerEventSource = null;
         eventWaiter?.TrySetResult();
-        if (message.Kind == SpeechWebSocketMessageKind.Text && message.Text is { } text) await HandleServerEventAsync(text);
+        // Gemini sends every message as a binary frame of JSON; OpenAI as text.
+        if (message.AsText is not { } text) return;
+        JsonObject? wireMessage;
+        try { wireMessage = JsonNode.Parse(text) as JsonObject; }
+        catch (JsonException) { return; }
+        if (wireMessage is null) return;
+        foreach (var serverEvent in dialect.Incoming(wireMessage))
+        {
+            if (webSocket != socket) break;
+            await HandleServerEventAsync(serverEvent);
+        }
     }
 
     private void MarkConnectionLost(string reason)
@@ -1094,7 +1183,10 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 onPlaybackActiveChanged: isPlaying => mainThread.Post(() =>
                 {
                     IsSpeaking = isPlaying;
-                    if (!isPlaying) ScheduleIdlePauseIfNeeded();
+                    if (isPlaying) return;
+                    ScheduleIdlePauseIfNeeded();
+                    // A reply's audio can outlast its response.done; the quiet moment is when it stops.
+                    ReconnectAfterGoAwayIfQuiet();
                 }));
         }
         var description = await audio.StartAsync();
@@ -1155,10 +1247,11 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
 
     // MARK: - Socket plumbing
 
+    /// <summary>One client event, in the current vendor's words (none, one or several wire messages).</summary>
     private void Send(JsonObject message)
     {
         if (webSocket is null || socketSender is null || !isSocketOpen) throw new RealtimeVoiceException(RealtimeVoiceErrorKind.NotConnected);
-        socketSender.SendText(message.ToJsonString(SpeechJson.CompactOptions));
+        foreach (var wireMessage in dialect.Outgoing(message)) socketSender.SendText(wireMessage.ToJsonString(SpeechJson.CompactOptions));
     }
 
     private void TrySend(JsonObject message)
@@ -1167,12 +1260,10 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         catch (RealtimeVoiceException) { }
     }
 
-    private async Task HandleServerEventAsync(string text)
+    /// <summary>One server event in OpenAI's shape (the dialect has translated it already).</summary>
+    private async Task HandleServerEventAsync(JsonObject serverEvent)
     {
-        JsonObject? serverEvent;
-        try { serverEvent = JsonNode.Parse(text) as JsonObject; }
-        catch (JsonException) { return; }
-        if (serverEvent is null || SpeechJson.String(serverEvent["type"]) is not { } type) return;
+        if (SpeechJson.String(serverEvent["type"]) is not { } type) return;
         switch (type)
         {
             case "input_audio_buffer.speech_started":
@@ -1180,6 +1271,18 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 FlushPlayback();
                 if (responseInProgress) CancelActiveResponse();
                 if (currentMode == RealtimeTurnMode.AlwaysOn) RefreshInstructionsIfNeeded();
+                // A vendor that replies on its own gets the screen while the person is still talking.
+                if (currentMode == RealtimeTurnMode.AlwaysOn && dialect.RespondsWithoutRequest) await AttachScreenContextAsync();
+                break;
+            case "session.go_away":
+                Log($"{ProviderName} will close this connection soon ({SpeechJson.String(serverEvent["time_left"]) ?? "?"} left)");
+                // The next press reconnects; hands-free moves over at the next quiet moment.
+                connectedAt = DateTimeOffset.MinValue;
+                if (currentMode == RealtimeTurnMode.AlwaysOn)
+                {
+                    reconnectAfterGoAway = true;
+                    ReconnectAfterGoAwayIfQuiet();
+                }
                 break;
             case "conversation.item.input_audio_transcription.completed":
                 if (SpeechJson.String(serverEvent["transcript"]) is { } transcript && transcript.Trim().Length > 0)
@@ -1246,16 +1349,30 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 {
                     OnResponseFinished?.Invoke();
                     ScheduleIdlePauseIfNeeded();
+                    ReconnectAfterGoAwayIfQuiet();
                 }
                 break;
             }
             case "error":
-                Log($"realtime error: {SpeechJson.String((serverEvent["error"] as JsonObject)?["message"]) ?? text}");
+                Log($"realtime error: {SpeechJson.String((serverEvent["error"] as JsonObject)?["message"]) ?? serverEvent.ToJsonString(SpeechJson.CompactOptions)}");
                 break;
         }
     }
 
     private async Task HandleToolCallAsync(JsonObject serverEvent)
+    {
+        pendingToolCalls += 1;
+        try
+        {
+            await RunToolCallAsync(serverEvent);
+        }
+        finally
+        {
+            pendingToolCalls -= 1;
+        }
+    }
+
+    private async Task RunToolCallAsync(JsonObject serverEvent)
     {
         var callId = SpeechJson.String(serverEvent["call_id"]) ?? "";
         var name = SpeechJson.String(serverEvent["name"]) ?? "";
@@ -1478,6 +1595,35 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         {
             // No response is active (event ordering can put arguments.done after done): continue now.
             TrySend(new JsonObject { ["type"] = "response.create" });
+        }
+    }
+
+    /// <summary>
+    /// After Gemini's `goAway`, hands-free moves to a new connection (the conversation resumes on
+    /// it) as soon as nothing is being said or done, with the microphone still streaming.
+    /// </summary>
+    private void ReconnectAfterGoAwayIfQuiet()
+    {
+        if (!reconnectAfterGoAway || currentMode != RealtimeTurnMode.AlwaysOn || responseInProgress || IsSpeaking || pendingToolCalls > 0) return;
+        reconnectAfterGoAway = false;
+        var wasListening = isForwardingMicrophone;
+        Log($"moving hands-free to a new {ProviderName} connection");
+        _ = ReconnectAfterGoAwayAsync(wasListening);
+    }
+
+    private async Task ReconnectAfterGoAwayAsync(bool wasListening)
+    {
+        await Task.Yield();
+        CloseConnection();
+        try
+        {
+            await ConnectIfNeededAsync(RealtimeTurnMode.AlwaysOn);
+            if (wasListening) StartListeningContinuously();
+        }
+        catch (Exception error)
+        {
+            Log($"reconnect after goAway failed: {error.Message}");
+            OnConnectionLost?.Invoke(error.Message);
         }
     }
 

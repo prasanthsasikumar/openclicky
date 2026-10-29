@@ -152,5 +152,12 @@ struct SettingsFileReloadTests {
         var tokenChanged = OpenClickyShellSettings()
         tokenChanged.token = "new-token"
         #expect(OpenClickyConfiguration.credentialFingerprint(of: tokenChanged) != original)
+        // A Gemini key or a fast voice pick can move realtime to another vendor.
+        var geminiAdded = OpenClickyShellSettings()
+        geminiAdded.geminiApiKey = "g"
+        #expect(OpenClickyConfiguration.credentialFingerprint(of: geminiAdded) != original)
+        var providerPicked = OpenClickyShellSettings()
+        providerPicked.realtimeProvider = "gemini"
+        #expect(OpenClickyConfiguration.credentialFingerprint(of: providerPicked) != original)
     }
 }

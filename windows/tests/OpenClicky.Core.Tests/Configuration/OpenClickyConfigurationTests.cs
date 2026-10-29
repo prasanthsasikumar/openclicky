@@ -273,5 +273,12 @@ public sealed class OpenClickyConfigurationTests : IDisposable
         Assert.Equal(OpenClickyConfiguration.CredentialFingerprint(before), OpenClickyConfiguration.CredentialFingerprint(after));
         after.AnthropicApiKey = "ak";
         Assert.NotEqual(OpenClickyConfiguration.CredentialFingerprint(before), OpenClickyConfiguration.CredentialFingerprint(after));
+        // A Gemini key or a fast voice pick can move realtime to another vendor.
+        var geminiAdded = before.Clone();
+        geminiAdded.GeminiApiKey = "g";
+        Assert.NotEqual(OpenClickyConfiguration.CredentialFingerprint(before), OpenClickyConfiguration.CredentialFingerprint(geminiAdded));
+        var providerPicked = before.Clone();
+        providerPicked.RealtimeProvider = "gemini";
+        Assert.NotEqual(OpenClickyConfiguration.CredentialFingerprint(before), OpenClickyConfiguration.CredentialFingerprint(providerPicked));
     }
 }

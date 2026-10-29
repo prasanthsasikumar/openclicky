@@ -103,13 +103,13 @@ extension SettingsCatalog {
                 view: AnyView(SettingsRow(title: "Type to Clicky", detail: "A one-line composer opens in the island.") {
                     SettingsKeys(keys: ["⌃"], gesture: "tap twice")
                 })),
-            // Hands-free runs on OpenAI Realtime, which needs an own OpenAI key: without one the key
-            // would do nothing, so it isn't listed (Voice says how to get it).
+            // Hands-free runs on fast voice or, without a realtime key, on the standard lane; with
+            // nothing that can answer the keys would do nothing, so it isn't listed.
             SettingsItem(
                 id: "keyboard.handsFree", page: .keyboard, section: "Clicky",
                 title: "Hands-free", detail: "Always-on listening. Same keys to stop.",
                 keywords: ["always on", "realtime", "listening", "hands free"],
-                isRelevant: { usesRealtime },
+                isRelevant: { usesRealtime || OpenClickyConfiguration.isConfigured },
                 view: AnyView(SettingsRow(title: "Hands-free", detail: "Always-on listening. Same keys to stop.") {
                     SettingsKeys(keys: [key, "⌃"], gesture: "tap twice")
                 })),

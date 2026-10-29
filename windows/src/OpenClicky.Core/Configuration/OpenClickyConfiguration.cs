@@ -78,7 +78,8 @@ public static class OpenClickyConfiguration
 
     /// <summary>What a live session was opened with. When this changes, the session is stale.</summary>
     public static IReadOnlyList<string> CredentialFingerprint(OpenClickyShellSettings shellSettings) =>
-        [shellSettings.BackendUrl, shellSettings.Token, shellSettings.OpenaiApiKey ?? "", shellSettings.AnthropicApiKey ?? ""];
+        [shellSettings.BackendUrl, shellSettings.Token, shellSettings.OpenaiApiKey ?? "", shellSettings.AnthropicApiKey ?? "",
+         shellSettings.GeminiApiKey ?? "", shellSettings.RealtimeProvider ?? ""];
 
     // MARK: - Watching the file
 
@@ -451,6 +452,10 @@ public static class OpenClickyConfiguration
     public static IReadOnlyList<string> CliCommand => Settings.CliCommand;
     public static string WorkspacePath => OpenClickyPaths.ExpandTilde(Settings.Workspace);
     public static string? AgentModelOverride => string.IsNullOrEmpty(Settings.Model) ? null : Settings.Model;
+
+    /// <summary>The fast voice vendor the person picked in Settings → Voice; null is automatic.</summary>
+    public static Speech.RealtimeVoiceProvider? PreferredRealtimeProvider =>
+        RawValues.FromRawValue<Speech.RealtimeVoiceProvider>(Settings.RealtimeProvider);
 
     /// <summary>
     /// The user's skill library: `library/&lt;id&gt;/SKILL.md`, `active/`, `activations.json`. Same layout

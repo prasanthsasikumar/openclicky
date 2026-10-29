@@ -2,7 +2,7 @@
 //  CompanionManager.Realtime.cs
 //  OpenClicky (Windows port of CompanionManager.swift: the Realtime voice lane)
 //
-//  Speech-to-speech over OpenAI Realtime: the session is kept warm so a press only starts audio;
+//  Speech-to-speech over OpenAI Realtime or Gemini Live: the session is kept warm so a press only starts audio;
 //  point_at goes through the pointing chain (browser tab → OCR snap → UI Automation → Claude) and
 //  ends in pointAt; send_to_agent runs the agent lane; the fast tools run the desktop actions; the
 //  instructions carry the skills for the app in front.
@@ -27,6 +27,9 @@ public sealed partial class CompanionManager
 
     /// <summary>Realtime answers: switched on, something to mint a session with, and an account kind that has it.</summary>
     public bool UsesRealtimeVoice => IsRealtimeVoiceEnabled && OpenClickyConfiguration.IsConfigured && AccountCapabilities.Current().UsesRealtime;
+
+    /// <summary>Settings → Voice picked another fast voice vendor: the next connection is made with it.</summary>
+    public void RealtimeProviderChanged() => WarmUpRealtimeVoice();
 
     /// <summary>Opens the Realtime session now so the first key press only starts audio.</summary>
     private void WarmUpRealtimeVoice()
@@ -103,7 +106,7 @@ public sealed partial class CompanionManager
             AppLog.Write($"realtime connection lost: {reason}");
             if (VoiceState == CompanionVoiceState.Idle) return;
             VoiceState = CompanionVoiceState.Idle;
-            Overlay.StreamCursorCaption("Lost the connection to OpenAI. Press again to reconnect.", holdSeconds: 6);
+            Overlay.StreamCursorCaption($"Lost the connection to {client.ProviderName}. Press again to reconnect.", holdSeconds: 6);
             Overlay.ScheduleTransientHideIfNeeded();
         };
         client.ScreenContextProvider = CaptureCursorScreenContextAsync;

@@ -35,6 +35,8 @@ struct RealtimeScreenContext {
 /// behaves like one whose handshake has not finished yet (it refuses every send).
 nonisolated protocol RealtimeSocket: AnyObject, Sendable {
     var response: URLResponse? { get }
+    /// What the server said when it closed the socket, if anything.
+    var closeReason: Data? { get }
     func resume()
     func send(_ message: URLSessionWebSocketTask.Message, completionHandler: @escaping @Sendable (Error?) -> Void)
     func receive(completionHandler: @escaping @Sendable (Result<URLSessionWebSocketTask.Message, Error>) -> Void)
@@ -160,6 +162,15 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     var baseInstructions: String { instructions }
 
     private var webSocketTask: RealtimeSocket?
+    /// Translates the client's OpenAI-shaped events for the vendor of the current connection.
+    private var dialect: RealtimeWireDialect = OpenAIWireDialect()
+    /// Who the current (or last) connection talks to, for the sentences a person sees.
+    var providerName: String { dialect.providerName }
+    /// Gemini's handle for the conversation, kept across connections (Gemini replaces a socket
+    /// about every ten minutes) so a new one carries on where the last stopped.
+    private var geminiResumption: (handle: String, savedAt: Date)?
+    /// Gemini said the socket is about to close; hands-free reconnects at the next quiet moment.
+    private var reconnectAfterGoAway = false
     /// True once the server's first event arrived on `webSocketTask`. Until then `send` refuses:
     /// a message written while the WebSocket handshake is still in flight can fail with "Socket is
     /// not connected", and a failed send tears the socket down (issue #1).
@@ -267,7 +278,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     func connectIfNeeded(mode: TurnMode) async throws {
         if isConnected, turnMode == mode {
             let now = Date()
-            if !Self.isTooOld(connectedAt: connectedAt, now: now) {
+            if !Self.isTooOld(connectedAt: connectedAt, now: now, maximumAge: dialect.maximumConnectionAge) {
                 if !Self.needsPing(lastServerEventAt: lastServerEventAt, now: now) { return }
                 if let webSocketTask, await Self.ping(webSocketTask) {
                     lastServerEventAt = Date()
@@ -328,9 +339,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// How long after the last turn the keep-warm loop still reconnects in the background.
     nonisolated static let keepWarmWhileUsedWithin: TimeInterval = 15 * 60
 
-    nonisolated static func isTooOld(connectedAt: Date?, now: Date) -> Bool {
+    nonisolated static func isTooOld(connectedAt: Date?, now: Date, maximumAge: TimeInterval = maximumConnectionAge) -> Bool {
         guard let connectedAt else { return true }
-        return now.timeIntervalSince(connectedAt) >= maximumConnectionAge
+        return now.timeIntervalSince(connectedAt) >= maximumAge
     }
 
     nonisolated static func needsPing(lastServerEventAt: Date?, now: Date) -> Bool {
@@ -365,13 +376,41 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     /// What a refused socket handshake means, in words a person can act on. URLSession reports it
     /// as "bad server response", which reads as a network fault.
-    nonisolated static func handshakeFailureDescription(statusCode: Int?, underlyingError: String) -> String {
+    nonisolated static func handshakeFailureDescription(statusCode: Int?, underlyingError: String, provider: String = "OpenAI") -> String {
         switch statusCode {
-        case 401: return "OpenAI refused the realtime session (401): the session key was rejected. Check your sign-in, or your own OpenAI key in ~/.openclicky/shell.json."
-        case 403: return "OpenAI refused the realtime session (403): this key has no access to the realtime model."
-        case 429: return "OpenAI refused the realtime session (429): this key is over its rate limit or out of credit."
-        case let status? where status >= 400: return "OpenAI refused the realtime session (\(status))."
+        case 401: return "\(provider) refused the realtime session (401): the session key was rejected. Check your sign-in, or your own \(provider) key in Settings → Account."
+        case 403: return "\(provider) refused the realtime session (403): this key has no access to the realtime model."
+        case 429: return "\(provider) refused the realtime session (429): this key is over its rate limit or out of credit."
+        case let status? where status >= 400: return "\(provider) refused the realtime session (\(status))."
         default: return underlyingError
+        }
+    }
+
+    /// The reason a vendor gave when it closed the socket (Gemini explains a refused setup there),
+    /// nil when it gave none.
+    nonisolated static func closeDescription(_ reason: Data?) -> String? {
+        guard let reason, !reason.isEmpty else { return nil }
+        let text = String(decoding: reason, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : "closed by the server: \(text)"
+    }
+
+    /// After Gemini's `goAway`, hands-free moves to a new connection (the conversation resumes on
+    /// it) as soon as nothing is being said or done, with the microphone still streaming.
+    private func reconnectAfterGoAwayIfQuiet() {
+        guard reconnectAfterGoAway, currentMode == .alwaysOn, !responseInProgress, !isSpeaking, pendingActionCount == 0 else { return }
+        reconnectAfterGoAway = false
+        let wasListening = isForwardingMicrophone
+        log("moving hands-free to a new \(providerName) connection")
+        Task { [weak self] in
+            guard let self else { return }
+            self.closeConnection()
+            do {
+                try await self.connectIfNeeded(mode: .alwaysOn)
+                if wasListening { self.startListeningContinuously() }
+            } catch {
+                self.log("reconnect after goAway failed: \(error.localizedDescription)")
+                self.onConnectionLost?(error.localizedDescription)
+            }
         }
     }
 
@@ -385,6 +424,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// Everything `disconnect` does except stopping the keep-warm loop, which is what calls this
     /// when it reconnects.
     private func closeConnection() {
+        if let gemini = dialect as? GeminiLiveDialect, let handle = gemini.resumptionHandle {
+            geminiResumption = (handle, Date())
+        }
+        reconnectAfterGoAway = false
         failPendingHandshake(RealtimeVoiceError.notConnected)
         handshakeFailureBeforeWaiting = nil
         connectedAt = nil
@@ -424,6 +467,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     private func openConnection(mode: TurnMode) async throws {
         guard OpenClickyConfiguration.isConfigured else { throw RealtimeVoiceError.notConfigured }
         let connectInstructions = currentInstructions()
+        let credentials = ProviderRouter.currentCredentials()
+        let provider = RealtimeVoiceProvider.choose(credentials: credentials, preferred: OpenClickyConfiguration.preferredRealtimeProvider)
+        if provider == .gemini, let geminiKey = credentials.geminiKey {
+            try await openGeminiConnection(key: geminiKey, mode: mode, instructions: connectInstructions)
+            return
+        }
+        dialect = OpenAIWireDialect()
         let secretData: Data
         let secretResponse: URLResponse
         switch ProviderRouter.current(for: .realtime) {
@@ -478,6 +528,39 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             })
     }
 
+    /// Gemini Live on the person's own key, which goes in a header straight to Google. A resumed
+    /// conversation that Gemini no longer knows is refused at setup; then it starts afresh once.
+    private func openGeminiConnection(key: String, mode: TurnMode, instructions connectInstructions: String) async throws {
+        AppLog.append("route: realtime → gemini, own key")
+        let handle = geminiResumption.flatMap { Date().timeIntervalSince($0.savedAt) < Self.geminiResumptionLifetime ? $0.handle : nil }
+        do {
+            try await startGeminiSession(key: key, mode: mode, instructions: connectInstructions, resumptionHandle: handle)
+        } catch where handle != nil {
+            log("gemini did not resume the conversation (\(error.localizedDescription)); starting a new one")
+            geminiResumption = nil
+            try await startGeminiSession(key: key, mode: mode, instructions: connectInstructions, resumptionHandle: nil)
+        }
+    }
+
+    /// How long a Gemini conversation is picked up again after its socket closed.
+    nonisolated static let geminiResumptionLifetime: TimeInterval = 30 * 60
+
+    private func startGeminiSession(key: String, mode: TurnMode, instructions connectInstructions: String, resumptionHandle: String?) async throws {
+        let model = GeminiLiveDialect.defaultModel
+        dialect = GeminiLiveDialect(model: model, sampleRate: Int(Self.sampleRate), resumptionHandle: resumptionHandle)
+        var socketRequest = URLRequest(url: GeminiLiveDialect.socketURL)
+        socketRequest.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        try await startSession(
+            on: urlSession.webSocketTask(with: socketRequest),
+            model: model,
+            mode: mode,
+            instructions: connectInstructions,
+            whileWaitingForHandshake: {
+                guard Self.startsAudioWhileConnecting(mode: mode) else { return }
+                try await self.startAudioIfNeeded()
+            })
+    }
+
     /// Whether connecting also sets up the audio graph. Not for push-to-talk: the graph carries
     /// Apple's voice-processing unit, which turns every other app's sound down for as long as it
     /// exists, paused or not. Built at launch and only paused, it kept headphones quiet until
@@ -511,6 +594,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         // handshake (a 401) fails the wait with its status, so the press says what was refused.
         do {
             try await whileWaitingForHandshake()
+            if dialect.clientSpeaksFirst {
+                for message in dialect.outgoing(sessionUpdate(mode: mode, instructions: connectInstructions)) {
+                    try await sendBeforeHandshake(message, on: socket)
+                }
+            }
             try await awaitHandshake(on: socket)
         } catch {
             closeConnection()
@@ -538,7 +626,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             handshakeContinuation = continuation
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
-                self?.failPendingHandshake(RealtimeVoiceError.backend("OpenAI did not answer the realtime connection within 10 seconds."))
+                guard let self else { return }
+                self.failPendingHandshake(RealtimeVoiceError.backend("\(self.providerName) did not answer the realtime connection within 10 seconds."))
             }
         }
     }
@@ -954,6 +1043,29 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     private func send(_ object: [String: Any]) throws {
         guard let webSocketTask, isSocketOpen else { throw RealtimeVoiceError.notConnected }
+        for message in dialect.outgoing(object) {
+            try sendWire(message, on: webSocketTask)
+        }
+    }
+
+    /// The first message to a vendor that waits for the client (Gemini's setup). The handshake may
+    /// still be in flight, when a send fails with "Socket is not connected" (issue #1), so a failed
+    /// send is retried for up to ten seconds instead of tearing the socket down.
+    private func sendBeforeHandshake(_ object: [String: Any], on socket: RealtimeSocket) async throws {
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+        var lastError: Error?
+        for _ in 0..<50 {
+            guard webSocketTask === socket else { throw RealtimeVoiceError.notConnected }
+            lastError = await withCheckedContinuation { (continuation: CheckedContinuation<Error?, Never>) in
+                socket.send(.string(text)) { continuation.resume(returning: $0) }
+            }
+            guard lastError != nil else { return }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        throw RealtimeVoiceError.backend("\(providerName) did not accept the session setup (\(lastError?.localizedDescription ?? "no answer")).")
+    }
+
+    private func sendWire(_ object: [String: Any], on webSocketTask: RealtimeSocket) throws {
         let data = try JSONSerialization.data(withJSONObject: object)
         let sendingTask = webSocketTask
         webSocketTask.send(.string(String(decoding: data, as: UTF8.self))) { [weak self] error in
@@ -963,7 +1075,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 self.log("send failed: \(error.localizedDescription)")
                 // A failed send means the socket is gone; say so once, and let the next press reconnect.
                 guard self.webSocketTask === sendingTask else { return }
-                self.markConnectionLost("the connection to OpenAI dropped (\(error.localizedDescription))")
+                self.markConnectionLost("the connection to \(self.providerName) dropped (\(error.localizedDescription))")
             }
         }
     }
@@ -976,7 +1088,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 case .failure(let error):
                     let reason = Self.handshakeFailureDescription(
                         statusCode: (task.response as? HTTPURLResponse)?.statusCode,
-                        underlyingError: error.localizedDescription)
+                        underlyingError: Self.closeDescription(task.closeReason) ?? error.localizedDescription,
+                        provider: self.providerName)
                     if self.handshakeContinuation != nil {
                         self.failPendingHandshake(RealtimeVoiceError.backend(reason))
                         return
@@ -994,7 +1107,18 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                         self.handshakeContinuation = nil
                         pendingHandshake.resume()
                     }
-                    if case .string(let text) = message { await self.handleServerEvent(text) }
+                    let frame: Data?
+                    switch message {
+                    case .string(let text): frame = Data(text.utf8)
+                    case .data(let data): frame = data
+                    @unknown default: frame = nil
+                    }
+                    if let frame, let wireMessage = (try? JSONSerialization.jsonObject(with: frame)) as? [String: Any] {
+                        for event in self.dialect.incoming(wireMessage) {
+                            guard self.webSocketTask === task else { break }
+                            await self.handleServerEvent(event)
+                        }
+                    }
                     self.receiveLoop(task)
                 }
             }
@@ -1013,10 +1137,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         if wasConnected { onConnectionLost?(reason) }
     }
 
-    private func handleServerEvent(_ text: String) async {
-        guard let data = text.data(using: .utf8),
-              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = event["type"] as? String else { return }
+    private func handleServerEvent(_ event: [String: Any]) async {
+        guard let type = event["type"] as? String else { return }
         switch type {
         case "input_audio_buffer.speech_started":
             log("listening…")
@@ -1024,6 +1146,15 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             turnGeneration += 1
             if responseInProgress { cancelActiveResponse() }
             if currentMode == .alwaysOn { refreshInstructionsIfNeeded() }
+            // A vendor that replies on its own gets the screen while the person is still talking.
+            if currentMode == .alwaysOn, dialect.respondsWithoutRequest { await attachScreenContext() }
+        case "session.go_away":
+            log("\(providerName) will close this connection soon (\(event["time_left"] as? String ?? "?") left)")
+            connectedAt = .distantPast
+            if currentMode == .alwaysOn {
+                reconnectAfterGoAway = true
+                reconnectAfterGoAwayIfQuiet()
+            }
         case "conversation.item.input_audio_transcription.completed":
             if let transcript = event["transcript"] as? String {
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1074,13 +1205,14 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             if !continued {
                 onResponseFinished?()
                 scheduleIdlePauseIfNeeded()
+                reconnectAfterGoAwayIfQuiet()
                 if stopListeningAfterGoodbye {
                     stopListeningAfterGoodbye = false
                     endHandsFreeOnceTheGoodbyeHasPlayed()
                 }
             }
         case "error":
-            let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? text
+            let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? "\(event)"
             log("realtime error: \(message)")
         default:
             break

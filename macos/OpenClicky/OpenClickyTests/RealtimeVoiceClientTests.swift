@@ -56,6 +56,7 @@ private final class HandshakePendingSocket: RealtimeSocket, @unchecked Sendable 
     private(set) var sendsBeforeOpen = 0
     private(set) var wasResumed = false
     var response: URLResponse?
+    var closeReason: Data?
 
     func resume() { lock.withLock { wasResumed = true } }
 

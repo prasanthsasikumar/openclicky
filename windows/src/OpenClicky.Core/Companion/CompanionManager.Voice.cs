@@ -147,7 +147,7 @@ public sealed partial class CompanionManager
             // Say the real reason: a free account cannot use realtime at all, whatever the switch says.
             var reason = AccountCapabilities.Current().UsesRealtime
                 ? "hands-free needs fast voice. turn it on in settings, clicky."
-                : "hands-free needs your own openai key. add it in settings, account.";
+                : "hands-free needs your own openai or gemini key. add it in settings, account.";
             Overlay.StreamCursorCaption(reason, holdSeconds: 6);
             return;
         }
