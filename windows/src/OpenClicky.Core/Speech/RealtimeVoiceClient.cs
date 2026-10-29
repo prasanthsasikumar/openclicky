@@ -32,9 +32,15 @@ namespace OpenClicky.Core.Speech;
 /// pointer position, and the capture it came from, so `point_at` coordinates map back onto the display.</summary>
 public sealed record RealtimeScreenContext(byte[] Jpeg, string Caption, CompanionScreenCapture Capture);
 
-/// <summary>What a desktop action (the fast lane) said: the sentence the model repeats, and whether
-/// the arguments were refused rather than the action run.</summary>
-public sealed record RealtimeToolResult(string SpokenSentence, bool WasRejected = false);
+/// <summary>What a desktop action (the fast lane) said: the sentence for the person, and whether the
+/// arguments were refused rather than the action run.</summary>
+/// <param name="ModelOutput">What the model is told in the tool's output when it differs from the sentence
+/// (a screenshot to read, a rule to keep); null → the sentence.</param>
+/// <param name="ThenLooksAtScreen">The action changed the screen (a page opened): the model sees a fresh
+/// screenshot, once it has settled, before it speaks.</param>
+/// <param name="LogDescription">The log's words when the sentence would carry something private; null → the sentence.</param>
+public sealed record RealtimeToolResult(string SpokenSentence, bool WasRejected = false, string? ModelOutput = null,
+                                        bool ThenLooksAtScreen = false, string? LogDescription = null);
 
 /// <summary>
 /// The `point_at` resolution steps after the OCR snap (which the client does itself through
@@ -109,8 +115,9 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         + "click, point at it with the point_at tool while you explain, one call per step, in order, with the element's "
         + "exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking "
         + "at. "
-        + "Do simple local things yourself with the fast tools (open_app, open_url, create_folder, "
-        + "reveal_in_explorer, set_volume, media_control) and then say the one sentence they give back. "
+        + "Do simple local things yourself with the fast tools (open_app, open_url, web_search, create_folder, "
+        + "reveal_in_explorer, set_volume, media_control, play_music, minimize_all, restore_windows, check_email, "
+        + "draft_email) and then say what they give back in a few words. " + Answers.AskLanePrompts.CommandOrQuestionInstruction + " "
         + "For anything bigger (creating or editing files or code, running commands, using integrations, research, "
         + "multi-step tasks), first say one short sentence acknowledging it, then call the send_to_agent "
         + "tool with a clear, self-contained task, and afterwards tell the user in one sentence what happened. "
@@ -231,6 +238,9 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public Func<string, JsonObject, Task<RealtimeToolResult?>>? OnDesktopAction { get; set; }
     /// <summary>The desktop actions' tool definitions, offered next to send_to_agent and point_at.</summary>
     public Func<IReadOnlyList<JsonObject>>? DesktopActionToolDefinitions { get; set; }
+    /// <summary>The process in front, for "act, then look": the screen has settled once a different app is
+    /// in front (a browser opened) or the wait runs out. Null → only the wait.</summary>
+    public Func<int?>? FrontAppProvider { get; set; }
     /// <summary>The screen context attached to every turn; null → the turn goes out without an image.</summary>
     public Func<Task<RealtimeScreenContext?>>? ScreenContextProvider { get; set; }
     /// <summary>The highlighted text in the app in front (IFocusedElementReader.SelectedTextAsync).</summary>
@@ -1390,6 +1400,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         if (name is not ("send_to_agent" or "point_at") && OnDesktopAction is { } desktopAction)
         {
             var startedAt = now();
+            var frontAppBefore = FrontAppProvider?.Invoke();
             RealtimeToolResult? outcome;
             try
             {
@@ -1401,10 +1412,17 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             }
             if (outcome is not null)
             {
+                // Act, then look: the model describes what is on screen now, not what was there before the page opened.
+                if (outcome.ThenLooksAtScreen && !outcome.WasRejected)
+                {
+                    await WaitForScreenToSettleAsync(frontAppBefore);
+                    await AttachScreenContextAsync();
+                }
+                var logged = outcome.LogDescription ?? outcome.SpokenSentence;
                 Log(outcome.WasRejected
-                    ? $"desktop action: {name} rejected, {outcome.SpokenSentence}"
-                    : $"desktop action: {name} {outcome.SpokenSentence} in {(now() - startedAt).TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s");
-                SendToolOutput(callId, outcome.SpokenSentence);
+                    ? $"desktop action: {name} rejected, {logged}"
+                    : $"desktop action: {name} {logged} in {(now() - startedAt).TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s");
+                SendToolOutput(callId, outcome.ModelOutput ?? outcome.SpokenSentence);
                 RequestContinuation(serverEvent);
                 return;
             }
@@ -1428,6 +1446,32 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         // The output goes out immediately; the follow-up response is requested once, on response.done.
         SendToolOutput(callId, output);
         RequestContinuation(serverEvent);
+    }
+
+    /// <summary>
+    /// How much longer to wait for the screen to settle after an action, or null to stop. Two phases:
+    /// another app coming to the front (<paramref name="frontChangedAt"/>, waited for up to 1.5 s; a
+    /// browser already in front never changes), then a second for the page to paint; four seconds in
+    /// all at most.
+    /// </summary>
+    public static TimeSpan? SettleDelay(TimeSpan? frontChangedAt, TimeSpan elapsed)
+    {
+        var paintStartsAt = frontChangedAt ?? TimeSpan.FromSeconds(1.5);
+        var settledAt = TimeSpan.FromTicks(Math.Min((paintStartsAt + TimeSpan.FromSeconds(1)).Ticks, TimeSpan.FromSeconds(4).Ticks));
+        return elapsed >= settledAt ? null : TimeSpan.FromSeconds(0.25);
+    }
+
+    private async Task WaitForScreenToSettleAsync(int? frontAppBefore)
+    {
+        var startedAt = now();
+        TimeSpan? frontChangedAt = null;
+        while (true)
+        {
+            var elapsed = now() - startedAt;
+            if (frontChangedAt is null && FrontAppProvider is { } frontApp && frontApp() != frontAppBefore) frontChangedAt = elapsed;
+            if (SettleDelay(frontChangedAt, elapsed) is not { } wait) return;
+            await Task.Delay(wait);
+        }
     }
 
     private void SendToolOutput(string callId, string output) => TrySend(new JsonObject

@@ -141,7 +141,7 @@ public static class WordsPageSentences
 /// <summary>A provider a key can be saved for (Keys & Plans): where it lives in shell.json and how its row reads.</summary>
 public enum ProviderKey
 {
-    OpenAI, Anthropic, OpenRouter, Gemini, Groq, Mistral, Xai, Sarvam, ElevenLabs, GoogleCloud, AmazonPolly,
+    OpenAI, Anthropic, OpenRouter, Gemini, Groq, Mistral, Xai, Sarvam, ElevenLabs, GoogleCloud, AmazonPolly, Spotify,
 }
 
 public static class ProviderKeys
@@ -160,7 +160,8 @@ public static class ProviderKeys
         ProviderKey.Sarvam => "Sarvam",
         ProviderKey.ElevenLabs => "ElevenLabs",
         ProviderKey.GoogleCloud => "Google Cloud voice",
-        _ => "Amazon Polly",
+        ProviderKey.AmazonPolly => "Amazon Polly",
+        _ => "Spotify",
     };
 
     public static string Detail(this ProviderKey provider) => provider switch
@@ -175,7 +176,8 @@ public static class ProviderKeys
         ProviderKey.Sarvam => "Speaks answers in a natural voice (Bulbul), and the Sarvam dictation engine for Indian languages.",
         ProviderKey.ElevenLabs => "Speaks answers in ElevenLabs’ voice, on your own ElevenLabs account.",
         ProviderKey.GoogleCloud => "Speaks answers. A Google Cloud API key with the Text-to-Speech API switched on; an AI Studio key won’t do.",
-        _ => "Speaks answers in Amazon’s neural voices. Paste access key ID:secret key, then :region if it isn’t us-east-1.",
+        ProviderKey.AmazonPolly => "Speaks answers in Amazon’s neural voices. Paste access key ID:secret key, then :region if it isn’t us-east-1.",
+        _ => "Finds the song you asked for. Paste client id:client secret from developer.spotify.com; without it OpenClicky’s own lookup is used.",
     };
 
     public static string Placeholder(this ProviderKey provider) => provider switch
@@ -190,7 +192,8 @@ public static class ProviderKeys
         ProviderKey.Sarvam => "Sarvam key",
         ProviderKey.ElevenLabs => "sk_…",
         ProviderKey.GoogleCloud => "AIza…",
-        _ => "AKIA…:secret",
+        ProviderKey.AmazonPolly => "AKIA…:secret",
+        _ => "id:secret",
     };
 
     public static string? StoredKey(this ProviderKey provider, OpenClickyShellSettings shell) => provider switch
@@ -205,7 +208,8 @@ public static class ProviderKeys
         ProviderKey.Sarvam => shell.SarvamKey,
         ProviderKey.ElevenLabs => shell.ElevenLabsApiKey,
         ProviderKey.GoogleCloud => shell.GoogleCloudApiKey,
-        _ => shell.AmazonPollyCredentials,
+        ProviderKey.AmazonPolly => shell.AmazonPollyCredentials,
+        _ => shell.SpotifyCredentials,
     };
 
     public static void Store(this ProviderKey provider, OpenClickyShellSettings shell, string? key)
@@ -222,7 +226,8 @@ public static class ProviderKeys
             case ProviderKey.Sarvam: shell.SarvamKey = key; break;
             case ProviderKey.ElevenLabs: shell.ElevenLabsApiKey = key; break;
             case ProviderKey.GoogleCloud: shell.GoogleCloudApiKey = key; break;
-            default: shell.AmazonPollyCredentials = key; break;
+            case ProviderKey.AmazonPolly: shell.AmazonPollyCredentials = key; break;
+            default: shell.SpotifyCredentials = key; break;
         }
     }
 

@@ -261,8 +261,19 @@ public sealed class SettingsCatalog
             items.Add(Item("clicky.fastVoiceNeedsKey", "Fast voice", "Fast voice and hands-free", "Needs your own OpenAI or Gemini key. A free account uses the standard voice.",
                 ["realtime", "voice", "fast", "hands-free", "always listening", "openai", "gemini", "key"]));
         }
+        // "Check my email" and "draft an email": which inbox they go to.
+        items.Add(Item("clicky.emailApp", "Doing things", "Email", EmailAppDetail,
+            ["email", "mail", "gmail", "outlook", "inbox", "draft"]));
+        items.Add(new SettingsItem
+        {
+            Id = "clicky.emailNeverSent", Page = DictationSettingsPage.Voice, Section = "Doing things", Chrome = SettingsItemChrome.Footer,
+            Title = EmailNeverSentText, Detail = EmailNeverSentText, Keywords = ["send", "email"],
+        });
         return items;
     }
+
+    public const string EmailAppDetail = "Which inbox “check my email” and “draft an email” open. Automatic is Gmail.";
+    public const string EmailNeverSentText = "Nothing is ever sent by voice.";
 
     // MARK: - Plugins (SettingsPluginsPage.swift)
 

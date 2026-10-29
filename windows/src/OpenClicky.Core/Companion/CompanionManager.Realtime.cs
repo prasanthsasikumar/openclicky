@@ -135,8 +135,10 @@ public sealed partial class CompanionManager
             if (outcome is null) return null;
             if (outcome.DidSomething) LastSuccessfulQuickActionAt = DateTimeOffset.Now;
             return new RealtimeToolResult(outcome.SpokenSentence, WasRejected: outcome is DesktopActionOutcome.InvalidName or DesktopActionOutcome.InvalidAppName
-                or DesktopActionOutcome.UnknownLocation or DesktopActionOutcome.InvalidUrl);
+                or DesktopActionOutcome.UnknownLocation or DesktopActionOutcome.InvalidUrl or DesktopActionOutcome.InvalidQuery or DesktopActionOutcome.InvalidRecipient,
+                ModelOutput: outcome.ToolOutput, ThenLooksAtScreen: outcome.ThenLooksAtScreen, LogDescription: outcome.LogDescription);
         };
+        client.FrontAppProvider = () => services.FrontmostApp.CurrentWithoutUrl()?.ProcessId;
         client.Pointing = MakePointingServices();
         client.PropertyChanged += (_, eventArgs) =>
         {
