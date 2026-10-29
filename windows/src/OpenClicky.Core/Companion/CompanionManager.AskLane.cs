@@ -23,6 +23,9 @@ public sealed partial class CompanionManager
     private readonly List<(string UserTranscript, string AssistantResponse)> conversationHistory = [];
     /// <summary>Account notices already spoken this session: each is said once, then the lane falls back silently.</summary>
     private readonly HashSet<string> spokenAccountNotices = new(StringComparer.Ordinal);
+    /// <summary>The last question sent down the ask lane and when: the same one again soon after means the
+    /// answer missed what they meant (RepeatedQuestion).</summary>
+    private (string Transcript, DateTimeOffset AskedAt)? lastAskQuestion;
 
     /// <summary>The running response, cancelled when the person speaks again.</summary>
     private CancellationTokenSource? currentResponseCancellation;
@@ -94,16 +97,16 @@ public sealed partial class CompanionManager
         // A guide's own "what's next?" never pauses: the person already let the task go ahead, and
         // a pause after every click would only slow the steps down.
         var pauseSeconds = AskSendPause.Seconds(DictationSettings.PauseBeforeSendingScreen, isGuidedStepContinuation);
-        _ = RunAskLaneAsync(transcript, pauseSeconds, cancellation);
+        _ = RunAskLaneAsync(transcript, pauseSeconds, isGuidedStepContinuation, cancellation);
     }
 
-    private async Task RunAskLaneAsync(string transcript, double? pauseSeconds, CancellationTokenSource cancellation)
+    private async Task RunAskLaneAsync(string transcript, double? pauseSeconds, bool isGuidedStepContinuation, CancellationTokenSource cancellation)
     {
         var cancellationToken = cancellation.Token;
         VoiceState = CompanionVoiceState.Processing;
         try
         {
-            await AnswerAsync(transcript, pauseSeconds, cancellationToken);
+            await AnswerAsync(transcript, pauseSeconds, isGuidedStepContinuation, cancellationToken);
         }
         catch (Exception error) when (AskLaneFailures.IsCancellation(error) || cancellationToken.IsCancellationRequested)
         {
@@ -125,8 +128,10 @@ public sealed partial class CompanionManager
         if (currentResponseCancellation == cancellation) currentResponseCancellation = null;
     }
 
-    private async Task AnswerAsync(string transcript, double? pauseSeconds, CancellationToken cancellationToken)
+    private async Task AnswerAsync(string transcript, double? pauseSeconds, bool isGuidedStepContinuation, CancellationToken cancellationToken)
     {
+        // Where the mouse was when they let go: what "this" points at.
+        var mouseLocationAtRelease = services.Screens.CursorPosition();
         if (pauseSeconds is { } seconds)
         {
             // A moment to call it off before anything leaves the PC. Esc or a click on the island
@@ -173,6 +178,26 @@ public sealed partial class CompanionManager
         }
 
         var labeledImages = screenCaptures.Select(ImageLabeledWithItsPixelSize).ToList();
+        // The pointer's place in its screenshot goes into the question, and a close-up of what is
+        // around it rides along, so "what is this?" is about the thing pointed at and not the
+        // window with focus.
+        var pointer = PointerInCapture.Locate(mouseLocationAtRelease, screenCaptures);
+        if (pointer is not null && screenCaptures.FirstOrDefault(capture => capture.Label == pointer.ScreenLabel) is { } pointedCapture
+            && PointerCloseUp.CropRect(pointer, pointedCapture.ScreenshotWidthInPixels, pointedCapture.ScreenshotHeightInPixels) is { } closeUpArea
+            && services.ScreenCapture.CropJpeg(pointedCapture.ImageData, closeUpArea) is { } closeUp)
+        {
+            labeledImages.Add((closeUp, PointerCloseUp.Label()));
+        }
+        // A guide's own "what's next?" is the same words every step: it is never a question asked
+        // again, and is not remembered as one (the Mac compared those too).
+        var isRepeatedQuestion = false;
+        if (!isGuidedStepContinuation)
+        {
+            var secondsSinceLastQuestion = lastAskQuestion is { } last ? (DateTimeOffset.Now - last.AskedAt).TotalSeconds : double.PositiveInfinity;
+            isRepeatedQuestion = RepeatedQuestion.IsRepeat(transcript, lastAskQuestion?.Transcript, secondsSinceLastQuestion);
+            lastAskQuestion = (transcript, DateTimeOffset.Now);
+        }
+        if (isRepeatedQuestion) AppLog.Write("ask: the same question again; answering about what is under the pointer");
         // The text a "rephrase this" would replace: the highlight, or the box the cursor is in.
         var writingTarget = await WritingTarget.CaptureFromFrontAppAsync(services.WriteInPlace, AppLog.Write);
         var selectedText = writingTarget is null ? await ReadSelectedTextAsync() : null;
@@ -211,7 +236,7 @@ public sealed partial class CompanionManager
                 labeledImages,
                 systemPrompt,
                 historyForApi,
-                AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText),
+                AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText, pointer, isRepeatedQuestion),
                 askTools,
                 accumulatedAnswer => services.MainThread.Post(() => answerSpeaker.Receive(accumulatedAnswer)),
                 cancellationToken);

@@ -155,16 +155,22 @@ public static class AskLanePrompts
     }
 
     /// <summary>
-    /// The question as sent: what was said, plus the text it may be about. A text to write over
-    /// carries the exact words (the highlight in full, or the box's text); otherwise a highlight is
-    /// quoted the short way, as context for "what does this mean".
+    /// The question as sent: what was said, plus the text it may be about, where the pointer is, and
+    /// whether it is the same question again. A text to write over carries the exact words (the
+    /// highlight in full, or the box's text); otherwise a highlight is quoted the short way, as
+    /// context for "what does this mean". Each line of context sits in its own brackets.
     /// </summary>
     /// <param name="selectedText">The text highlighted in the app in front (the Platform layer reads it); null for none.</param>
-    public static string AskUserPrompt(string transcript, WritingTarget? writingTarget, string? selectedText = null)
+    public static string AskUserPrompt(string transcript, WritingTarget? writingTarget, string? selectedText = null,
+                                       PointerInCapture? pointer = null, bool isRepeatedQuestion = false)
     {
-        if (writingTarget is not null) return transcript + "\n\n[" + writingTarget.ContextLine + "]";
-        if (!string.IsNullOrWhiteSpace(selectedText)) return transcript + "\n\n[" + SelectedTextContextLine(selectedText) + "]";
-        return transcript;
+        var contextLines = new List<string>();
+        if (writingTarget is not null) contextLines.Add(writingTarget.ContextLine);
+        else if (!string.IsNullOrWhiteSpace(selectedText)) contextLines.Add(SelectedTextContextLine(selectedText));
+        if (pointer is not null) contextLines.Add(pointer.PromptLine);
+        if (isRepeatedQuestion) contextLines.Add(RepeatedQuestion.PromptLine);
+        if (contextLines.Count == 0) return transcript;
+        return transcript + "\n\n" + string.Join("\n", contextLines.Select(line => "[" + line + "]"));
     }
 
     /// <summary>SelectedTextReader.contextLine: what a highlight adds to a question.</summary>
