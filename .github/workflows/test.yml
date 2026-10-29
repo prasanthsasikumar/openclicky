@@ -77,7 +77,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # PyGObject (GTK 3) comes from the distribution, as linux/README.md says, not from pip.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-gi gir1.2-gtk-3.0 python3-venv xvfb
+      # GStreamer decodes a cloud voice's MP3 (speech_voices.as_wav): its bindings, appsrc and
+      # decodebin (plugins-base), and the MP3 decoder (plugins-good).
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-gi gir1.2-gtk-3.0 python3-venv xvfb gir1.2-gstreamer-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good
       # The offline extra (sherpa-onnx) too, so Settings' offline engine and voice rows are tested; the
       # models themselves are not downloaded here, and the tests that need them skip themselves.
       - run: python3 -m venv --system-site-packages .venv && .venv/bin/pip install -e '.[test,offline]'

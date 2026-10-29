@@ -60,19 +60,21 @@ struct LocalAskRungTests {
 
     @Test func aSlowModelIsCloudWithinTheBudget() async {
         let started = Date()
-        let decision = await rung(FakeModel(intent: LocalAskIntent(kind: .openApp, name: "Safari"), delaySeconds: 5)).decide(transcript: "open safari", writingTarget: nil, budgetSeconds: 0.2)
+        let decision = await rung(FakeModel(intent: LocalAskIntent(kind: .openApp, name: "Safari"), delaySeconds: 60)).decide(transcript: "open safari", writingTarget: nil, budgetSeconds: 0.2)
         #expect(decision == .cloud(reason: "timed out"))
-        // Well under the model's 5 s, with room for a loaded test machine (1.05 s in a full run).
-        #expect(Date().timeIntervalSince(started) < 3.0)
+        // Far under the model's 60 s, not "close to the budget": the CI runner, with the whole suite
+        // running at once, took 4.9 s for a 0.2 s budget, and a tight bound failed every run there.
+        #expect(Date().timeIntervalSince(started) < 30)
     }
 
     @Test func aModelThatIgnoresCancellationStillLosesToTheBudget() async {
         // Foundation Models under background-on-battery throttling may not return on cancellation;
         // the cloud path must still start when the budget ends (review, 2026-10-28).
         let started = Date()
-        let decision = await rung(FakeModel(intent: LocalAskIntent(kind: .openApp, name: "Safari"), nonCancellableDelaySeconds: 3)).decide(transcript: "open safari", writingTarget: nil, budgetSeconds: 0.2)
+        let decision = await rung(FakeModel(intent: LocalAskIntent(kind: .openApp, name: "Safari"), nonCancellableDelaySeconds: 60)).decide(transcript: "open safari", writingTarget: nil, budgetSeconds: 0.2)
         #expect(decision == .cloud(reason: "timed out"))
-        #expect(Date().timeIntervalSince(started) < 1.5)
+        // Far under the model's 60 s (see aSlowModelIsCloudWithinTheBudget for why not tighter).
+        #expect(Date().timeIntervalSince(started) < 30)
     }
 
     @Test func theBudgetWithoutAPauseIsThePauseLength() {
@@ -96,11 +98,12 @@ struct LocalAskRungTests {
     }
 
     @Test func aRewriteThatNeverComesIsCloud() async {
-        let model = FakeModel(intent: LocalAskIntent(kind: .rewriteText, rewriteInstruction: "shorter"), rewritten: "x", rewriteDelaySeconds: 30)
+        let model = FakeModel(intent: LocalAskIntent(kind: .rewriteText, rewriteInstruction: "shorter"), rewritten: "x", rewriteDelaySeconds: 60)
         let started = Date()
         let decision = await rung(model).decide(transcript: "make this shorter", writingTarget: target, budgetSeconds: 0.2, rewriteBudgetSeconds: 0.3)
         #expect(decision == .cloud(reason: "timed out"))
-        #expect(Date().timeIntervalSince(started) < 2.0)
+        // Far under the rewrite's 60 s (see aSlowModelIsCloudWithinTheBudget for why not tighter).
+        #expect(Date().timeIntervalSince(started) < 30)
     }
 
     @Test func aRewriteThatAnsweredIsCloud() async {

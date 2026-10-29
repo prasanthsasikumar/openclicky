@@ -21,6 +21,7 @@ const RATE_LIMIT_PER_MINUTE = 30;
 const RATE_LIMIT_MAX_ADDRESSES = 1_000;
 
 let token: { value: string; expiresAt: number } | undefined;
+let tokenRequest: Promise<string> | null = null;
 const queryCache = new Map<string, { at: number; tracks: MusicTrack[] }>();
 const requestsByAddress = new Map<string, number[]>();
 
@@ -31,6 +32,7 @@ export function musicRateLimiterEntries(): number {
 
 export function resetMusicCaches() {
   token = undefined;
+  tokenRequest = null;
   queryCache.clear();
   requestsByAddress.clear();
 }
@@ -41,6 +43,14 @@ const normalised = (query: string) => query.trim().toLowerCase().replace(/\s+/g,
 
 async function accessToken(env: Env, now: number): Promise<string> {
   if (token && now < token.expiresAt - TOKEN_MARGIN_MS) return token.value;
+  // Lookups that arrive together share one token request instead of each minting its own.
+  tokenRequest ??= requestToken(env, now).finally(() => {
+    tokenRequest = null;
+  });
+  return tokenRequest;
+}
+
+async function requestToken(env: Env, now: number): Promise<string> {
   const basic = Buffer.from(`${env.SPOTIFY_CLIENT_ID}:${env.SPOTIFY_CLIENT_SECRET}`).toString("base64");
   const res = await fetch(`${accountsBase(env)}/api/token`, {
     method: "POST",
