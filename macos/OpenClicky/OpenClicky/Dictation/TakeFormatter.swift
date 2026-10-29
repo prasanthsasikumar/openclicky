@@ -243,7 +243,38 @@ enum TakeFormatter {
         if rawWords <= 3 { return polishedWords <= rawWords + 4 }
         let ratio = Double(polishedWords) / Double(rawWords)
         guard ratio >= 0.4 && ratio <= 1.8 else { return false }
-        return reusesTheSpokenWords(polished, raw: raw)
+        guard !answersASpokenQuestion(polished, raw: raw) else { return false }
+        return reusesTheSpokenWords(polished, raw: raw) && keepsTheSpokenWords(polished, raw: raw)
+    }
+
+    static let questionOpeners: Set<String> = ["how", "what", "why", "who", "which", "can", "could", "would", "should", "do", "does", "did", "is", "are"]
+
+    /// A spoken question tidied is still a question; Apple's model answered "how many files do we
+    /// need and how many do we have?" with "We need 10 files and we have 8", in the question's own
+    /// words, so `reusesTheSpokenWords` let it through.
+    static func answersASpokenQuestion(_ polished: String, raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let opener = trimmed.lowercased().split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
+        let asked = trimmed.contains("?") || questionOpeners.contains(opener)
+        return asked && !polished.contains("?")
+    }
+
+    /// The other way round from `reusesTheSpokenWords`: at least half the words spoken must be in
+    /// the rewrite. An answer can be made of the question's words and still leave most of them out.
+    /// Fillers, self-corrections and spoken numbers drop some, never most.
+    static func keepsTheSpokenWords(_ polished: String, raw: String) -> Bool {
+        func words(_ text: String) -> [String]? {
+            let pieces = text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" && $0 != "’" })
+                .map { $0.replacingOccurrences(of: "’", with: "'") }
+                .filter { !$0.contains(where: \.isNumber) && !fillers.contains($0) }
+            guard pieces.allSatisfy({ $0.unicodeScalars.allSatisfy { $0.isASCII } }) else { return nil }
+            return pieces
+        }
+        guard let polishedWords = words(polished), let rawWords = words(raw), rawWords.count >= 6 else { return true }
+        let written = Set(polishedWords)
+        let spoken = Set(rawWords)
+        let kept = spoken.filter { written.contains($0) }.count
+        return Double(kept) / Double(spoken.count) >= 0.5
     }
 
     /// A clean-up keeps the speaker's words; a reply of the same length does not ("ignore the
