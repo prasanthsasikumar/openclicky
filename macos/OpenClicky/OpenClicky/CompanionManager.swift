@@ -200,6 +200,11 @@ final class CompanionManager: ObservableObject {
         if enabled { warmUpRealtimeVoice() } else { realtimeVoiceClient.disconnect(reason: "realtime voice turned off") }
     }
 
+    /// Settings → Voice picked another fast voice vendor: the next connection is made with it.
+    func realtimeProviderChanged() {
+        warmUpRealtimeVoice()
+    }
+
     func setAlwaysListening(_ enabled: Bool) {
         isAlwaysListening = enabled
         warmUpRealtimeVoice()
@@ -271,7 +276,7 @@ final class CompanionManager: ObservableObject {
             AppLog.append("realtime connection lost: \(reason)")
             guard self.voiceState != .idle else { return }
             self.voiceState = .idle
-            self.streamCursorCaption("Lost the connection to OpenAI. Press again to reconnect.", holdSeconds: 6)
+            self.streamCursorCaption("Lost the connection to \(self.realtimeVoiceClient.providerName). Press again to reconnect.", holdSeconds: 6)
             self.scheduleTransientHideIfNeeded()
         }
         realtimeVoiceClient.screenContextProvider = {
@@ -1471,7 +1476,7 @@ final class CompanionManager: ObservableObject {
             // Say the real reason: a free account cannot use realtime at all, whatever the switch says.
             let reason = AccountCapabilities.current().usesRealtime
                 ? "hands-free needs fast voice. turn it on in settings, clicky."
-                : "hands-free needs your own openai key. add it in settings, account."
+                : "hands-free needs your own openai or gemini key. add it in settings, account."
             streamCursorCaption(reason, holdSeconds: 6)
             return
         }

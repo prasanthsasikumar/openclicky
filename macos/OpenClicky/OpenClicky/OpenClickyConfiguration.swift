@@ -63,6 +63,9 @@ struct OpenClickyShellSettings: Codable {
     /// Who answers questions: nil or "auto" picks in ProviderRouter's order; otherwise one of
     /// AnswerSource's raw values.
     var answerSource: String? = nil
+    /// Who runs the fast voice lane and hands-free (RealtimeVoiceProvider): nil or "auto" uses
+    /// OpenAI when its key is set, else Gemini; "openai" or "gemini" picks one.
+    var realtimeProvider: String? = nil
     /// Model overrides per provider ("openrouter": "anthropic/claude-sonnet-4.6"); absent → default.
     var answerModels: [String: String]? = nil
     /// Who speaks answers (SpeechVoiceChoice): nil, "auto" or the older "cloud" picks in order (your
@@ -125,6 +128,7 @@ extension OpenClickyShellSettings {
         useClaudeCodePlan = try container.decodeIfPresent(Bool.self, forKey: .useClaudeCodePlan)
         useCodexPlan = try container.decodeIfPresent(Bool.self, forKey: .useCodexPlan)
         answerSource = try container.decodeIfPresent(String.self, forKey: .answerSource)
+        realtimeProvider = try container.decodeIfPresent(String.self, forKey: .realtimeProvider)
         answerModels = try container.decodeIfPresent([String: String].self, forKey: .answerModels)
         speechVoice = try container.decodeIfPresent(String.self, forKey: .speechVoice)
         macVoiceIdentifier = try container.decodeIfPresent(String.self, forKey: .macVoiceIdentifier)
@@ -454,6 +458,11 @@ enum OpenClickyConfiguration {
 
     static var cliCommand: [String] { settings.cliCommand }
     static var workspacePath: String { NSString(string: settings.workspace).expandingTildeInPath }
+    /// The fast voice vendor the person picked in Settings → Clicky; nil is automatic.
+    static var preferredRealtimeProvider: RealtimeVoiceProvider? {
+        settings.realtimeProvider.flatMap(RealtimeVoiceProvider.init(rawValue:))
+    }
+
     static var agentModelOverride: String? { settings.model.isEmpty ? nil : settings.model }
 
     /// The user's skill library: `library/<id>/SKILL.md`, `active/` symlinks, `activations.json`.

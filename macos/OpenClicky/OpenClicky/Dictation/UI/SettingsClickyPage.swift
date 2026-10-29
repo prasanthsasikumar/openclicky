@@ -81,16 +81,17 @@ extension SettingsCatalog {
                            "mac voice", "premium voice", "siri", "credits", "allowance", "left"],
                 view: AnyView(SpeechVoiceRows(openKeysPage: { [companionManager] in companionManager.showSettings(.keys) }))),
         ]
-        // Fast voice and hands-free run on OpenAI Realtime, which only an own OpenAI key can use;
-        // a free account would see switches that do nothing, so it gets the way to a key instead.
+        // Fast voice and hands-free run on OpenAI Realtime or Gemini Live, which need an own OpenAI
+        // or Gemini key; a free account would see switches that do nothing, so it gets the way to
+        // a key instead.
         if usesRealtime {
             items += [
                 SettingsItem(
                     id: "clicky.fastVoice", page: .voice, section: "Fast voice",
-                    title: "Fast voice", detail: "Talks back instantly, over OpenAI Realtime.",
-                    keywords: ["realtime", "voice", "fast", "openai"],
+                    title: "Fast voice", detail: "Talks back instantly, over OpenAI Realtime or Gemini Live.",
+                    keywords: ["realtime", "voice", "fast", "openai", "gemini", "live"],
                     view: AnyView(CompanionSwitchRow(
-                        title: "Fast voice", detail: "Talks back instantly, over OpenAI Realtime.",
+                        title: "Fast voice", detail: "Talks back instantly, over OpenAI Realtime or Gemini Live.",
                         publisher: companionManager.$isRealtimeVoiceEnabled.eraseToAnyPublisher(),
                         initialValue: companionManager.isRealtimeVoiceEnabled,
                         set: { [companionManager] in companionManager.setRealtimeVoiceEnabled($0) }))),
@@ -104,12 +105,21 @@ extension SettingsCatalog {
                         initialValue: companionManager.isAlwaysListening,
                         set: { [companionManager] in companionManager.setAlwaysListening($0) }))),
             ]
+            // Only worth a choice when both can run here.
+            let credentials = ProviderCredentials(settings: OpenClickyConfiguration.settings)
+            if credentials.geminiKey != nil, credentials.openAIKey != nil || credentials.accountToken != nil {
+                items.append(SettingsItem(
+                    id: "clicky.realtimeProvider", page: .voice, section: "Fast voice",
+                    title: "Fast voice with", detail: "Who talks back in fast voice and hands-free.",
+                    keywords: ["realtime", "gemini", "openai", "live", "provider", "fast voice", "hands-free"],
+                    view: AnyView(RealtimeProviderRow(changed: { [companionManager] in companionManager.realtimeProviderChanged() }))))
+            }
         } else {
             items.append(SettingsItem(
                 id: "clicky.fastVoiceNeedsKey", page: .voice, section: "Fast voice",
-                title: "Fast voice and hands-free", detail: "Needs your own OpenAI key. A free account uses the standard voice.",
-                keywords: ["realtime", "voice", "fast", "hands-free", "always listening", "openai", "key"],
-                view: AnyView(SettingsRow(title: "Fast voice and hands-free", detail: "Needs your own OpenAI key. A free account uses the standard voice.") {
+                title: "Fast voice and hands-free", detail: "Needs your own OpenAI or Gemini key. A free account uses the standard voice.",
+                keywords: ["realtime", "voice", "fast", "hands-free", "always listening", "openai", "gemini", "key"],
+                view: AnyView(SettingsRow(title: "Fast voice and hands-free", detail: "Needs your own OpenAI or Gemini key. A free account uses the standard voice.") {
                     Button("Add Key…") { companionManager.showSettings(.keys) }
                         .pointerCursor()
                 })))
@@ -161,6 +171,40 @@ struct EmailAppRow: View {
                 Text("Automatic").tag("auto")
                 Text("Apple Mail").tag("mail")
                 Text("Gmail").tag("gmail")
+            }
+            .labelsHidden().fixedSize()
+            .pointerCursor()
+        }
+    }
+}
+
+/// Who runs fast voice and hands-free when both an OpenAI and a Gemini key (or an account) are
+/// here: automatic (OpenAI first), OpenAI Realtime or Gemini Live. `realtimeProvider` in shell.json.
+struct RealtimeProviderRow: View {
+    let changed: () -> Void
+    @ObservedObject private var shellSettingsRevision = ShellSettingsRevision.shared
+
+    /// The picker's tag for a saved setting; anything unknown shows as automatic.
+    static func tag(forSetting setting: String?) -> String {
+        guard let setting, RealtimeVoiceProvider(rawValue: setting) != nil else { return "auto" }
+        return setting
+    }
+
+    var body: some View {
+        let _ = shellSettingsRevision.revision
+        SettingsRow(title: "Fast voice with", detail: "Who talks back in fast voice and hands-free. Automatic is OpenAI, whose pointing is tuned best.") {
+            Picker("", selection: Binding(
+                get: { Self.tag(forSetting: OpenClickyConfiguration.settings.realtimeProvider) },
+                set: { tag in
+                    OpenClickyConfiguration.update { $0.realtimeProvider = RealtimeVoiceProvider(rawValue: tag)?.rawValue }
+                    ShellSettingsRevision.shared.noteChanged()
+                    changed()
+                }
+            )) {
+                Text("Automatic").tag("auto")
+                ForEach(RealtimeVoiceProvider.allCases, id: \.rawValue) { provider in
+                    Text(provider == .openAI ? "OpenAI Realtime" : "Gemini Live").tag(provider.rawValue)
+                }
             }
             .labelsHidden().fixedSize()
             .pointerCursor()

@@ -103,7 +103,7 @@ extension SettingsCatalog {
                 view: AnyView(SettingsRow(title: "Type to Clicky", detail: "A one-line composer opens in the island.") {
                     SettingsKeys(keys: ["⌃"], gesture: "tap twice")
                 })),
-            // Hands-free runs on OpenAI Realtime, which needs an own OpenAI key: without one the key
+            // Hands-free runs on OpenAI Realtime or Gemini Live, which need an own key: without one the key
             // would do nothing, so it isn't listed (Voice says how to get it).
             SettingsItem(
                 id: "keyboard.handsFree", page: .keyboard, section: "Clicky",
