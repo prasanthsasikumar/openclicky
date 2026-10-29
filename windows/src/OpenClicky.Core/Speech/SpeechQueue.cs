@@ -325,7 +325,8 @@ public sealed class StreamingAnswerSpeaker
         string? pointTag;
         lock (stateLock)
         {
-            if (isCancelled || hasHandledPointTag || chunker.PointTag is null) return;
+            // An [UNSURE] answer never points, even when the model sent a tag with it.
+            if (isCancelled || hasHandledPointTag || chunker.IsUnsure || chunker.PointTag is null) return;
             hasHandledPointTag = true;
             pointTag = chunker.PointTag;
         }

@@ -4,7 +4,9 @@
 // a question on its way, an answer being said, or a guide waiting for a click. A dictation take
 // keeps esc to itself, as it always has. The rules are pure, so they are unit-tested without
 // events; CompanionManager.StopAskLane does the stopping. Also here: the pause before the screen
-// is sent.
+// is sent, and the [UNSURE] marker for a reply that cannot find what to point at.
+
+using System.Text.RegularExpressions;
 
 namespace OpenClicky.Core.Answers;
 
@@ -76,5 +78,40 @@ public static class AskSendPause
         {
         }
         return !cancellationToken.IsCancellationRequested;
+    }
+}
+
+/// <summary>
+/// The [UNSURE] marker that opens a reply when the model cannot find the control on screen. Such a
+/// reply carries no point (a tag sent anyway is ignored), says in words what to look for or asks
+/// what they see, and is never spoken with the marker. Guessing with the pointer would send the
+/// person to the wrong place with all the confidence of a right one.
+/// </summary>
+public static class UnsureMarker
+{
+    public const string Marker = "[UNSURE]";
+    public const string IslandStatus = "not sure · tell me what you see";
+
+    /// <summary>Matches the marker however a model spaces or cases it ("[unsure]", "[ UNSURE ]").</summary>
+    private static readonly Regex MarkerPattern = new(@"\[\s*unsure\s*\]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex LeadingMarkerPattern = new(@"^\s*\[\s*unsure\s*\]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    public static bool ContainsMarker(string text) => MarkerPattern.IsMatch(text);
+
+    /// <summary>The text without any marker, trimmed.</summary>
+    public static string RemovingMarkers(string text) => MarkerPattern.Replace(text, "").Trim();
+
+    /// <summary>The length (UTF-16) of a marker opening <paramref name="text"/> (after any whitespace), or null when it does not open with one.</summary>
+    public static int? LeadingMarkerLength(string text)
+    {
+        var match = LeadingMarkerPattern.Match(text);
+        return match.Success ? match.Index + match.Length : null;
+    }
+
+    /// <summary>True while a streamed answer's opening ("[", "[UNS") could still turn out to be the marker.</summary>
+    public static bool CouldStillBecomeMarker(string opening)
+    {
+        var soFar = opening[..Math.Min(Marker.Length, opening.Length)].ToUpperInvariant();
+        return soFar.Length < Marker.Length && Marker.StartsWith(soFar, StringComparison.Ordinal);
     }
 }

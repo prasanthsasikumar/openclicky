@@ -268,17 +268,29 @@ public sealed partial class CompanionManager
         }
         answerSpeaker.Finish(toolOutcomes);
 
-        // The tag and the guide's marker are stripped so they don't confuse future context.
-        var replyIsAGuidedStep = GuidedStepMarker.ContainsMarker(fullResponseText);
-        var parseResult = PointTagParser.ParsePointingCoordinates(GuidedStepMarker.RemovingMarkers(fullResponseText));
+        // The tag and the markers are stripped so they don't confuse future context. A reply that is
+        // not sure what to point at never points, and is never a guide's step: the guide ends there
+        // and the person asks again with what they see. Keeping the guide waiting for a click would
+        // only guess at what the next click means.
+        var replyIsUnsure = UnsureMarker.ContainsMarker(fullResponseText);
+        var replyIsAGuidedStep = !replyIsUnsure && GuidedStepMarker.ContainsMarker(fullResponseText);
+        var parseResult = PointTagParser.ParsePointingCoordinates(UnsureMarker.RemovingMarkers(GuidedStepMarker.RemovingMarkers(fullResponseText)));
+        var pointedCoordinate = replyIsUnsure ? null : parseResult.Coordinate;
         var spokenText = AskLaneFailures.SpokenReply(parseResult.SpokenText, toolOutcomes);
+        if (replyIsUnsure)
+        {
+            AppLog.Write($"ask: not sure what to point at{(parseResult.Coordinate is null ? "" : " (its point tag ignored)")}");
+            // The marker came after a tag the pointer already flew to: bring it back.
+            Overlay.ClearDetectedElementLocation();
+            ShowAskIslandStatus(UnsureMarker.IslandStatus, 10);
+        }
 
         if (spokenText.Length == 0)
         {
             // Nothing to say (an empty answer, or a bare tag): "thinking…" would stay up in silence.
-            AppLog.Write($"ask: empty answer ({(parseResult.Coordinate is null ? "no point" : "point only")})");
+            AppLog.Write($"ask: empty answer ({(pointedCoordinate is null ? "no point" : "point only")})");
             Overlay.DismissCursorCaption();
-            if (parseResult.Coordinate is null)
+            if (pointedCoordinate is null)
             {
                 LastQuestionFailed = true;
                 SpeakWithSystemVoice(AskLaneFailures.EmptyAnswerSentence);
@@ -579,7 +591,8 @@ public sealed partial class CompanionManager
 
     /// <summary>
     /// What the island's status says instead of the ask lane's state, while set: the pause before
-    /// sending the screen. Null gives the status back to the state.
+    /// sending the screen, or a reply that was not sure what to point at. Null gives the status back
+    /// to the state.
     /// </summary>
     private void SetAskIslandStatus(string? status)
     {
