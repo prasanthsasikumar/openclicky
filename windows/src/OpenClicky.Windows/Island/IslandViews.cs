@@ -72,7 +72,8 @@ internal sealed class CollapsedHandleView : Grid, IIslandContent
 
 // MARK: - Peek
 
-/// <summary>The hover tease (NotchPeekLine): the pointer's mark and status, then "· click to open", on one line under the band.</summary>
+/// <summary>The hover tease (NotchPeekLine): the pointer's mark and status (or the playing track, with Now playing on),
+/// then "· click to open", on one line under the band.</summary>
 internal sealed class PeekLineView : Grid, IIslandContent
 {
     private readonly IslandCompanionModel hub;
@@ -84,6 +85,8 @@ internal sealed class PeekLineView : Grid, IIslandContent
         this.hub = hub;
         // The whole line is the island's click target: a click opens the panel.
         IsHitTestVisible = false;
+        Loaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed += OnMediaChanged;
+        Unloaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed -= OnMediaChanged;
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -94,16 +97,25 @@ internal sealed class PeekLineView : Grid, IIslandContent
         var markHolder = new Grid { Width = 12, Height = 12, Margin = new Thickness(0, 0, 6, 0) };
         markHolder.Children.Add(mark);
         row.Children.Add(markHolder);
+        // A long track name is cut, so "click to open" always fits.
         statusText = Text("", 11, DS.HUD.Text2Brush, trimming: TextTrimming.CharacterEllipsis);
+        statusText.MaxWidth = 170;
         row.Children.Add(statusText);
         row.Children.Add(Text(" · click to open", 11, DS.HUD.Text3Brush));
         Children.Add(row);
         Refresh();
     }
 
+    private void OnMediaChanged()
+    {
+        if (Dispatcher.CheckAccess()) Refresh();
+        else Dispatcher.BeginInvoke(Refresh);
+    }
+
     public void Refresh()
     {
-        statusText.Text = IslandTexts.PeekStatus(hub.IsClickyCursorEnabled, hub.PointerPresence, hub.IsPointerAwake);
+        statusText.Text = IslandTexts.PeekText(IslandTexts.PeekStatus(hub.IsClickyCursorEnabled, hub.PointerPresence, hub.IsPointerAwake),
+            agentLine: null, mediaLine: Plugins.Media.MediaIslandView.Store.NowPlayingLine);
     }
 
     public void Tick() { }

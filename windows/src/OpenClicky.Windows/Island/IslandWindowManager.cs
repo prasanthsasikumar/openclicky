@@ -16,6 +16,7 @@ using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Windows.Overlay;
+using OpenClicky.Windows.Plugins.Media;
 
 namespace OpenClicky.Windows.Island;
 
@@ -66,9 +67,13 @@ public sealed class IslandWindowManager : IDisposable
                 componentSettingsObservations.Add(preferences.Observe(key, () => dispatcher.BeginInvoke(() =>
                 {
                     foreach (var instance in instances) instance.Model.RefreshComponentSettings();
+                    SyncOptionalComponents();
                 })));
             }
         }
+        // The playing track is a moment of its own (Now playing on and something plays).
+        MediaIslandView.Store.Changed += OnMediaChanged;
+        SyncOptionalComponents();
         if (overlayModel is not null)
         {
             overlayModel.DockTarget = () => (DockPoint, DockScreenFrame);
@@ -218,7 +223,7 @@ public sealed class IslandWindowManager : IDisposable
             model.SetPermissionPrompt(hub.PermissionPrompt);
             model.SetTourCard(hub.TourCard);
             model.SetCaption(hub.CaptionText);
-            model.SetContext(hub.IslandContext with { Now = DateTimeOffset.Now });
+            model.SetContext(CurrentContext());
             var window = new IslandWindow(model, hub, screen);
             instances.Add(new Instance(screen.DeviceName, model, window));
             if (isShown) window.Show();
@@ -331,10 +336,27 @@ public sealed class IslandWindowManager : IDisposable
     /// <summary>Ticks once a second while a landed take's transcript window runs, so it ends on time.</summary>
     private DispatcherTimer? landedTranscriptTimer;
 
+    /// <summary>The plugins that read something in the background follow their switches: Now playing asks the media
+    /// sessions only while it is on (NotchHUDManager.syncOptionalComponents).</summary>
+    private void SyncOptionalComponents() =>
+        MediaIslandView.Store.SetEnabled(componentSettings?.EnabledPlugins.Contains(Core.Plugins.IslandPluginRegistry.MediaId) ?? false);
+
+    private bool isMediaPlaying;
+
+    private void OnMediaChanged()
+    {
+        if (MediaIslandView.Store.IsPlaying == isMediaPlaying) return;
+        isMediaPlaying = MediaIslandView.Store.IsPlaying;
+        ApplyIslandContext();
+    }
+
+    /// <summary>The companion's moment, with the time now and whether music plays.</summary>
+    private IslandContext CurrentContext() => hub.IslandContext with { Now = DateTimeOffset.Now, IsMediaPlaying = isMediaPlaying };
+
     /// <summary>Every island gets the moment, with the time now; a landed take keeps the clock running until its window ends.</summary>
     private void ApplyIslandContext()
     {
-        var context = hub.IslandContext with { Now = DateTimeOffset.Now };
+        var context = CurrentContext();
         foreach (var instance in instances) instance.Model.SetContext(context);
         var isInLandedWindow = !context.IsTakeLive && context.TakeLandedAt is { } landedAt && context.Now - landedAt < IslandContext.LandedTranscriptWindow;
         if (isInLandedWindow && landedTranscriptTimer is null)
@@ -353,6 +375,8 @@ public sealed class IslandWindowManager : IDisposable
     {
         hoverPollTimer.Stop();
         landedTranscriptTimer?.Stop();
+        MediaIslandView.Store.Changed -= OnMediaChanged;
+        MediaIslandView.Store.SetEnabled(false);
         foreach (var observation in componentSettingsObservations) observation.Dispose();
         componentSettingsObservations.Clear();
         hub.PropertyChanged -= OnHubPropertyChanged;

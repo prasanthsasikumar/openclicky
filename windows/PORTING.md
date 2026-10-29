@@ -140,7 +140,7 @@ What the Mac gained after the port (git log da71df7..HEAD -- macos), and where W
 | Island: transcript and agent components (the moment picks them), "follow up" on an agent thread | Done (`CompanionManager.IslandContext.cs`) |
 | Plugin: Shelf (drop on the island, drag out, copy) | Done (`Core/Plugins/Shelf`, `Windows/Plugins/Shelf`; the collapsed island catches drags with an alpha-1 rectangle only while the Shelf is on) |
 | Plugin: Coding agents (Claude Code / Codex sessions, plan limits) | Not yet |
-| Plugin: Now playing (artwork, progress, controls) | Not yet: Windows' media session API covers every player |
+| Plugin: Now playing (artwork, progress, controls) | Done: Windows' media sessions, so every player that reports to Windows (`Core/Plugins/Media`, `Windows/Plugins/Media`) |
 | Plugin: Teacher (draws lessons on screen) | Not yet |
 | Island: glass under the open panel | Not needed: the Mac went back to solid black (f0abb80) |
 | Island: docking the pointer removed (2bf8edb) | Done: no dock button, tray item or setting; a stored dock flag is cleared once (CursorFlightPlanner still knows ToDock, unused) |
