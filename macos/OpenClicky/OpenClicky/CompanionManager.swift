@@ -2262,9 +2262,12 @@ final class CompanionManager: ObservableObject {
     /// The speaker for one spoken reply: its pieces are fetched and played by the answer voice
     /// player, the next one fetched while the current one plays.
     private func makeAnswerSpeaker(onVoiceStarts: @escaping () -> Void, onPointTag: @escaping (String) -> Void) -> StreamingAnswerSpeaker {
-        StreamingAnswerSpeaker(
+        // One session per answer, so a late or failed free voice hands the rest of this answer to
+        // the local voice and the next answer tries again (AccountVoiceGuard.swift).
+        let answerVoiceSession = answerVoicePlayer.makeAnswerSession()
+        return StreamingAnswerSpeaker(
             speechQueue: SpeechQueue(
-                fetchAudio: { [answerVoicePlayer] pieceText in try await answerVoicePlayer.fetchAudio(for: pieceText) },
+                fetchAudio: { pieceText in try await answerVoiceSession.audio(for: pieceText) },
                 playAudio: { [answerVoicePlayer] audioData in try await answerVoicePlayer.playToCompletion(audioData) }
             ),
             onVoiceStarts: onVoiceStarts,
