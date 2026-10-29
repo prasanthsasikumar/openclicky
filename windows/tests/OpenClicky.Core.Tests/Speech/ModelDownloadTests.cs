@@ -8,6 +8,50 @@ namespace OpenClicky.Core.Tests.Speech;
 
 public class ModelDownloadTests
 {
+    /// <summary>tar, faked: writes a model folder into the folder it is told to unpack into, and checks the model's
+    /// final folder is still empty while it does.</summary>
+    private sealed class FakeTar(string finalModelFolder) : IProcessRunner
+    {
+        public bool ModelWasVisibleWhileUnpacking { get; private set; }
+
+        public string? ResolveExecutable(string command) => command;
+
+        public IRunningProcess Start(ProcessLaunchRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<ProcessRunResult> RunAsync(ProcessLaunchRequest request, string? standardInput = null, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+        {
+            var target = request.Arguments[request.Arguments.ToList().IndexOf("-C") + 1];
+            var model = Directory.CreateDirectory(Path.Combine(target, "the-model"));
+            File.WriteAllText(Path.Combine(model.FullName, "encoder.onnx"), "half written");
+            ModelWasVisibleWhileUnpacking = File.Exists(Path.Combine(finalModelFolder, "encoder.onnx"));
+            File.WriteAllText(Path.Combine(model.FullName, "tokens.txt"), "tokens");
+            return Task.FromResult(new ProcessRunResult(0, "", "", false));
+        }
+    }
+
+    /// <summary>A fresh install used Kokoro and Parakeet while tar was still writing them (2026-10-29): the model only
+    /// appears in its folder once it is whole.</summary>
+    [Fact]
+    public async Task AModelAppearsOnlyOnceItIsWhollyUnpacked()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"openclicky-unpack-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var modelFolder = Path.Combine(folder, "the-model");
+            var tar = new FakeTar(modelFolder);
+            await ModelDownload.UnpackAsync("archive.tar.bz2", folder, tar, CancellationToken.None);
+            Assert.False(tar.ModelWasVisibleWhileUnpacking);
+            Assert.True(File.Exists(Path.Combine(modelFolder, "encoder.onnx")));
+            Assert.True(File.Exists(Path.Combine(modelFolder, "tokens.txt")));
+            Assert.False(Directory.Exists(Path.Combine(folder, ".unpacking")));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
     [Fact]
     public void TheChecksumIsLowerCaseHexSha256()
     {

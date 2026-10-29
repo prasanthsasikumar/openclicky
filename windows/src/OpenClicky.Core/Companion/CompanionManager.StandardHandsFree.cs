@@ -188,11 +188,13 @@ public sealed partial class CompanionManager
     private async Task AskStandardHandsFreeTurnAsync(float[] samples)
     {
         var seconds = (double)samples.Length / UtteranceDetector.SampleRate;
+        var peak = UtteranceDetector.PeakDecibels(samples);
+        var raised = UtteranceDetector.Normalized(samples, out var gain);
         var heard = "";
         try
         {
             // The ask lane's own engine, as the Ctrl + Win lane would hear it.
-            heard = (await RecordedAudioTranscription.TranscribeAsync(UtteranceDetector.Pcm16(samples),
+            heard = (await RecordedAudioTranscription.TranscribeAsync(UtteranceDetector.Pcm16(raised),
                 BuddyDictationManager.TranscriptionProvider, keyterms: [])).Trim();
         }
         catch (Exception error)
@@ -203,7 +205,7 @@ public sealed partial class CompanionManager
         {
             isStandardHandsFreeTranscribing = false;
             if (!isStandardHandsFreeOn) return;
-            AppLog.Write($"hands-free (standard): heard {heard.Length} chars from {seconds:0.0} s");
+            AppLog.Write($"hands-free (standard): heard {heard.Length} chars from {seconds:0.0} s (peak {peak:0} dBFS, gain ×{gain:0.0}, {BuddyDictationManager.TranscriptionProvider.DisplayName})");
             if (heard.Length == 0)
             {
                 Overlay.DismissCursorCaption();

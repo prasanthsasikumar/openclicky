@@ -142,6 +142,35 @@ public sealed class UtteranceDetector
         return enoughSpeech ? new Event.Finished(samples) : new Event.Discarded();
     }
 
+    /// <summary>The loudest a quiet turn is raised to before transcription, and the most it is multiplied by.</summary>
+    public const float TargetPeak = 0.5f;
+    public const float MaximumGain = 20;
+
+    /// <summary>
+    /// A quiet turn raised so its loudest sample is about <see cref="TargetPeak"/>. The detector hears a voice at three
+    /// times the room's noise, which on a laptop's built-in microphone can be far quieter than the engines read well:
+    /// on a tester's PC Parakeet heard nothing in most hands-free turns (2026-10-29) though it read a recording of the
+    /// same words. A loud turn is left as it is; the gain is capped so a whisper in a silent room is not mostly hiss.
+    /// </summary>
+    public static float[] Normalized(float[] samples, out float gain)
+    {
+        var peak = 0f;
+        foreach (var sample in samples) peak = Math.Max(peak, Math.Abs(sample));
+        gain = peak <= 0 || peak >= TargetPeak / 2 ? 1 : Math.Min(MaximumGain, TargetPeak / peak);
+        if (gain == 1) return samples;
+        var raised = new float[samples.Length];
+        for (var index = 0; index < samples.Length; index++) raised[index] = Math.Clamp(samples[index] * gain, -1f, 1f);
+        return raised;
+    }
+
+    /// <summary>The loudest sample, in dBFS (for the log).</summary>
+    public static double PeakDecibels(float[] samples)
+    {
+        var peak = 0f;
+        foreach (var sample in samples) peak = Math.Max(peak, Math.Abs(sample));
+        return peak <= 0 ? double.NegativeInfinity : 20 * Math.Log10(peak);
+    }
+
     /// <summary>16 kHz mono float samples as 16-bit little-endian PCM, what the transcription engines take.</summary>
     public static byte[] Pcm16(float[] samples)
     {

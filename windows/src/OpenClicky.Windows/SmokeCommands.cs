@@ -50,6 +50,14 @@ internal static class SmokeCommands
             var engineName = Argument("--openclicky-smoke-transcribe", 2) ?? "offline";
             return Task.Run(() => TranscribeAsync(wavPath, engineName)).GetAwaiter().GetResult();
         }
+        if (Argument("--openclicky-smoke-handsfree-file") is { } handsFreeWavPath)
+        {
+            ConsoleAttachment.Attach();
+            // Optional: a volume to scale the recording by (a quiet microphone), and --as-recorded to skip raising quiet turns.
+            var volume = double.TryParse(Argument("--openclicky-smoke-handsfree-file", 2), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : 1;
+            return Task.Run(() => HandsFreeFileAsync(handsFreeWavPath, volume, !args.Contains("--as-recorded"))).GetAwaiter().GetResult();
+        }
         if (Argument("--openclicky-voice-smoke") is { } voiceName)
         {
             ConsoleAttachment.Attach();
@@ -108,6 +116,51 @@ internal static class SmokeCommands
         int read;
         while ((read = samples.Read(buffer, 0, buffer.Length)) > 0) all.AddRange(buffer.AsSpan(0, read).ToArray());
         return all.ToArray();
+    }
+
+    /// <summary>A recording through standard hands-free's own detector and the on-device hearing a free account uses,
+    /// the way CompanionManager.StandardHandsFree asks each turn (the Mac's --openclicky-smoke-handsfree-file).</summary>
+    private static async Task<int> HandsFreeFileAsync(string wavPath, double volume, bool raisesQuietTurns)
+    {
+        var platform = new HeadlessPlatform();
+        var provider = new OnDeviceHearingProvider(platform.OfflineSpeech);
+        Console.WriteLine($"hands-free: {provider.DisplayName} on {Path.GetFileName(wavPath)} at ×{volume}, {(raisesQuietTurns ? "raising quiet turns" : "as recorded")}");
+        // A quieter microphone, simulated.
+        var samples = LoadMono16k(wavPath).Select(sample => (float)(sample * volume)).ToArray();
+        var detector = new UtteranceDetector();
+        var turns = 0;
+        var heardAny = false;
+        for (var offset = 0; offset + UtteranceDetector.FrameLength <= samples.Length; offset += UtteranceDetector.FrameLength)
+        {
+            var detected = detector.Process(samples.AsSpan(offset, UtteranceDetector.FrameLength).ToArray());
+            switch (detected)
+            {
+                case UtteranceDetector.Event.Started:
+                    Console.WriteLine($"hands-free: speech started at {offset / (double)UtteranceDetector.SampleRate:0.00} s");
+                    break;
+                case UtteranceDetector.Event.Discarded:
+                    Console.WriteLine("hands-free: discarded (too short)");
+                    break;
+                case UtteranceDetector.Event.Finished finished:
+                    turns++;
+                    var stopwatch = Stopwatch.StartNew();
+                    try
+                    {
+                        var gain = 1f;
+                        var turnSamples = raisesQuietTurns ? UtteranceDetector.Normalized(finished.Samples, out gain) : finished.Samples;
+                        var heard = await RecordedAudioTranscription.TranscribeAsync(UtteranceDetector.Pcm16(turnSamples), provider, keyterms: []);
+                        heardAny |= heard.Trim().Length > 0;
+                        Console.WriteLine($"hands-free: turn {turns} ({finished.Samples.Length / (double)UtteranceDetector.SampleRate:0.0} s, peak {UtteranceDetector.PeakDecibels(finished.Samples):0} dBFS, gain ×{gain:0.0}) heard \"{heard}\" in {stopwatch.Elapsed.TotalSeconds:0.0} s; sign-off {HandsFreeSignOff.IsSignOff(heard)}");
+                    }
+                    catch (Exception error)
+                    {
+                        Console.WriteLine($"hands-free: turn {turns} failed: {error.GetType().Name}: {error.Message}");
+                    }
+                    break;
+            }
+        }
+        if (turns == 0) Console.WriteLine("hands-free: no turn found");
+        return heardAny ? 0 : 2;
     }
 
     private static async Task<int> TranscribeAsync(string wavPath, string engineName)

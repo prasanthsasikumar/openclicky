@@ -72,6 +72,22 @@ public class StandardHandsFreeTests
         Assert.Empty(Run(new UtteranceDetector(), quiet: 500, loud: 0, thenQuiet: 0));
     }
 
+    /// <summary>A quiet turn from a laptop's microphone is raised for the engine; a loud one is left alone, and the gain
+    /// is capped.</summary>
+    [Fact]
+    public void AQuietTurnIsRaisedAndALoudOneLeftAlone()
+    {
+        var quiet = new[] { 0f, 0.05f, -0.025f };
+        var raised = UtteranceDetector.Normalized(quiet, out var gain);
+        Assert.Equal(10, gain, precision: 3);
+        Assert.Equal(0.5f, raised[1], precision: 3);
+        var loud = new[] { 0f, 0.4f, -0.3f };
+        Assert.Same(loud, UtteranceDetector.Normalized(loud, out var loudGain));
+        Assert.Equal(1, loudGain);
+        UtteranceDetector.Normalized([0.001f], out var cappedGain);
+        Assert.Equal(UtteranceDetector.MaximumGain, cappedGain);
+    }
+
     [Fact]
     public void SamplesBecomeLittleEndianPcm16()
     {
