@@ -23,6 +23,31 @@ struct WindowMinimizerTests {
         #expect(picked == [MinimizableWindow(ownerPID: 10, bounds: CGRect(x: 0, y: 40, width: 1200, height: 800))])
     }
 
+    @Test func aKeptAppsWindowsStayOnScreen() {
+        let onScreen = [
+            OnScreenWindow(ownerPID: 10, bounds: CGRect(x: 0, y: 40, width: 1200, height: 800)),
+            OnScreenWindow(ownerPID: 30, bounds: CGRect(x: 100, y: 100, width: 900, height: 600)),   // Terminal
+        ]
+        let picked = WindowMinimizer.windowsToMinimize(onScreen: onScreen, regularAppPIDs: [10, 30], ownPID: 99, keptAppPIDs: [30])
+        #expect(picked == [MinimizableWindow(ownerPID: 10, bounds: CGRect(x: 0, y: 40, width: 1200, height: 800))])
+    }
+
+    @Test func aSpokenAppNameFindsTheRunningApp() {
+        let running = [
+            RunningAppName(processIdentifier: 30, localizedName: "Terminal", bundleIdentifier: "com.apple.Terminal"),
+            RunningAppName(processIdentifier: 40, localizedName: "Google Chrome", bundleIdentifier: "com.google.Chrome"),
+            RunningAppName(processIdentifier: 50, localizedName: "Visual Studio Code", bundleIdentifier: "com.microsoft.VSCode"),
+        ]
+        #expect(WindowMinimizer.processIDs(ofAppsNamed: "the terminal", among: running) == [30])
+        #expect(WindowMinimizer.processIDs(ofAppsNamed: "com.apple.Terminal", among: running) == [30])
+        #expect(WindowMinimizer.processIDs(ofAppsNamed: "Chrome", among: running) == [40])
+        #expect(WindowMinimizer.processIDs(ofAppsNamed: "studio code", among: running) == [50])
+        // Whole words only: "term" is not Terminal.
+        #expect(WindowMinimizer.processIDs(ofAppsNamed: "term", among: running).isEmpty)
+        #expect(WindowMinimizer.processIDs(ofAppsNamed: "Xcode", among: running).isEmpty)
+        #expect(WindowMinimizer.processIDs(ofAppsNamed: "  ", among: running).isEmpty)
+    }
+
     @Test func theLayerDefaultsToAnOrdinaryWindow() {
         #expect(OnScreenWindow(ownerPID: 1, bounds: .zero).layer == 0)
     }

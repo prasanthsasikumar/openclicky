@@ -70,8 +70,9 @@ enum MacActionOutcome: Equatable {
     case playerControlled(String)
     case searched(query: String, site: WebSearchSite)
     case invalidQuery
-    case minimizedWindows(Int)
-    case restoredWindows(Int)
+    case minimizedWindows(count: Int, keptApp: String?)
+    case restoredWindows(count: Int, app: String?)
+    case windowAppNotRunning(String)
     case unreadMail([UnreadMail])
     case openedGmailInbox
     case mailUnavailable(MailScriptError)
@@ -115,6 +116,8 @@ enum MacActionOutcome: Equatable {
             return spokenSentence + " Mail is on screen in the latest screenshot; read the unread rows if you can see them."
         case .draftedEmail:
             return spokenSentence + " If they ask you to send it, say you never send email and that it is open in front of them."
+        case .windowAppNotRunning:
+            return spokenSentence + " Call open_app if they want it opened."
         default:
             return spokenSentence
         }
@@ -174,10 +177,17 @@ enum MacActionOutcome: Equatable {
             return "Searching for \(query)."
         case .invalidQuery:
             return "I didn't catch what to search for."
-        case .minimizedWindows(let count):
+        case .minimizedWindows(let count, nil):
             return count == 0 ? "Nothing to minimize." : "Minimized \(count) window\(count == 1 ? "" : "s")."
-        case .restoredWindows(let count):
+        case .minimizedWindows(let count, let keptApp?):
+            return count == 0 ? "Nothing else to minimize; \(keptApp) stays up." : "Minimized \(count) window\(count == 1 ? "" : "s"); \(keptApp) stays up."
+        case .restoredWindows(let count, nil):
             return count == 0 ? "I hadn't minimized anything." : "Brought \(count) window\(count == 1 ? "" : "s") back."
+        case .restoredWindows(let count, let app?):
+            // Zero is not a failure: the app had nothing in the Dock and is now in front.
+            return count == 0 ? "\(app) is in front now." : "Brought \(app) back."
+        case .windowAppNotRunning(let app):
+            return "\(app) isn't open."
         case .unreadMail(let unread):
             guard !unread.isEmpty else { return "No unread email in Mail." }
             let named = unread.prefix(3).map { "\($0.spokenSender) about \($0.subject)" }
@@ -289,8 +299,10 @@ enum MacAction: Equatable {
     case setVolume(level: Int)
     case mediaControl(action: String)
     case webSearch(query: String, site: WebSearchSite)
-    case minimizeAll
-    case restoreWindows
+    /// Every window to the Dock, except the named app's when there is one.
+    case minimizeAll(keepApp: String?)
+    /// What minimizeAll minimized, or only the named app's windows when there is one.
+    case restoreWindows(app: String?)
     case checkEmail(app: String?)
     case draftEmail(to: String, subject: String, body: String, app: String?)
     case playMusic(query: String)
@@ -306,10 +318,12 @@ final class MacActionRunner {
     struct Extras {
         /// Sends pause / play to a running music player; false when no player is running.
         var controlPlayer: (MediaCommand) async -> Bool
-        /// Minimizes every ordinary window on screen; returns how many.
-        var minimizeAllWindows: () -> Int
-        /// Brings back what the last minimizeAllWindows minimized; returns how many.
-        var restoreMinimizedWindows: () -> Int
+        /// Minimizes every ordinary window on screen except the named app's; returns how many,
+        /// or nil when the named app is not running.
+        var minimizeAllWindows: (String?) -> Int?
+        /// Brings back what the last minimizeAllWindows minimized, or only the named app's windows;
+        /// returns how many, or nil when the named app is not running.
+        var restoreMinimizedWindows: (String?) -> Int?
         /// Which email app a check or draft goes to, given the app the person named (or nil).
         var chooseEmailApp: (String?) -> EmailApp
         /// Mail's unread inbox messages, newest first, or why they could not be read.
@@ -331,8 +345,8 @@ final class MacActionRunner {
 
         init(
             controlPlayer: @escaping (MediaCommand) async -> Bool = { _ in false },
-            minimizeAllWindows: @escaping () -> Int = { 0 },
-            restoreMinimizedWindows: @escaping () -> Int = { 0 },
+            minimizeAllWindows: @escaping (String?) -> Int? = { _ in 0 },
+            restoreMinimizedWindows: @escaping (String?) -> Int? = { _ in 0 },
             chooseEmailApp: @escaping (String?) -> EmailApp = { _ in .gmail },
             readUnreadMail: @escaping () async -> Result<[UnreadMail], MailScriptError> = { .success([]) },
             runMailDraft: @escaping (String) async -> MailScriptError? = { _ in nil },
@@ -458,11 +472,13 @@ final class MacActionRunner {
             openURL(WebSearchSite.url(for: site, query: query))
             return .searched(query: query, site: site)
 
-        case .minimizeAll:
-            return .minimizedWindows(extras.minimizeAllWindows())
+        case .minimizeAll(let keptApp):
+            guard let count = extras.minimizeAllWindows(keptApp) else { return .windowAppNotRunning(keptApp ?? "") }
+            return .minimizedWindows(count: count, keptApp: keptApp)
 
-        case .restoreWindows:
-            return .restoredWindows(extras.restoreMinimizedWindows())
+        case .restoreWindows(let app):
+            guard let count = extras.restoreMinimizedWindows(app) else { return .windowAppNotRunning(app ?? "") }
+            return .restoredWindows(count: count, app: app)
 
         case .checkEmail(let requestedApp):
             switch extras.chooseEmailApp(requestedApp) {
@@ -573,8 +589,8 @@ final class MacActionRunner {
                     await source.perform(command, on: player)
                     return true
                 },
-                minimizeAllWindows: { minimizedWindows.minimizeEverything() },
-                restoreMinimizedWindows: { minimizedWindows.restoreLastSet() },
+                minimizeAllWindows: { keptApp in minimizedWindows.minimizeEverything(keepingAppNamed: keptApp) },
+                restoreMinimizedWindows: { app in minimizedWindows.restore(appNamed: app) },
                 chooseEmailApp: { requested in
                     EmailApp.choose(requested: requested, setting: OpenClickyConfiguration.settings.emailApp, mailHasAccounts: EmailApp.mailHasAccounts())
                 },
@@ -737,8 +753,12 @@ extension MacAction {
             [
                 "type": "function",
                 "name": "minimize_all",
-                "description": "Minimize every open window so the desktop is clear. For 'minimize everything', 'clear my screen', 'hide all windows'.",
-                "parameters": ["type": "object", "properties": [String: Any](), "required": [String]()],
+                "description": "Minimize every open window so the desktop is clear. For 'minimize everything', 'clear my screen', 'hide all windows'; with keep for 'everything except Terminal', 'leave just Safari'.",
+                "parameters": [
+                    "type": "object",
+                    "properties": ["keep": ["type": "string", "description": "Only when they named an app to leave on screen: its name, e.g. 'Terminal'."]],
+                    "required": [String](),
+                ],
             ],
             [
                 "type": "function",
@@ -770,8 +790,12 @@ extension MacAction {
             [
                 "type": "function",
                 "name": "restore_windows",
-                "description": "Bring back the windows minimize_all minimized. For 'bring them back', 'restore my windows'.",
-                "parameters": ["type": "object", "properties": [String: Any](), "required": [String]()],
+                "description": "Bring windows back from the Dock. Without app: every window minimize_all minimized ('bring them back', 'restore my windows'). With app: that app's windows only, nothing else ('show just the terminal', 'bring back Safari').",
+                "parameters": [
+                    "type": "object",
+                    "properties": ["app": ["type": "string", "description": "Only when they named one app: its name, e.g. 'Terminal'. Never leave it out when they named one."]],
+                    "required": [String](),
+                ],
             ],
         ]
     }
@@ -836,11 +860,16 @@ extension MacAction {
             guard let site else { return .badArguments(.invalidQuery) }
             return .action(.webSearch(query: query, site: site))
 
-        case "minimize_all":
-            return .action(.minimizeAll)
-
-        case "restore_windows":
-            return .action(.restoreWindows)
+        case "minimize_all", "restore_windows":
+            // An app name is only matched against running apps, never resolved to a path, but it
+            // gets open_app's checks all the same.
+            let rawAppName = string(toolName == "minimize_all" ? "keep" : "app")
+            var appName: String?
+            if !rawAppName.isEmpty {
+                guard let validName = MacActionValidation.folderName(rawAppName) else { return .badArguments(.invalidAppName) }
+                appName = validName
+            }
+            return .action(toolName == "minimize_all" ? .minimizeAll(keepApp: appName) : .restoreWindows(app: appName))
 
         case "play_music":
             guard let query = MacActionValidation.searchQuery(string("query")) else { return .badArguments(.invalidQuery) }

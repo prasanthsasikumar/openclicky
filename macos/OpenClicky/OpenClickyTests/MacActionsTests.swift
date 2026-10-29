@@ -123,8 +123,9 @@ struct MacActionRunnerTests {
         var installedApplications: [String: URL] = ["spotify": URL(fileURLWithPath: "/Applications/Spotify.app")]
         var playerCommands: [MediaCommand] = []
         var playerTakesCommands = false
-        var windowsToMinimize = 0
-        var windowsToRestore = 0
+        var windowsToMinimize: Int? = 0
+        var windowsToRestore: Int? = 0
+        var appsNamedForWindows: [String?] = []
         var emailApp: EmailApp = .mail
         var unread: Result<[UnreadMail], MailScriptError> = .success([])
         var mailDraftScripts: [String] = []
@@ -154,8 +155,14 @@ struct MacActionRunnerTests {
                     recorder.playerCommands.append(command)
                     return recorder.playerTakesCommands
                 },
-                minimizeAllWindows: { recorder.windowsToMinimize },
-                restoreMinimizedWindows: { recorder.windowsToRestore },
+                minimizeAllWindows: { keptApp in
+                    recorder.appsNamedForWindows.append(keptApp)
+                    return recorder.windowsToMinimize
+                },
+                restoreMinimizedWindows: { app in
+                    recorder.appsNamedForWindows.append(app)
+                    return recorder.windowsToRestore
+                },
                 chooseEmailApp: { _ in recorder.emailApp },
                 readUnreadMail: { recorder.unread },
                 runMailDraft: { script in
@@ -286,16 +293,40 @@ struct MacActionRunnerTests {
         let recorder = Recorder()
         let runner = makeRunner(root: root, recorder: recorder)
         recorder.windowsToMinimize = 3
-        #expect(await runner.perform(.minimizeAll) == .minimizedWindows(3))
-        #expect(MacActionOutcome.minimizedWindows(3).spokenSentence == "Minimized 3 windows.")
+        #expect(await runner.perform(.minimizeAll(keepApp: nil)) == .minimizedWindows(count: 3, keptApp: nil))
+        #expect(MacActionOutcome.minimizedWindows(count: 3, keptApp: nil).spokenSentence == "Minimized 3 windows.")
         recorder.windowsToMinimize = 0
-        #expect(await runner.perform(.minimizeAll) == .minimizedWindows(0))
-        #expect(MacActionOutcome.minimizedWindows(0).spokenSentence == "Nothing to minimize.")
+        #expect(await runner.perform(.minimizeAll(keepApp: nil)) == .minimizedWindows(count: 0, keptApp: nil))
+        #expect(MacActionOutcome.minimizedWindows(count: 0, keptApp: nil).spokenSentence == "Nothing to minimize.")
         recorder.windowsToRestore = 3
-        #expect(await runner.perform(.restoreWindows) == .restoredWindows(3))
-        #expect(MacActionOutcome.restoredWindows(3).spokenSentence == "Brought 3 windows back.")
-        #expect(MacActionOutcome.restoredWindows(0).spokenSentence == "I hadn't minimized anything.")
-        #expect(!MacActionOutcome.minimizedWindows(3).thenLooksAtScreen)
+        #expect(await runner.perform(.restoreWindows(app: nil)) == .restoredWindows(count: 3, app: nil))
+        #expect(MacActionOutcome.restoredWindows(count: 3, app: nil).spokenSentence == "Brought 3 windows back.")
+        #expect(MacActionOutcome.restoredWindows(count: 0, app: nil).spokenSentence == "I hadn't minimized anything.")
+        #expect(!MacActionOutcome.minimizedWindows(count: 3, keptApp: nil).thenLooksAtScreen)
+    }
+
+    // "Show just the terminal" after "minimize everything" brought all nine windows back and the
+    // model said the Terminal was restored (2026-10-28).
+    @Test func aNamedAppIsPassedThroughAndTheSentenceNamesIt() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+        recorder.windowsToRestore = 1
+        #expect(await runner.perform(.restoreWindows(app: "Terminal")) == .restoredWindows(count: 1, app: "Terminal"))
+        recorder.windowsToMinimize = 7
+        #expect(await runner.perform(.minimizeAll(keepApp: "Terminal")) == .minimizedWindows(count: 7, keptApp: "Terminal"))
+        #expect(recorder.appsNamedForWindows == ["Terminal", "Terminal"])
+        #expect(MacActionOutcome.restoredWindows(count: 1, app: "Terminal").spokenSentence == "Brought Terminal back.")
+        #expect(MacActionOutcome.restoredWindows(count: 0, app: "Terminal").spokenSentence == "Terminal is in front now.")
+        #expect(MacActionOutcome.minimizedWindows(count: 7, keptApp: "Terminal").spokenSentence == "Minimized 7 windows; Terminal stays up.")
+
+        recorder.windowsToRestore = nil
+        let notRunning = await runner.perform(.restoreWindows(app: "Xcode"))
+        #expect(notRunning == .windowAppNotRunning("Xcode"))
+        #expect(notRunning.spokenSentence == "Xcode isn't open.")
+        #expect(notRunning.toolOutput.contains("open_app"))
+        #expect(!notRunning.didSomething)
     }
 
     @Test func checkingMailReadsTheListAndGmailOpensTheInboxThenLooks() async throws {
@@ -481,8 +512,14 @@ struct MacActionParsingTests {
     }
 
     @Test func minimizeAllAndRestoreParseWithNoArguments() {
-        #expect(MacAction.parse(toolName: "minimize_all", arguments: [:]) == .action(.minimizeAll))
-        #expect(MacAction.parse(toolName: "restore_windows", arguments: [:]) == .action(.restoreWindows))
+        #expect(MacAction.parse(toolName: "minimize_all", arguments: [:]) == .action(.minimizeAll(keepApp: nil)))
+        #expect(MacAction.parse(toolName: "restore_windows", arguments: [:]) == .action(.restoreWindows(app: nil)))
+    }
+
+    @Test func minimizeAllAndRestoreParseANamedApp() {
+        #expect(MacAction.parse(toolName: "minimize_all", arguments: ["keep": " Terminal "]) == .action(.minimizeAll(keepApp: "Terminal")))
+        #expect(MacAction.parse(toolName: "restore_windows", arguments: ["app": "Terminal"]) == .action(.restoreWindows(app: "Terminal")))
+        #expect(MacAction.parse(toolName: "restore_windows", arguments: ["app": "../Terminal"]) == .badArguments(.invalidAppName))
     }
 
     @Test func emailToolsParseTheirArguments() {
@@ -624,8 +661,10 @@ struct FastActionToolDefinitionTests {
             case .webSearch(let query, let site):
                 #expect(query == arguments["query"] as? String)
                 #expect(site.rawValue == arguments["site"] as? String)
-            case .minimizeAll, .restoreWindows:
-                #expect(arguments.isEmpty)
+            case .minimizeAll(let keptApp):
+                #expect(keptApp == arguments["keep"] as? String)
+            case .restoreWindows(let app):
+                #expect(app == arguments["app"] as? String)
             case .checkEmail(let app):
                 #expect(app == arguments["app"] as? String)
             case .draftEmail(let to, let subject, let body, let app):
