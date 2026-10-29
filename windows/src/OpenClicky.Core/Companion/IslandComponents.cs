@@ -8,9 +8,9 @@
 //  OpenClicky.Windows/Island (the built-ins) and OpenClicky.Windows/Plugins (the plugins), looked up
 //  by the component's id.
 //
-//  Ported so far: the shortcuts (built in) and the System plugin. The Mac's transcript and agent
-//  components, and the Shelf, Coding agents, Now playing and Teacher plugins, are not yet; the
-//  context already carries what they will read.
+//  Ported so far: the built-ins (shortcuts, transcript, agent) and the System plugin. The Mac's
+//  Shelf, Coding agents, Now playing and Teacher plugins are not yet; the context already carries
+//  what they will read.
 //
 
 using OpenClicky.Core.Configuration;
@@ -24,6 +24,10 @@ public sealed record IslandContext
     public bool IsTakeLive { get; init; }
     /// <summary>When the last take landed (the live → idle flip).</summary>
     public DateTimeOffset? TakeLandedAt { get; init; }
+    /// <summary>The take's words so far (the orb's live transcript).</summary>
+    public string LiveTranscript { get; init; } = "";
+    /// <summary>The last take's words as they were pasted, for the moments after it lands.</summary>
+    public string LandedTranscript { get; init; } = "";
     public string? AgentActivityText { get; init; }
     public bool IsResultCardUp { get; init; }
     /// <summary>A drag from another app is over the island.</summary>
@@ -33,6 +37,15 @@ public sealed record IslandContext
     public DateTimeOffset Now { get; init; } = DateTimeOffset.UnixEpoch;
 
     public static IslandContext Idle { get; } = new();
+
+    /// <summary>The landing time to carry: <paramref name="now"/> at the live → idle flip, the previous one while
+    /// the take stays landed, nothing while a take is live.</summary>
+    public static DateTimeOffset? LandingTime(bool wasLive, DateTimeOffset? previousLandedAt, bool isLive, DateTimeOffset now)
+    {
+        if (isLive) return null;
+        if (wasLive) return now;
+        return previousLandedAt;
+    }
 
     /// <summary>How long a landed take keeps its transcript in front.</summary>
     public static readonly TimeSpan LandedTranscriptWindow = TimeSpan.FromSeconds(8);
@@ -171,7 +184,19 @@ public static class IslandComponentRegistry
     /// 45 under the band; a side drawer stacks the dock button over the grid (IslandLayout.FullHeight).</summary>
     public static IslandComponent Shortcuts { get; } = new(ShortcutsId, "Shortcuts", "", 45);
 
-    public static IReadOnlyList<IslandComponent> BuiltIns { get; } = [Shortcuts];
+    /// <summary>The take's words so far, while a take is live and for a moment after it lands.</summary>
+    public static IslandComponent Transcript { get; } = new(TranscriptId, "Transcript", "", 52)
+    {
+        IsAvailable = context => context.ContextualKey == TranscriptId,
+    };
+
+    /// <summary>The working agent's latest line, and its result card's follow-up.</summary>
+    public static IslandComponent Agent { get; } = new(AgentId, "Agent", "", 52)
+    {
+        IsAvailable = context => context.AgentActivityText is not null || context.IsResultCardUp,
+    };
+
+    public static IReadOnlyList<IslandComponent> BuiltIns { get; } = [Shortcuts, Transcript, Agent];
 
     /// <summary>The built-ins first, then the plugins (off until turned on in Settings).</summary>
     public static IReadOnlyList<IslandComponent> All { get; } = [.. BuiltIns, .. IslandPluginRegistry.All];

@@ -204,7 +204,7 @@ public sealed partial class CompanionManager
                 LastQuestionFailed = false;
                 Overlay.DismissCursorCaption();
                 Overlay.CancelTransientHide();
-                if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible && !IsCursorDocked) Overlay.ShowOverlayOnAllScreens();
+                if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible) Overlay.ShowOverlayOnAllScreens();
                 InterruptCurrentAnswer(includingAgentWork: true);
                 Overlay.ClearDetectedElementLocation();
                 VoiceState = CompanionVoiceState.Listening;

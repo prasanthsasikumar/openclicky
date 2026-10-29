@@ -1,7 +1,7 @@
 // Ports MenuBarPanelManager.swift: the tray icon (the Mac's NSStatusItem) and its plain menu, for
-// either click: what OpenClicky is doing and the keys to remember, agent mode, docking the pointer,
-// the window, the island, settings, the welcome tour, and quit. Each item is raised as an event the
-// composition root wires (Wired in AppComposition.WireTray: CompanionManager.setAgentModeEnabled, setCursorDocked,
+// either click: what OpenClicky is doing and the keys to remember, agent mode, the window, the island,
+// settings, the welcome tour, and quit. Each item is raised as an event the
+// composition root wires (Wired in AppComposition.WireTray: CompanionManager.setAgentModeEnabled,
 // showDictationWindow(section: .words), notchHUDManager.openPanel, showSettings, firstRunTour.replay,
 // quitWithFarewell). The icon is Assets\OpenClicky.ico when the app ships one, else the mark drawn here.
 
@@ -17,8 +17,6 @@ namespace OpenClicky.Windows.Tray;
 public sealed record TrayMenuState(
     string StatusText,
     bool IsAgentModeEnabled,
-    bool IsCursorDocked,
-    bool IslandIsSideDrawer,
     string DictationKeyLabel)
 {
     /// <summary>"Ready", or what OpenClicky is busy with (MenuBarPanelManager.statusText).</summary>
@@ -38,7 +36,6 @@ public sealed class TrayIcon : IDisposable
     private readonly Icon icon;
 
     public event Action? AgentModeToggled;
-    public event Action? DockToggled;
     public event Action? OpenWindowRequested;
     public event Action? OpenIslandRequested;
     public event Action? SettingsRequested;
@@ -88,7 +85,6 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(new ToolStripLabel($"Hold Ctrl + Win to talk · hold {state.DictationKeyLabel} to dictate") { ForeColor = SystemColors.GrayText });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(Item("Agent Mode", () => AgentModeToggled?.Invoke(), state.IsAgentModeEnabled));
-        menu.Items.Add(Item(state.IslandIsSideDrawer ? "Dock Pointer in the Drawer" : "Dock Pointer in the Island", () => DockToggled?.Invoke(), state.IsCursorDocked));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(Item("Open OpenClicky", () => OpenWindowRequested?.Invoke()));
         menu.Items.Add(Item("Open the Island", () => OpenIslandRequested?.Invoke()));

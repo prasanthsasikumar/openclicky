@@ -234,19 +234,6 @@ public class IslandCompanionModelTests
         Assert.Equal(2, closes);
     }
 
-    [Fact]
-    public void TheDockButtonWorksOnlyWhileIdle()
-    {
-        var hub = Make();
-        var requests = new List<bool>();
-        hub.DockToggleRequested += requests.Add;
-        hub.ToggleDockCommand.Execute(null);
-        hub.IsCursorDocked = true;
-        hub.ToggleDockCommand.Execute(null);
-        hub.VoiceState = CompanionVoiceState.Listening;
-        hub.ToggleDockCommand.Execute(null);
-        Assert.Equal(new[] { true, false }, requests);
-    }
 
     [Fact]
     public void DerivedWordsFollowTheState()

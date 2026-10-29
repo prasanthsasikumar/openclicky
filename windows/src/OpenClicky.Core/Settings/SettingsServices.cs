@@ -30,9 +30,7 @@ public interface ICompanionSettings : INotifyPropertyChanged
     PointerPresence PointerPresence { get; }
     void SetPointerPresence(PointerPresence presence);
 
-    /// <summary>isCursorDocked / setCursorDocked.</summary>
-    bool IsCursorDocked { get; }
-    void SetCursorDocked(bool isDocked);
+
 
     /// <summary>isAgentModeEnabled / setAgentModeEnabled.</summary>
     bool IsAgentModeEnabled { get; }
@@ -223,7 +221,6 @@ public sealed class DetachedCompanionSettings : ObservableObject, ICompanionSett
     private readonly Preferences preferences;
     private bool isClickyCursorEnabled = true;
     private PointerPresence pointerPresence = PointerPresence.Always;
-    private bool isCursorDocked;
     private bool isAgentModeEnabled;
     private string selectedModel = "claude-sonnet-4-6";
     private bool isRealtimeVoiceEnabled;
@@ -243,8 +240,6 @@ public sealed class DetachedCompanionSettings : ObservableObject, ICompanionSett
     public PointerPresence PointerPresence => pointerPresence;
     public void SetPointerPresence(PointerPresence presence) => SetProperty(ref pointerPresence, presence, nameof(PointerPresence));
 
-    public bool IsCursorDocked => isCursorDocked;
-    public void SetCursorDocked(bool isDocked) => SetProperty(ref isCursorDocked, isDocked, nameof(IsCursorDocked));
 
     public bool IsAgentModeEnabled => isAgentModeEnabled;
     public void SetAgentModeEnabled(bool isEnabled) => SetProperty(ref isAgentModeEnabled, isEnabled, nameof(IsAgentModeEnabled));

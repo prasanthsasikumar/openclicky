@@ -69,9 +69,8 @@ public static class IslandTexts
     }
 
     /// <summary>One line saying what the pointer is doing (NotchPointerStatus).</summary>
-    public static string PointerStatus(bool isCursorDocked, HUDPlacement placement, bool isClickyCursorEnabled, PointerPresence presence, bool isPointerAwake)
+    public static string PointerStatus(bool isClickyCursorEnabled, PointerPresence presence, bool isPointerAwake)
     {
-        if (isCursorDocked) return placement.IsSideDrawer() ? "pointer is docked in the drawer" : "pointer is docked";
         if (!isClickyCursorEnabled) return "pointer shows while you talk";
         return presence switch
         {
@@ -82,9 +81,8 @@ public static class IslandTexts
     }
 
     /// <summary>The pointer's status in fewer words, so it fits beside "click to open" on the peek's one line.</summary>
-    public static string PeekStatus(bool isCursorDocked, bool isClickyCursorEnabled, PointerPresence presence, bool isPointerAwake)
+    public static string PeekStatus(bool isClickyCursorEnabled, PointerPresence presence, bool isPointerAwake)
     {
-        if (isCursorDocked) return "pointer docked";
         if (!isClickyCursorEnabled) return "pointer while you talk";
         return presence switch
         {
@@ -94,12 +92,6 @@ public static class IslandTexts
         };
     }
 
-    /// <summary>The panel's first button. The Mac docks "in the notch"; on Windows the island hangs from the top.</summary>
-    public static string DockButtonTitle(bool isCursorDocked, HUDPlacement placement) =>
-        isCursorDocked ? "release pointer" : placement.IsSideDrawer() ? "dock in the drawer" : "dock in the island";
-
-    public static string DockButtonToolTip(bool isCursorDocked) =>
-        isCursorDocked ? "talk still works while docked" : "park the pointer until Clicky needs it";
 
     /// <summary>The four shortcuts CompanionShortcutRecognizer knows, with the Windows keys (PORTING.md).</summary>
     public static IReadOnlyList<IslandShortcut> ShortcutGrid(DictationHotkey dictationKey, bool isAlwaysListening)
@@ -137,7 +129,7 @@ public static class IslandTexts
     public const string ComposerSendHint = "↵ send";
     public const string ComposerEscapeHint = "esc";
     public const string StopSpeakingToolTip = "click to stop speaking";
-    public const string ReleasePointerToolTip = "release the pointer";
+
     public const string InfoToolTip = "what can you do?";
     public const string SettingsToolTip = "settings";
     public const string QuitToolTip = "quit openclicky";

@@ -35,14 +35,12 @@ public class IslandTextsTests
     }
 
     [Fact]
-    public void ThePointerStatusFollowsDockAndPresence()
+    public void ThePointerStatusFollowsPresence()
     {
-        Assert.Equal("pointer is docked", IslandTexts.PointerStatus(true, HUDPlacement.Notch, true, PointerPresence.Always, true));
-        Assert.Equal("pointer is docked in the drawer", IslandTexts.PointerStatus(true, HUDPlacement.Left, true, PointerPresence.Always, true));
-        Assert.Equal("pointer shows while you talk", IslandTexts.PointerStatus(false, HUDPlacement.Notch, false, PointerPresence.Always, true));
-        Assert.Equal("pointer follows while moving", IslandTexts.PointerStatus(false, HUDPlacement.Notch, true, PointerPresence.WhileMoving, false));
-        Assert.Equal("shake the mouse for the pointer", IslandTexts.PointerStatus(false, HUDPlacement.Notch, true, PointerPresence.OnShake, false));
-        Assert.Equal("pointer follows your mouse", IslandTexts.PointerStatus(false, HUDPlacement.Notch, true, PointerPresence.OnShake, true));
+        Assert.Equal("pointer shows while you talk", IslandTexts.PointerStatus(false, PointerPresence.Always, true));
+        Assert.Equal("pointer follows while moving", IslandTexts.PointerStatus(true, PointerPresence.WhileMoving, false));
+        Assert.Equal("shake the mouse for the pointer", IslandTexts.PointerStatus(true, PointerPresence.OnShake, false));
+        Assert.Equal("pointer follows your mouse", IslandTexts.PointerStatus(true, PointerPresence.OnShake, true));
     }
 
     [Fact]
@@ -74,11 +72,8 @@ public class IslandTextsTests
     }
 
     [Fact]
-    public void TheDockButtonAndExplanationSayTheWindowsThings()
+    public void TheExplanationSaysTheWindowsThings()
     {
-        Assert.Equal("dock in the island", IslandTexts.DockButtonTitle(false, HUDPlacement.Notch));
-        Assert.Equal("dock in the drawer", IslandTexts.DockButtonTitle(false, HUDPlacement.Right));
-        Assert.Equal("release pointer", IslandTexts.DockButtonTitle(true, HUDPlacement.Notch));
         var explanation = IslandTexts.ExplainMessage(DictationHotkey.RightAlt);
         Assert.Contains("hold ctrl + windows", explanation);
         Assert.DoesNotContain("right ctrl", explanation);

@@ -61,7 +61,7 @@ public sealed class PointerTriangleView : Grid
         }
     }
 
-    /// <summary>Dimmed in the island band while the pointer rests docked: half opacity, no glow.</summary>
+    /// <summary>Dimmed: half opacity, no glow.</summary>
     public bool IsDimmed
     {
         set

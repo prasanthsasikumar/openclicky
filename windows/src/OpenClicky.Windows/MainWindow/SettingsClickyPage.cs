@@ -32,8 +32,7 @@ internal sealed partial class SettingsRowFactory
             case "clicky.pointerPresence":
                 return new LiveContent(() => Ui.Card(PointerPresenceOptions(query)),
                     Changes.Of(companion, nameof(ICompanionSettings.PointerPresence), nameof(ICompanionSettings.IsClickyCursorEnabled)));
-            case "clicky.dock":
-                return CompanionToggle(item, query, () => companion.IsCursorDocked, companion.SetCursorDocked, nameof(ICompanionSettings.IsCursorDocked));
+
             case "clicky.agentMode":
                 return CompanionToggle(item, query, () => companion.IsAgentModeEnabled, companion.SetAgentModeEnabled, nameof(ICompanionSettings.IsAgentModeEnabled));
             case "clicky.workspace":
@@ -80,7 +79,7 @@ internal sealed partial class SettingsRowFactory
     {
         PointerPresence.Always => "Follows the mouse everywhere.",
         PointerPresence.WhileMoving => "Fades a few seconds after the mouse rests.",
-        _ => "Hidden until you shake. A shake also releases a docked pointer.",
+        _ => "Hidden until you shake the mouse.",
     };
 
     /// <summary>Always / while the mouse moves / after a shake, as radio options; dimmed while the pointer is off.</summary>

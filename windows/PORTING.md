@@ -137,13 +137,13 @@ What the Mac gained after the port (git log da71df7..HEAD -- macos), and where W
 | Island: hover peeks, a click opens the panel | Done |
 | Island: components in the panel's slot, a capsule to flip them, Settings → Plugins (default, order) | Done (framework; `Core/Companion/IslandComponents.cs`) |
 | Plugin: System (CPU, memory, disk, battery rings) | Done (`Core/Plugins/SystemStats`, `Windows/Plugins/SystemStats`) |
-| Island: transcript and agent components (the moment picks them) | Not yet: the context carries what they read |
+| Island: transcript and agent components (the moment picks them), "follow up" on an agent thread | Done (`CompanionManager.IslandContext.cs`) |
 | Plugin: Shelf (drop on the island, drag out, copy) | Not yet |
 | Plugin: Coding agents (Claude Code / Codex sessions, plan limits) | Not yet |
 | Plugin: Now playing (artwork, progress, controls) | Not yet: Windows' media session API covers every player |
 | Plugin: Teacher (draws lessons on screen) | Not yet |
 | Island: glass under the open panel | Not needed: the Mac went back to solid black (f0abb80) |
-| Island: docking the pointer removed (2bf8edb) | Not yet: Windows still has the dock button |
+| Island: docking the pointer removed (2bf8edb) | Done: no dock button, tray item or setting; a stored dock flag is cleared once (CursorFlightPlanner still knows ToDock, unused) |
 | Ask lane: simple requests answered on the device (Apple's on-device model) | Mac only for now: no Windows equivalent chosen |
 | Voice: minimize everything / bring it back, web search, Spotify by name, stop that song | Not yet (check each) |
 | Voice: check email, draft one (never sent); act, then look again | Not yet (check each) |

@@ -37,6 +37,7 @@ public sealed partial class CompanionManager
         dictationTakeController = controller;
         controller.SpaceStore.StartWatching();
         services.Shortcuts.DictationKey = DictationSettings.DictationKey;
+        UpdateRightAltAdoption();
         DictationSettings.PropertyChanged += OnDictationSettingsChanged;
         Orb.Clicked += controller.OrbClicked;
         Orb.Hint = controller.IdleHint;
@@ -56,7 +57,7 @@ public sealed partial class CompanionManager
         controller.OnNoTextBoxAtPress = message =>
         {
             // The pointer may be resting out of sight ("after a shake"): it is the one speaking.
-            AppLog.Write($"pointer: asked for a text box (overlay {(Overlay.IsOverlayVisible ? "shown" : "hidden")}, docked {Overlay.IsCursorDocked}, presence {pointerPresence.RawValue()}, awake {Overlay.IsPointerAwake}, voice {VoiceState})");
+            AppLog.Write($"pointer: asked for a text box (overlay {(Overlay.IsOverlayVisible ? "shown" : "hidden")}, presence {pointerPresence.RawValue()}, awake {Overlay.IsPointerAwake}, voice {VoiceState})");
             WakePointer();
             ShowQuietNotice(message);
         };
@@ -89,6 +90,7 @@ public sealed partial class CompanionManager
     private void OnDictationSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs eventArgs) => services.MainThread.Post(() =>
     {
         services.Shortcuts.DictationKey = DictationSettings.DictationKey;
+        UpdateRightAltAdoption();
         Island.DictationKey = DictationSettings.DictationKey;
         if (dictationTakeController is { } controller)
         {

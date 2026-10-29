@@ -20,10 +20,10 @@ public sealed partial class CompanionManager
     public void ShowQuietNotice(string message)
     {
         Overlay.ShowCaption(message, 8);
-        if (!IsCursorDocked) Overlay.ScheduleTransientHideIfNeeded();
+        Overlay.ScheduleTransientHideIfNeeded();
     }
 
-    /// <summary>The island's (i): the buddy types out what OpenClicky does next to itself (beside the mouse while docked).</summary>
+    /// <summary>The island's (i): the buddy types out what OpenClicky does next to itself.</summary>
     public void ExplainWhatOpenClickyDoes()
     {
         Overlay.CancelTransientHide();
@@ -77,8 +77,6 @@ public sealed partial class CompanionManager
                 var mouse = services.Screens.CursorPosition();
                 var awake = pointerPresenceTracker.Update(new ScreenPoint(mouse.X, mouse.Y), MonotonicSeconds());
                 if (awake != Overlay.IsPointerAwake) Overlay.IsPointerAwake = awake;
-                // In the shake mode a shake means "come here": a docked pointer leaves the island too.
-                if (pointerPresenceTracker.ShookOnLastUpdate && IsCursorDocked && VoiceState == CompanionVoiceState.Idle) SetCursorDocked(false);
             });
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(1.0 / 30.0));
     }

@@ -49,27 +49,15 @@ public class OverlayModelTests
     }
 
     [Fact]
-    public void PointingWhileDockedLaunchesTheBuddyFromTheIsland()
+    public void AFlightBackToTheMouseOnAnotherDisplayHasTwoLegs()
     {
         var (model, _, _) = Make();
-        model.RestoreDockedWithoutFlight();
-        var shows = 0;
-        model.OverlayShowRequested += () => shows++;
-        model.PointAt(new ScreenPoint(10, 10), Primary, null);
-        Assert.Equal(1, shows);
-        Assert.True(model.IsOverlayVisible);
-        Assert.Equal(DockPoint, model.CursorLaunchOriginScreenLocation);
-    }
-
-    [Fact]
-    public void ADockingFlightFromAnotherDisplayHasTwoLegs()
-    {
-        var (model, _, _) = Make();
-        model.BeginCursorFlight(CursorFlightPurpose.ToDock, Right);
+        model.MouseLocation = () => DockPoint;
+        model.BeginCursorFlight(CursorFlightPurpose.ToMouse, Right);
         var firstLeg = Assert.IsType<CursorFlightLeg>(model.CursorFlightLeg);
         Assert.False(firstLeg.IsFinalLeg);
         Assert.Equal(Right, firstLeg.ScreenFrame);
-        Assert.Equal(new ScreenPoint(Right.Left, DockPoint.Y), firstLeg.EndScreenLocation);
+        Assert.Equal(Right.Left, firstLeg.EndScreenLocation.X);
 
         // A second request while flying is ignored.
         model.BeginCursorFlight(CursorFlightPurpose.ToMouse, Primary);
@@ -96,55 +84,6 @@ public class OverlayModelTests
         model.BeginCursorFlight(CursorFlightPurpose.ToMouse, Right);
         Assert.True(model.CursorFlightLeg!.IsFinalLeg);
         Assert.Equal(new ScreenPoint(4000, 500), model.CursorFlightLeg.EndScreenLocation);
-    }
-
-    [Fact]
-    public void DockingAsksTheOverlayForAFlightThenRemembersTheDock()
-    {
-        var (model, clock, preferences) = Make();
-        var hides = new List<bool>();
-        model.OverlayHideRequested += fade => hides.Add(fade);
-        model.SetCursorDocked(true);
-        Assert.True(model.IsDockingInProgress);
-        Assert.True(model.IsOverlayVisible);
-        Assert.Equal(0, model.CursorDockRequestToken);
-        clock.Advance(0);
-        Assert.Equal(1, model.CursorDockRequestToken);
-
-        model.FinishDockingCursor();
-        Assert.True(model.IsCursorDocked);
-        Assert.False(model.IsOverlayVisible);
-        Assert.Equal(new[] { false }, hides);
-        Assert.True(preferences.GetBool(OverlayModel.DockedPreferenceKey));
-
-        // Releasing flies out of the island to the mouse.
-        model.SetCursorDocked(false);
-        Assert.False(model.IsCursorDocked);
-        Assert.True(model.IsOverlayVisible);
-        Assert.Equal(DockPoint, model.CursorLaunchOriginScreenLocation);
-        Assert.False(preferences.GetBool(OverlayModel.DockedPreferenceKey));
-    }
-
-    [Fact]
-    public void DockingWaitsForTheConversationToEnd()
-    {
-        var (model, _, _) = Make();
-        model.VoiceState = CompanionVoiceState.Responding;
-        model.SetCursorDocked(true);
-        Assert.False(model.IsDockingInProgress);
-        Assert.False(model.IsOverlayVisible);
-    }
-
-    [Fact]
-    public void DockingWithoutAnyOverlayFlyingFinishesAfterFourSeconds()
-    {
-        var (model, clock, _) = Make();
-        model.SetCursorDocked(true);
-        clock.Advance(3.9);
-        Assert.False(model.IsCursorDocked);
-        clock.Advance(0.2);
-        Assert.True(model.IsCursorDocked);
-        Assert.False(model.IsDockingInProgress);
     }
 
     [Fact]
@@ -177,18 +116,6 @@ public class OverlayModelTests
         model.StreamCursorCaption("second", holdSeconds: 1);
         clock.Advance(0.03 * 6);
         Assert.Equal("second", model.CursorCaptionText);
-    }
-
-    [Fact]
-    public void ACaptionWhileDockedShowsTheOverlayForItAloneAndHidesItAfter()
-    {
-        var (model, clock, _) = Make();
-        model.RestoreDockedWithoutFlight();
-        model.ShowCaption("hello", holdSeconds: 1);
-        Assert.True(model.IsOverlayVisible);
-        clock.Advance(0.03 * 5 + 1 + 0.35);
-        Assert.False(model.IsCursorCaptionVisible);
-        Assert.False(model.IsOverlayVisible);
     }
 
     [Fact]

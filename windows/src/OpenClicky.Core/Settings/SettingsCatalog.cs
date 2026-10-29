@@ -216,8 +216,7 @@ public sealed class SettingsCatalog
                 ["pointer", "cursor", "buddy", "orange", "visible", "hide"]),
             Item("clicky.pointerPresence", "Pointer", "The pointer shows", "Always, while the mouse moves, or after a shake.",
                 ["pointer", "cursor", "always", "while the mouse moves", "after a shake", "shake", "hide"]),
-            Item("clicky.dock", "Pointer", "Dock the pointer in the island", "It waits in the island or in the drawer until Clicky needs it.",
-                ["dock", "island", "drawer", "pointer", "park", "top"]),
+
             Item("clicky.agentMode", "Agent", "Agent mode", "Clicky can hand work to Codex.",
                 ["agent", "codex", "tasks", "automation"]),
             Item("clicky.workspace", "Agent", "Workspace", "Where agents keep their files.",

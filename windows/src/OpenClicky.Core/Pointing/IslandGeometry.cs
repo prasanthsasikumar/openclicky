@@ -35,7 +35,7 @@ public sealed record IslandGeometry(ScreenRect ScreenFrame, double NotchWidth, d
 
     public ScreenRect NotchRect => new(ScreenFrame.MidX - NotchWidth / 2, ScreenFrame.Top, NotchWidth, NotchHeight);
 
-    /// <summary>Where the docked buddy "lives": just under the virtual notch's bottom edge.</summary>
+    /// <summary>Where the pointer comes out of the island: just under the virtual notch's bottom edge.</summary>
     public ScreenPoint DockPoint => new(NotchRect.MidX, NotchRect.Bottom + 6);
 
     /// <summary>A display hangs the island from the band above its work area. With no such band (the usual bottom
@@ -215,7 +215,7 @@ public sealed class IslandLayout
 
     public ScreenRect Island => IslandFrame(Width, Height);
 
-    /// <summary>Where the docked buddy "lives": under the band, or just inside a side drawer's handle.</summary>
+    /// <summary>Where the pointer comes out of the island: under the band, or just inside a side drawer's handle.</summary>
     public ScreenPoint DockPoint
     {
         get

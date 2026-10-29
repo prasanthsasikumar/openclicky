@@ -150,14 +150,11 @@ public sealed class AppComposition : ICompanionHost, IDisposable
     private TrayMenuState ReadTrayState() => new(
         TrayMenuState.StatusTextFor(Companion.VoiceState.ToString().ToLowerInvariant(), Companion.AgentActivityText is not null),
         Companion.IsAgentModeEnabled,
-        Companion.IsCursorDocked,
-        Companion.HudPlacement.IsSideDrawer(),
         dictationSettings.DictationKey.KeycapLabel());
 
     private void WireTray()
     {
         trayIcon.AgentModeToggled += () => Companion.SetAgentModeEnabled(!Companion.IsAgentModeEnabled);
-        trayIcon.DockToggled += () => Companion.SetCursorDocked(!Companion.IsCursorDocked);
         trayIcon.OpenWindowRequested += () => Companion.ShowDictationWindow(DictationSection.Words);
         trayIcon.OpenIslandRequested += companionUi.IslandWindows.OpenPanel;
         trayIcon.SettingsRequested += () => Companion.ShowSettings();

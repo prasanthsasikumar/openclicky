@@ -60,6 +60,15 @@ if (-not $Version) {
 if ($Publish -and -not $GitHubToken) { throw '-Publish needs -GitHubToken or $env:GITHUB_TOKEN' }
 
 Write-Host "OpenClicky $Version for $($Runtimes -join ', ')"
+
+# Windows Installer reads only major.minor.build and replaces an older install only when that is higher:
+# 0.10.1-dev.2 and -dev.3 both read 0.10.1, so each new MSI installed beside the last (2026-10-28).
+# The dev number goes into the build field instead: X.Y.Z-dev.N -> X.Y.(Z*100+N), a release X.Y.(Z*100+99),
+# so every dev build replaces the one before and the release replaces its dev builds.
+if ($Version -notmatch '^(\d+)\.(\d+)\.(\d+)(?:-[A-Za-z]+\.(\d+))?$') { throw "version '$Version' is not X.Y.Z or X.Y.Z-tag.N" }
+$devNumber = if ($Matches[4]) { [int]$Matches[4] } else { 99 }
+if ($devNumber -gt 98 -and $Matches[4]) { throw "a dev number above 98 does not fit the MSI version" }
+$msiVersion = '{0}.{1}.{2}' -f $Matches[1], $Matches[2], ([int]$Matches[3] * 100 + $devNumber)
 # The built-in dictation model ships in every release (hash-checked; skipped when already there).
 & (Join-Path $windowsDirectory 'scripts\fetch-speech-model.ps1')
 foreach ($runtime in $Runtimes) {
@@ -81,10 +90,10 @@ foreach ($runtime in $Runtimes) {
         if ($LASTEXITCODE -ne 0) { Write-Warning "no earlier release for $channel; packing a full package only" }
     }
 
-    Write-Host "== ${runtime}: vpk pack"
+    Write-Host "== ${runtime}: vpk pack (msi version $msiVersion)"
     vpk pack --packId $PackId --packVersion $Version --packDir $publishDirectory --mainExe OpenClicky.exe `
         --packTitle OpenClicky --packAuthors OpenClicky --icon $icon --runtime $runtime --channel $channel `
-        --shortcuts 'Desktop,StartMenuRoot' --msi --instLocation PerMachine -o $releaseDirectory
+        --shortcuts 'Desktop,StartMenuRoot' --msi --msiVersion $msiVersion --instLocation PerMachine -o $releaseDirectory
     if ($LASTEXITCODE -ne 0) { throw "vpk pack failed for $runtime" }
 
     if ($Publish) {

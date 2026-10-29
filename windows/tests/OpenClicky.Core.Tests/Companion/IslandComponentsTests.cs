@@ -67,7 +67,7 @@ public class IslandComponentsTests
         settings.SetPluginEnabled(IslandPluginRegistry.SystemId, true);
         Assert.True(settings.IsEnabled(IslandPluginRegistry.SystemId, registry));
         Assert.Equal(IslandPluginRegistry.SystemId, settings.ResolvedDefaultId(registry));
-        Assert.Equal(new HashSet<string> { "shortcuts", "system" }, settings.EnabledIds(registry));
+        Assert.Equal(new HashSet<string> { "shortcuts", "transcript", "agent", "system" }, settings.EnabledIds(registry));
         settings.SetPluginEnabled(IslandPluginRegistry.SystemId, false);
         Assert.Empty(settings.EnabledPlugins);
     }
@@ -76,7 +76,7 @@ public class IslandComponentsTests
     public void TheOrderDropsUnknownIdsAndAppendsMissingOnes()
     {
         var settings = new IslandComponentSettings(Preferences.InMemory()) { Order = ["system", "gone"] };
-        Assert.Equal(["system", "shortcuts"], settings.ResolvedOrder(IslandComponentRegistry.All));
+        Assert.Equal(["system", "shortcuts", "transcript", "agent"], settings.ResolvedOrder(IslandComponentRegistry.All));
     }
 
     [Fact]
@@ -96,6 +96,47 @@ public class IslandComponentsTests
         Assert.Equal("media", context.ContextualKey);
         context = context with { AgentActivityText = "working" };
         Assert.Equal("agent", context.ContextualKey);
+    }
+
+    [Fact]
+    public void ATakeLandsAtTheLiveToIdleFlipAndKeepsThatTimeUntilTheNextTake()
+    {
+        Assert.Null(IslandContext.LandingTime(wasLive: false, previousLandedAt: null, isLive: true, Now));
+        Assert.Equal(Now, IslandContext.LandingTime(wasLive: true, previousLandedAt: null, isLive: false, Now));
+        Assert.Equal(Now, IslandContext.LandingTime(wasLive: false, previousLandedAt: Now, isLive: false, Now.AddSeconds(3)));
+        Assert.Null(IslandContext.LandingTime(wasLive: false, previousLandedAt: Now, isLive: true, Now.AddSeconds(3)));
+    }
+
+    /// <summary>A live take puts the transcript in the slot, an agent at work puts the agent there; both leave
+    /// the capsule a way back to the shortcuts.</summary>
+    [Fact]
+    public void TheRealBuiltInsFollowTheMoment()
+    {
+        var geometry = IslandGeometry.VirtualNotch(new ScreenRect(0, 0, 1920, 1080), new ScreenRect(0, 0, 1920, 1040));
+        var model = new IslandModel(geometry);
+        model.SetContext(IslandContext.Idle with { Now = Now, IsTakeLive = true, LiveTranscript = "hello" });
+        Assert.Equal(new IslandComponentSelection("transcript", ["shortcuts", "transcript"]), model.Selection);
+        model.SetContext(IslandContext.Idle with { Now = Now, AgentActivityText = "ran: dir" });
+        Assert.Equal(new IslandComponentSelection("agent", ["shortcuts", "agent"]), model.Selection);
+        model.SetContext(IslandContext.Idle with { Now = Now });
+        Assert.Equal(new IslandComponentSelection("shortcuts", ["shortcuts"]), model.Selection);
+    }
+
+    [Fact]
+    public void TheComposerOpenedForAThreadSendsItsWordsToThatThreadOnce()
+    {
+        var hub = new IslandCompanionModel();
+        var newRequests = new List<string>();
+        var followUps = new List<(string Text, string ThreadId)>();
+        hub.ComposerSubmitted += newRequests.Add;
+        hub.ComposerFollowUpSubmitted += (text, threadId) => followUps.Add((text, threadId));
+        hub.OpenTextComposer("thread-1");
+        hub.SubmitComposerCommand.Execute(" and the tests too ");
+        Assert.Equal([("and the tests too", "thread-1")], followUps);
+        hub.OpenTextComposer();
+        hub.SubmitComposerCommand.Execute("what's this?");
+        Assert.Equal(["what's this?"], newRequests);
+        Assert.Single(followUps);
     }
 
     /// <summary>The System plugin on and the default: the open panel is the band plus its 84 rows, and the capsule

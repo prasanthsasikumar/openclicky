@@ -6,7 +6,7 @@
 //  What the island shows in each state, drawn with the HUD tokens: the collapsed handle, the busy
 //  strip and the caption strip, the composer, the connect / permission / tour cards and the open
 //  panel (the band with the pointer's status, the voice pill, Settings and quit; the body with
-//  dock, (i) and the 2 × 2 shortcut grid or the engine warning). Each view refreshes its words from
+//  (i) and the 2 × 2 shortcut grid or the engine warning). Each view refreshes its words from
 //  the models (Refresh) and animates its indicators every frame (Tick).
 //
 
@@ -103,8 +103,7 @@ internal sealed class PeekLineView : Grid, IIslandContent
 
     public void Refresh()
     {
-        mark.IsDimmed = hub.IsCursorDocked;
-        statusText.Text = IslandTexts.PeekStatus(hub.IsCursorDocked, hub.IsClickyCursorEnabled, hub.PointerPresence, hub.IsPointerAwake);
+        statusText.Text = IslandTexts.PeekStatus(hub.IsClickyCursorEnabled, hub.PointerPresence, hub.IsPointerAwake);
     }
 
     public void Tick() { }
@@ -112,31 +111,29 @@ internal sealed class PeekLineView : Grid, IIslandContent
 
 // MARK: - Badge
 
-/// <summary>The docked buddy, or the voice-state indicator while busy (NotchBuddyBadge): level bars while listening, a
-/// spinner while thinking, the pointer otherwise (a button that releases a docked pointer).</summary>
+/// <summary>The voice-state indicator (NotchBuddyBadge): level bars while listening, a spinner while thinking, the
+/// pointer otherwise.</summary>
 internal sealed class BuddyBadgeView : Grid
 {
     private readonly IslandCompanionModel hub;
     private readonly WaveformView waveform = new();
     private readonly SpinnerView spinner = new();
     private readonly PointerTriangleView pointerMark = new(12, DS.HUD.Pointer, 4);
-    private readonly Border releaseButton;
+    private readonly Grid markHolder = new() { Width = 14, Height = 14 };
 
     public BuddyBadgeView(IslandCompanionModel hub)
     {
         this.hub = hub;
-        var markHolder = new Grid { Width = 14, Height = 14 };
         markHolder.Children.Add(pointerMark);
-        releaseButton = Clickable(markHolder, () => hub.ReleasePointerCommand.Execute(null), IslandTexts.ReleasePointerToolTip);
-        releaseButton.HorizontalAlignment = HorizontalAlignment.Center;
-        releaseButton.VerticalAlignment = VerticalAlignment.Center;
+        markHolder.HorizontalAlignment = HorizontalAlignment.Center;
+        markHolder.VerticalAlignment = VerticalAlignment.Center;
         waveform.HorizontalAlignment = HorizontalAlignment.Center;
         waveform.VerticalAlignment = VerticalAlignment.Center;
         spinner.HorizontalAlignment = HorizontalAlignment.Center;
         spinner.VerticalAlignment = VerticalAlignment.Center;
         Children.Add(waveform);
         Children.Add(spinner);
-        Children.Add(releaseButton);
+        Children.Add(markHolder);
         Refresh();
     }
 
@@ -145,10 +142,7 @@ internal sealed class BuddyBadgeView : Grid
         waveform.Visibility = hub.VoiceState == CompanionVoiceState.Listening ? Visibility.Visible : Visibility.Collapsed;
         spinner.Visibility = hub.VoiceState == CompanionVoiceState.Processing ? Visibility.Visible : Visibility.Collapsed;
         var showsMark = hub.VoiceState is CompanionVoiceState.Idle or CompanionVoiceState.Responding;
-        releaseButton.Visibility = showsMark ? Visibility.Visible : Visibility.Collapsed;
-        releaseButton.IsHitTestVisible = hub.IsCursorDocked;
-        releaseButton.Cursor = hub.IsCursorDocked ? Cursors.Hand : Cursors.Arrow;
-        releaseButton.ToolTip = hub.IsCursorDocked ? IslandTexts.ReleasePointerToolTip : null;
+        markHolder.Visibility = showsMark ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public void Tick()
@@ -225,7 +219,7 @@ internal sealed class CompactStatusView : Grid, IIslandContent
     public void Tick() => badge.Tick();
 }
 
-/// <summary>The caption strip (the (i) while the buddy is docked, the goodbye): the badge with the text typing out.</summary>
+/// <summary>The caption strip (the goodbye): the badge with the text typing out.</summary>
 internal sealed class CaptionStripView : DockPanel, IIslandContent
 {
     private readonly IslandCompanionModel hub;
@@ -739,7 +733,7 @@ internal sealed class TourCardView : Grid, IIslandContent
 // MARK: - Full panel
 
 /// <summary>The open island, one short panel: the band (the pointer's status; the voice pill, Settings, quit) over one
-/// row (dock / release, (i), the four shortcuts or what the dictation engine is missing). A side drawer stacks them.</summary>
+/// row ((i), the four shortcuts or what the dictation engine is missing). A side drawer stacks them.</summary>
 internal sealed class FullPanelView : Grid, IIslandContent
 {
     private readonly IslandCompanionModel hub;
@@ -747,8 +741,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
     private readonly PointerTriangleView statusMark = new(12, DS.HUD.Pointer, 4);
     private readonly TextBlock statusText;
     private readonly Grid voicePillHost = new();
-    private readonly Border dockButton;
-    private readonly TextBlock dockButtonLabel;
+
     private readonly ContentControl shortcutsOrWarning = new() { Focusable = false };
 
     public FullPanelView(IslandCompanionModel hub, IslandModel model)
@@ -787,10 +780,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
         Children.Add(band);
 
         // The body.
-        dockButtonLabel = Text("", 13, Brushes.Black, FontWeights.SemiBold);
-        dockButtonLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        dockButton = Clickable(dockButtonLabel, () => hub.ToggleDockCommand.Execute(null), background: DS.HUD.TextBrush, cornerRadius: new CornerRadius(DS.HUD.TileRadius));
-        dockButton.Height = 30;
+
         var info = Text("i", 17, DS.HUD.TextBrush, family: DS.Fonts.Serif);
         info.FontStyle = FontStyles.Italic;
         info.HorizontalAlignment = HorizontalAlignment.Center;
@@ -806,12 +796,8 @@ internal sealed class FullPanelView : Grid, IIslandContent
         if (isSideDrawer)
         {
             var stack = new StackPanel();
-            var buttonsRow = new DockPanel { LastChildFill = true };
-            infoButton.Margin = new Thickness(8, 0, 0, 0);
-            DockPanel.SetDock(infoButton, Dock.Right);
-            buttonsRow.Children.Add(infoButton);
-            buttonsRow.Children.Add(dockButton);
-            stack.Children.Add(buttonsRow);
+            infoButton.HorizontalAlignment = HorizontalAlignment.Left;
+            stack.Children.Add(infoButton);
             shortcutsOrWarning.Margin = new Thickness(0, 10, 0, 0);
             stack.Children.Add(shortcutsOrWarning);
             body = stack;
@@ -819,11 +805,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
         else
         {
             var row = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Top };
-            // 116 rather than the Mac's 128: the Windows keycaps ("R Ctrl") are wider than ⌃ and fn.
-            dockButton.Width = 116;
-            dockButton.Margin = new Thickness(0, 0, 10, 0);
-            DockPanel.SetDock(dockButton, Dock.Left);
-            row.Children.Add(dockButton);
+
             infoButton.Margin = new Thickness(0, 0, 12, 0);
             DockPanel.SetDock(infoButton, Dock.Left);
             row.Children.Add(infoButton);
@@ -832,7 +814,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
         }
         body.Margin = new Thickness(DS.HUD.BodySidePadding, isSideDrawer ? 6 : 2, DS.HUD.BodySidePadding, 0);
         // The slot: the shortcuts row above, or the component the island picked (a plugin) in its place.
-        if (IslandComponentViews.Make(model.ActiveComponent) is { } componentView)
+        if (IslandComponentViews.Make(model.ActiveComponent, hub, model) is { } componentView)
         {
             slotContent = componentView as IIslandContent;
             body = componentView;
@@ -854,13 +836,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
 
     public void Refresh()
     {
-        statusMark.IsDimmed = hub.IsCursorDocked;
         statusText.Text = hub.PointerStatusText;
-        dockButtonLabel.Text = hub.DockButtonTitle;
-        dockButton.Background = hub.IsCursorDocked ? DS.HUD.PointerBrush : DS.HUD.TextBrush;
-        dockButton.ToolTip = hub.DockButtonToolTip;
-        dockButton.Opacity = hub.IsIdle ? 1 : 0.5;
-        dockButton.IsHitTestVisible = hub.IsIdle;
         voicePillHost.Children.Clear();
         voicePillHost.Children.Add(VoicePill());
         shortcutsOrWarning.Content = hub.EngineWarning is { } warning ? EngineWarningView(warning) : ShortcutGrid();

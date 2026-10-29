@@ -5,7 +5,7 @@
 //  Everything the pointer overlay (one click-through window per monitor, Overlay/OverlayWindow.cs)
 //  reads, and the overlay-side rules CompanionManager keeps on the Mac: pointing (pointAt, the
 //  token that re-flies to the same spot, the Settings tour's click ripple), the typewriter caption
-//  beside the pointer, docking into the island and back, the flight legs between displays
+//  beside the pointer, the flight legs back to the mouse between displays
 //  (CursorFlightPlanner), and transient cursor mode (the overlay fades out a second after an
 //  interaction when "show openclicky" is off).
 //
@@ -48,19 +48,14 @@ public sealed partial class OverlayModel : ObservableObject
     [ObservableProperty] private double cursorCaptionOpacity;
     [ObservableProperty] private bool isCursorCaptionVisible;
 
-    // MARK: - Docking and flights
+    // MARK: - Flights
 
-    /// <summary>True while the buddy lives in the island instead of following the mouse.</summary>
-    [ObservableProperty] private bool isCursorDocked;
-    /// <summary>Bumped when the user docks the buddy; the overlay showing the buddy starts the flight.</summary>
-    [ObservableProperty] private int cursorDockRequestToken;
     /// <summary>The leg of a flight in progress; the overlay whose screen matches animates it.</summary>
     [ObservableProperty] private CursorFlightLeg? cursorFlightLeg;
 
     /// <summary>Where a freshly shown overlay starts the buddy (the island) before flying out. Consumed by the overlay.</summary>
     public ScreenPoint? CursorLaunchOriginScreenLocation { get; set; }
 
-    public bool IsDockingInProgress { get; private set; }
     private int cursorFlightSequence;
 
     // MARK: - Presence, tour
@@ -90,8 +85,6 @@ public sealed partial class OverlayModel : ObservableObject
     public event Action? PointerWakeRequested;
     /// <summary>The first-launch welcome bubble finished (the Mac starts its onboarding video here).</summary>
     public event Action? WelcomeFinished;
-    /// <summary>The island should drop a caption it is typing (undocking).</summary>
-    public event Action? IslandCaptionClearRequested;
 
     // MARK: - Environment (set by the Windows side)
 
@@ -99,7 +92,7 @@ public sealed partial class OverlayModel : ObservableObject
     public Func<ScreenPoint> MouseLocation { get; set; } = () => ScreenPoint.Zero;
     /// <summary>The monitor frame (physical pixels) containing a point, else the nearest.</summary>
     public Func<ScreenPoint, ScreenRect> ScreenFrameAt { get; set; } = _ => ScreenRect.Empty;
-    /// <summary>Where the docked buddy lives (the primary island's dock point) and that monitor's frame.</summary>
+    /// <summary>Where the pointer comes out of the island (the primary island's dock point) and that monitor's frame.</summary>
     public Func<(ScreenPoint DockPoint, ScreenRect DockScreenFrame)> DockTarget { get; set; } = () => (ScreenPoint.Zero, ScreenRect.Empty);
     /// <summary>An answer is being spoken (transient mode waits for it to finish).</summary>
     public Func<bool> IsAnswerAudioPlaying { get; set; } = () => false;
@@ -108,11 +101,12 @@ public sealed partial class OverlayModel : ObservableObject
     private readonly Func<double> secondsClock;
     private readonly Preferences? preferences;
 
-    public const string DockedPreferenceKey = "isOpenClickyCursorDocked";
+    /// <summary>Docking the pointer in the island is gone (as on the Mac, 2026-10-28): the stored flag is cleared once at launch.</summary>
+    public const string RetiredDockedPreferenceKey = "isOpenClickyCursorDocked";
     public const string CursorEnabledPreferenceKey = "isClickyCursorEnabled";
 
     /// <param name="delay">The clock (Task.Delay); tests pass an immediate one.</param>
-    /// <param name="preferences">Where the docked state is remembered (null: not remembered).</param>
+    /// <param name="preferences">Where "show openclicky" is remembered (null: not remembered).</param>
     /// <param name="secondsClock">The clock <paramref name="delay"/> runs on, in seconds (the typewriter keeps pace with it).</param>
     public OverlayModel(Func<TimeSpan, CancellationToken, Task>? delay = null, Preferences? preferences = null, Func<double>? secondsClock = null)
     {
@@ -206,7 +200,6 @@ public sealed partial class OverlayModel : ObservableObject
     {
         // The spinner (processing) hides the triangle, so the flight would be invisible.
         if (VoiceState == CompanionVoiceState.Processing) VoiceState = CompanionVoiceState.Idle;
-        LaunchDockedCursorForPointing();
         var trimmedLabel = label?.Trim();
         DetectedElementBubbleText = string.IsNullOrEmpty(trimmedLabel) ? null : trimmedLabel;
         DetectedElementDisplayFrame = displayFrame;
@@ -214,14 +207,6 @@ public sealed partial class OverlayModel : ObservableObject
         DetectedElementPointToken = unchecked(DetectedElementPointToken + 1);
     }
 
-    /// <summary>While docked, pointing needs the buddy on screen: it launches from the island and comes back after.</summary>
-    private void LaunchDockedCursorForPointing()
-    {
-        if (!IsCursorDocked || IsOverlayVisible) return;
-        CursorLaunchOriginScreenLocation = DockTarget().DockPoint;
-        CursorFlightLeg = null;
-        ShowOverlayOnAllScreens();
-    }
 
     public void ClearDetectedElementLocation()
     {
@@ -233,7 +218,6 @@ public sealed partial class OverlayModel : ObservableObject
     public void BeginSettingsTourPointing()
     {
         PointerStaysOnTarget = true;
-        if (IsCursorDocked) CursorLaunchOriginScreenLocation = DockTarget().DockPoint;
         if (!IsOverlayVisible) ShowOverlayOnAllScreens();
     }
 
@@ -267,70 +251,10 @@ public sealed partial class OverlayModel : ObservableObject
     /// <summary>Raised by the overlay when its welcome bubble is gone.</summary>
     public void NoteWelcomeFinished() => WelcomeFinished?.Invoke();
 
-    // MARK: - Docking
-
-    /// <summary>Dock the buddy in the island, or release it back to the mouse.</summary>
-    public void SetCursorDocked(bool docked)
-    {
-        if (docked) DockCursor();
-        else UndockCursor();
-    }
-
-    private void DockCursor()
-    {
-        if (IsCursorDocked || IsDockingInProgress) return;
-        if (VoiceState != CompanionVoiceState.Idle) return;
-        IsDockingInProgress = true;
-        if (!IsOverlayVisible) ShowOverlayOnAllScreens();
-        CancelTransientHide();
-        ClearDetectedElementLocation();
-        DismissCursorCaption();
-        _ = BumpDockRequestAndWatchAsync();
-    }
-
-    private async Task BumpDockRequestAndWatchAsync()
-    {
-        // Bumped on the next turn so a freshly created overlay observes the change.
-        await delay(TimeSpan.Zero, CancellationToken.None);
-        CursorDockRequestToken = unchecked(CursorDockRequestToken + 1);
-        // Both legs of the longest flight take under 3.5 s. If no overlay picked the request up (the pointer between
-        // displays, say), dock without the flight rather than hang.
-        await delay(TimeSpan.FromSeconds(4), CancellationToken.None);
-        if (!IsDockingInProgress) return;
-        AppLog.Write("pointer: docking without a flight (no overlay animated it)");
-        FinishDockingCursor();
-    }
-
-    /// <summary>Called by the overlay once the flight into the island has finished.</summary>
-    public void FinishDockingCursor()
-    {
-        IsDockingInProgress = false;
-        IsCursorDocked = true;
-        preferences?.Set(DockedPreferenceKey, true);
-        HideOverlay();
-        CursorFlightLeg = null;
-        ClearDetectedElementLocation();
-    }
-
-    private void UndockCursor()
-    {
-        if (!IsCursorDocked) return;
-        IsCursorDocked = false;
-        preferences?.Set(DockedPreferenceKey, false);
-        CursorFlightLeg = null;
-        IslandCaptionClearRequested?.Invoke();
-        // Re-create the overlay with the buddy starting at the island; it flies to the mouse.
-        CursorLaunchOriginScreenLocation = DockTarget().DockPoint;
-        ShowOverlayOnAllScreens();
-    }
-
-    /// <summary>Restores the docked state at launch without an animation: the buddy is simply home.</summary>
-    public void RestoreDockedWithoutFlight() => IsCursorDocked = true;
-
     // MARK: - Flights between displays
 
-    /// <summary>Starts a flight from the overlay on <paramref name="fromScreenFrame"/> to the island (ToDock) or to the
-    /// mouse (ToMouse). A destination on another display gets two legs.</summary>
+    /// <summary>Starts a flight from the overlay on <paramref name="fromScreenFrame"/> back to the mouse. A mouse on
+    /// another display gets two legs.</summary>
     public void BeginCursorFlight(CursorFlightPurpose purpose, ScreenRect fromScreenFrame)
     {
         if (CursorFlightLeg is not null) return;
@@ -357,11 +281,6 @@ public sealed partial class OverlayModel : ObservableObject
 
     private (ScreenPoint Destination, ScreenRect DestinationScreenFrame) CursorFlightDestination(CursorFlightPurpose purpose, ScreenRect fallbackScreenFrame)
     {
-        if (purpose == CursorFlightPurpose.ToDock)
-        {
-            var (dockPoint, dockScreenFrame) = DockTarget();
-            return (dockPoint, dockScreenFrame.IsEmpty ? fallbackScreenFrame : dockScreenFrame);
-        }
         var mouseLocation = MouseLocation();
         var mouseScreenFrame = ScreenFrameAt(mouseLocation);
         return (mouseLocation, mouseScreenFrame.IsEmpty ? fallbackScreenFrame : mouseScreenFrame);
@@ -398,28 +317,14 @@ public sealed partial class OverlayModel : ObservableObject
         }
     }
 
-    /// <summary>A caption by the pointer; beside the mouse when the buddy is docked (the overlay is shown for the caption
-    /// alone, the buddy stays in the island).</summary>
-    public void ShowCaption(string message, double holdSeconds)
-    {
-        if (IsCursorDocked && !IsOverlayVisible)
-        {
-            CancelTransientHide();
-            ShowOverlayOnAllScreens();
-        }
-        StreamCursorCaption(message, holdSeconds);
-    }
+    /// <summary>A caption by the pointer.</summary>
+    public void ShowCaption(string message, double holdSeconds) => StreamCursorCaption(message, holdSeconds);
 
     /// <summary>Text shown at once, no typewriter (the question as it is heard, many times a second).</summary>
     public void ShowLiveCaption(string text)
     {
         var heardSoFar = text.Trim();
         if (heardSoFar.Length == 0) return;
-        if (IsCursorDocked && !IsOverlayVisible)
-        {
-            CancelTransientHide();
-            ShowOverlayOnAllScreens();
-        }
         captionCancellation?.Cancel();
         captionCancellation = null;
         CursorCaptionText = heardSoFar;
@@ -443,13 +348,5 @@ public sealed partial class OverlayModel : ObservableObject
         if (CursorCaptionOpacity != 0.0) return;
         IsCursorCaptionVisible = false;
         CursorCaptionText = "";
-        HideCaptionOnlyOverlayIfDocked();
-    }
-
-    /// <summary>The caption-only overlay goes away with its caption, unless the docked buddy has since launched to point.</summary>
-    private void HideCaptionOnlyOverlayIfDocked()
-    {
-        if (!IsCursorDocked || !IsOverlayVisible || IsDockingInProgress || DetectedElementScreenLocation is not null || CursorFlightLeg is not null) return;
-        HideOverlay();
     }
 }

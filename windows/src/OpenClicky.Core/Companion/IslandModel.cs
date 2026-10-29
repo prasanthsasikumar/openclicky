@@ -30,17 +30,13 @@ public sealed partial class IslandModel : ObservableObject
     [ObservableProperty] private FirstRunTourCard? tourCard;
     /// <summary>The tour just finished: the island settles back slowly, once.</summary>
     [ObservableProperty] private bool isSettlingGracefully;
-    /// <summary>Text typed out in the compact strip (the (i) while the buddy is docked, the goodbye); null = none.</summary>
+    /// <summary>Text typed out in the compact strip (the goodbye); null = none.</summary>
     [ObservableProperty] private string? captionText;
     [ObservableProperty] private bool isComposerOpen;
     /// <summary>The busy strip has a line to show under its status.</summary>
     [ObservableProperty] private bool hasCompactDetailLine;
     /// <summary>The goodbye on quit: its caption shows even over a busy strip, and nothing opens after it.</summary>
     [ObservableProperty] private bool isSayingGoodbye;
-    [ObservableProperty] private bool isCursorDocked;
-
-    /// <summary>Whether this monitor's island is the one the buddy docks into (the primary monitor).</summary>
-    public bool HostsDockedCursor { get; set; }
 
     /// <summary>Called whenever the expansion or the island's size changes so the window can resize itself.</summary>
     public event Action? LayoutChanged;
@@ -231,13 +227,6 @@ public sealed partial class IslandModel : ObservableObject
         if (Expansion == IslandExpansion.Compact) LayoutChanged?.Invoke();
     }
 
-    public void SetCursorDocked(bool docked)
-    {
-        if (IsCursorDocked == docked) return;
-        IsCursorDocked = docked;
-        LayoutChanged?.Invoke();
-    }
-
     public void TogglePinned()
     {
         if (IsSetupInProgress) return;
@@ -384,9 +373,7 @@ public sealed partial class IslandCompanionModel : ObservableObject
     private bool isAlwaysListening;
     /// <summary>The voice is a dictation into the front app, not a question.</summary>
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CompactStatusText))] private bool isDictatingToFrontApp;
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PointerStatusText), nameof(DockButtonTitle), nameof(DockButtonToolTip))]
-    private bool isCursorDocked;
+
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PointerStatusText))] private bool isClickyCursorEnabled = true;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PointerStatusText))] private PointerPresence pointerPresence = PointerPresence.Always;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PointerStatusText))] private bool isPointerAwake = true;
@@ -400,7 +387,6 @@ public sealed partial class IslandCompanionModel : ObservableObject
     /// <summary>Why the engine can't run, the pill's hover text when blocked.</summary>
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(VoicePillToolTip))] private string? engineUnavailableReason;
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PointerStatusText), nameof(DockButtonTitle))]
     private HUDPlacement placement = HUDPlacement.Notch;
 
     // MARK: - Cards (every island shows the same one)
@@ -414,6 +400,17 @@ public sealed partial class IslandCompanionModel : ObservableObject
     [ObservableProperty] private string? captionText;
     [ObservableProperty] private bool isSayingGoodbye;
 
+    // MARK: - The slot's moment (mirrored from the orchestrator)
+
+    /// <summary>What the islands know about the moment: a live or just-landed take, a working agent.</summary>
+    [ObservableProperty] private IslandContext islandContext = IslandContext.Idle;
+    /// <summary>The agent result card's title, status and thread, for the agent component.</summary>
+    [ObservableProperty] private string agentCardTitle = "";
+    [ObservableProperty] private string agentCardStatus = "";
+    [ObservableProperty] private string agentCardThreadId = "";
+    /// <summary>The thread a follow-up typed in the composer goes to; null: a new request.</summary>
+    public string? ComposerThreadId { get; private set; }
+
     // MARK: - Derived
 
     public bool IsBusy => VoiceState != CompanionVoiceState.Idle || AgentActivityText is not null;
@@ -422,9 +419,7 @@ public sealed partial class IslandCompanionModel : ObservableObject
     public string CompactStatusText => IslandTexts.CompactStatus(VoiceState, IsDictatingToFrontApp, IsAlwaysListening, AgentActivityText, AnsweringSourceName);
     public string? DetailLine => IslandTexts.DetailLine(VoiceState, AgentActivityText, LastTranscript);
     public bool HasCompactDetailLine => DetailLine is not null;
-    public string PointerStatusText => IslandTexts.PointerStatus(IsCursorDocked, Placement, IsClickyCursorEnabled, PointerPresence, IsPointerAwake);
-    public string DockButtonTitle => IslandTexts.DockButtonTitle(IsCursorDocked, Placement);
-    public string DockButtonToolTip => IslandTexts.DockButtonToolTip(IsCursorDocked);
+    public string PointerStatusText => IslandTexts.PointerStatus(IsClickyCursorEnabled, PointerPresence, IsPointerAwake);
     public IReadOnlyList<IslandShortcut> ShortcutGrid => IslandTexts.ShortcutGrid(DictationKey, IsAlwaysListening);
     public string VoicePillToolTip => EngineBlockedPillLabel is null
         ? IslandTexts.VoicePillToolTip(DictationEngineName)
@@ -440,7 +435,15 @@ public sealed partial class IslandCompanionModel : ObservableObject
     public event Action<HUDPlacement>? PlacementChangeRequested;
 
     /// <summary>Ctrl tapped twice: the one-line composer on the island under the pointer, with the keyboard.</summary>
-    public void OpenTextComposer() => OpenComposerRequested?.Invoke();
+    public void OpenTextComposer() => OpenTextComposer(threadId: null);
+
+    /// <summary>The composer, its text going to <paramref name="threadId"/> when given (the agent component's
+    /// "follow up"), else a new request.</summary>
+    public void OpenTextComposer(string? threadId)
+    {
+        ComposerThreadId = string.IsNullOrEmpty(threadId) ? null : threadId;
+        OpenComposerRequested?.Invoke();
+    }
     /// <summary>Closes the composer everywhere; the window that had the keyboard gets it back.</summary>
     public void CloseTextComposer() => CloseComposerRequested?.Invoke();
     /// <summary>Opens the full panel on the island under the pointer and keeps it open.</summary>
@@ -461,8 +464,9 @@ public sealed partial class IslandCompanionModel : ObservableObject
 
     /// <summary>The composer's text, trimmed and non-empty (↵); the composer has already closed.</summary>
     public event Action<string>? ComposerSubmitted;
-    /// <summary>The dock button: true = dock the pointer, false = release it.</summary>
-    public event Action<bool>? DockToggleRequested;
+    /// <summary>The composer's text for an agent thread (text, thread id), opened from the agent component.</summary>
+    public event Action<string, string>? ComposerFollowUpSubmitted;
+
     /// <summary>The (i): type out what OpenClicky does (the panel has closed).</summary>
     public event Action? ExplainRequested;
     public event Action<IslandSettingsDestination>? SettingsRequested;
@@ -484,22 +488,14 @@ public sealed partial class IslandCompanionModel : ObservableObject
     [RelayCommand]
     private void SubmitComposer(string? text)
     {
+        var threadId = ComposerThreadId;
+        ComposerThreadId = null;
         CloseTextComposer();
         var trimmed = (text ?? "").Trim();
         if (trimmed.Length == 0) return;
-        ComposerSubmitted?.Invoke(trimmed);
+        if (threadId is not null) ComposerFollowUpSubmitted?.Invoke(trimmed, threadId);
+        else ComposerSubmitted?.Invoke(trimmed);
     }
-
-    [RelayCommand]
-    private void ToggleDock()
-    {
-        if (!IsIdle) return;
-        DockToggleRequested?.Invoke(!IsCursorDocked);
-    }
-
-    /// <summary>The docked badge in the strip: release the pointer.</summary>
-    [RelayCommand]
-    private void ReleasePointer() => DockToggleRequested?.Invoke(false);
 
     [RelayCommand] private void Explain() => ExplainRequested?.Invoke();
     [RelayCommand] private void OpenSettings(IslandSettingsDestination destination) => SettingsRequested?.Invoke(destination);

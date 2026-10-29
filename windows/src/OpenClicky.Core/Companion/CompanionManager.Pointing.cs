@@ -179,7 +179,7 @@ public sealed partial class CompanionManager
     /// <summary>The tour's first moment: the pointer flies out of the island to the mouse and says hello.</summary>
     public void IntroducePointerForTour()
     {
-        if (!IsCursorDocked && !Overlay.IsOverlayVisible)
+        if (!Overlay.IsOverlayVisible)
         {
             Overlay.CursorLaunchOriginScreenLocation = Overlay.DockTarget().DockPoint;
             Overlay.ShowOverlayOnAllScreens();

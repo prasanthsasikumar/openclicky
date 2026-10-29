@@ -43,8 +43,6 @@ internal enum BuddyNavigationMode
     NavigatingToTarget,
     /// <summary>Arrived, pointing with its bubble.</summary>
     PointingAtTarget,
-    /// <summary>Flying into the island to dock; the island takes over when it lands.</summary>
-    FlyingToDock,
 }
 
 public sealed class OverlayWindow : Window
@@ -243,7 +241,7 @@ public sealed class OverlayWindow : Window
         bubbleSpring.Snap(cursorPosition.X, cursorPosition.Y);
         UpdateCaptionOpacityTarget();
 
-        // Leaving the island (undock, or launching from the dock to point): start at the island and fly out.
+        // Coming out of the island (the tour's hello, a hidden pointer launching to point): start there and fly out.
         if (model.CursorLaunchOriginScreenLocation is { } launchOrigin && screenFrame.Contains(launchOrigin))
         {
             cursorPosition = ToLocal(launchOrigin);
@@ -315,10 +313,6 @@ public sealed class OverlayWindow : Window
                 clickRippleScale.AnimateTo(1.4, 0.45, Easing.EaseOut);
                 clickRippleOpacity.AnimateTo(0, 0.45, Easing.EaseOut);
                 break;
-            case nameof(OverlayModel.CursorDockRequestToken):
-                // The overlay that is showing the buddy starts the flight; the model splits it at display edges.
-                if (BuddyIsVisibleOnThisScreen) model.BeginCursorFlight(CursorFlightPurpose.ToDock, screenFrame);
-                break;
             case nameof(OverlayModel.CursorFlightLeg):
                 if (model.CursorFlightLeg is { } flightLeg && flightLeg.ScreenFrame == screenFrame) PerformFlightLeg(flightLeg);
                 break;
@@ -362,8 +356,6 @@ public sealed class OverlayWindow : Window
                     if (model.DetectedElementScreenLocation is not null) return false;
                     // Likewise while another screen's overlay is flying the buddy.
                     if (model.CursorFlightLeg is { } flightLeg && flightLeg.ScreenFrame != screenFrame) return false;
-                    // Docked, the buddy lives in the island; an overlay shown then is for a caption beside the mouse.
-                    if (model.IsCursorDocked) return false;
                     return isCursorOnThisScreen;
                 default:
                     return true;
@@ -685,16 +677,9 @@ public sealed class OverlayWindow : Window
         StartFlyingBackToCursor();
     }
 
-    /// <summary>Back to the mouse after pointing, or back into the island when the buddy is docked there.</summary>
+    /// <summary>Back to the mouse after pointing.</summary>
     private void StartFlyingBackToCursor()
     {
-        if (model.IsCursorDocked)
-        {
-            navigationBubbleText = "";
-            navigationBubbleOpacity.Snap(0.0);
-            model.BeginCursorFlight(CursorFlightPurpose.ToDock, screenFrame);
-            return;
-        }
         if (!IsMouseOnThisScreen())
         {
             // The mouse is on another display: fly to this display's edge, then across that one.
@@ -711,10 +696,10 @@ public sealed class OverlayWindow : Window
         AnimateBezierFlightArc(cursorWithTrackingOffset, FinishNavigationAndResumeFollowing);
     }
 
-    // MARK: - Docking
+    // MARK: - Flights between displays
 
-    /// <summary>One leg of a flight on this display: into the island, or back to a mouse on another display. A non-final
-    /// leg ends at this display's edge and hands over to the destination display's overlay.</summary>
+    /// <summary>One leg of a flight back to a mouse on another display. A non-final leg ends at this display's edge and
+    /// hands over to the destination display's overlay.</summary>
     private void PerformFlightLeg(CursorFlightLeg flightLeg)
     {
         if (showWelcome && welcomeText.Length > 0) return;
@@ -735,22 +720,14 @@ public sealed class OverlayWindow : Window
         dockScale.Snap(1.0);
 
         var destination = ToLocal(flightLeg.EndScreenLocation);
-        if (flightLeg.Purpose == CursorFlightPurpose.ToDock)
+        if (flightLeg.IsFinalLeg)
         {
-            buddyNavigationMode = BuddyNavigationMode.FlyingToDock;
-            isReturningToCursor = false;
+            // Land where cursor following would put the buddy; a big mouse move cancels it.
+            destination = new Point(destination.X + FollowOffsetX, destination.Y + FollowOffsetY);
+            cursorPositionWhenNavigationStarted = MouseInLocalDips();
         }
-        else
-        {
-            if (flightLeg.IsFinalLeg)
-            {
-                // Land where cursor following would put the buddy; a big mouse move cancels it.
-                destination = new Point(destination.X + FollowOffsetX, destination.Y + FollowOffsetY);
-                cursorPositionWhenNavigationStarted = MouseInLocalDips();
-            }
-            buddyNavigationMode = BuddyNavigationMode.NavigatingToTarget;
-            isReturningToCursor = flightLeg.IsFinalLeg;
-        }
+        buddyNavigationMode = BuddyNavigationMode.NavigatingToTarget;
+        isReturningToCursor = flightLeg.IsFinalLeg;
 
         AnimateBezierFlightArc(destination, () =>
         {
@@ -758,35 +735,14 @@ public sealed class OverlayWindow : Window
             if (!flightLeg.IsFinalLeg)
             {
                 // Slip off this display's edge; the destination display's overlay continues.
-                if (flightLeg.Purpose == CursorFlightPurpose.ToDock)
-                {
-                    cursorOpacity.Snap(0.0);
-                }
-                else
-                {
-                    buddyNavigationMode = BuddyNavigationMode.FollowingCursor;
-                    isReturningToCursor = false;
-                    triangleRotationDegrees = -35.0;
-                }
+                buddyNavigationMode = BuddyNavigationMode.FollowingCursor;
+                isReturningToCursor = false;
+                triangleRotationDegrees = -35.0;
                 model.ContinueCursorFlight(flightLeg);
                 return;
             }
-            if (flightLeg.Purpose == CursorFlightPurpose.ToDock) SettleIntoDock();
-            else FinishNavigationAndResumeFollowing();
+            FinishNavigationAndResumeFollowing();
         });
-    }
-
-    /// <summary>The end of the docking flight: tip up under the island, slip inside, hand over to the island.</summary>
-    private async void SettleIntoDock()
-    {
-        if (buddyNavigationMode != BuddyNavigationMode.FlyingToDock) return;
-        triangleRotationDegrees = 0;
-        triangleRotation.Snap(0);
-        cursorOpacity.AnimateTo(0.0, 0.22, Easing.EaseIn);
-        dockScale.AnimateTo(0.6, 0.22, Easing.EaseIn);
-        await Task.Delay(250);
-        if (isClosed) return;
-        model.FinishDockingCursor();
     }
 
     private void CancelNavigationAndResumeFollowing()

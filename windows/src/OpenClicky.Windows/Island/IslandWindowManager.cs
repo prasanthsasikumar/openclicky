@@ -3,7 +3,7 @@
 //  OpenClicky (Windows port of NotchHUD.swift's NotchHUDManager)
 //
 //  One island per monitor, hanging from the top centre (below a taskbar docked at the top) or as a
-//  drawer on a screen edge. The primary monitor's island is where the buddy docks. Hover is polled
+//  drawer on a screen edge. The pointer comes out of the primary monitor's island. Hover is polled
 //  from the cursor position every 50 ms (as on the Mac, where onHover is unreliable in a non-key
 //  panel); a click anywhere outside closes a pinned panel or the composer. The composer opens on
 //  the island under the pointer with the keyboard and hands it back to the previous window.
@@ -72,7 +72,6 @@ public sealed class IslandWindowManager : IDisposable
         if (overlayModel is not null)
         {
             overlayModel.DockTarget = () => (DockPoint, DockScreenFrame);
-            overlayModel.IslandCaptionClearRequested += hub.ClearCaption;
         }
     }
 
@@ -101,7 +100,7 @@ public sealed class IslandWindowManager : IDisposable
         }
     }
 
-    /// <summary>Where the docked buddy lives (the primary island), physical pixels.</summary>
+    /// <summary>Where the pointer comes out of the island (the primary island), physical pixels.</summary>
     public ScreenPoint DockPoint
     {
         get
@@ -127,7 +126,7 @@ public sealed class IslandWindowManager : IDisposable
         return (location, primaryInstance.Window.Screen.FrameInPixels());
     }
 
-    /// <summary>The monitor the buddy docks on, physical pixels.</summary>
+    /// <summary>The monitor the pointer comes out on, physical pixels.</summary>
     public ScreenRect DockScreenFrame => (PrimaryInstance?.Window.Screen ?? screens.Primary())?.FrameInPixels() ?? ScreenRect.Empty;
 
     private Instance? InstanceUnderPointer
@@ -211,15 +210,15 @@ public sealed class IslandWindowManager : IDisposable
                 existing.Window.UpdateScreen(screen);
                 continue;
             }
-            var model = new IslandModel(geometry, placement, componentSettings: componentSettings) { HostsDockedCursor = screen.DeviceName == primary?.DeviceName };
+            var model = new IslandModel(geometry, placement, componentSettings: componentSettings);
             model.SetBusy(hub.IsBusy);
             model.SetSpeaking(hub.IsSpeaking);
             model.SetCompactDetailLine(hub.HasCompactDetailLine);
-            model.SetCursorDocked(hub.IsCursorDocked);
             model.SetConnectPrompt(hub.ConnectPrompt);
             model.SetPermissionPrompt(hub.PermissionPrompt);
             model.SetTourCard(hub.TourCard);
             model.SetCaption(hub.CaptionText);
+            model.SetContext(hub.IslandContext with { Now = DateTimeOffset.Now });
             var window = new IslandWindow(model, hub, screen);
             instances.Add(new Instance(screen.DeviceName, model, window));
             if (isShown) window.Show();
@@ -242,8 +241,8 @@ public sealed class IslandWindowManager : IDisposable
                     instance.Model.SetCompactDetailLine(hub.HasCompactDetailLine);
                 }
                 break;
-            case nameof(IslandCompanionModel.IsCursorDocked):
-                foreach (var instance in instances) instance.Model.SetCursorDocked(hub.IsCursorDocked);
+            case nameof(IslandCompanionModel.IslandContext):
+                ApplyIslandContext();
                 break;
             case nameof(IslandCompanionModel.ConnectPrompt):
                 foreach (var instance in instances) instance.Model.SetConnectPrompt(hub.ConnectPrompt);
@@ -320,9 +319,33 @@ public sealed class IslandWindowManager : IDisposable
         if (PrimaryInstance is { } primaryInstance && primaryInstance.Model.Expansion == IslandExpansion.Tour) primaryInstance.Window.FocusTourField();
     }
 
+    // MARK: - The slot's moment
+
+    /// <summary>Ticks once a second while a landed take's transcript window runs, so it ends on time.</summary>
+    private DispatcherTimer? landedTranscriptTimer;
+
+    /// <summary>Every island gets the moment, with the time now; a landed take keeps the clock running until its window ends.</summary>
+    private void ApplyIslandContext()
+    {
+        var context = hub.IslandContext with { Now = DateTimeOffset.Now };
+        foreach (var instance in instances) instance.Model.SetContext(context);
+        var isInLandedWindow = !context.IsTakeLive && context.TakeLandedAt is { } landedAt && context.Now - landedAt < IslandContext.LandedTranscriptWindow;
+        if (isInLandedWindow && landedTranscriptTimer is null)
+        {
+            landedTranscriptTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => ApplyIslandContext(), dispatcher);
+            landedTranscriptTimer.Start();
+        }
+        else if (!isInLandedWindow && landedTranscriptTimer is not null)
+        {
+            landedTranscriptTimer.Stop();
+            landedTranscriptTimer = null;
+        }
+    }
+
     public void Dispose()
     {
         hoverPollTimer.Stop();
+        landedTranscriptTimer?.Stop();
         foreach (var observation in componentSettingsObservations) observation.Dispose();
         componentSettingsObservations.Clear();
         hub.PropertyChanged -= OnHubPropertyChanged;
@@ -333,7 +356,6 @@ public sealed class IslandWindowManager : IDisposable
         hub.FocusTourFieldRequested -= FocusTourField;
         hub.PlacementChangeRequested -= SetPlacement;
         screens.DisplaysChanged -= OnDisplaysChanged;
-        if (overlayModel is not null) overlayModel.IslandCaptionClearRequested -= hub.ClearCaption;
         foreach (var instance in instances) instance.Window.Close();
         instances.Clear();
     }

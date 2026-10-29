@@ -115,6 +115,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
     {
         Island.AgentActivityText = value;
         AgentCard.AgentActivityText = value;
+        UpdateIslandContext();
         if (value is not null) AgentTaskStarted?.Invoke();
     }
     partial void OnIsDictatingToFrontAppChanged(bool value) => Island.IsDictatingToFrontApp = value;
@@ -217,10 +218,6 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
     {
         switch (eventArgs.PropertyName)
         {
-            case nameof(OverlayModel.IsCursorDocked):
-                Island.IsCursorDocked = Overlay.IsCursorDocked;
-                OnPropertyChanged(nameof(IsCursorDocked));
-                break;
             case nameof(OverlayModel.IsClickyCursorEnabled):
                 Island.IsClickyCursorEnabled = Overlay.IsClickyCursorEnabled;
                 OnPropertyChanged(nameof(IsClickyCursorEnabled));
@@ -234,10 +231,11 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         }
     }
 
-    /// <summary>The island's buttons (CompanionUi wires the dock button and the (i) itself).</summary>
+    /// <summary>The island's buttons (CompanionUi wires the (i) itself).</summary>
     private void WireIslandButtons()
     {
         Island.ComposerSubmitted += SubmitTypedRequest;
+        ObserveIslandContext();
         Island.SettingsRequested += destination => ShowSettings(destination switch
         {
             IslandSettingsDestination.Dictation => DictationSettingsPage.Dictation,
@@ -361,10 +359,6 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
 
     public void SetClickyCursorEnabled(bool isEnabled) => Overlay.SetClickyCursorEnabled(isEnabled);
 
-    public bool IsCursorDocked => Overlay.IsCursorDocked;
-
-    /// <summary>Dock the buddy in the island, or release it back to the mouse.</summary>
-    public void SetCursorDocked(bool isDocked) => Overlay.SetCursorDocked(isDocked);
 
     public void ReplayWelcomeTour() => FirstRunTour.Replay();
 
@@ -491,12 +485,14 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         AccountProfileStore.Shared.ShowNotice = notice => services.MainThread.Post(() => ShowQuietNotice(notice));
         AccountProfileStore.Shared.Start();
 
-        // Onboarded with every permission still granted: the pointer shows at once (docked: simply home).
-        if (HasCompletedOnboarding && AllPermissionsGranted && IsClickyCursorEnabled)
+        // Docking the pointer is gone: someone who had it docked gets it back under "the pointer shows".
+        if (preferences.Contains(OverlayModel.RetiredDockedPreferenceKey))
         {
-            if (preferences.GetBool(OverlayModel.DockedPreferenceKey)) Overlay.RestoreDockedWithoutFlight();
-            else Overlay.ShowOverlayOnAllScreens();
+            preferences.Remove(OverlayModel.RetiredDockedPreferenceKey);
+            AppLog.Write("pointer: the retired dock setting was cleared");
         }
+        // Onboarded with every permission still granted: the pointer shows at once.
+        if (HasCompletedOnboarding && AllPermissionsGranted && IsClickyCursorEnabled) Overlay.ShowOverlayOnAllScreens();
 
         StartDictation();
         StartPermissionPrompts();

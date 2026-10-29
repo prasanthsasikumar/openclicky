@@ -89,7 +89,12 @@ public sealed partial class CompanionManager
                 // Delivered through ShortcutTransition.
                 break;
             case CompanionShortcutEventKind.OtherDictationKeyHeld:
-                if (shortcutEvent.OtherKey is { } otherKey) FirstRunTour.AdoptDictationKey(otherKey);
+                if (shortcutEvent.OtherKey is { } otherKey) OtherDictationKeyHeld(otherKey);
+                break;
+            case CompanionShortcutEventKind.DictationPressed:
+            case CompanionShortcutEventKind.DictationEditPressed:
+                NoteDictationKeyPressed();
+                HandleDictationShortcut(shortcutEvent);
                 break;
             default:
                 HandleDictationShortcut(shortcutEvent);
@@ -109,7 +114,7 @@ public sealed partial class CompanionManager
         var trimmedText = text.Trim();
         if (trimmedText.Length == 0) return;
         Overlay.CancelTransientHide();
-        if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible && !IsCursorDocked) Overlay.ShowOverlayOnAllScreens();
+        if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible) Overlay.ShowOverlayOnAllScreens();
         InterruptCurrentAnswer(includingAgentWork: true);
         Overlay.ClearDetectedElementLocation();
         Overlay.DismissCursorCaption();
@@ -194,8 +199,8 @@ public sealed partial class CompanionManager
         askOutcome = AskOutcome.Listening;
         askLiveWordsShownSincePress = false;
         Overlay.CancelTransientHide();
-        // The cursor is hidden: bring it back for this interaction (not while docked: the island shows the state).
-        if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible && !IsCursorDocked) Overlay.ShowOverlayOnAllScreens();
+        // The cursor is hidden: bring it back for this interaction.
+        if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible) Overlay.ShowOverlayOnAllScreens();
         InterruptCurrentAnswer(includingAgentWork: true);
         Overlay.ClearDetectedElementLocation();
         Overlay.DismissCursorCaption();
@@ -271,6 +276,6 @@ public sealed partial class CompanionManager
         ShowAskCaption(errorMessage, 6);
     }
 
-    /// <summary>A caption by the pointer for the ask lane, beside the mouse while the buddy is docked.</summary>
+    /// <summary>A caption by the pointer for the ask lane.</summary>
     private void ShowAskCaption(string message, double holdSeconds) => Overlay.ShowCaption(message, holdSeconds);
 }

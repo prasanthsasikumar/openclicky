@@ -115,6 +115,10 @@ public sealed class CompanionShortcutRecognizer
     /// <summary>Whether OtherDictationKeyHeld is reported (off by default; the first-run tour turns it on).</summary>
     public bool ReportsOtherDictationKeys { get; set; }
 
+    /// <summary>Right Alt pressed alone becomes the dictation key on that press, even outside the tour: on while
+    /// right Ctrl dictates and this PC has never seen it pressed (a laptop without one whose tour was skipped).</summary>
+    public bool AdoptsRightAlt { get; set; }
+
     public bool IsTalkHeld { get; private set; }
     public bool IsDictationKeyHeld { get; private set; }
 
@@ -361,7 +365,7 @@ public sealed class CompanionShortcutRecognizer
     /// Ctrl, and the first hold must already be a take. AltGr also reports a left Ctrl nobody pressed.</summary>
     private IReadOnlyList<CompanionShortcutEvent> AdoptRightAltOnPress(ShortcutKeyEvent keyEvent)
     {
-        if (!ReportsOtherDictationKeys || dictationKey != DictationHotkey.RightControl || IsDictationKeyHeld || IsTalkHeld
+        if (!(ReportsOtherDictationKeys || AdoptsRightAlt) || dictationKey != DictationHotkey.RightControl || IsDictationKeyHeld || IsTalkHeld
             || keyEvent.VirtualKey != VirtualKeys.RightAlt || !keyEvent.IsDown
             || (keyEvent.Modifiers & ~PhysicalModifiers.LeftControl) != PhysicalModifiers.RightAlt)
             return Array.Empty<CompanionShortcutEvent>();

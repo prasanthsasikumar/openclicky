@@ -643,6 +643,24 @@ public class DictationKeyGestureMatrixTests
         Assert.Equal(DictationHotkey.RightAlt, keyboard.Recognizer.DictationKey);
     }
 
+    /// <summary>A skipped tour on a laptop with no right Ctrl: right Alt still dictates from its first press, while
+    /// the companion says right Ctrl was never seen; left Ctrl is never reported outside the tour.</summary>
+    [Fact]
+    public void OutsideTheTourRightAltDictatesWhileRightControlWasNeverSeen()
+    {
+        var keyboard = new SimulatedKeyboard(DictationHotkey.RightControl);
+        keyboard.Recognizer.AdoptsRightAlt = true;
+        keyboard.Press(PhysicalKey.LeftControl);
+        keyboard.Wait(0.8);
+        keyboard.Release(PhysicalKey.LeftControl);
+        Assert.Empty(keyboard.Events);
+        keyboard.Wait(1);
+        keyboard.Press(PhysicalKey.RightAlt);
+        keyboard.Wait(1);
+        keyboard.Release(PhysicalKey.RightAlt);
+        Assert.Equal(new[] { OtherDictationKeyHeld(DictationHotkey.RightAlt), DictationPressed, DictationReleased(wasTap: false) }, keyboard.Events);
+    }
+
     /// <summary>Left Ctrl is copy and paste's: on the tour it is reported (the card explains) but never dictates.</summary>
     [Fact]
     public void OnTheTourLeftControlHeldAloneIsReportedButDoesNotDictate()

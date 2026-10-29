@@ -231,20 +231,6 @@ public static class UiDemo
             await Wait(0.9);
             Shot("island-full", IslandRegion(130));
 
-            // Dock into the island, and back out.
-            islandManager.CloseAll();
-            await Wait(0.5);
-            overlayModel.SetCursorDocked(true);
-            await Wait(0.75);
-            Shot("overlay-docking-flight", IslandRegion(400));
-            await Wait(2.5);
-            islandManager.OpenPanel();
-            await Wait(0.9);
-            Shot("island-full-docked", IslandRegion(130));
-            islandManager.CloseAll();
-            await Wait(0.5);
-            overlayModel.SetCursorDocked(false);
-            await Wait(2.0);
 
             // The engine warning in place of the shortcuts.
             islandModel.EngineWarning = IslandEngineWarning.Make("Sarvam", "needs your sarvam key", "add a key");

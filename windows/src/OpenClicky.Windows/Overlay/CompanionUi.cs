@@ -4,7 +4,7 @@
 //
 //  The floating companion UI in one place for the composition root: the pointer overlay, the
 //  islands, the orb and the agent result card, with their models, and the little wiring that is
-//  UI-only (the island's dock button flies the pointer, the docked state shows in the island, the
+//  UI-only (the
 //  (i) types beside the pointer). Everything else (voice, answers, pointing, permissions, the tour)
 //  is the orchestrator's: it drives the models and listens to their events.
 //
@@ -68,14 +68,7 @@ public sealed class CompanionUi : IDisposable
         OrbWindow = new OrbWindow(Orb, OrbSettings, screens);
         AgentCardWindow = new AgentResultCardWindow(AgentCard, screens);
 
-        // UI-only wiring: the dock button flies the pointer; the island shows where it lives.
-        Island.DockToggleRequested += Overlay.SetCursorDocked;
-        Overlay.PropertyChanged += (_, eventArgs) =>
-        {
-            if (eventArgs.PropertyName == nameof(OverlayModel.IsCursorDocked)) Island.IsCursorDocked = Overlay.IsCursorDocked;
-        };
-        Island.IsCursorDocked = Overlay.IsCursorDocked;
-        // The (i): typed beside the pointer (beside the mouse while docked), 8 s.
+        // The (i): typed beside the pointer, 8 s.
         Island.ExplainRequested += () =>
         {
             Overlay.CancelTransientHide();
