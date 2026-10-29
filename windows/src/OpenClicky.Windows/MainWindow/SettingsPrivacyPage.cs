@@ -25,6 +25,8 @@ internal sealed partial class SettingsRowFactory
                 return new LiveContent(() => Ui.Card(MicrophonePermissionRow(item, query)), Changes.Every(TimeSpan.FromSeconds(1.5)));
             case "privacy.readNearbyText":
                 return SettingsToggleRow(item.Title, item.Detail, query, () => Settings.ReadNearbyText, isOn => Settings.ReadNearbyText = isOn, nameof(DictationSettings.ReadNearbyText));
+            case "privacy.pauseBeforeSendingScreen":
+                return SettingsToggleRow(item.Title, item.Detail, query, () => Settings.PauseBeforeSendingScreen, isOn => Settings.PauseBeforeSendingScreen = isOn, nameof(DictationSettings.PauseBeforeSendingScreen));
             case "privacy.memoryOnThisMac":
                 return SettingsToggleRow(item.Title, item.Detail, query, () => Settings.KeepMemoryOnThisPC, isOn => Settings.KeepMemoryOnThisPC = isOn, nameof(DictationSettings.KeepMemoryOnThisPC));
             case "privacy.incognito":

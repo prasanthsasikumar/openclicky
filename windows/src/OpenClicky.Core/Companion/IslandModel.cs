@@ -445,6 +445,8 @@ public sealed partial class IslandCompanionModel : ObservableObject
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CompactStatusText))] private bool isDictatingToFrontApp;
     /// <summary>The ask lane has taken a question and not finished with it (the pause before sending included).</summary>
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsQuestionOnItsWay))] private bool isAskInFlight;
+    /// <summary>A word from the ask lane that matters more than its state ("sending your screen · esc to cancel").</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CompactStatusText))] private string? askIslandStatus;
 
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PointerStatusText))] private bool isClickyCursorEnabled = true;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PointerStatusText))] private PointerPresence pointerPresence = PointerPresence.Always;
@@ -494,7 +496,7 @@ public sealed partial class IslandCompanionModel : ObservableObject
     /// </summary>
     public bool IsQuestionOnItsWay => IsAskInFlight && AgentActivityText is null && !IsSpeaking;
     public bool IsIdle => VoiceState == CompanionVoiceState.Idle;
-    public string CompactStatusText => IslandTexts.CompactStatus(VoiceState, IsDictatingToFrontApp, IsAlwaysListening, AgentActivityText, AnsweringSourceName);
+    public string CompactStatusText => AskIslandStatus ?? IslandTexts.CompactStatus(VoiceState, IsDictatingToFrontApp, IsAlwaysListening, AgentActivityText, AnsweringSourceName);
     public string? DetailLine => IslandTexts.DetailLine(VoiceState, AgentActivityText, LastTranscript);
     public bool HasCompactDetailLine => DetailLine is not null;
     public string PointerStatusText => IslandTexts.PointerStatus(IsClickyCursorEnabled, PointerPresence, IsPointerAwake);

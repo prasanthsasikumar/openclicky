@@ -57,6 +57,7 @@ public sealed partial class CompanionManager
         StopActiveAnswer();
         currentResponseCancellation?.Cancel();
         IsAskInFlight = false;
+        SetAskIslandStatus(null);
         if (includingAgentWork) openClickyAgentClient.Cancel();
         answerVoicePlayer.StopPlayback();
         StopSystemVoice();
@@ -89,16 +90,19 @@ public sealed partial class CompanionManager
         var cancellation = new CancellationTokenSource();
         currentResponseCancellation = cancellation;
         IsAskInFlight = true;
-        _ = RunAskLaneAsync(transcript, cancellation);
+        // A guide's own "what's next?" never pauses: the person already let the task go ahead, and
+        // a pause after every click would only slow the steps down.
+        var pauseSeconds = AskSendPause.Seconds(DictationSettings.PauseBeforeSendingScreen, isGuidedStepContinuation);
+        _ = RunAskLaneAsync(transcript, pauseSeconds, cancellation);
     }
 
-    private async Task RunAskLaneAsync(string transcript, CancellationTokenSource cancellation)
+    private async Task RunAskLaneAsync(string transcript, double? pauseSeconds, CancellationTokenSource cancellation)
     {
         var cancellationToken = cancellation.Token;
         VoiceState = CompanionVoiceState.Processing;
         try
         {
-            await AnswerAsync(transcript, cancellationToken);
+            await AnswerAsync(transcript, pauseSeconds, cancellationToken);
         }
         catch (Exception error) when (AskLaneFailures.IsCancellation(error) || cancellationToken.IsCancellationRequested)
         {
@@ -120,8 +124,20 @@ public sealed partial class CompanionManager
         if (currentResponseCancellation == cancellation) currentResponseCancellation = null;
     }
 
-    private async Task AnswerAsync(string transcript, CancellationToken cancellationToken)
+    private async Task AnswerAsync(string transcript, double? pauseSeconds, CancellationToken cancellationToken)
     {
+        if (pauseSeconds is { } seconds)
+        {
+            // A moment to call it off before anything leaves the PC. Esc or a click on the island
+            // cancels this question, and nothing is captured or sent.
+            AppLog.Write($"ask: pausing {seconds} s before sending the screen");
+            SetAskIslandStatus(AskSendPause.Caption);
+            Overlay.ShowLiveCaption(AskSendPause.Caption);
+            if (!await AskSendPause.WaitOutAsync(seconds, cancellationToken)) return;
+            SetAskIslandStatus(null);
+            ShowAskCaption($"“{transcript}” · thinking…", 30);
+        }
+        // Captured after the pause, so what is sent is what is on screen now.
         // Every screen (an account sends at most two), told apart from a backend failure.
         IReadOnlyList<CompanionScreenCapture> allScreenCaptures;
         try
@@ -546,6 +562,40 @@ public sealed partial class CompanionManager
             if (!SetProperty(ref isAskInFlight, value)) return;
             Island.IsAskInFlight = value;
         }
+    }
+
+    /// <summary>The expiry of a status shown for a while (<see cref="ShowAskIslandStatus"/>).</summary>
+    private CancellationTokenSource? askIslandStatusExpiry;
+
+    /// <summary>
+    /// What the island's status says instead of the ask lane's state, while set: the pause before
+    /// sending the screen. Null gives the status back to the state.
+    /// </summary>
+    private void SetAskIslandStatus(string? status)
+    {
+        askIslandStatusExpiry?.Cancel();
+        askIslandStatusExpiry = null;
+        Island.AskIslandStatus = status;
+    }
+
+    /// <summary>Puts <paramref name="status"/> on the island for a while (a new question or a stop takes it away sooner).</summary>
+    private void ShowAskIslandStatus(string status, double holdSeconds)
+    {
+        SetAskIslandStatus(status);
+        var expiry = new CancellationTokenSource();
+        askIslandStatusExpiry = expiry;
+        _ = ClearAskIslandStatusLaterAsync(status, holdSeconds, expiry.Token);
+    }
+
+    private async Task ClearAskIslandStatusLaterAsync(string status, double holdSeconds, CancellationToken cancellationToken)
+    {
+        try { await Task.Delay(TimeSpan.FromSeconds(holdSeconds), cancellationToken); }
+        catch (OperationCanceledException) { return; }
+        services.MainThread.Post(() =>
+        {
+            if (cancellationToken.IsCancellationRequested || Island.AskIslandStatus != status) return;
+            Island.AskIslandStatus = null;
+        });
     }
 
     /// <summary>

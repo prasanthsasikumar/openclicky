@@ -495,6 +495,8 @@ public sealed class SettingsCatalog
             Item("privacy.microphone", "Permissions", "Microphone", MicrophonePermissionDetail, ["permission", "mic", "audio", "grant", "allow"]),
             Item("privacy.readNearbyText", "Permissions", "Read nearby text", "Helps spell names and terms on screen right.",
                 ["context", "screen", "spelling", "names", "ui automation", "accessibility"]),
+            Item("privacy.pauseBeforeSendingScreen", "Permissions", "Pause before sending my screen", "A moment to press esc before Clicky sends your screen.",
+                ["screenshot", "screen", "cancel", "esc", "send", "wait", "consent"]),
             Item("privacy.memoryOnThisMac", "What it keeps", "Keep my memory on this PC only", "History, dictionary and styles stay here. Questions to Clicky still go online.",
                 ["local", "memory", "cloud", "sync", "data"]),
             Item("privacy.incognito", "What it keeps", "Incognito", "Takes still paste, but nothing is saved to history.", ["private", "history", "don't save"]),
