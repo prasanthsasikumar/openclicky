@@ -15,6 +15,24 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
+## 0.10.1
+
+### Windows
+
+- **Island plugins.** Switch on System, Shelf, Coding agents, Now playing or Teacher under Settings → Plugins. The open island shows what's happening (your words while dictating, an agent's progress), and a small capsule flips between components. Drop files on the island to keep them on the Shelf; Now playing works with any player that reports to Windows.
+- **Teacher: Clicky draws while it explains.** Ask "teach me how a rainbow forms" and the lesson is drawn in handwriting on your screen, stroke by stroke, while the pointer flies to each label; a real picture from Wikimedia Commons comes up when a drawing can't show it. If you typed the question or your sound is low, the answer is written on screen too. Esc, the ✕ or your next question clears it.
+- **Do things by voice.** "Search YouTube for lo-fi", "minimize everything" and "bring them back", "play Blinding Lights" and "stop that song", "check my email", "draft an email to Ana saying I'll be late" (Gmail or Outlook on the web; never sent). Live facts like the weather are looked up and read from the page instead of "I can't check".
+- **Hands-free without a key.** With fast voice off, hands-free still listens on your PC and Clicky answers once you stop talking. Say "okay, that's all I need for now" to end it, on fast voice too.
+- **You stay in control.** Esc stops anything Clicky is doing: listening, thinking, speaking, or a guide waiting for your click. Clicky pauses a moment before sending your screen ("esc to cancel"; Settings → Privacy & Security turns it off), notices when you click somewhere other than where it pointed, and says what to look for when it isn't sure instead of pointing at the wrong thing.
+- **"What is this?" means what's under the mouse.** A close-up around the pointer goes with each question, and the pointer finds a window's close, minimize and maximize buttons exactly.
+- **"Rephrase this" rewrites in place on the fast voice lane.** Highlighted text, or the box you're typing in, is replaced with the new version; Ctrl+V puts the original back.
+- **The free voice speaks first.** Answers use your account's voice before Kokoro, and if it's slow or fails, the rest of that answer switches to the voice on your PC instead of going quiet. Kokoro no longer downloads by itself.
+- **Dictated questions stay questions.** The clean-up no longer answers a question you dictated; it keeps your words.
+- **No more docking the pointer in the island**, as on the Mac.
+- **Fix: dictation into a web page you haven't clicked into** now asks you to click a box instead of pasting into the page.
+- **Fix: right Alt works on laptops with no right Ctrl** even if you skipped the tour.
+- **Fix: voices and speech models are used only once fully unpacked**, so a fresh install no longer speaks or listens with a half-downloaded model.
+
 ## 0.10.0
 
 ### All platforms
