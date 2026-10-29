@@ -44,8 +44,18 @@ enum LocalAskIntentMapper {
     /// The most words an app name may have; anything longer is a description, not a name.
     static let maximumAppNameWords = 4
 
-    nonisolated static func map(_ intent: LocalAskIntent, hasWritingTarget: Bool, resolveApp: (String) -> String?) -> LocalAskMapping {
-        let mapping = unvalidatedMapping(intent, hasWritingTarget: hasWritingTarget, resolveApp: resolveApp)
+    /// The most words a bare playback command has ("go back to the previous song"). Anything longer
+    /// asks for more than play, pause or skip: "open Spotify and play the first song in my favourite
+    /// list" came back as playback with nothing named, and the play key resumed a paused YouTube
+    /// video in Chrome instead (2026-10-29).
+    static let maximumPlaybackWords = 6
+
+    /// Words that mean the request asks for something besides the player's own buttons: an app to
+    /// open, a second request, a song or list to find.
+    static let wordsBeyondPlayback: Set<String> = ["open", "launch", "and", "then", "spotify", "youtube", "list", "playlist", "album", "artist", "favourite", "favorite", "liked", "by"]
+
+    nonisolated static func map(_ intent: LocalAskIntent, transcript: String, hasWritingTarget: Bool, resolveApp: (String) -> String?) -> LocalAskMapping {
+        let mapping = unvalidatedMapping(intent, transcript: transcript, hasWritingTarget: hasWritingTarget, resolveApp: resolveApp)
         // The fast lane's own validation is the last word: a mapping it would refuse goes to the
         // cloud rather than being spoken as a failure.
         if case .quickAction(let toolName, let arguments) = mapping {
@@ -56,7 +66,7 @@ enum LocalAskIntentMapper {
         return mapping
     }
 
-    private nonisolated static func unvalidatedMapping(_ intent: LocalAskIntent, hasWritingTarget: Bool, resolveApp: (String) -> String?) -> LocalAskMapping {
+    private nonisolated static func unvalidatedMapping(_ intent: LocalAskIntent, transcript: String, hasWritingTarget: Bool, resolveApp: (String) -> String?) -> LocalAskMapping {
         let name = intent.name.trimmingCharacters(in: .whitespacesAndNewlines)
         switch intent.kind {
         case .openApp:
@@ -95,8 +105,13 @@ enum LocalAskIntentMapper {
             return .quickAction(toolName: "set_volume", arguments: ["level": String(level)])
 
         case .playback:
+            // A named app, song or list is the cloud's: play_music, or open_app and then play.
+            guard name.isEmpty, isBarePlaybackCommand(transcript) else { return .cloud(reason: "playback asks for more") }
+            // play and pause go to the player with the track; the play/pause key goes to whatever
+            // macOS last played, a paused browser video included, and with nothing playing it starts it.
             switch intent.playback.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-            case "play", "pause", "playpause": return .quickAction(toolName: "media_control", arguments: ["action": "playpause"])
+            case "play": return .quickAction(toolName: "media_control", arguments: ["action": "play"])
+            case "pause": return .quickAction(toolName: "media_control", arguments: ["action": "pause"])
             case "next": return .quickAction(toolName: "media_control", arguments: ["action": "next"])
             case "previous": return .quickAction(toolName: "media_control", arguments: ["action": "previous"])
             default: return .cloud(reason: "no playback action")
@@ -109,6 +124,13 @@ enum LocalAskIntentMapper {
         case .needsCloud:
             return .cloud(reason: "model declined")
         }
+    }
+
+    /// "pause", "next song", "skip this track": short, and naming nothing to open or find.
+    nonisolated static func isBarePlaybackCommand(_ transcript: String) -> Bool {
+        let words = transcript.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+        guard words.count <= maximumPlaybackWords else { return false }
+        return words.allSatisfy { !wordsBeyondPlayback.contains($0) }
     }
 
     /// The level the model filled in, or the one it left in words: it put "thirty" in `name` and -1

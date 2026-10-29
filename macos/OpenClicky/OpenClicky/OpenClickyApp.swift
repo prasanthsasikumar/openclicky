@@ -423,7 +423,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                     let intent = try await model.classify(transcript: request)
                     let classifySeconds = Date().timeIntervalSince(startedAt)
                     print("local-ask: intent kind=\(intent.kind) name=\"\(intent.name)\" location=\"\(intent.location)\" volume=\(intent.volumeLevel) playback=\"\(intent.playback)\" rewrite=\"\(intent.rewriteInstruction)\" in \(String(format: "%.2f", classifySeconds)) s")
-                    let mapping = LocalAskIntentMapper.map(intent, hasWritingTarget: mentionsRewriting, resolveApp: { spoken in
+                    let mapping = LocalAskIntentMapper.map(intent, transcript: request, hasWritingTarget: mentionsRewriting, resolveApp: { spoken in
                         InstalledAppResolver.resolve(spoken: spoken, installedAppNames: installedAppNames, defaultBrowserName: defaultBrowserName)
                     })
                     print("local-ask: mapping \(mapping) (total \(String(format: "%.2f", Date().timeIntervalSince(startedAt))) s)")

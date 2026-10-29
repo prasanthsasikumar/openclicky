@@ -111,7 +111,7 @@ struct LocalAskRung {
     private func classifyAndMap(transcript: String, writingTarget: WritingTarget?) async -> Step {
         do {
             let intent = try await model.classify(transcript: transcript)
-            let mapping = LocalAskIntentMapper.map(intent, hasWritingTarget: writingTarget != nil, resolveApp: resolveApp)
+            let mapping = LocalAskIntentMapper.map(intent, transcript: transcript, hasWritingTarget: writingTarget != nil, resolveApp: resolveApp)
             switch mapping {
             case .quickAction(let toolName, let arguments):
                 return .decided(.quickAction(toolName: toolName, arguments: arguments))

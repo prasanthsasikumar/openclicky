@@ -11,8 +11,8 @@ import Testing
 @testable import OpenClicky
 
 /// No app is installed unless a test says so, the way a Mac with none of the named apps would answer.
-private func map(_ intent: LocalAskIntent, hasWritingTarget: Bool = false, resolveApp: @escaping (String) -> String? = { _ in nil }) -> LocalAskMapping {
-    LocalAskIntentMapper.map(intent, hasWritingTarget: hasWritingTarget, resolveApp: resolveApp)
+private func map(_ intent: LocalAskIntent, transcript: String = "", hasWritingTarget: Bool = false, resolveApp: @escaping (String) -> String? = { _ in nil }) -> LocalAskMapping {
+    LocalAskIntentMapper.map(intent, transcript: transcript, hasWritingTarget: hasWritingTarget, resolveApp: resolveApp)
 }
 
 struct LocalAskIntentMapperTests {
@@ -82,9 +82,32 @@ struct LocalAskIntentMapperTests {
         #expect(map(LocalAskIntent(kind: .setVolume, name: spoken, volumeLevel: -1)) == .quickAction(toolName: "set_volume", arguments: ["level": String(level)]))
     }
 
-    @Test(arguments: [("play", "playpause"), ("pause", "playpause"), ("next", "next"), ("previous", "previous")])
+    @Test(arguments: [("play", "play"), ("pause", "pause"), ("next", "next"), ("previous", "previous")])
     func playbackMapsOntoMediaControl(spoken: String, action: String) {
+        // play and pause, never playpause: the play/pause key goes to whatever macOS last played.
         #expect(map(LocalAskIntent(kind: .playback, playback: spoken)) == .quickAction(toolName: "media_control", arguments: ["action": action]))
+    }
+
+    @Test(arguments: ["pause", "pause the music", "next song", "skip this track", "go back to the previous song", "resume playing"])
+    func aBarePlaybackCommandStaysOnThisMac(transcript: String) {
+        #expect(map(LocalAskIntent(kind: .playback, playback: "next"), transcript: transcript) == .quickAction(toolName: "media_control", arguments: ["action": "next"]))
+    }
+
+    @Test(arguments: [
+        // Seen live 2026-10-29: the model said playback with nothing named, and the play key
+        // resumed a paused YouTube video in Chrome instead of Spotify.
+        "Open Spotify and play the first song in my favourite list",
+        "play my liked songs",
+        "play Blinding Lights by The Weeknd",
+        "play something on youtube",
+        "pause this and open mail",
+    ])
+    func playbackThatAsksForMoreGoesToTheCloud(transcript: String) {
+        #expect(map(LocalAskIntent(kind: .playback, playback: "play"), transcript: transcript) == .cloud(reason: "playback asks for more"))
+    }
+
+    @Test func playbackNamingAnAppGoesToTheCloud() {
+        #expect(map(LocalAskIntent(kind: .playback, name: "Spotify", playback: "play"), transcript: "play spotify") == .cloud(reason: "playback asks for more"))
     }
 
     @Test func rewriteNeedsAWritingTarget() {
