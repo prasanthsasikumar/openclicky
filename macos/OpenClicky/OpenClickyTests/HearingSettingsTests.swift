@@ -75,7 +75,7 @@ struct HearingSettingsTests {
 
     /// F-16: the styles page's language, not the HUD's, reaches the backend engines; auto sends none.
     @Test @MainActor func everyDictationEngineReceivesTheStylesPageLanguage() throws {
-        let settings = DictationSettings(defaults: UserDefaults(suiteName: "openclicky-tests-\(UUID().uuidString)")!)
+        let settings = DictationSettings(defaults: ScratchDefaults.make())
         settings.languageCode = "hi-IN"
 
         let openClicky = try #require(DictationEngineResolver.makeProvider(for: .openclicky, settings: settings) as? OpenAIAudioTranscriptionProvider)
