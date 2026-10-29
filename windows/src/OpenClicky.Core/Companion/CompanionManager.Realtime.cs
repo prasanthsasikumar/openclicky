@@ -149,6 +149,26 @@ public sealed partial class CompanionManager
         };
     }
 
+    /// <summary>
+    /// Whether esc goes to the fast voice lane (the Mac's EscapeTarget.realtime): never while a dictation
+    /// take is in progress (esc cancels the take), and only while the lane has something to stop. Esc
+    /// used to know only the dictation take: pressed while Gmail loaded, it did nothing and Clicky read
+    /// the inbox (the Mac, 2026-10-28).
+    /// </summary>
+    public static bool EscStopsFastVoice(bool dictationTakeInProgress, bool usesRealtimeVoice, bool realtimeIsBusy) =>
+        !dictationTakeInProgress && usesRealtimeVoice && realtimeIsBusy;
+
+    /// <summary>The fast voice lane stops: the reply ends, and an action still working says nothing when it
+    /// finishes (its output stays in the conversation for the next turn).</summary>
+    private void StopFastVoiceOnEscape()
+    {
+        AppLog.Write("realtime: stopped (esc)");
+        RealtimeVoiceClient.StopSpeaking();
+        VoiceState = CompanionVoiceState.Idle;
+        ShowAskCaption("stopped", 1.5);
+        Overlay.ScheduleTransientHideIfNeeded();
+    }
+
     /// <summary>"that's all, thanks" while hands-free is on: the Realtime model called `stop_listening` and
     /// its goodbye has played. Ends hands-free exactly as the shortcut does.</summary>
     private void EndHandsFreeBySignOff()

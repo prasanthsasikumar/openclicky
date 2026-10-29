@@ -82,7 +82,10 @@ public sealed partial class CompanionManager
                 ToggleHandsFree();
                 break;
             case CompanionShortcutEventKind.EscapePressed:
-                HandleDictationShortcut(shortcutEvent);
+                // A dictation take keeps esc to itself (it cancels the take, as always); otherwise esc
+                // stops the fast voice lane when it is answering, speaking or still working on an action.
+                if (EscStopsFastVoice(IsTakeInProgress, UsesRealtimeVoice, RealtimeVoiceClient.IsBusy)) StopFastVoiceOnEscape();
+                else HandleDictationShortcut(shortcutEvent);
                 break;
             case CompanionShortcutEventKind.TalkPressed:
             case CompanionShortcutEventKind.TalkReleased:

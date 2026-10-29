@@ -4,6 +4,7 @@
 // — the push-to-talk turn and a point_at call snapped to the screenshot's text.
 
 using System.Text.Json.Nodes;
+using OpenClicky.Core.Companion;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Speech;
@@ -181,6 +182,21 @@ public class RealtimeSessionUpdateTests
         Assert.Contains("stop or quit something else", description);
         // Gemini refuses an object schema with no properties: it is declared without one.
         Assert.Null(GeminiLiveDialect.FunctionDeclaration(RealtimeVoiceClient.StopListeningToolDefinition())!["parameters"]);
+    }
+}
+
+/// <summary>Esc on the fast voice lane: pressed while Gmail loaded, it did nothing and Clicky read the inbox
+/// (the Mac, 2026-10-28).</summary>
+public class RealtimeEscapeTests
+{
+    [Fact]
+    public void EscStopsTheFastVoiceLaneWhenItIsBusy()
+    {
+        Assert.True(CompanionManager.EscStopsFastVoice(dictationTakeInProgress: false, usesRealtimeVoice: true, realtimeIsBusy: true));
+        // A dictation take keeps esc to itself.
+        Assert.False(CompanionManager.EscStopsFastVoice(dictationTakeInProgress: true, usesRealtimeVoice: true, realtimeIsBusy: true));
+        Assert.False(CompanionManager.EscStopsFastVoice(dictationTakeInProgress: false, usesRealtimeVoice: true, realtimeIsBusy: false));
+        Assert.False(CompanionManager.EscStopsFastVoice(dictationTakeInProgress: false, usesRealtimeVoice: false, realtimeIsBusy: true));
     }
 }
 
@@ -398,6 +414,48 @@ public class RealtimeTurnTests : IDisposable
         Assert.True(await Eventually.TrueAsync(() => stopRequests > 0));
         await Task.Delay(100);
         Assert.Equal(1, stopRequests);
+    }
+
+    /// <summary>
+    /// The timing that matters: the model's response has finished while the action still works on its
+    /// page. Esc then has something to stop, sends no cancel (OpenAI answers one with nothing active with
+    /// an error), and the action's late output asks for no continuation and takes no second look, or
+    /// Clicky reads the inbox the person just cancelled (the Mac, 2026-10-28).
+    /// </summary>
+    [Fact]
+    public async Task EscWhileAnActionWorksStopsItsLateLookAndContinuation()
+    {
+        var (client, socket, _) = await ConnectedClientAsync();
+        var action = new TaskCompletionSource<RealtimeToolResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var screensAttached = 0;
+        await mainThread.InvokeAsync(() =>
+        {
+            client.OnDesktopAction = (_, _) => action.Task;
+            client.ScreenContextProvider = () =>
+            {
+                screensAttached++;
+                return Task.FromResult<RealtimeScreenContext?>(new RealtimeScreenContext([1], "screen", Capture()));
+            };
+        });
+        socket.Receive("""{"type":"response.created","response":{"id":"r1"}}""");
+        socket.Receive("""{"type":"response.done","response":{"id":"r1","status":"completed"}}""");
+        socket.Receive("""{"type":"response.function_call_arguments.done","name":"open_url","call_id":"c1","response_id":"r1","arguments":"{\"url\":\"https://mail.google.com\"}"}""");
+        var busy = false;
+        for (var attempt = 0; attempt < 500 && !busy; attempt++)
+        {
+            busy = await mainThread.InvokeAsync(() => client.IsBusy);
+            if (!busy) await Task.Delay(10);
+        }
+        Assert.True(busy);
+
+        await mainThread.InvokeAsync(client.StopSpeaking);
+        action.SetResult(new RealtimeToolResult("Opened Gmail.", ThenLooksAtScreen: true));
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("function_call_output"))));
+        await Task.Delay(150);
+        Assert.DoesNotContain("response.cancel", SentTypes(socket));
+        Assert.DoesNotContain("response.create", SentTypes(socket));
+        Assert.Equal(0, screensAttached);
+        Assert.False(await mainThread.InvokeAsync(() => client.IsBusy));
     }
 
     /// <summary>Push-to-talk listens only while the keys are held, so it has nothing to end.</summary>

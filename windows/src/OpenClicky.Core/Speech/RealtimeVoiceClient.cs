@@ -257,6 +257,10 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public Func<string>? InstructionsProvider { get; set; }
     public RealtimePointingServices Pointing { get; set; } = new();
 
+    /// <summary>Whether Esc has anything to stop here: a reply being made or played, or a tool call still
+    /// working (an action whose page is settling before the look, the agent).</summary>
+    public bool IsBusy => responseInProgress || IsSpeaking || pendingToolCalls > 0;
+
     /// <summary>The capture behind the most recently attached screen context; `point_at` maps onto it.</summary>
     public CompanionScreenCapture? LastScreenCapture { get; private set; }
     public RealtimeTurnMode TurnMode { get; private set; } = RealtimeTurnMode.PushToTalk;
@@ -323,6 +327,10 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     private bool wasListeningContinuouslyBeforeDictation;
     /// <summary>A sign-off was heard: hands-free ends after the goodbye response is done and has played.</summary>
     private bool stopListeningAfterGoodbye;
+    /// <summary>Counts the turns: bumped whenever the conversation moves on (a cancel, a barge-in, a new
+    /// turn's response). A tool call whose turn has moved on by the time it finishes still sends its
+    /// output (it belongs in the conversation) but asks for no continuation and takes no second look.</summary>
+    private int turnGeneration;
 
     /// <summary>OCR of `LastScreenCapture`, started as soon as the screen is attached so it is ready by the first `point_at`.</summary>
     private Task<IReadOnlyList<ScreenTextLine>>? lastScreenText;
@@ -1306,6 +1314,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             case "input_audio_buffer.speech_started":
                 Log("listening…");
                 FlushPlayback();
+                turnGeneration += 1;
                 if (responseInProgress) CancelActiveResponse();
                 if (currentMode == RealtimeTurnMode.AlwaysOn) RefreshInstructionsIfNeeded();
                 // A vendor that replies on its own gets the screen while the person is still talking.
@@ -1429,6 +1438,9 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             {
             }
         }
+        // The turn this call belongs to: Esc, the person speaking or a new turn moves it on while an
+        // action (or the agent) is still working, and then nothing may follow its output.
+        var generation = turnGeneration;
         if (name is not ("send_to_agent" or "point_at" or StopListeningToolName) && OnDesktopAction is { } desktopAction)
         {
             var startedAt = now();
@@ -1445,17 +1457,18 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             if (outcome is not null)
             {
                 // Act, then look: the model describes what is on screen now, not what was there before the page opened.
-                if (outcome.ThenLooksAtScreen && !outcome.WasRejected)
+                // Not once the turn moved on: Esc while the page loads stops the look too.
+                if (outcome.ThenLooksAtScreen && !outcome.WasRejected && turnGeneration == generation)
                 {
                     await WaitForScreenToSettleAsync(frontAppBefore);
-                    await AttachScreenContextAsync();
+                    if (turnGeneration == generation) await AttachScreenContextAsync();
                 }
                 var logged = outcome.LogDescription ?? outcome.SpokenSentence;
                 Log(outcome.WasRejected
                     ? $"desktop action: {name} rejected, {logged}"
                     : $"desktop action: {name} {logged} in {(now() - startedAt).TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s");
                 SendToolOutput(callId, outcome.ModelOutput ?? outcome.SpokenSentence);
-                RequestContinuation(serverEvent);
+                ContinueUnlessTheTurnMovedOn(serverEvent, generation);
                 return;
             }
         }
@@ -1489,7 +1502,18 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         }
         // The output goes out immediately; the follow-up response is requested once, on response.done.
         SendToolOutput(callId, output);
-        RequestContinuation(serverEvent);
+        ContinueUnlessTheTurnMovedOn(serverEvent, generation);
+    }
+
+    /// <summary>
+    /// A tool output whose turn has moved on (Esc, speech or a new turn since the call came in) stays in
+    /// the conversation for the next turn but asks for no continuation: Esc while Gmail loads must not
+    /// be followed by Clicky reading the inbox.
+    /// </summary>
+    private void ContinueUnlessTheTurnMovedOn(JsonObject serverEvent, int generation)
+    {
+        if (turnGeneration == generation) RequestContinuation(serverEvent);
+        else Log("tool output after the turn moved on (esc, speech or a new turn): no continuation");
     }
 
     /// <summary>
@@ -1739,16 +1763,23 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// remembered as cancelled so its tool calls still in flight cannot re-arm the continuation.</summary>
     private void CancelActiveResponse()
     {
+        turnGeneration += 1;
         needsContinuationAfterResponse = false;
+        // Only cancel what is in progress: OpenAI answers a cancel with nothing active with an error
+        // ("no active response found"), and the generation bump above is what stops a late action
+        // from continuing. Gemini's dialect sends nothing for a cancel but drops the turn's open
+        // calls, so their late outputs do not make Gemini carry on by itself: it always gets it.
+        var hadActiveResponse = responseInProgress;
         if (activeResponseId is not null) cancelledResponseIds.Add(activeResponseId);
         activeResponseId = null;
         responseInProgress = false;
-        TrySend(new JsonObject { ["type"] = "response.cancel" });
+        if (hadActiveResponse || dialect is not OpenAIWireDialect) TrySend(new JsonObject { ["type"] = "response.cancel" });
     }
 
     /// <summary>Request the reply for a committed user turn; any queued continuation is superseded (one create per turn).</summary>
     private void RequestTurnResponse()
     {
+        turnGeneration += 1;
         needsContinuationAfterResponse = false;
         TrySend(new JsonObject { ["type"] = "response.create" });
     }

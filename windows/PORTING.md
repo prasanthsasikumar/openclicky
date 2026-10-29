@@ -153,6 +153,7 @@ What the Mac gained after the port (git log da71df7..HEAD -- macos), and where W
 | Ask lane: pause before sending, Esc stops it, mouse close-up, [UNSURE], window buttons | Not yet |
 | Hands-free without a realtime key: the standard lane listens on this PC (066eefb) | Done (`Core/Speech/StandardHandsFree.cs`, `CompanionManager.StandardHandsFree.cs`); unverified on a live microphone |
 | Hands-free ends on a goodbye | Done: the standard lane by fixed sign-offs (`HandsFreeSignOff`); fast voice (OpenAI and Gemini Live) offers `stop_listening` in hands-free only, and ends after the goodbye has played (`RealtimeVoiceClient`, `CompanionManager.EndHandsFreeBySignOff`); unverified live |
+| Esc stops the fast voice lane: a reply, or an action still working on its look (a429390, b9dbcc8) | Done (`RealtimeVoiceClient.IsBusy` / turn generation, `CompanionManager.EscStopsFastVoice`), OpenAI and Gemini Live alike; a dictation take still keeps esc first |
 | Rephrase in place | Not yet (check) |
 
 ## Status (2026-10-14)
