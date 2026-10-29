@@ -129,6 +129,18 @@ internal sealed partial class SettingsRowFactory
             case "clicky.speechVoice":
                 return new LiveContent(() => SpeechVoiceRows(item, query), Changes.Shell, Changes.Of(Settings, nameof(Core.Dictation.DictationSettings.Region)),
                     Changes.Of(services.Services.Kokoro));
+            case "clicky.emailApp":
+                // emailApp in shell.json: automatic saves nothing; anything unknown (the Mac's "mail") shows as automatic.
+                return new LiveContent(() =>
+                {
+                    var picked = Core.Actions.EmailApps.Named(OpenClickyConfiguration.Settings.EmailApp)?.RawValue() ?? "auto";
+                    return Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                        Ui.Picker(new[] { ("auto", "Automatic"), ("gmail", "Gmail"), ("outlook", "Outlook") }, picked, choice =>
+                        {
+                            OpenClickyConfiguration.Update(shell => shell.EmailApp = choice == "auto" ? null : choice);
+                            ShellSettingsRevision.NoteChanged();
+                        }, 150)));
+                }, Changes.Shell);
             case "clicky.fastVoice":
                 return CompanionToggle(item, query, () => companion.IsRealtimeVoiceEnabled, companion.SetRealtimeVoiceEnabled, nameof(ICompanionSettings.IsRealtimeVoiceEnabled));
             case "clicky.alwaysListening":

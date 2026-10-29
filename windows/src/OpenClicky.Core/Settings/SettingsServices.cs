@@ -379,7 +379,7 @@ public sealed class DetachedSettingsServices(IProcessRunner? processes = null) :
     private static readonly string[] AllVoiceIds = ["automatic", "account", "openai", "elevenlabs", "google", "gemini", "polly", "sarvam", "kokoro", "mac"];
 
     /// <summary>Automatic's order (SpeechVoiceChoice.automaticOrder).</summary>
-    private static readonly string[] AutomaticOrder = ["openai", "elevenlabs", "google", "polly", "sarvam", "gemini", "kokoro", "account", "mac"];
+    private static readonly string[] AutomaticOrder = ["openai", "elevenlabs", "google", "polly", "sarvam", "gemini", "account", "kokoro", "mac"];
 
     private bool CanSpeak(string voiceId, OpenClickyShellSettings shell, bool hasAccount)
     {

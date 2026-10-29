@@ -109,6 +109,23 @@ public abstract record DesktopActionOutcome
     public sealed record OpenedUrl(string Url) : DesktopActionOutcome;
     public sealed record VolumeSet(int Level) : DesktopActionOutcome;
     public sealed record MediaControlled(string Action) : DesktopActionOutcome;
+    /// <summary>Pause or play went to the player itself ("pause" / "play").</summary>
+    public sealed record PlayerControlled(string Command) : DesktopActionOutcome;
+    public sealed record Searched(string Query, WebSearchSite Site) : DesktopActionOutcome;
+    public sealed record InvalidQuery : DesktopActionOutcome;
+    public sealed record MinimizedWindows(int Count, string? KeptApp) : DesktopActionOutcome;
+    public sealed record RestoredWindows(int Count, string? App) : DesktopActionOutcome;
+    public sealed record WindowAppNotRunning(string App) : DesktopActionOutcome;
+    public sealed record OpenedInbox(EmailApp App) : DesktopActionOutcome;
+    public sealed record DraftedEmail(EmailApp App, string To, int BodyLength) : DesktopActionOutcome;
+    public sealed record InvalidRecipient : DesktopActionOutcome;
+    public sealed record PlayingTrack(string Name, string Artist) : DesktopActionOutcome;
+    /// <summary>Spotify opened the track but Windows could not confirm it started (no media session answered).</summary>
+    public sealed record OpenedTrack(string Name, string Artist) : DesktopActionOutcome;
+    public sealed record OpenedSpotifySearch(string Query) : DesktopActionOutcome;
+    public sealed record SpotifyStarting : DesktopActionOutcome;
+    public sealed record SpotifyNotInstalled : DesktopActionOutcome;
+    public sealed record PlayFailed : DesktopActionOutcome;
     public sealed record InvalidName : DesktopActionOutcome;
     public sealed record InvalidAppName : DesktopActionOutcome;
     public sealed record UnknownLocation(string Raw) : DesktopActionOutcome;
@@ -117,7 +134,34 @@ public abstract record DesktopActionOutcome
     public sealed record Failed(string Reason) : DesktopActionOutcome;
 
     /// <summary>True when the action did what was asked (the tour counts it as a task handed over).</summary>
-    public bool DidSomething => this is OpenedApp or CreatedFolder or FolderAlreadyExists or Revealed or OpenedUrl or VolumeSet or MediaControlled;
+    public bool DidSomething => this is OpenedApp or CreatedFolder or FolderAlreadyExists or Revealed or OpenedUrl or VolumeSet or MediaControlled
+        or PlayerControlled or Searched or MinimizedWindows or RestoredWindows or OpenedInbox or DraftedEmail or PlayingTrack or OpenedTrack or OpenedSpotifySearch;
+
+    /// <summary>
+    /// What the Realtime model is told in the tool's output. The same as the sentence unless an outcome
+    /// has more to say to the model than to the person (a screenshot to look at, a rule to keep).
+    /// </summary>
+    public string ToolOutput => this switch
+    {
+        Searched searched => $"The results for {searched.Query} are on screen in the latest screenshot. If they asked for a fact (the weather, a score, a price), say that fact from the page; otherwise say what the first few results are. One sentence.",
+        OpenedInbox inbox => $"{inbox.App.Title()}'s inbox is open and attached as the latest screenshot. Unread rows are in bold. Read out sender and subject of the unread ones briefly, newest first, at most five, then stop.",
+        DraftedEmail => SpokenSentence + " If they ask you to send it, say you never send email and that it is open in front of them.",
+        WindowAppNotRunning => SpokenSentence + " Call open_app if they want it opened.",
+        _ => SpokenSentence,
+    };
+
+    /// <summary>What goes in app.log. The same as the sentence unless it would carry something private (an email's recipient).</summary>
+    public string LogDescription => this switch
+    {
+        DraftedEmail drafted => $"draft_email: {drafted.App.RawValue()}, {drafted.BodyLength}-character body, {(drafted.To.Contains('@') ? "address" : "name")} given",
+        _ => SpokenSentence,
+    };
+
+    /// <summary>
+    /// Whether the model should see a fresh screenshot before it speaks: true for an action that
+    /// changed what is on screen in a way worth describing (a page opened), false for the rest.
+    /// </summary>
+    public bool ThenLooksAtScreen => this is OpenedUrl or Searched or OpenedInbox or DraftedEmail;
 
     public string SpokenSentence => this switch
     {
@@ -130,6 +174,30 @@ public abstract record DesktopActionOutcome
         OpenedUrl => "Opened it in your browser.",
         VolumeSet volume => $"Volume set to {volume.Level} percent.",
         MediaControlled => "Done.",
+        PlayerControlled player => player.Command == "pause" ? "Paused." : "Playing.",
+        Searched searched => $"Searching for {searched.Query}.",
+        InvalidQuery => "I didn't catch what to search for.",
+        MinimizedWindows { KeptApp: null } minimized => minimized.Count == 0
+            ? "Nothing to minimize."
+            : $"Minimized {minimized.Count} window{(minimized.Count == 1 ? "" : "s")}.",
+        MinimizedWindows minimized => minimized.Count == 0
+            ? $"Nothing else to minimize; {minimized.KeptApp} stays up."
+            : $"Minimized {minimized.Count} window{(minimized.Count == 1 ? "" : "s")}; {minimized.KeptApp} stays up.",
+        RestoredWindows { App: null } restored => restored.Count == 0
+            ? "I hadn't minimized anything."
+            : $"Brought {restored.Count} window{(restored.Count == 1 ? "" : "s")} back.",
+        // Zero is not a failure: the app had nothing minimized and is now in front.
+        RestoredWindows restored => restored.Count == 0 ? $"{restored.App} is in front now." : $"Brought {restored.App} back.",
+        WindowAppNotRunning notRunning => $"{notRunning.App} isn't open.",
+        OpenedInbox => "Here's your inbox.",
+        DraftedEmail drafted => $"Drafted an email to {drafted.To}; it's open for you to check. I don't send email — you do.",
+        InvalidRecipient => "I didn't catch who it's for.",
+        PlayingTrack playing => playing.Artist.Length == 0 ? $"Playing {playing.Name}." : $"Playing {playing.Name} by {playing.Artist}.",
+        OpenedTrack opened => (opened.Artist.Length == 0 ? $"Opened {opened.Name}" : $"Opened {opened.Name} by {opened.Artist}") + " in Spotify; press play if it hasn't started.",
+        OpenedSpotifySearch search => $"I couldn't look that up, so I opened Spotify's search for {search.Query}; pick one.",
+        SpotifyStarting => "Spotify is starting; give it a moment and ask again.",
+        SpotifyNotInstalled => "Spotify isn't installed on this PC.",
+        PlayFailed => "Spotify didn't play it.",
         InvalidName => "That name has characters a folder can't have.",
         InvalidAppName => "That app name has characters an app name can't have.",
         UnknownLocation unknown => $"I don't know where {unknown.Raw} is.",
@@ -179,6 +247,42 @@ public static class DesktopActionValidation
     }
 
     /// <summary>
+    /// Something to search for (or a song to look up), or null: trimmed, at most 200 characters, and
+    /// nothing a control character (a newline, a NUL) could do to the URL or the page.
+    /// </summary>
+    public static string? SearchQuery(string raw)
+    {
+        var trimmed = raw.Trim();
+        if (trimmed.Length == 0 || trimmed.Length > 200) return null;
+        if (trimmed.Any(char.IsControl)) return null;
+        return trimmed;
+    }
+
+    /// <summary>
+    /// Who an email is for: an address or a name as said, at most 80 characters, never an angle
+    /// bracket (so it can only ever land in a To field). Null when there is nothing usable.
+    /// </summary>
+    public static string? Recipient(string raw)
+    {
+        var trimmed = raw.Trim();
+        if (trimmed.Length == 0 || trimmed.Length > 80 || trimmed.Contains('<') || trimmed.Contains('>')) return null;
+        return trimmed;
+    }
+
+    public static string EmailSubject(string raw)
+    {
+        var trimmed = raw.Trim();
+        return trimmed.Length <= 200 ? trimmed : trimmed[..200];
+    }
+
+    /// <summary>A compose URL carries about this much; both inboxes take the same cap so they behave alike.</summary>
+    public static string EmailBody(string raw)
+    {
+        var trimmed = raw.Trim();
+        return trimmed.Length <= 2_000 ? trimmed : trimmed[..2_000];
+    }
+
+    /// <summary>
     /// An http(s) URL, or null. Other schemes are refused: `file:` reads the disk and a custom scheme
     /// launches whichever app registered it, neither of which is "open this page for me".
     /// </summary>
@@ -205,6 +309,14 @@ public abstract record DesktopAction
     public sealed record RevealInExplorer(string Name, DesktopActionLocation Location) : DesktopAction;
     public sealed record SetVolume(int Level) : DesktopAction;
     public sealed record MediaControl(string Action) : DesktopAction;
+    public sealed record WebSearch(string Query, WebSearchSite Site) : DesktopAction;
+    /// <summary>Every window minimized, except the named app's when there is one.</summary>
+    public sealed record MinimizeAll(string? KeepApp) : DesktopAction;
+    /// <summary>What MinimizeAll minimized, or only the named app's windows when there is one.</summary>
+    public sealed record RestoreWindows(string? App) : DesktopAction;
+    public sealed record CheckEmail(string? App) : DesktopAction;
+    public sealed record DraftEmail(string To, string Subject, string Body, string? App) : DesktopAction;
+    public sealed record PlayMusic(string Query) : DesktopAction;
 
     public const string OpenAppToolName = "open_app";
     public const string OpenUrlToolName = "open_url";
@@ -214,6 +326,12 @@ public abstract record DesktopAction
     public const string RevealInFinderToolName = "reveal_in_finder";
     public const string SetVolumeToolName = "set_volume";
     public const string MediaControlToolName = "media_control";
+    public const string WebSearchToolName = "web_search";
+    public const string MinimizeAllToolName = "minimize_all";
+    public const string CheckEmailToolName = "check_email";
+    public const string DraftEmailToolName = "draft_email";
+    public const string PlayMusicToolName = "play_music";
+    public const string RestoreWindowsToolName = "restore_windows";
 
     public const string VolumeArgumentMessage = "I need a volume between 0 and 100";
 
@@ -274,9 +392,53 @@ public abstract record DesktopAction
                      new JsonObject { ["level"] = new JsonObject { ["type"] = "integer", ["description"] = "0 to 100." } },
                      "level"),
             Function(MediaControlToolName,
-                     "Play, pause, or skip whatever is playing.",
-                     new JsonObject { ["action"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("playpause", "next", "previous") } },
+                     "Pause, resume, or skip whatever is playing. Use pause for 'stop', 'pause', 'be quiet'; play to resume; playpause only when they say play/pause without saying which.",
+                     new JsonObject { ["action"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("playpause", "next", "previous", "pause", "play") } },
                      "action"),
+            Function(WebSearchToolName,
+                     "Search the web (or YouTube, Wikipedia, Google Maps, Amazon) for what the user said and show the results in their browser. Use for 'search for…', 'look up…', 'google…', and for live facts you cannot know: the weather, news, scores, prices, opening hours.",
+                     new JsonObject
+                     {
+                         ["query"] = new JsonObject { ["type"] = "string", ["description"] = "What to search for, as the user said it." },
+                         ["site"] = new JsonObject
+                         {
+                             ["type"] = "string",
+                             ["enum"] = new JsonArray(WebSearchSites.All.Select(site => (JsonNode)site.RawValue()).ToArray()),
+                             ["description"] = "Where to search. Leave it out for the web.",
+                         },
+                     },
+                     "query"),
+            Function(MinimizeAllToolName,
+                     "Minimize every open window so the desktop is clear. For 'minimize everything', 'clear my screen', 'hide all windows'; with keep for 'everything except Terminal', 'leave just Chrome'.",
+                     new JsonObject { ["keep"] = new JsonObject { ["type"] = "string", ["description"] = "Only when they named an app to leave on screen: its name, e.g. 'Terminal'." } }),
+            Function(CheckEmailToolName,
+                     "Show the user's unread email. Use when they say check my email, any new mail, what's in my inbox.",
+                     new JsonObject
+                     {
+                         ["app"] = new JsonObject
+                         {
+                             ["type"] = "string",
+                             ["enum"] = new JsonArray("gmail", "outlook"),
+                             ["description"] = "Only when they named one: 'gmail' for Gmail, 'outlook' for Outlook.",
+                         },
+                     }),
+            Function(DraftEmailToolName,
+                     "Start a new email with the recipient and a short body written from what the user said, and leave it open for them to read and send themselves. Never sends.",
+                     new JsonObject
+                     {
+                         ["to"] = new JsonObject { ["type"] = "string", ["description"] = "The recipient's email address, or their name exactly as the user said it." },
+                         ["subject"] = new JsonObject { ["type"] = "string", ["description"] = "A short subject. Leave it out if nothing fits." },
+                         ["body"] = new JsonObject { ["type"] = "string", ["description"] = "The email's text, short and in the user's voice, saying what they asked you to say. No invented facts." },
+                         ["app"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("gmail", "outlook"), ["description"] = "Only when they named one." },
+                     },
+                     "to", "body"),
+            Function(PlayMusicToolName,
+                     "Play a specific song, album or artist in Spotify. Pass what they said, e.g. 'Blinding Lights by The Weeknd'. For pause, resume or skip use media_control.",
+                     new JsonObject { ["query"] = new JsonObject { ["type"] = "string", ["description"] = "The song (and artist, if said), as the user said it." } },
+                     "query"),
+            Function(RestoreWindowsToolName,
+                     "Bring minimized windows back. Without app: every window minimize_all minimized ('bring them back', 'restore my windows'). With app: that app's windows only, nothing else ('show just the terminal', 'bring back Chrome').",
+                     new JsonObject { ["app"] = new JsonObject { ["type"] = "string", ["description"] = "Only when they named one app: its name, e.g. 'Terminal'. Never leave it out when they named one." } }),
         ];
     }
 
@@ -297,7 +459,8 @@ public abstract record DesktopAction
     public static readonly IReadOnlySet<string> ToolNames = new HashSet<string>(StringComparer.Ordinal)
     {
         OpenAppToolName, OpenUrlToolName, CreateFolderToolName, RevealInExplorerToolName, RevealInFinderToolName,
-        SetVolumeToolName, MediaControlToolName,
+        SetVolumeToolName, MediaControlToolName, WebSearchToolName, MinimizeAllToolName, CheckEmailToolName, DraftEmailToolName,
+        PlayMusicToolName, RestoreWindowsToolName,
     };
 
     /// <summary>
@@ -344,6 +507,59 @@ public abstract record DesktopAction
 
             case MediaControlToolName:
                 return new DesktopActionParseResult.Action(new MediaControl(StringArgument("action").ToLowerInvariant()));
+
+            case WebSearchToolName:
+            {
+                if (DesktopActionValidation.SearchQuery(StringArgument("query")) is not { } query)
+                {
+                    return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidQuery());
+                }
+                var rawSite = StringArgument("site");
+                return (rawSite.Length == 0 ? WebSearchSite.Web : WebSearchSites.Named(rawSite)) is { } site
+                    ? new DesktopActionParseResult.Action(new WebSearch(query, site))
+                    : new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidQuery());
+            }
+
+            case MinimizeAllToolName:
+            case RestoreWindowsToolName:
+            {
+                // An app name is only matched against running apps, never resolved to a path, but it
+                // gets open_app's checks all the same.
+                var rawAppName = StringArgument(toolName == MinimizeAllToolName ? "keep" : "app");
+                string? windowAppName = null;
+                if (rawAppName.Length > 0)
+                {
+                    if (DesktopActionValidation.FolderName(rawAppName) is not { } validName)
+                    {
+                        return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidAppName());
+                    }
+                    windowAppName = validName;
+                }
+                return new DesktopActionParseResult.Action(toolName == MinimizeAllToolName ? new MinimizeAll(windowAppName) : new RestoreWindows(windowAppName));
+            }
+
+            case PlayMusicToolName:
+                return DesktopActionValidation.SearchQuery(StringArgument("query")) is { } song
+                    ? new DesktopActionParseResult.Action(new PlayMusic(song))
+                    : new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidQuery());
+
+            case CheckEmailToolName:
+            {
+                var app = StringArgument("app");
+                return new DesktopActionParseResult.Action(new CheckEmail(app.Length == 0 ? null : app));
+            }
+
+            case DraftEmailToolName:
+            {
+                if (DesktopActionValidation.Recipient(StringArgument("to")) is not { } recipient)
+                {
+                    return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidRecipient());
+                }
+                var body = DesktopActionValidation.EmailBody(StringArgument("body"));
+                if (body.Length == 0) return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.Failed("I need something to write"));
+                var app = StringArgument("app");
+                return new DesktopActionParseResult.Action(new DraftEmail(recipient, StringArgument("subject"), body, app.Length == 0 ? null : app));
+            }
 
             default:
                 return new DesktopActionParseResult.NotAFastAction();
@@ -414,33 +630,54 @@ public abstract record DesktopActionParseResult
 /// </summary>
 public sealed class DesktopActionRunner
 {
-    private static readonly string[] MediaActions = ["playpause", "next", "previous"];
+    /// <summary>"play" is here for when no player session took it: the media key is the next best thing.</summary>
+    private static readonly string[] MediaActions = ["playpause", "next", "previous", "play"];
 
     private readonly IDesktopActionExecutor executor;
     private readonly string homeDirectory;
     private readonly Func<string> workspaceDirectory;
     private readonly bool usesKnownFolders;
+    private readonly DesktopActionExtras extras;
 
     /// <param name="usesKnownFolders">
     /// True (the app) asks the executor for the shell's Desktop / Downloads / Documents paths, which
     /// follow a OneDrive redirection; false (tests) keeps them under <paramref name="homeDirectory"/>.
     /// </param>
-    public DesktopActionRunner(IDesktopActionExecutor executor, string homeDirectory, string workspaceDirectory, bool usesKnownFolders = false)
-        : this(executor, homeDirectory, () => workspaceDirectory, usesKnownFolders)
+    public DesktopActionRunner(IDesktopActionExecutor executor, string homeDirectory, string workspaceDirectory, bool usesKnownFolders = false,
+                               DesktopActionExtras? extras = null)
+        : this(executor, homeDirectory, () => workspaceDirectory, usesKnownFolders, extras)
     {
     }
 
-    public DesktopActionRunner(IDesktopActionExecutor executor, string homeDirectory, Func<string> workspaceDirectory, bool usesKnownFolders = false)
+    public DesktopActionRunner(IDesktopActionExecutor executor, string homeDirectory, Func<string> workspaceDirectory, bool usesKnownFolders = false,
+                               DesktopActionExtras? extras = null)
     {
         this.executor = executor;
         this.homeDirectory = homeDirectory;
         this.workspaceDirectory = workspaceDirectory;
         this.usesKnownFolders = usesKnownFolders;
+        this.extras = extras ?? DesktopActionExtras.Inert;
     }
+
+    /// <summary>The music lookup's route is logged when it changes (own credentials added, say), not per call.</summary>
+    private static string? lastLoggedMusicRoute;
 
     /// <summary>The runner the app uses: the real home folder, the configured workspace, the shell's known folders.</summary>
     public static DesktopActionRunner Live(IDesktopActionExecutor executor) =>
-        new(executor, OpenClickyPaths.HomeDirectory, () => OpenClickyConfiguration.WorkspacePath, usesKnownFolders: true);
+        new(executor, OpenClickyPaths.HomeDirectory, () => OpenClickyConfiguration.WorkspacePath, usesKnownFolders: true, new DesktopActionExtras
+        {
+            LookUpTrack = query =>
+            {
+                var route = MusicLookup.CurrentRoute();
+                if (route.LogName != lastLoggedMusicRoute)
+                {
+                    lastLoggedMusicRoute = route.LogName;
+                    AppLog.Write($"route: music lookup → {route.LogName}");
+                }
+                return new MusicLookup(route).SearchAsync(query);
+            },
+            ChooseEmailApp = requested => EmailApps.Choose(requested, OpenClickyConfiguration.Settings.EmailApp),
+        });
 
     /// <summary>Where a location is on this PC.</summary>
     public string DirectoryPath(DesktopActionLocation location)
@@ -453,7 +690,46 @@ public sealed class DesktopActionRunner
         return location.DirectoryPath(homeDirectory, workspaceDirectory());
     }
 
-    public Task<DesktopActionOutcome> PerformAsync(DesktopAction action) => Task.Run(() => Perform(action));
+    public Task<DesktopActionOutcome> PerformAsync(DesktopAction action) => action switch
+    {
+        DesktopAction.PlayMusic playMusic => PlayMusicAsync(playMusic.Query),
+        DesktopAction.MediaControl { Action: "pause" or "play" } mediaControl => ControlPlayerAsync(mediaControl.Action),
+        _ => Task.Run(() => Perform(action)),
+    };
+
+    /// <summary>
+    /// "Stop that song" goes to the player itself: the play/pause key toggles, so with nothing playing
+    /// it would start something. Play with no player session falls back to the key.
+    /// </summary>
+    private async Task<DesktopActionOutcome> ControlPlayerAsync(string command)
+    {
+        var playerTookIt = await executor.ControlPlayerAsync(command == "pause" ? PlayerCommand.Pause : PlayerCommand.Play).ConfigureAwait(false);
+        if (playerTookIt) return new DesktopActionOutcome.PlayerControlled(command);
+        if (command == "pause") return new DesktopActionOutcome.Failed("nothing is playing");
+        executor.SendMediaKey("playpause");
+        return new DesktopActionOutcome.MediaControlled(command);
+    }
+
+    private async Task<DesktopActionOutcome> PlayMusicAsync(string query)
+    {
+        if (!executor.SpotifyIsInstalled()) return new DesktopActionOutcome.SpotifyNotInstalled();
+        if (!executor.SpotifyIsRunning() && !await executor.LaunchSpotifyAsync().ConfigureAwait(false)) return new DesktopActionOutcome.SpotifyStarting();
+        var tracks = await extras.LookUpTrack(query).ConfigureAwait(false);
+        // No lookup answered, or it answered with something that is not a track (the backend is not
+        // trusted with what Spotify is told to open): Spotify's own search leaves the person one click away.
+        if (MusicTrackPicker.Pick(tracks, query) is not { } track || !track.Uri.StartsWith("spotify:track:", StringComparison.Ordinal))
+        {
+            executor.OpenSpotifyUri(MusicLookup.SpotifySearchUri(query));
+            return new DesktopActionOutcome.OpenedSpotifySearch(query);
+        }
+        var artist = track.Artists.FirstOrDefault() ?? "";
+        return await executor.PlaySpotifyTrackAsync(track.Uri, track.Name).ConfigureAwait(false) switch
+        {
+            SpotifyPlayResult.Playing => new DesktopActionOutcome.PlayingTrack(track.Name, artist),
+            SpotifyPlayResult.Opened => new DesktopActionOutcome.OpenedTrack(track.Name, artist),
+            _ => new DesktopActionOutcome.PlayFailed(),
+        };
+    }
 
     public DesktopActionOutcome Perform(DesktopAction action)
     {
@@ -522,8 +798,44 @@ public sealed class DesktopActionRunner
                 {
                     return new DesktopActionOutcome.Failed($"I don't know how to {mediaControl.Action}");
                 }
-                executor.SendMediaKey(mediaControl.Action);
+                // Pause and play normally go to the player (PerformAsync); here only as the key.
+                if (mediaControl.Action == "pause") return new DesktopActionOutcome.Failed("nothing is playing");
+                executor.SendMediaKey(mediaControl.Action == "play" ? "playpause" : mediaControl.Action);
                 return new DesktopActionOutcome.MediaControlled(mediaControl.Action);
+            }
+
+            case DesktopAction.WebSearch webSearch:
+            {
+                if (!executor.OpenUrl(webSearch.Site.Url(webSearch.Query))) return new DesktopActionOutcome.Failed("the browser didn't open");
+                return new DesktopActionOutcome.Searched(webSearch.Query, webSearch.Site);
+            }
+
+            case DesktopAction.MinimizeAll minimizeAll:
+                return executor.MinimizeAllWindows(minimizeAll.KeepApp) is { } minimized
+                    ? new DesktopActionOutcome.MinimizedWindows(minimized, minimizeAll.KeepApp)
+                    : new DesktopActionOutcome.WindowAppNotRunning(minimizeAll.KeepApp ?? "");
+
+            case DesktopAction.RestoreWindows restoreWindows:
+                return executor.RestoreMinimizedWindows(restoreWindows.App) is { } restored
+                    ? new DesktopActionOutcome.RestoredWindows(restored, restoreWindows.App)
+                    : new DesktopActionOutcome.WindowAppNotRunning(restoreWindows.App ?? "");
+
+            case DesktopAction.CheckEmail checkEmail:
+            {
+                var app = extras.ChooseEmailApp(checkEmail.App);
+                if (!executor.OpenUrl(app.InboxUrl())) return new DesktopActionOutcome.Failed("the browser didn't open");
+                return new DesktopActionOutcome.OpenedInbox(app);
+            }
+
+            case DesktopAction.DraftEmail draftEmail:
+            {
+                if (DesktopActionValidation.Recipient(draftEmail.To) is not { } recipient) return new DesktopActionOutcome.InvalidRecipient();
+                var subject = DesktopActionValidation.EmailSubject(draftEmail.Subject);
+                var body = DesktopActionValidation.EmailBody(draftEmail.Body);
+                if (body.Length == 0) return new DesktopActionOutcome.Failed("I need something to write");
+                var app = extras.ChooseEmailApp(draftEmail.App);
+                if (!executor.OpenUrl(app.ComposeUrl(recipient, subject, body))) return new DesktopActionOutcome.Failed("the browser didn't open");
+                return new DesktopActionOutcome.DraftedEmail(app, recipient, body.Length);
             }
 
             default:
@@ -557,6 +869,22 @@ public sealed class DesktopActionRunner
 }
 
 /// <summary>
+/// What the newer actions need besides the OS (the Mac's MacActionRunner.Extras): the song lookup and
+/// the inbox choice, both read from the settings at the time of the call. Defaults do nothing, so a
+/// test passes only what it drives.
+/// </summary>
+public sealed record DesktopActionExtras
+{
+    /// <summary>The catalogue search for play_music; empty when nothing answered.</summary>
+    public Func<string, Task<IReadOnlyList<MusicTrack>>> LookUpTrack { get; init; } = _ => Task.FromResult<IReadOnlyList<MusicTrack>>([]);
+
+    /// <summary>Which inbox a check or draft goes to, given the one the person named (or null).</summary>
+    public Func<string?, EmailApp> ChooseEmailApp { get; init; } = requested => EmailApps.Choose(requested, setting: null);
+
+    public static DesktopActionExtras Inert { get; } = new();
+}
+
+/// <summary>
 /// The log lines for a fast action. The prefix stays `mac action:` on Windows on purpose: the
 /// measure script (macos/OpenClicky/scripts/measure-actions.sh) greps for
 /// `mac action: &lt;tool&gt; … in &lt;seconds&gt; s`.
@@ -567,7 +895,7 @@ public static class DesktopActionLog
 
     /// <summary>"mac action: open_app Opened Spotify. in 0.42 s"</summary>
     public static string Performed(string toolName, DesktopActionOutcome outcome, TimeSpan elapsed) =>
-        $"{Prefix} {toolName} {outcome.SpokenSentence} in {elapsed.TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s";
+        $"{Prefix} {toolName} {outcome.LogDescription} in {elapsed.TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s";
 
     /// <summary>"mac action: create_folder rejected, I don't know where icloud is."</summary>
     public static string Rejected(string toolName, DesktopActionOutcome outcome) =>

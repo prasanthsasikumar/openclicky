@@ -11,6 +11,7 @@ using OpenClicky.Core.Actions;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Speech;
@@ -23,6 +24,9 @@ public sealed partial class CompanionManager
     private readonly List<(string UserTranscript, string AssistantResponse)> conversationHistory = [];
     /// <summary>Account notices already spoken this session: each is said once, then the lane falls back silently.</summary>
     private readonly HashSet<string> spokenAccountNotices = new(StringComparer.Ordinal);
+    /// <summary>The last question sent down the ask lane and when: the same one again soon after means the
+    /// answer missed what they meant (RepeatedQuestion).</summary>
+    private (string Transcript, DateTimeOffset AskedAt)? lastAskQuestion;
 
     /// <summary>The running response, cancelled when the person speaks again.</summary>
     private CancellationTokenSource? currentResponseCancellation;
@@ -56,6 +60,8 @@ public sealed partial class CompanionManager
         host.StopSettingsTour();
         StopActiveAnswer();
         currentResponseCancellation?.Cancel();
+        IsAskInFlight = false;
+        SetAskIslandStatus(null);
         if (includingAgentWork) openClickyAgentClient.Cancel();
         answerVoicePlayer.StopPlayback();
         StopSystemVoice();
@@ -84,19 +90,25 @@ public sealed partial class CompanionManager
         {
             guidedStepsGivenSoFar = 0;
             guidedStepGoal = transcript;
+            TeacherPlugin.ClearBoard("a new question");
         }
+        guidedStepPointedLocation = null;
         var cancellation = new CancellationTokenSource();
         currentResponseCancellation = cancellation;
-        _ = RunAskLaneAsync(transcript, cancellation);
+        IsAskInFlight = true;
+        // A guide's own "what's next?" never pauses: the person already let the task go ahead, and
+        // a pause after every click would only slow the steps down.
+        var pauseSeconds = AskSendPause.Seconds(DictationSettings.PauseBeforeSendingScreen, isGuidedStepContinuation);
+        _ = RunAskLaneAsync(transcript, pauseSeconds, isGuidedStepContinuation, cancellation);
     }
 
-    private async Task RunAskLaneAsync(string transcript, CancellationTokenSource cancellation)
+    private async Task RunAskLaneAsync(string transcript, double? pauseSeconds, bool isGuidedStepContinuation, CancellationTokenSource cancellation)
     {
         var cancellationToken = cancellation.Token;
         VoiceState = CompanionVoiceState.Processing;
         try
         {
-            await AnswerAsync(transcript, cancellationToken);
+            await AnswerAsync(transcript, pauseSeconds, isGuidedStepContinuation, cancellationToken);
         }
         catch (Exception error) when (AskLaneFailures.IsCancellation(error) || cancellationToken.IsCancellationRequested)
         {
@@ -111,14 +123,29 @@ public sealed partial class CompanionManager
         await WaitForSystemVoiceNoticeToEndAsync();
         if (!cancellationToken.IsCancellationRequested)
         {
+            IsAskInFlight = false;
             VoiceState = CompanionVoiceState.Idle;
             Overlay.ScheduleTransientHideIfNeeded();
         }
         if (currentResponseCancellation == cancellation) currentResponseCancellation = null;
     }
 
-    private async Task AnswerAsync(string transcript, CancellationToken cancellationToken)
+    private async Task AnswerAsync(string transcript, double? pauseSeconds, bool isGuidedStepContinuation, CancellationToken cancellationToken)
     {
+        // Where the mouse was when they let go: what "this" points at.
+        var mouseLocationAtRelease = services.Screens.CursorPosition();
+        if (pauseSeconds is { } seconds)
+        {
+            // A moment to call it off before anything leaves the PC. Esc or a click on the island
+            // cancels this question, and nothing is captured or sent.
+            AppLog.Write($"ask: pausing {seconds} s before sending the screen");
+            SetAskIslandStatus(AskSendPause.Caption);
+            Overlay.ShowLiveCaption(AskSendPause.Caption);
+            if (!await AskSendPause.WaitOutAsync(seconds, cancellationToken)) return;
+            SetAskIslandStatus(null);
+            ShowAskCaption($"“{transcript}” · thinking…", 30);
+        }
+        // Captured after the pause, so what is sent is what is on screen now.
         // Every screen (an account sends at most two), told apart from a backend failure.
         IReadOnlyList<CompanionScreenCapture> allScreenCaptures;
         try
@@ -152,7 +179,30 @@ public sealed partial class CompanionManager
             AgentActivityText = null;
         }
 
+        // A teaching question's lesson starts now, while the answer is still being asked for.
+        var cursorCapture = CursorCapture(screenCaptures);
+        if (!isGuidedStepContinuation) TeacherPlugin.StartLesson(transcript, cursorCapture);
         var labeledImages = screenCaptures.Select(ImageLabeledWithItsPixelSize).ToList();
+        // The pointer's place in its screenshot goes into the question, and a close-up of what is
+        // around it rides along, so "what is this?" is about the thing pointed at and not the
+        // window with focus.
+        var pointer = PointerInCapture.Locate(mouseLocationAtRelease, screenCaptures);
+        if (pointer is not null && screenCaptures.FirstOrDefault(capture => capture.Label == pointer.ScreenLabel) is { } pointedCapture
+            && PointerCloseUp.CropRect(pointer, pointedCapture.ScreenshotWidthInPixels, pointedCapture.ScreenshotHeightInPixels) is { } closeUpArea
+            && services.ScreenCapture.CropJpeg(pointedCapture.ImageData, closeUpArea) is { } closeUp)
+        {
+            labeledImages.Add((closeUp, PointerCloseUp.Label()));
+        }
+        // A guide's own "what's next?" is the same words every step: it is never a question asked
+        // again, and is not remembered as one (the Mac compared those too).
+        var isRepeatedQuestion = false;
+        if (!isGuidedStepContinuation)
+        {
+            var secondsSinceLastQuestion = lastAskQuestion is { } last ? (DateTimeOffset.Now - last.AskedAt).TotalSeconds : double.PositiveInfinity;
+            isRepeatedQuestion = RepeatedQuestion.IsRepeat(transcript, lastAskQuestion?.Transcript, secondsSinceLastQuestion);
+            lastAskQuestion = (transcript, DateTimeOffset.Now);
+        }
+        if (isRepeatedQuestion) AppLog.Write("ask: the same question again; answering about what is under the pointer");
         // The text a "rephrase this" would replace: the highlight, or the box the cursor is in.
         var writingTarget = await WritingTarget.CaptureFromFrontAppAsync(services.WriteInPlace, AppLog.Write);
         var selectedText = writingTarget is null ? await ReadSelectedTextAsync() : null;
@@ -162,8 +212,14 @@ public sealed partial class CompanionManager
         var claudeRoute = ProviderRouter.Route(ProviderCapability.Claude, ProviderRouter.CurrentCredentials());
         // Offered wherever the agent lane doesn't run, and to a plan through PlanToolProtocol's [ACTION: …] lines.
         var offersQuickActions = AskLanePrompts.OffersQuickActionsToAskLane(agentLaneRuns, claudeRoute.AnsweringSource);
-        var askTools = AskLanePrompts.AskTools(offersQuickActions, writingTarget is not null, DesktopAction.AnthropicToolDefinitions());
-        var systemPrompt = AskLanePrompts.AskSystemPrompt(offersQuickActions, writingTarget is not null, TalkSkillsBlock());
+        var teacherIsOn = TeacherPlugin.IsEnabled;
+        IReadOnlyList<System.Text.Json.Nodes.JsonObject> askTools =
+        [
+            .. AskLanePrompts.AskTools(offersQuickActions, writingTarget is not null, DesktopAction.AnthropicToolDefinitions()),
+            .. teacherIsOn ? TeacherPlugin.AnthropicToolDefinitions() : [],
+        ];
+        var systemPrompt = AskLanePrompts.AskSystemPrompt(offersQuickActions, writingTarget is not null, TalkSkillsBlock(),
+            pluginPromptLines: TeacherPlugin.PromptLines(teacherIsOn));
 
         // Spoken while it is still being written: each finished sentence goes to the voice, and the
         // pointer moves when the voice starts (the prompt puts the tag first).
@@ -191,7 +247,7 @@ public sealed partial class CompanionManager
                 labeledImages,
                 systemPrompt,
                 historyForApi,
-                AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText),
+                AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText, pointer, isRepeatedQuestion),
                 askTools,
                 accumulatedAnswer => services.MainThread.Post(() => answerSpeaker.Receive(accumulatedAnswer)),
                 cancellationToken);
@@ -203,10 +259,25 @@ public sealed partial class CompanionManager
             throw;
         }
         AppLog.Write($"ask: answer {fullResponseText.Length} chars in {(DateTimeOffset.UtcNow - askStartedAt).TotalSeconds:0.0} s");
+        // Stopped (esc, the island, a new question) while the answer was coming in: nothing it asked
+        // for may run. Each call is checked too, since a rewrite or an action awaits.
+        if (cancellationToken.IsCancellationRequested)
+        {
+            answerSpeaker.Cancel();
+            playbackCancellation.Cancel();
+            return;
+        }
 
         var toolOutcomes = new List<string>();
         foreach (var call in toolCalls.Take(2))
         {
+            if (cancellationToken.IsCancellationRequested) break;
+            // The drawing is the answer's picture, not something to say: nothing is added to the spoken reply.
+            if (TeacherPlugin.ToolNames.Contains(call.Name))
+            {
+                TeacherPlugin.Perform(call.Name, call.Arguments, cursorCapture);
+                continue;
+            }
             if (call.Name == WriteInPlace.ToolName)
             {
                 if (writingTarget is null) continue;
@@ -239,17 +310,29 @@ public sealed partial class CompanionManager
         }
         answerSpeaker.Finish(toolOutcomes);
 
-        // The tag and the guide's marker are stripped so they don't confuse future context.
-        var replyIsAGuidedStep = GuidedStepMarker.ContainsMarker(fullResponseText);
-        var parseResult = PointTagParser.ParsePointingCoordinates(GuidedStepMarker.RemovingMarkers(fullResponseText));
+        // The tag and the markers are stripped so they don't confuse future context. A reply that is
+        // not sure what to point at never points, and is never a guide's step: the guide ends there
+        // and the person asks again with what they see. Keeping the guide waiting for a click would
+        // only guess at what the next click means.
+        var replyIsUnsure = UnsureMarker.ContainsMarker(fullResponseText);
+        var replyIsAGuidedStep = !replyIsUnsure && GuidedStepMarker.ContainsMarker(fullResponseText);
+        var parseResult = PointTagParser.ParsePointingCoordinates(UnsureMarker.RemovingMarkers(GuidedStepMarker.RemovingMarkers(fullResponseText)));
+        var pointedCoordinate = replyIsUnsure ? null : parseResult.Coordinate;
         var spokenText = AskLaneFailures.SpokenReply(parseResult.SpokenText, toolOutcomes);
+        if (replyIsUnsure)
+        {
+            AppLog.Write($"ask: not sure what to point at{(parseResult.Coordinate is null ? "" : " (its point tag ignored)")}");
+            // The marker came after a tag the pointer already flew to: bring it back.
+            Overlay.ClearDetectedElementLocation();
+            ShowAskIslandStatus(UnsureMarker.IslandStatus, 10);
+        }
 
         if (spokenText.Length == 0)
         {
             // Nothing to say (an empty answer, or a bare tag): "thinking…" would stay up in silence.
-            AppLog.Write($"ask: empty answer ({(parseResult.Coordinate is null ? "no point" : "point only")})");
+            AppLog.Write($"ask: empty answer ({(pointedCoordinate is null ? "no point" : "point only")})");
             Overlay.DismissCursorCaption();
-            if (parseResult.Coordinate is null)
+            if (pointedCoordinate is null)
             {
                 LastQuestionFailed = true;
                 SpeakWithSystemVoice(AskLaneFailures.EmptyAnswerSentence);
@@ -258,6 +341,7 @@ public sealed partial class CompanionManager
         else
         {
             RememberExchange(transcript, spokenText);
+            TeacherPlugin.WriteAnswerIfTheyCannotHear(spokenText, lastQuestionWasTyped, cursorCapture);
             if (replyIsAGuidedStep) WaitForTheGuidedStepToBeDone();
         }
 
@@ -334,12 +418,17 @@ public sealed partial class CompanionManager
 
     // MARK: - Speaking
 
-    private StreamingAnswerSpeaker MakeAnswerSpeaker(Action onVoiceStarts, Action<string> onPointTag) =>
-        new(new SpeechQueue(
-                (pieceText, cancellationToken) => answerVoicePlayer.FetchAudioAsync(pieceText, cancellationToken),
+    private StreamingAnswerSpeaker MakeAnswerSpeaker(Action onVoiceStarts, Action<string> onPointTag)
+    {
+        // One session per answer, so a late or failed free voice hands the rest of this answer to the local voice
+        // and the next answer tries again (AccountVoiceGuard.cs).
+        var answerVoiceSession = answerVoicePlayer.MakeAnswerSession();
+        return new(new SpeechQueue(
+                answerVoiceSession.AudioAsync,
                 (audio, cancellationToken) => answerVoicePlayer.PlayToCompletionAsync(audio, cancellationToken)),
             onVoiceStarts: () => services.MainThread.Post(onVoiceStarts),
             onPointTag: pointTag => services.MainThread.Post(() => onPointTag(pointTag)));
+    }
 
     /// <summary>
     /// Speaks a reply that is already whole (the agent's result) in pieces through SpeechQueue,
@@ -473,6 +562,13 @@ public sealed partial class CompanionManager
     private GuidedStepWatcher? guidedStepWatcher;
     /// <summary>What the person asked that started the guide, repeated in every "what's next?".</summary>
     private string guidedStepGoal = "";
+    /// <summary>
+    /// Where the pointer last pointed for the answer under way (global physical pixels), and the
+    /// scale of that monitor, so the click that finishes a step can be checked against it. Cleared
+    /// with each new request.
+    /// </summary>
+    private ScreenPoint? guidedStepPointedLocation;
+    private double guidedStepPointedScale = 1;
 
     /// <summary>The reply was one step of a guide: once the person does it, ask for the next on a fresh screenshot.</summary>
     private void WaitForTheGuidedStepToBeDone()
@@ -488,24 +584,119 @@ public sealed partial class CompanionManager
         GuidedStepWatcher? watcher = null;
         watcher = new GuidedStepWatcher(
             services.GuidedStepInput,
-            onStepDone: () => services.MainThread.Post(() =>
+            onStepDone: clickLocation => services.MainThread.Post(() =>
             {
                 if (guidedStepWatcher != watcher) return;
-                AppLog.Write($"guide: step {guidedStepsGivenSoFar} done, asking for the next");
+                var clickCheck = GuidedStepClickCheck.Check(guidedStepPointedLocation, clickLocation, guidedStepPointedScale);
+                AppLog.Write($"guide: step {guidedStepsGivenSoFar} done ({GuidedStepClickCheck.Describe(clickCheck)}), asking for the next");
                 guidedStepWatcher = null;
-                SendTranscriptToClaudeWithScreenshot(GuidedStepRules.NextStepRequest(guidedStepGoal), isGuidedStepContinuation: true);
+                if (clickCheck is GuidedStepClickCheck.Verdict.OffTarget) ShowAskCaption(GuidedStepClickCheck.OffTargetCaption, 4);
+                SendTranscriptToClaudeWithScreenshot(GuidedStepRules.NextStepRequest(guidedStepGoal, clickCheck), isGuidedStepContinuation: true);
             }),
             onEnded: reason => services.MainThread.Post(() =>
             {
                 if (guidedStepWatcher != watcher) return;
                 AppLog.Write($"guide: ended ({GuidedStepWatcher.Describe(reason)}) after {guidedStepsGivenSoFar} steps");
+                // Esc means stop: the step still being said goes quiet too, as esc does anywhere else.
+                // (The global esc usually gets there first; then this watcher was already stopped.)
+                // Stopped while the watcher is still set, so the guide counts as something to stop.
+                if (reason == GuidedStepWatcher.EndReason.Escape)
+                {
+                    StopAskLane("esc during a guide");
+                    return;
+                }
                 guidedStepWatcher = null;
                 guidedStepsGivenSoFar = 0;
-                // Esc means stop: the step still being said goes quiet too.
-                if (reason == GuidedStepWatcher.EndReason.Escape) StopSpeaking();
             }));
         guidedStepWatcher = watcher;
         watcher.Start();
+    }
+
+    // MARK: - Stopping the ask lane
+
+    private bool isAskInFlight;
+    /// <summary>
+    /// From the moment the ask lane takes a question (the pause before sending included) until its
+    /// answer has been said, failed, or was stopped. Esc and a click on the island stop it.
+    /// </summary>
+    public bool IsAskInFlight
+    {
+        get => isAskInFlight;
+        private set
+        {
+            if (!SetProperty(ref isAskInFlight, value)) return;
+            Island.IsAskInFlight = value;
+        }
+    }
+
+    /// <summary>The expiry of a status shown for a while (<see cref="ShowAskIslandStatus"/>).</summary>
+    private CancellationTokenSource? askIslandStatusExpiry;
+
+    /// <summary>
+    /// What the island's status says instead of the ask lane's state, while set: the pause before
+    /// sending the screen, or a reply that was not sure what to point at. Null gives the status back
+    /// to the state.
+    /// </summary>
+    private void SetAskIslandStatus(string? status)
+    {
+        askIslandStatusExpiry?.Cancel();
+        askIslandStatusExpiry = null;
+        Island.AskIslandStatus = status;
+    }
+
+    /// <summary>Puts <paramref name="status"/> on the island for a while (a new question or a stop takes it away sooner).</summary>
+    private void ShowAskIslandStatus(string status, double holdSeconds)
+    {
+        SetAskIslandStatus(status);
+        var expiry = new CancellationTokenSource();
+        askIslandStatusExpiry = expiry;
+        _ = ClearAskIslandStatusLaterAsync(status, holdSeconds, expiry.Token);
+    }
+
+    private async Task ClearAskIslandStatusLaterAsync(string status, double holdSeconds, CancellationToken cancellationToken)
+    {
+        try { await Task.Delay(TimeSpan.FromSeconds(holdSeconds), cancellationToken); }
+        catch (OperationCanceledException) { return; }
+        services.MainThread.Post(() =>
+        {
+            if (cancellationToken.IsCancellationRequested || Island.AskIslandStatus != status) return;
+            Island.AskIslandStatus = null;
+        });
+    }
+
+    /// <summary>
+    /// Whether esc has anything in the ask lane to stop: a press still listening or transcribing, a
+    /// question on its way or being answered, or a guide waiting for its step to be done.
+    /// </summary>
+    public bool AskLaneCanBeStopped =>
+        AskLaneEscape.CanStop(askOutcome == AskOutcome.Resolved, IsAskInFlight, guidedStepWatcher is null ? null : guidedStepsGivenSoFar);
+
+    /// <summary>
+    /// Esc, or a click on the island while a question is on its way: what a new question does,
+    /// without the question. The request in flight is cancelled (so nothing it asked for runs), the
+    /// voice and the pointer stop, a guide ends, and the island goes back to rest. Returns false when
+    /// there was nothing to stop.
+    /// </summary>
+    public bool StopAskLane(string source)
+    {
+        if (!AskLaneCanBeStopped) return false;
+        AppLog.Write($"ask: stopped ({source})");
+        if (askOutcome != AskOutcome.Resolved)
+        {
+            askOutcome = AskOutcome.Resolved;
+            askPressWasStopped = true;
+            pendingKeyboardShortcutStart?.Cancel();
+            pendingKeyboardShortcutStart = null;
+            BuddyDictationManager.CancelCurrentDictation(preserveDraftText: false);
+        }
+        guidedStepsGivenSoFar = 0;
+        InterruptCurrentAnswer(includingAgentWork: true);
+        Overlay.ClearDetectedElementLocation();
+        // A cancelled answer skips its own reset to idle.
+        VoiceState = CompanionVoiceState.Idle;
+        ShowAskCaption("stopped", 1.5);
+        Overlay.ScheduleTransientHideIfNeeded();
+        return true;
     }
 
     private void StopWatchingForGuidedStep()

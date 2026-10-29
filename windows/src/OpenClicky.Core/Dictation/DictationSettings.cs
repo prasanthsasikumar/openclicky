@@ -385,6 +385,7 @@ public sealed class DictationSettings : ObservableObject
         public const string KeepMemoryOnThisMac = "dictation.keepMemoryOnThisMac";
         public const string RetainFailedTakeAudio = "dictation.retainFailedTakeAudio";
         public const string ReadNearbyText = "dictation.readNearbyText";
+        public const string PauseBeforeSendingScreen = "openclicky.ask.pauseBeforeSendingScreen";
         public const string HasCompletedDictationOnboarding = "dictation.onboarded";
         public const string PreferredMicrophoneUID = "dictation.preferredMicrophoneUID";
         public const string Region = "openclicky.region";
@@ -437,6 +438,7 @@ public sealed class DictationSettings : ObservableObject
         keepMemoryOnThisPC = defaults.GetBool(Keys.KeepMemoryOnThisMac);
         retainFailedTakeAudio = defaults.GetBool(Keys.RetainFailedTakeAudio, defaultValue: true);
         readNearbyText = defaults.GetBool(Keys.ReadNearbyText, defaultValue: true);
+        pauseBeforeSendingScreen = defaults.GetBool(Keys.PauseBeforeSendingScreen, defaultValue: true);
         hasCompletedDictationOnboarding = defaults.GetBool(Keys.HasCompletedDictationOnboarding);
         preferredMicrophoneUID = defaults.GetString(Keys.PreferredMicrophoneUID);
         orbPosition = DecodePoint(defaults.GetString(Keys.OrbPosition));
@@ -737,6 +739,15 @@ public sealed class DictationSettings : ObservableObject
     {
         get => readNearbyText;
         set => Store(ref readNearbyText, value, () => defaults.Set(Keys.ReadNearbyText, value), nameof(ReadNearbyText));
+    }
+
+    private bool pauseBeforeSendingScreen;
+    /// <summary>A question to Clicky waits a moment (AskSendPause) before the screen is captured and sent,
+    /// so esc or a click on the island can still call it off. The Ctrl + Win lane only; on by default.</summary>
+    public bool PauseBeforeSendingScreen
+    {
+        get => pauseBeforeSendingScreen;
+        set => Store(ref pauseBeforeSendingScreen, value, () => defaults.Set(Keys.PauseBeforeSendingScreen, value), nameof(PauseBeforeSendingScreen));
     }
 
     private bool hasCompletedDictationOnboarding;

@@ -24,4 +24,7 @@ public interface IWindowList
 
     /// <summary>The pid of OpenClicky's own process (to skip its windows when deciding what covers what).</summary>
     int OwnProcessId { get; }
+
+    /// <summary>Where a window's caption buttons are (WindowControlLocator); null when the window is gone or minimised.</summary>
+    Pointing.CaptionButtonLayout? CaptionButtonLayout(nint windowHandle, string appName) => null;
 }

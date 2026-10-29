@@ -260,7 +260,9 @@ public sealed record IslandExpansionInputs(
     bool IsHovering = false,
     bool IsSpeaking = false,
     bool HasCaption = false,
-    bool IsSideDrawer = false)
+    bool IsSideDrawer = false,
+    /// <summary>A drag over the island (the Shelf), a tile on its way out, or a drop that just landed.</summary>
+    bool HoldsOpenForShelf = false)
 {
     /// <summary>The permission cards or the tour are up: hovering or clicking the island must not open the panel over them.</summary>
     public bool IsSetupInProgress => HasTourCard || HasPermissionPrompt;
@@ -300,6 +302,9 @@ public static class IslandExpansionRules
             target = IslandExpansion.Permission;
         else if (inputs.IsPinnedOpen && !inputs.IsSetupInProgress)
             target = IslandExpansion.Full;
+        else if (inputs.HoldsOpenForShelf && !inputs.IsSetupInProgress)
+            // A drag over the island, a tile on its way out, or a drop that just landed.
+            target = IslandExpansion.Full;
         else if (inputs.HasTourCard && !inputs.IsBusy)
             // Like the connect card: hovering it must not swap it for the panel.
             target = IslandExpansion.Tour;
@@ -322,8 +327,8 @@ public static class IslandExpansionRules
     }
 
     /// <summary>After the grace period: hovering or a pinned panel holds the island open, except during setup, where the
-    /// pointer resting on the tour card must not keep the busy strip from showing.</summary>
+    /// pointer resting on the tour card must not keep the busy strip from showing. A drag or a drop's hold keeps it open.</summary>
     public static bool SettlesAfterGrace(IslandExpansionInputs inputs) =>
         (inputs.IsSetupInProgress || (inputs.IsSpeaking && !inputs.IsPinnedOpen) || (!inputs.IsHovering && !inputs.IsPinnedOpen))
-        && !inputs.IsComposerOpen;
+        && !inputs.IsComposerOpen && (!inputs.HoldsOpenForShelf || inputs.IsSetupInProgress);
 }

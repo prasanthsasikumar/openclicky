@@ -59,17 +59,29 @@ public class AnswerVoicePlayerTests
         }
     }
 
+    /// <summary>This PC's voice, faked: it "renders" a fixed sound.</summary>
+    private sealed class FakeSystemVoice : ISystemVoice
+    {
+        public static readonly byte[] Sound = [7, 7, 7];
+        public IReadOnlyList<SystemVoiceInfo> Voices(string? languageCode = null) => [new("aria", "Microsoft Aria", "en-US", "Female")];
+        public SystemVoiceInfo? CurrentVoice(string languageCode, string? pickedVoiceId = null) => Voices(languageCode)[0];
+        public double DefaultSpeakingRate => 1;
+        public Task<byte[]> RenderWavAsync(string text, string languageCode, string? pickedVoiceId = null, double? speakingRate = null,
+                                           CancellationToken cancellationToken = default) => Task.FromResult(Sound);
+    }
+
+    /// <summary>A refused free voice (402: the allowance is spent) never leaves the answer unspoken: the local voice says
+    /// it instead, Kokoro when downloaded, else this PC's (#23).</summary>
     [Fact]
-    public async Task ARefusedFreeVoiceSaysTheStatus()
+    public async Task ARefusedFreeVoiceIsSaidByTheLocalVoice()
     {
         HttpClients.UseHandler(new DelegatingTestHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage((HttpStatusCode)402) { Content = new StringContent("{\"error\":\"limit\"}") })));
         try
         {
-            var player = new AnswerVoicePlayer(new SilentPlayer(), () => "https://backend.test/tts") { CurrentVoice = () => SpeechVoiceChoice.Account };
-            var error = await Assert.ThrowsAsync<BackendHttpException>(() => player.FetchAudioAsync("hi"));
-            Assert.Equal(402, error.Status);
-            Assert.Equal(BackendHttpException.ServiceKind.Voice, error.Service);
+            var services = new SpeechVoiceServices(() => false, (_, _, _) => throw new InvalidOperationException("no kokoro"), new FakeSystemVoice());
+            var player = new AnswerVoicePlayer(new SilentPlayer(), () => "https://backend.test/tts", services) { CurrentVoice = () => SpeechVoiceChoice.Account };
+            Assert.Equal(FakeSystemVoice.Sound, await player.FetchAudioAsync("hi"));
         }
         finally
         {

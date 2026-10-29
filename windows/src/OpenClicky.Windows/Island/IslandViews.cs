@@ -72,7 +72,8 @@ internal sealed class CollapsedHandleView : Grid, IIslandContent
 
 // MARK: - Peek
 
-/// <summary>The hover tease (NotchPeekLine): the pointer's mark and status, then "· click to open", on one line under the band.</summary>
+/// <summary>The hover tease (NotchPeekLine): the pointer's mark and status (or the playing track, with Now playing on),
+/// then "· click to open", on one line under the band.</summary>
 internal sealed class PeekLineView : Grid, IIslandContent
 {
     private readonly IslandCompanionModel hub;
@@ -84,6 +85,8 @@ internal sealed class PeekLineView : Grid, IIslandContent
         this.hub = hub;
         // The whole line is the island's click target: a click opens the panel.
         IsHitTestVisible = false;
+        Loaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed += OnPluginLineChanged;
+        Unloaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed -= OnPluginLineChanged;
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -94,16 +97,32 @@ internal sealed class PeekLineView : Grid, IIslandContent
         var markHolder = new Grid { Width = 12, Height = 12, Margin = new Thickness(0, 0, 6, 0) };
         markHolder.Children.Add(mark);
         row.Children.Add(markHolder);
+        // A long track name is cut, so "click to open" always fits.
         statusText = Text("", 11, DS.HUD.Text2Brush, trimming: TextTrimming.CharacterEllipsis);
+        statusText.MaxWidth = 170;
         row.Children.Add(statusText);
         row.Children.Add(Text(" · click to open", 11, DS.HUD.Text3Brush));
         Children.Add(row);
+        // A coding session starting or stopping changes the line while it shows.
+        Loaded += (_, _) => Plugins.CodingAgents.AgentsIslandView.Sessions.Changed += OnPluginLineChanged;
+        Unloaded += (_, _) => Plugins.CodingAgents.AgentsIslandView.Sessions.Changed -= OnPluginLineChanged;
         Refresh();
+    }
+
+    /// <summary>A coding session or the track changed: the line follows while it shows.</summary>
+    private void OnPluginLineChanged()
+    {
+        if (Dispatcher.CheckAccess()) Refresh();
+        else Dispatcher.BeginInvoke(Refresh);
     }
 
     public void Refresh()
     {
-        statusText.Text = IslandTexts.PeekStatus(hub.IsClickyCursorEnabled, hub.PointerPresence, hub.IsPointerAwake);
+        var sessions = Plugins.CodingAgents.AgentsIslandView.Sessions;
+        // The watcher only runs while the Coding agents plugin is on, so its line is null otherwise.
+        var agentLine = sessions.IsEnabled ? sessions.PeekLine : null;
+        statusText.Text = IslandTexts.PeekText(IslandTexts.PeekStatus(hub.IsClickyCursorEnabled, hub.PointerPresence, hub.IsPointerAwake),
+            agentLine, mediaLine: Plugins.Media.MediaIslandView.Store.NowPlayingLine);
     }
 
     public void Tick() { }
@@ -197,8 +216,14 @@ internal sealed class CompactStatusView : Grid, IIslandContent
         SetRow(detailText, 1);
         Children.Add(detailText);
 
-        // Only while speaking, so a click on the busy strip otherwise still opens the panel.
-        stopOverlay = Clickable(new Grid(), () => hub.StopSpeakingCommand.Execute(null), IslandTexts.StopSpeakingToolTip);
+        // Only while speaking, or while a question is on its way (the pause before sending, or a
+        // guide's first step being looked up: it stops it, as esc does), so a click on the busy
+        // strip otherwise still opens the panel.
+        stopOverlay = Clickable(new Grid(), () =>
+        {
+            if (hub.IsSpeaking) hub.StopSpeakingCommand.Execute(null);
+            else hub.StopAskCommand.Execute(null);
+        }, IslandTexts.StopSpeakingToolTip);
         SetRowSpan(stopOverlay, 3);
         stopOverlay.Margin = new Thickness(-14, 0, -14, 0);
         Children.Add(stopOverlay);
@@ -209,8 +234,10 @@ internal sealed class CompactStatusView : Grid, IIslandContent
     {
         badge.Refresh();
         statusText.Text = hub.CompactStatusText;
-        stopIcon.Visibility = hub.IsSpeaking ? Visibility.Visible : Visibility.Collapsed;
-        stopOverlay.Visibility = hub.IsSpeaking ? Visibility.Visible : Visibility.Collapsed;
+        var canStop = hub.IsSpeaking || hub.IsQuestionOnItsWay;
+        stopIcon.Visibility = canStop ? Visibility.Visible : Visibility.Collapsed;
+        stopOverlay.Visibility = canStop ? Visibility.Visible : Visibility.Collapsed;
+        stopOverlay.ToolTip = hub.IsSpeaking ? IslandTexts.StopSpeakingToolTip : IslandTexts.StopAskToolTip;
         var detailLine = hub.DetailLine;
         detailText.Text = detailLine ?? "";
         detailText.Visibility = detailLine is null ? Visibility.Collapsed : Visibility.Visible;

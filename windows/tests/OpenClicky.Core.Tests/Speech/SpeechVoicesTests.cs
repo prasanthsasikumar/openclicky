@@ -42,8 +42,8 @@ public class SpeechVoicesTests
             SpeechVoiceChoices.Resolve(shell, account, kokoro, "en");
         Assert.Equal(SpeechVoiceChoice.Mac, Resolve(Settings()));
         Assert.Equal(SpeechVoiceChoice.Kokoro, Resolve(Settings(), kokoro: true));
-        // Kokoro, once downloaded, saves the free voice's characters.
-        Assert.Equal(SpeechVoiceChoice.Kokoro, Resolve(Settings(), account: true, kokoro: true));
+        // The free voice comes before a downloaded Kokoro: an ElevenLabs grant pays for it now (#23).
+        Assert.Equal(SpeechVoiceChoice.Account, Resolve(Settings(), account: true, kokoro: true));
         Assert.Equal(SpeechVoiceChoice.Account, Resolve(Settings(), account: true));
         Assert.Equal(SpeechVoiceChoice.Sarvam, Resolve(Settings(s => s.SarvamKey = "s"), account: true));
         Assert.Equal(SpeechVoiceChoice.Sarvam, Resolve(Settings(s => { s.GeminiApiKey = "g"; s.SarvamKey = "s"; })));

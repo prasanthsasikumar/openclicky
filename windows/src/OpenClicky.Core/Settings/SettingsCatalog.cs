@@ -224,6 +224,13 @@ public sealed class SettingsCatalog
         ];
     }
 
+    /// <summary>"Always listening": instant on fast voice, else after the person stops talking.</summary>
+    public static string HandsFreeDetail(bool usesRealtime) => usesRealtime
+        ? "Hands-free: just talk, no keys. Instant with fast voice on."
+        : "Hands-free: just talk, no keys. Clicky answers once you stop talking.";
+
+    public const string FastVoiceNeedsKeyDetail = "Instant replies need your own OpenAI or Gemini key. Without one, Clicky answers in the standard voice.";
+
     public IReadOnlyList<SettingsItem> VoiceItems()
     {
         var usesRealtime = capabilities().UsesRealtime;
@@ -239,15 +246,22 @@ public sealed class SettingsCatalog
                 ["voice", "speech", "tts", "text to speech", "elevenlabs", "eleven labs", "kokoro", "offline", "on device",
                  "pc voice", "windows voice", "narrator", "credits", "allowance", "left"]),
         ];
-        // Fast voice and hands-free run on OpenAI Realtime or Gemini Live, which need an own OpenAI
-        // or Gemini key; a free account would see switches that do nothing, so it gets the way to
-        // a key instead.
+        // Fast voice runs on OpenAI Realtime or Gemini Live, which need an own OpenAI or Gemini key; without one
+        // its switch would do nothing, so the row shows the way to a key instead.
         if (usesRealtime)
         {
             items.Add(Item("clicky.fastVoice", "Fast voice", "Fast voice", "Talks back instantly, over OpenAI Realtime or Gemini Live.",
                 ["realtime", "voice", "fast", "openai", "gemini", "live"]));
-            items.Add(Item("clicky.alwaysListening", "Fast voice", "Always listening", "Hands-free: just talk, no keys. Needs fast voice.",
+        }
+        // Hands-free works on every lane that can answer: instantly with fast voice, otherwise the standard lane
+        // hears each turn on this PC once the person stops talking.
+        if (usesRealtime || OpenClickyConfiguration.IsConfiguredFor(shellSettings()))
+        {
+            items.Add(Item("clicky.alwaysListening", "Fast voice", "Always listening", HandsFreeDetail(usesRealtime),
                 ["hands-free", "hands free", "always on", "listening"]));
+        }
+        if (usesRealtime)
+        {
             // Only worth a choice when both can run here.
             var credentials = ProviderCredentials.FromSettings(shellSettings());
             if (credentials.GeminiKey is not null && (credentials.OpenAIKey is not null || credentials.AccountToken is not null))
@@ -258,11 +272,22 @@ public sealed class SettingsCatalog
         }
         else
         {
-            items.Add(Item("clicky.fastVoiceNeedsKey", "Fast voice", "Fast voice and hands-free", "Needs your own OpenAI or Gemini key. A free account uses the standard voice.",
-                ["realtime", "voice", "fast", "hands-free", "always listening", "openai", "gemini", "key"]));
+            items.Add(Item("clicky.fastVoiceNeedsKey", "Fast voice", "Fast voice", FastVoiceNeedsKeyDetail,
+                ["realtime", "voice", "fast", "openai", "gemini", "key"]));
         }
+        // "Check my email" and "draft an email": which inbox they go to.
+        items.Add(Item("clicky.emailApp", "Doing things", "Email", EmailAppDetail,
+            ["email", "mail", "gmail", "outlook", "inbox", "draft"]));
+        items.Add(new SettingsItem
+        {
+            Id = "clicky.emailNeverSent", Page = DictationSettingsPage.Voice, Section = "Doing things", Chrome = SettingsItemChrome.Footer,
+            Title = EmailNeverSentText, Detail = EmailNeverSentText, Keywords = ["send", "email"],
+        });
         return items;
     }
+
+    public const string EmailAppDetail = "Which inbox “check my email” and “draft an email” open. Automatic is Gmail.";
+    public const string EmailNeverSentText = "Nothing is ever sent by voice.";
 
     // MARK: - Plugins (SettingsPluginsPage.swift)
 
@@ -372,10 +397,10 @@ public sealed class SettingsCatalog
                 ["ctrl", "win", "windows key", "control windows", "voice", "ask", "companion"]),
             Item("keyboard.type", "Clicky", "Type to Clicky", "A one-line composer opens in the island.",
                 ["ctrl", "composer", "island", "text", "control twice"]),
-            // Hands-free runs on OpenAI Realtime or Gemini Live, which need an own key: without one the key
-            // would do nothing, so it isn't listed (Voice says how to get it).
+            // Hands-free runs on fast voice or, without a realtime key, on the standard lane; with nothing that
+            // can answer the keys would do nothing, so it isn't listed.
             Item("keyboard.handsFree", "Clicky", "Hands-free", "Always-on listening. Same keys to stop.",
-                ["always on", "realtime", "listening", "hands free"], () => usesRealtime),
+                ["always on", "realtime", "listening", "hands free"], () => usesRealtime || OpenClickyConfiguration.IsConfiguredFor(shellSettings())),
         ];
     }
 
@@ -470,6 +495,8 @@ public sealed class SettingsCatalog
             Item("privacy.microphone", "Permissions", "Microphone", MicrophonePermissionDetail, ["permission", "mic", "audio", "grant", "allow"]),
             Item("privacy.readNearbyText", "Permissions", "Read nearby text", "Helps spell names and terms on screen right.",
                 ["context", "screen", "spelling", "names", "ui automation", "accessibility"]),
+            Item("privacy.pauseBeforeSendingScreen", "Permissions", "Pause before sending my screen", "A moment to press esc before Clicky sends your screen.",
+                ["screenshot", "screen", "cancel", "esc", "send", "wait", "consent"]),
             Item("privacy.memoryOnThisMac", "What it keeps", "Keep my memory on this PC only", "History, dictionary and styles stay here. Questions to Clicky still go online.",
                 ["local", "memory", "cloud", "sync", "data"]),
             Item("privacy.incognito", "What it keeps", "Incognito", "Takes still paste, but nothing is saved to history.", ["private", "history", "don't save"]),

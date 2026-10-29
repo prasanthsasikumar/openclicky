@@ -411,7 +411,8 @@ public class FastActionToolDefinitionTests
     public void EveryFastActionIsOfferedToTheModel()
     {
         var names = DesktopAction.RealtimeToolDefinitions().Select(definition => definition["name"]!.GetValue<string>());
-        Assert.Equal(["open_app", "open_url", "create_folder", "reveal_in_explorer", "set_volume", "media_control"], names);
+        Assert.Equal(["open_app", "open_url", "create_folder", "reveal_in_explorer", "set_volume", "media_control",
+                      "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows"], names);
     }
 
     [Fact]
@@ -449,7 +450,7 @@ public class FastActionToolDefinitionTests
         }
         // They fit the ask lane's hook.
         var tools = AskLanePrompts.AskTools(offersQuickActions: true, hasWritingTarget: false, anthropic);
-        Assert.Equal(6, tools.Count);
+        Assert.Equal(12, tools.Count);
     }
 
     /// <summary>
@@ -497,6 +498,28 @@ public class FastActionToolDefinitionTests
                 case DesktopAction.MediaControl mediaControl:
                     Assert.Equal(arguments["action"]!.GetValue<string>(), mediaControl.Action);
                     break;
+                case DesktopAction.WebSearch webSearch:
+                    Assert.Equal(arguments["query"]!.GetValue<string>(), webSearch.Query);
+                    Assert.Equal(arguments["site"]!.GetValue<string>(), webSearch.Site.RawValue());
+                    break;
+                case DesktopAction.MinimizeAll minimizeAll:
+                    Assert.Equal(arguments["keep"]!.GetValue<string>(), minimizeAll.KeepApp);
+                    break;
+                case DesktopAction.RestoreWindows restoreWindows:
+                    Assert.Equal(arguments["app"]!.GetValue<string>(), restoreWindows.App);
+                    break;
+                case DesktopAction.CheckEmail checkEmail:
+                    Assert.Equal(arguments["app"]!.GetValue<string>(), checkEmail.App);
+                    break;
+                case DesktopAction.DraftEmail draftEmail:
+                    Assert.Equal(arguments["to"]!.GetValue<string>(), draftEmail.To);
+                    Assert.Equal(arguments["subject"]!.GetValue<string>(), draftEmail.Subject);
+                    Assert.Equal(arguments["body"]!.GetValue<string>(), draftEmail.Body);
+                    Assert.Equal(arguments["app"]!.GetValue<string>(), draftEmail.App);
+                    break;
+                case DesktopAction.PlayMusic playMusic:
+                    Assert.Equal(arguments["query"]!.GetValue<string>(), playMusic.Query);
+                    break;
                 default:
                     Assert.Fail($"{toolName} parsed into an unexpected action");
                     break;
@@ -517,7 +540,7 @@ public class DesktopActionPlanToolTests
     public void InstructionBlockNamesEveryRealToolWithItsDescriptionAndSchema()
     {
         var block = PlanToolProtocol.InstructionBlock(QuickActionTools);
-        Assert.Equal(6, QuickActionTools.Count);
+        Assert.Equal(12, QuickActionTools.Count);
         foreach (var tool in QuickActionTools)
         {
             Assert.Contains($"- {tool.Name}: {tool.Description}", block);

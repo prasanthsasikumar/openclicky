@@ -84,6 +84,12 @@ public sealed class OpenClickyShellSettings
     [JsonPropertyName("googleCloudApiKey")] public string? GoogleCloudApiKey { get; set; }
     [JsonPropertyName("amazonPollyCredentials")] public string? AmazonPollyCredentials { get; set; }
 
+    /// <summary>"play …": own Spotify client credentials ("clientId:clientSecret") for the song lookup; null → the backend's.</summary>
+    [JsonPropertyName("spotifyCredentials")] public string? SpotifyCredentials { get; set; }
+
+    /// <summary>Which inbox "check my email" and "draft an email" use ("gmail", "outlook"); null → automatic (Gmail).</summary>
+    [JsonPropertyName("emailApp")] public string? EmailApp { get; set; }
+
     /// <summary>The Kokoro speaker picked in Settings; null → the language's default.</summary>
     [JsonPropertyName("kokoroSpeaker")] public int? KokoroSpeaker { get; set; }
 

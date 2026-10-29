@@ -14,8 +14,11 @@ using System.Windows.Threading;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Windows.Overlay;
+using OpenClicky.Windows.Plugins.CodingAgents;
+using OpenClicky.Windows.Plugins.Media;
 
 namespace OpenClicky.Windows.Island;
 
@@ -66,9 +69,13 @@ public sealed class IslandWindowManager : IDisposable
                 componentSettingsObservations.Add(preferences.Observe(key, () => dispatcher.BeginInvoke(() =>
                 {
                     foreach (var instance in instances) instance.Model.RefreshComponentSettings();
+                    SyncPluginStores();
                 })));
             }
         }
+        // The playing track is a moment of its own (Now playing on and something plays).
+        MediaIslandView.Store.Changed += OnMediaChanged;
+        SyncPluginStores();
         if (overlayModel is not null)
         {
             overlayModel.DockTarget = () => (DockPoint, DockScreenFrame);
@@ -218,7 +225,7 @@ public sealed class IslandWindowManager : IDisposable
             model.SetPermissionPrompt(hub.PermissionPrompt);
             model.SetTourCard(hub.TourCard);
             model.SetCaption(hub.CaptionText);
-            model.SetContext(hub.IslandContext with { Now = DateTimeOffset.Now });
+            model.SetContext(CurrentContext());
             var window = new IslandWindow(model, hub, screen);
             instances.Add(new Instance(screen.DeviceName, model, window));
             if (isShown) window.Show();
@@ -276,6 +283,13 @@ public sealed class IslandWindowManager : IDisposable
                 model.SetHovering(false);
                 continue;
             }
+            // A drag that ended without telling the island (a cancelled drag, a torn-down destination) must not leave it
+            // open: no button down means no drag.
+            if ((model.IsDragHovering || model.IsDraggingOut) && !FloatingWindowSupport.IsAnyMouseButtonDown())
+            {
+                model.SetDragHovering(false);
+                model.SetDragOut(false);
+            }
             var hoverMargin = model.Expansion is IslandExpansion.Collapsed or IslandExpansion.Peek ? 6 : 14;
             var isHovering = instance.Window.IslandRectInPixels(hoverMargin).Contains(cursor);
             model.SetHovering(isHovering);
@@ -319,15 +333,36 @@ public sealed class IslandWindowManager : IDisposable
         if (PrimaryInstance is { } primaryInstance && primaryInstance.Model.Expansion == IslandExpansion.Tour) primaryInstance.Window.FocusTourField();
     }
 
+    /// <summary>The plugins that read something in the background follow their switches (NotchHUDManager.syncOptionalComponents):
+    /// the Coding agents' slow poll feeds the peek line, and Now playing asks the media sessions only while it is on.</summary>
+    private void SyncPluginStores()
+    {
+        var enabled = componentSettings?.EnabledPlugins ?? [];
+        AgentsIslandView.SetEnabled(enabled.Contains(IslandPluginRegistry.AgentsId));
+        MediaIslandView.Store.SetEnabled(enabled.Contains(IslandPluginRegistry.MediaId));
+    }
+
     // MARK: - The slot's moment
 
     /// <summary>Ticks once a second while a landed take's transcript window runs, so it ends on time.</summary>
     private DispatcherTimer? landedTranscriptTimer;
 
+    private bool isMediaPlaying;
+
+    private void OnMediaChanged()
+    {
+        if (MediaIslandView.Store.IsPlaying == isMediaPlaying) return;
+        isMediaPlaying = MediaIslandView.Store.IsPlaying;
+        ApplyIslandContext();
+    }
+
+    /// <summary>The companion's moment, with the time now and whether music plays.</summary>
+    private IslandContext CurrentContext() => hub.IslandContext with { Now = DateTimeOffset.Now, IsMediaPlaying = isMediaPlaying };
+
     /// <summary>Every island gets the moment, with the time now; a landed take keeps the clock running until its window ends.</summary>
     private void ApplyIslandContext()
     {
-        var context = hub.IslandContext with { Now = DateTimeOffset.Now };
+        var context = CurrentContext();
         foreach (var instance in instances) instance.Model.SetContext(context);
         var isInLandedWindow = !context.IsTakeLive && context.TakeLandedAt is { } landedAt && context.Now - landedAt < IslandContext.LandedTranscriptWindow;
         if (isInLandedWindow && landedTranscriptTimer is null)
@@ -346,6 +381,8 @@ public sealed class IslandWindowManager : IDisposable
     {
         hoverPollTimer.Stop();
         landedTranscriptTimer?.Stop();
+        MediaIslandView.Store.Changed -= OnMediaChanged;
+        MediaIslandView.Store.SetEnabled(false);
         foreach (var observation in componentSettingsObservations) observation.Dispose();
         componentSettingsObservations.Clear();
         hub.PropertyChanged -= OnHubPropertyChanged;

@@ -8,7 +8,7 @@ using static OpenClicky.Windows.Platform.NativeMethods;
 namespace OpenClicky.Windows.Platform;
 
 /// <summary>The OS side of the fast-lane actions (MacActionRunner.live's closures).</summary>
-public sealed class DesktopActionExecutor : IDesktopActionExecutor
+public sealed partial class DesktopActionExecutor : IDesktopActionExecutor
 {
     private static readonly string[] ShortcutExtensions = [".lnk", ".url", ".appref-ms"];
 

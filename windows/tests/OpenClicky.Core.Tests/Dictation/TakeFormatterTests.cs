@@ -238,4 +238,23 @@ public sealed class TakeFormatterTests
         noModelStyle.PolishWithModel = false;
         Assert.False(TakeFormatter.ModelPassWillRun(context with { Style = noModelStyle }, new FixedPolisher("x"), wantsModel: true));
     }
+
+    /// <summary>A clean-up model answered dictated questions in their own words (Prasanth's take history, Terminal; #24).</summary>
+    [Fact]
+    public void AnAnswerToASpokenQuestionIsRejected()
+    {
+        Assert.False(TakeFormatter.LooksLikeTheSameTake("We need 10 files of recommendations. We have 10 files of recommendations.",
+            raw: "How many files of recommendations do we need? And how many have we gotten so far?"));
+        Assert.False(TakeFormatter.LooksLikeTheSameTake("We need 10 files of recommendations and we have 8. There are 2 missing.",
+            raw: "How many files of recommendations do we need and how many do we have and how many are missing?"));
+        Assert.True(TakeFormatter.LooksLikeTheSameTake("How many files of recommendations do we need, and how many have we gotten so far?",
+            raw: "How many files of recommendations do we need? And how many have we gotten so far?"));
+        Assert.True(TakeFormatter.LooksLikeTheSameTake("Why is the build failing on CI?", raw: "why is the build failing on CI"));
+        // "When" and "where" open statements as often as questions.
+        Assert.True(TakeFormatter.LooksLikeTheSameTake("When I click the Instant Ink section, it says \"Finish printer setup\".",
+            raw: "When I click the instant ink section it says finish printer setup"));
+        // An answer that leaves most of the spoken words out, question mark or not.
+        Assert.False(TakeFormatter.KeepsTheSpokenWords("We need files of recommendations.",
+            raw: "tell me how many files of recommendations we need and how many have we gotten so far"));
+    }
 }

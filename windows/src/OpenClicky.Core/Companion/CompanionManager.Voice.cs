@@ -3,7 +3,9 @@
 //  OpenClicky (Windows port of CompanionManager.swift: the shortcuts, push-to-talk, hands-free)
 //
 
+using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
 using OpenClicky.Core.Speech;
@@ -20,6 +22,9 @@ public sealed partial class CompanionManager
     public enum AskOutcome { Resolved, Listening, Transcribing }
 
     private AskOutcome askOutcome = AskOutcome.Resolved;
+    /// <summary>The Ctrl + Win press was stopped with esc while it was still listening or transcribing:
+    /// words the session hands over after all are dropped.</summary>
+    private bool askPressWasStopped;
     private bool askLiveWordsShownSincePress;
     private CancellationTokenSource? pendingKeyboardShortcutStart;
 
@@ -82,7 +87,25 @@ public sealed partial class CompanionManager
                 ToggleHandsFree();
                 break;
             case CompanionShortcutEventKind.EscapePressed:
-                HandleDictationShortcut(shortcutEvent);
+                // A dictation take in progress keeps esc to itself (it cancels the take, as always);
+                // otherwise esc stops whatever the ask lane is doing, and then the fast voice lane when
+                // it is answering, speaking or still working on an action (the Mac's order).
+                var escapeTarget = AskLaneEscape.Target(IsTakeInProgress, AskLaneCanBeStopped,
+                    realtimeIsBusy: EscStopsFastVoice(IsTakeInProgress, UsesRealtimeVoice, RealtimeVoiceClient.IsBusy));
+                // Whatever else it stops, esc takes a lesson off the screen too (never mid-take).
+                if (TeacherPlugin.EscClearsTheBoard(escapeTarget)) TeacherPlugin.ClearBoard("esc");
+                switch (escapeTarget)
+                {
+                    case EscapeTarget.AskLane:
+                        StopAskLane("esc");
+                        break;
+                    case EscapeTarget.Realtime:
+                        StopFastVoiceOnEscape();
+                        break;
+                    default:
+                        HandleDictationShortcut(shortcutEvent);
+                        break;
+                }
                 break;
             case CompanionShortcutEventKind.TalkPressed:
             case CompanionShortcutEventKind.TalkReleased:
@@ -118,6 +141,8 @@ public sealed partial class CompanionManager
         InterruptCurrentAnswer(includingAgentWork: true);
         Overlay.ClearDetectedElementLocation();
         Overlay.DismissCursorCaption();
+        TeacherPlugin.ClearBoard("a new question");
+        lastQuestionWasTyped = true;
         LastTranscript = trimmedText;
         AppLog.Write($"ask: typed request ({trimmedText.Length} chars)");
 
@@ -136,6 +161,7 @@ public sealed partial class CompanionManager
         {
             await RealtimeVoiceClient.ConnectIfNeededAsync(IsAlwaysListening ? RealtimeTurnMode.AlwaysOn : RealtimeTurnMode.PushToTalk);
             await RealtimeVoiceClient.SendTextTurnAsync(text);
+            TeacherPlugin.StartLesson(text, RealtimeVoiceClient.LastScreenCapture);
         }
         catch (Exception error)
         {
@@ -144,25 +170,29 @@ public sealed partial class CompanionManager
         }
     }
 
-    /// <summary>Dictation key + Ctrl tapped twice: always-on listening on or off (Realtime only).</summary>
+    /// <summary>Dictation key + Ctrl tapped twice: always-on listening on or off. Fast voice when it is on; otherwise
+    /// the standard lane listens on this PC and asks as Ctrl + Win would.</summary>
     public void ToggleHandsFree()
     {
-        if (!UsesRealtimeVoice)
+        if (!UsesRealtimeVoice && !OpenClickyConfiguration.IsConfigured)
         {
-            // Say the real reason: a free account cannot use realtime at all, whatever the switch says.
-            var reason = AccountCapabilities.Current().UsesRealtime
-                ? "hands-free needs fast voice. turn it on in settings, clicky."
-                : "hands-free needs your own openai or gemini key. add it in settings, account.";
-            Overlay.StreamCursorCaption(reason, holdSeconds: 6);
+            // Nothing could answer: no key, no plan and no account.
+            Overlay.StreamCursorCaption(ProviderRouter.NeedsAnthropicKeySentence, holdSeconds: 6);
             return;
         }
         SetAlwaysListening(!IsAlwaysListening);
+        AnnounceHandsFreeChange("by shortcut");
+    }
+
+    /// <summary>Says hands-free's new state by the pointer, and logs how it changed.</summary>
+    private void AnnounceHandsFreeChange(string how)
+    {
         var dictationKeyLabel = DictationSettings.DictationKey.KeycapLabel();
         var feedback = IsAlwaysListening
             ? $"hands-free is on. just talk, i'm listening. tap {dictationKeyLabel} + ctrl twice to stop."
             : $"hands-free is off. hold {TalkKeysCaption} to talk.";
         Overlay.ShowCaption(feedback, 6);
-        AppLog.Write($"hands-free {(IsAlwaysListening ? "on" : "off")}");
+        AppLog.Write($"hands-free {(IsAlwaysListening ? "on" : "off")} {how}{(UsesRealtimeVoice ? "" : " (standard lane)")}");
     }
 
     private void HandleShortcutTransition(BuddyPushToTalkShortcut.ShortcutTransition transition)
@@ -185,6 +215,7 @@ public sealed partial class CompanionManager
 
     private void TalkPressed()
     {
+        lastQuestionWasTyped = false;
         // The dictation take has its own manager: a take in progress (a tapped one keeps the
         // microphone after the key is up) is the dictation this guard means too.
         if (BuddyDictationManager.IsDictationInProgress || IsTakeInProgress)
@@ -197,6 +228,7 @@ public sealed partial class CompanionManager
         LastQuestionFailed = false;
         // A new press owns the outcome from here: whatever the last release was waiting for is over.
         askOutcome = AskOutcome.Listening;
+        askPressWasStopped = false;
         askLiveWordsShownSincePress = false;
         Overlay.CancelTransientHide();
         // The cursor is hidden: bring it back for this interaction.
@@ -222,6 +254,8 @@ public sealed partial class CompanionManager
             },
             submitDraftText: finalTranscript =>
             {
+                // Esc while it was still listening or transcribing: the words go nowhere.
+                if (askPressWasStopped) return;
                 LastTranscript = finalTranscript;
                 askOutcome = AskOutcome.Resolved;
                 var question = finalTranscript.Trim();

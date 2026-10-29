@@ -70,6 +70,49 @@ public interface IDesktopActionExecutor
 
     /// <summary>"playpause", "next", "previous", "mute" as media keys.</summary>
     bool SendMediaKey(string action);
+
+    // The newer actions (MacActionRunner.Extras). Each defaults to "nothing happened", so a test
+    // implements only the ones it drives.
+
+    /// <summary>
+    /// Pause or play sent to the player itself (Windows' media sessions), never the play/pause key,
+    /// which toggles and so would start something when nothing plays. False when no player took it.
+    /// </summary>
+    Task<bool> ControlPlayerAsync(PlayerCommand command) => Task.FromResult(false);
+
+    /// <summary>Minimizes every ordinary window on screen except the named app's; how many, or null when that app is not running.</summary>
+    int? MinimizeAllWindows(string? keepApp) => 0;
+
+    /// <summary>Brings back what the last MinimizeAllWindows minimized, or only the named app's windows; how many, or null when that app is not running.</summary>
+    int? RestoreMinimizedWindows(string? app) => 0;
+
+    bool SpotifyIsInstalled() => false;
+
+    bool SpotifyIsRunning() => false;
+
+    /// <summary>Starts Spotify and waits until its window is up; false when it did not come up in time.</summary>
+    Task<bool> LaunchSpotifyAsync() => Task.FromResult(false);
+
+    /// <summary>Plays a spotify:track: URI in the desktop app.</summary>
+    Task<SpotifyPlayResult> PlaySpotifyTrackAsync(string trackUri, string trackName) => Task.FromResult(SpotifyPlayResult.Failed);
+
+    /// <summary>Opens a spotify: URI (Spotify's own search page) in the desktop app.</summary>
+    bool OpenSpotifyUri(string uri) => false;
+}
+
+public enum PlayerCommand
+{
+    Pause,
+    Play,
+}
+
+public enum SpotifyPlayResult
+{
+    /// <summary>Spotify's media session reports the track playing.</summary>
+    Playing,
+    /// <summary>Spotify took the URI, but no media session confirmed playback.</summary>
+    Opened,
+    Failed,
 }
 
 public sealed record ProcessLaunchRequest

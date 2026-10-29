@@ -11,6 +11,7 @@ using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
@@ -22,6 +23,7 @@ using OpenClicky.Windows.Dictation;
 using OpenClicky.Windows.Island;
 using OpenClicky.Windows.Overlay;
 using OpenClicky.Windows.Platform;
+using OpenClicky.Windows.Plugins.Teacher;
 using OpenClicky.Windows.Tray;
 
 namespace OpenClicky.Windows;
@@ -102,6 +104,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
             CreateStreamingPlayer = () => platform.CreateStreamingPlayer(),
             CreateDictationTakeController = orb => WindowsDictationHost.CreateTakeController(platform, dictationSettings, spaceStore, takeStore, orb),
         };
+        // The Teacher plugin's board windows (its state is Core's TeacherBoard).
+        TeacherBoard.Shared.Surface = new TeacherBoardWindows(platform.Screens);
         Companion = new CompanionManager(services,
             new CompanionModels(companionUi.Overlay, companionUi.Island, companionUi.Orb, companionUi.AgentCard), this);
 

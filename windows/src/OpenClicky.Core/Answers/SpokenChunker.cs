@@ -13,7 +13,10 @@
 //
 // The [POINT:…] tag is never spoken. The ask prompt puts it first, so the chunker holds the text
 // back until the tag is complete and records it in `PointTag`; a tag at the end is found when the
-// stream finishes. The guide's [NEXT] marker (`GuidedStepMarker`) is never spoken either.
+// stream finishes. The guide's [NEXT] marker (`GuidedStepMarker`) and the [UNSURE] marker
+// (`UnsureMarker`) are never spoken either: they hold no sentence end, so they only ever arrive
+// whole inside a piece, and are taken out of every piece. [UNSURE] opens its answer, so a tag after
+// it still counts as leading (and is then ignored by whoever points: `IsUnsure`).
 //
 // Index notes for the C# port: Swift walks `Character`s (grapheme clusters); this port keeps
 // UTF-16 offsets (which is what the length limit is measured in anyway) and counts/cuts by text
@@ -29,6 +32,8 @@ public sealed class SpokenChunker
 {
     /// <summary>The [POINT:…] tag, once it has been seen in full (leading, or trailing at Finish()).</summary>
     public string? PointTag { get; private set; }
+    /// <summary>The answer carries the [UNSURE] marker: it is not sure what to point at, so it must not point.</summary>
+    public bool IsUnsure { get; private set; }
 
     private readonly int laterChunkMinimum;
     private readonly int firstChunkMinimum;
@@ -50,13 +55,14 @@ public sealed class SpokenChunker
     public IReadOnlyList<string> Feed(string accumulatedText)
     {
         latestAccumulatedText = accumulatedText;
+        if (!IsUnsure && UnsureMarker.ContainsMarker(accumulatedText)) IsUnsure = true;
         if (!ResolveLeadingTag(accumulatedText)) return Array.Empty<string>();
 
         var readyChunks = new List<string>();
         while (NextCompleteChunk(accumulatedText) is string chunk)
         {
-            // An empty chunk is only whitespace that was passed over (or a lone [NEXT] marker).
-            var spokenChunk = GuidedStepMarker.RemovingMarkers(chunk);
+            // An empty chunk is only whitespace that was passed over (or a lone marker).
+            var spokenChunk = RemovingMarkers(chunk);
             if (spokenChunk.Length > 0) readyChunks.Add(spokenChunk);
         }
         return readyChunks;
@@ -72,7 +78,7 @@ public sealed class SpokenChunker
             leadingTagResolved = true;
         }
         // Without the marker first, so "… [POINT:10,20:x] [NEXT]" still finds the trailing tag.
-        var remainingText = GuidedStepMarker.RemovingMarkers(accumulatedText.Substring(Math.Min(consumedLength, accumulatedText.Length)));
+        var remainingText = RemovingMarkers(accumulatedText.Substring(Math.Min(consumedLength, accumulatedText.Length)));
         consumedLength = accumulatedText.Length;
 
         // A trailing tag is never spoken, even after a leading one; the first tag seen is the one that points.
@@ -91,28 +97,38 @@ public sealed class SpokenChunker
             unspokenStart = cut;
         }
         lastChunks.Add(remainingText[unspokenStart..].Trim());
-        return lastChunks.Select(GuidedStepMarker.RemovingMarkers).Where(chunk => chunk.Length > 0).ToList();
+        return lastChunks.Select(RemovingMarkers).Where(chunk => chunk.Length > 0).ToList();
     }
 
     // MARK: - Private
 
+    /// <summary>The text without the guide's [NEXT] and without [UNSURE], trimmed.</summary>
+    private static string RemovingMarkers(string text) => UnsureMarker.RemovingMarkers(GuidedStepMarker.RemovingMarkers(text));
+
     private static readonly Regex CompleteLeadingTagPattern = new(@"^\s*\[POINT:[^\]]*\]", RegexOptions.CultureInvariant);
     private static readonly Regex TrailingTagPattern = new(@"\[POINT:[^\]]*\]\s*$", RegexOptions.CultureInvariant);
 
-    /// <summary>True once speech may start: either the answer does not open with a tag, or the tag is complete.</summary>
+    /// <summary>
+    /// True once speech may start: either the answer does not open with a tag, or the tag is complete.
+    /// An opening [UNSURE] is looked past, so a tag after it is still taken out and never spoken.
+    /// </summary>
     private bool ResolveLeadingTag(string accumulatedText)
     {
         if (leadingTagResolved) return true;
-        var trimmedStart = accumulatedText.TrimStart();
+        var unsureMarkerLength = UnsureMarker.LeadingMarkerLength(accumulatedText) ?? 0;
+        var textAfterMarker = accumulatedText[unsureMarkerLength..];
+        var trimmedStart = textAfterMarker.TrimStart();
         if (trimmedStart.Length == 0) return false;
+        // "[" or "[UNS…" could still become the marker: wait for more text before deciding.
+        if (unsureMarkerLength == 0 && UnsureMarker.CouldStillBecomeMarker(trimmedStart)) return false;
         // "[" or "[POI…" could still become a tag: wait for more text before deciding.
         var firstCharacters = trimmedStart[..Math.Min(7, trimmedStart.Length)];
         if ("[POINT:".StartsWith(firstCharacters, StringComparison.Ordinal) || trimmedStart.StartsWith("[POINT:", StringComparison.Ordinal))
         {
-            var tagMatch = CompleteLeadingTagPattern.Match(accumulatedText);
+            var tagMatch = CompleteLeadingTagPattern.Match(textAfterMarker);
             if (!tagMatch.Success) return false;
             PointTag = tagMatch.Value.Trim();
-            consumedLength = tagMatch.Index + tagMatch.Length;
+            consumedLength = unsureMarkerLength + tagMatch.Index + tagMatch.Length;
         }
         leadingTagResolved = true;
         return true;

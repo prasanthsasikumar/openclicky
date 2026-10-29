@@ -158,7 +158,8 @@ public sealed partial class IslandModel : ObservableObject
         IsHovering: isHovering,
         IsSpeaking: IsSpeaking,
         HasCaption: CaptionText is not null,
-        IsSideDrawer: Placement.IsSideDrawer());
+        IsSideDrawer: Placement.IsSideDrawer(),
+        HoldsOpenForShelf: isDragHovering || isDraggingOut || isHoldingAfterDrop);
 
     public void SetHovering(bool hovering)
     {
@@ -169,6 +170,75 @@ public sealed partial class IslandModel : ObservableObject
         }
         if (isHovering == hovering) return;
         isHovering = hovering;
+        // A drop's hold lasts while the pointer stays; it ends when the pointer leaves.
+        if (!hovering && isHoldingAfterDrop)
+        {
+            holdAfterDropCancellation?.Cancel();
+            isHoldingAfterDrop = false;
+        }
+        Reconcile();
+    }
+
+    // MARK: - Drags (the Shelf plugin)
+
+    private bool isDragHovering;
+    /// <summary>A tile is being dragged out of the shelf: the pointer leaves, the island must not close.</summary>
+    private bool isDraggingOut;
+    /// <summary>A drop just landed: the island stays open a moment so the new tile is seen.</summary>
+    private bool isHoldingAfterDrop;
+    private CancellationTokenSource? holdAfterDropCancellation;
+
+    /// <summary>A drag from another app is over this island.</summary>
+    public bool IsDragHovering => isDragHovering;
+    public bool IsDraggingOut => isDraggingOut;
+
+    /// <summary>Whether a component is on: a built-in always, a plugin when the user turned it on.</summary>
+    public bool IsComponentEnabled(string id) => componentSettings.IsEnabled(id, Registry);
+
+    /// <summary>A drag from another app entered or left this island. Only with the shelf on: without it the island
+    /// does not react to drags at all.</summary>
+    public void SetDragHovering(bool hovering)
+    {
+        if (hovering && !IsComponentEnabled(Plugins.IslandPluginRegistry.ShelfId)) return;
+        if (isDragHovering == hovering) return;
+        isDragHovering = hovering;
+        // The hover poll lags a drag by a tick; a drag that just left must not read as a hover.
+        if (!hovering) isHovering = false;
+        var newContext = context with { IsDragHovering = hovering };
+        if (newContext.ContextualKey != context.ContextualKey) componentOverride = null;
+        context = newContext;
+        RecomputeSelection();
+        OnPropertyChanged(nameof(IsDragHovering));
+        Reconcile(immediately: true);
+    }
+
+    public void SetDragOut(bool dragging)
+    {
+        if (isDraggingOut == dragging) return;
+        isDraggingOut = dragging;
+        Reconcile(immediately: true);
+    }
+
+    /// <summary>Keeps the island open 1.5 s after a drop with the shelf in front (so the new tile is seen), longer
+    /// while the pointer stays on it; the hold ends when the pointer leaves.</summary>
+    public void HoldOpenAfterDrop()
+    {
+        holdAfterDropCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        holdAfterDropCancellation = cancellation;
+        isHoldingAfterDrop = true;
+        componentOverride = Plugins.IslandPluginRegistry.ShelfId;
+        RecomputeSelection();
+        Reconcile(immediately: true);
+        _ = EndHoldAfterDropAsync(cancellation.Token);
+    }
+
+    private async Task EndHoldAfterDropAsync(CancellationToken cancellationToken)
+    {
+        try { await delay(TimeSpan.FromSeconds(1.5), cancellationToken); }
+        catch (OperationCanceledException) { return; }
+        if (cancellationToken.IsCancellationRequested || isHovering) return;
+        isHoldingAfterDrop = false;
         Reconcile();
     }
 
@@ -359,11 +429,11 @@ public sealed partial class IslandCompanionModel : ObservableObject
     // MARK: - What the islands read (mirrored from the orchestrator)
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsBusy), nameof(IsSpeaking), nameof(CompactStatusText), nameof(DetailLine), nameof(IsIdle))]
+    [NotifyPropertyChangedFor(nameof(IsBusy), nameof(IsSpeaking), nameof(CompactStatusText), nameof(DetailLine), nameof(IsIdle), nameof(IsQuestionOnItsWay))]
     private CompanionVoiceState voiceState = CompanionVoiceState.Idle;
     [ObservableProperty] private double currentAudioPowerLevel;
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsBusy), nameof(CompactStatusText), nameof(DetailLine))]
+    [NotifyPropertyChangedFor(nameof(IsBusy), nameof(CompactStatusText), nameof(DetailLine), nameof(IsQuestionOnItsWay))]
     private string? agentActivityText;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(DetailLine))] private string? lastTranscript;
     /// <summary>Who is answering ("Claude Code", "free credits").</summary>
@@ -373,6 +443,10 @@ public sealed partial class IslandCompanionModel : ObservableObject
     private bool isAlwaysListening;
     /// <summary>The voice is a dictation into the front app, not a question.</summary>
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CompactStatusText))] private bool isDictatingToFrontApp;
+    /// <summary>The ask lane has taken a question and not finished with it (the pause before sending included).</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsQuestionOnItsWay))] private bool isAskInFlight;
+    /// <summary>A word from the ask lane that matters more than its state ("sending your screen · esc to cancel").</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CompactStatusText))] private string? askIslandStatus;
 
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PointerStatusText))] private bool isClickyCursorEnabled = true;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PointerStatusText))] private PointerPresence pointerPresence = PointerPresence.Always;
@@ -415,8 +489,14 @@ public sealed partial class IslandCompanionModel : ObservableObject
 
     public bool IsBusy => VoiceState != CompanionVoiceState.Idle || AgentActivityText is not null;
     public bool IsSpeaking => VoiceState == CompanionVoiceState.Responding;
+    /// <summary>
+    /// A question on its way (the pause before sending, or the first step of a guide being looked
+    /// up): a click on the strip stops it, as esc does. An agent's work keeps the click that opens
+    /// the panel; only the ask lane's own question stops.
+    /// </summary>
+    public bool IsQuestionOnItsWay => IsAskInFlight && AgentActivityText is null && !IsSpeaking;
     public bool IsIdle => VoiceState == CompanionVoiceState.Idle;
-    public string CompactStatusText => IslandTexts.CompactStatus(VoiceState, IsDictatingToFrontApp, IsAlwaysListening, AgentActivityText, AnsweringSourceName);
+    public string CompactStatusText => AskIslandStatus ?? IslandTexts.CompactStatus(VoiceState, IsDictatingToFrontApp, IsAlwaysListening, AgentActivityText, AnsweringSourceName);
     public string? DetailLine => IslandTexts.DetailLine(VoiceState, AgentActivityText, LastTranscript);
     public bool HasCompactDetailLine => DetailLine is not null;
     public string PointerStatusText => IslandTexts.PointerStatus(IsClickyCursorEnabled, PointerPresence, IsPointerAwake);
@@ -473,6 +553,8 @@ public sealed partial class IslandCompanionModel : ObservableObject
     public event Action? QuitRequested;
     /// <summary>The busy strip was clicked while Clicky speaks.</summary>
     public event Action? StopSpeakingRequested;
+    /// <summary>The busy strip was clicked while a question is on its way (<see cref="IsQuestionOnItsWay"/>).</summary>
+    public event Action? StopAskRequested;
     /// <summary>The voice pill or the engine warning's button: open what the engine needs.</summary>
     public event Action? EngineSetupRequested;
     public event Action? PermissionGrantRequested;
@@ -501,6 +583,7 @@ public sealed partial class IslandCompanionModel : ObservableObject
     [RelayCommand] private void OpenSettings(IslandSettingsDestination destination) => SettingsRequested?.Invoke(destination);
     [RelayCommand] private void Quit() => QuitRequested?.Invoke();
     [RelayCommand] private void StopSpeaking() => StopSpeakingRequested?.Invoke();
+    [RelayCommand] private void StopAsk() => StopAskRequested?.Invoke();
     [RelayCommand] private void OpenEngineSetup() => EngineSetupRequested?.Invoke();
     [RelayCommand] private void GrantPermission() => PermissionGrantRequested?.Invoke();
     [RelayCommand] private void PermissionLater() => PermissionLaterRequested?.Invoke();

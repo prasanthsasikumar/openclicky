@@ -4,6 +4,8 @@
 // — the push-to-talk turn and a point_at call snapped to the screenshot's text.
 
 using System.Text.Json.Nodes;
+using OpenClicky.Core.Answers;
+using OpenClicky.Core.Companion;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Speech;
@@ -159,11 +161,43 @@ public class RealtimeSessionUpdateTests
         var openApp = new JsonObject { ["type"] = "function", ["name"] = "open_app" };
         var update = RealtimeVoiceClient.BuildSessionUpdate(RealtimeTurnMode.PushToTalk, "x", null, "en", [openApp]);
         var names = update["session"]!["tools"]!.AsArray().Select(tool => tool!["name"]!.GetValue<string>()).ToList();
-        Assert.Equal(["send_to_agent", "point_at", "open_app"], names);
+        Assert.Equal(["send_to_agent", "point_at", "write_in_place", "open_app"], names);
         Assert.Equal("auto", update["session"]!["tool_choice"]!.GetValue<string>());
         Assert.Equal("session.update", update["type"]!.GetValue<string>());
         var pointRequired = update["session"]!["tools"]![1]!["parameters"]!["required"]!.AsArray().Select(node => node!.GetValue<string>());
         Assert.Equal(["x", "y", "label", "text"], pointRequired);
+    }
+
+    /// <summary>Hands-free ends by voice ("that's all, thanks"): the model gets a tool for it, but only while
+    /// hands-free is on. Push-to-talk listens only while the keys are held, so it has nothing to end.</summary>
+    [Fact]
+    public void TheSignOffToolIsOfferedOnlyInHandsFree()
+    {
+        static List<string> ToolNames(RealtimeTurnMode mode) =>
+            RealtimeVoiceClient.BuildSessionUpdate(mode, "x", null, "en")["session"]!["tools"]!.AsArray().Select(tool => tool!["name"]!.GetValue<string>()).ToList();
+        Assert.Contains(RealtimeVoiceClient.StopListeningToolName, ToolNames(RealtimeTurnMode.AlwaysOn));
+        Assert.DoesNotContain(RealtimeVoiceClient.StopListeningToolName, ToolNames(RealtimeTurnMode.PushToTalk));
+        // Thanks alone, or stopping something else, is not a sign-off.
+        var description = RealtimeVoiceClient.StopListeningToolDefinition()["description"]!.GetValue<string>();
+        Assert.Contains("Never for thanks alone", description);
+        Assert.Contains("stop or quit something else", description);
+        // Gemini refuses an object schema with no properties: it is declared without one.
+        Assert.Null(GeminiLiveDialect.FunctionDeclaration(RealtimeVoiceClient.StopListeningToolDefinition())!["parameters"]);
+    }
+}
+
+/// <summary>Esc on the fast voice lane: pressed while Gmail loaded, it did nothing and Clicky read the inbox
+/// (the Mac, 2026-10-28).</summary>
+public class RealtimeEscapeTests
+{
+    [Fact]
+    public void EscStopsTheFastVoiceLaneWhenItIsBusy()
+    {
+        Assert.True(CompanionManager.EscStopsFastVoice(dictationTakeInProgress: false, usesRealtimeVoice: true, realtimeIsBusy: true));
+        // A dictation take keeps esc to itself.
+        Assert.False(CompanionManager.EscStopsFastVoice(dictationTakeInProgress: true, usesRealtimeVoice: true, realtimeIsBusy: true));
+        Assert.False(CompanionManager.EscStopsFastVoice(dictationTakeInProgress: false, usesRealtimeVoice: true, realtimeIsBusy: false));
+        Assert.False(CompanionManager.EscStopsFastVoice(dictationTakeInProgress: false, usesRealtimeVoice: false, realtimeIsBusy: true));
     }
 }
 
@@ -256,14 +290,15 @@ public class RealtimeTurnTests : IDisposable
         [0xFF, 0xD8], "image/jpeg", "user's screen (cursor is here)", true, 1280, 800,
         new PixelRect(0, 0, 2560, 1600), 2.0, @"\\.\DISPLAY1", 1280, 800);
 
-    private async Task<(RealtimeVoiceClient Client, FakeSpeechWebSocket Socket, FakeAudioCapture Microphone)> ConnectedClientAsync(IScreenTextRecognizer? recognizer = null)
+    private async Task<(RealtimeVoiceClient Client, FakeSpeechWebSocket Socket, FakeAudioCapture Microphone)> ConnectedClientAsync(IScreenTextRecognizer? recognizer = null,
+                                                                                                                             RealtimeTurnMode mode = RealtimeTurnMode.PushToTalk)
     {
         var microphone = new FakeAudioCapture();
         var client = await mainThread.InvokeAsync(() =>
             new RealtimeVoiceClient(mainThread, new RealtimeAudio(() => microphone, () => new FakeStreamingPcmPlayer()), recognizer, new FakeMicrophonePermission(MicrophoneConsent.Allowed)));
         var socket = new FakeSpeechWebSocket();
         var session = mainThread.RunAsync(() => client.StartSessionAsync(socket, RealtimeVoiceClient.RealtimeSocketUrl("gpt-realtime"),
-            new Dictionary<string, string>(), "gpt-realtime", RealtimeTurnMode.PushToTalk, "be brief", () => Task.CompletedTask));
+            new Dictionary<string, string>(), "gpt-realtime", mode, "be brief", () => Task.CompletedTask));
         Assert.True(await Eventually.TrueAsync(() => socket.IsWaitingToReceive));
         socket.Open("""{"type":"session.created"}""");
         await session;
@@ -361,6 +396,115 @@ public class RealtimeTurnTests : IDisposable
         Assert.True(await Eventually.TrueAsync(() => SentTypes(socket).Contains("conversation.item.create")));
         await Task.Delay(100);
         Assert.DoesNotContain("response.create", SentTypes(socket));
+    }
+
+    /// <summary>The sign-off is answered with a goodbye, and hands-free ends only once that response is done
+    /// (and has played), so closing the session never cuts the goodbye off.</summary>
+    [Fact]
+    public async Task ASignOffEndsHandsFreeAfterTheGoodbye()
+    {
+        var (client, socket, _) = await ConnectedClientAsync(mode: RealtimeTurnMode.AlwaysOn);
+        var stopRequests = 0;
+        await mainThread.InvokeAsync(() => client.OnStopListeningRequested = () => stopRequests++);
+        socket.Receive("""{"type":"response.function_call_arguments.done","name":"stop_listening","call_id":"call_1","response_id":"resp_1","arguments":"{}"}""");
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("function_call_output") && text.Contains("call_1"))));
+        Assert.Contains(socket.SentTexts, text => text.Contains("Say a short goodbye"));
+        Assert.Equal(0, stopRequests);
+
+        socket.Receive("""{"type":"response.done","response":{"status":"completed"}}""");
+        Assert.True(await Eventually.TrueAsync(() => stopRequests > 0));
+        await Task.Delay(100);
+        Assert.Equal(1, stopRequests);
+    }
+
+    /// <summary>
+    /// The timing that matters: the model's response has finished while the action still works on its
+    /// page. Esc then has something to stop, sends no cancel (OpenAI answers one with nothing active with
+    /// an error), and the action's late output asks for no continuation and takes no second look, or
+    /// Clicky reads the inbox the person just cancelled (the Mac, 2026-10-28).
+    /// </summary>
+    [Fact]
+    public async Task EscWhileAnActionWorksStopsItsLateLookAndContinuation()
+    {
+        var (client, socket, _) = await ConnectedClientAsync();
+        var action = new TaskCompletionSource<RealtimeToolResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var screensAttached = 0;
+        await mainThread.InvokeAsync(() =>
+        {
+            client.OnDesktopAction = (_, _) => action.Task;
+            client.ScreenContextProvider = () =>
+            {
+                screensAttached++;
+                return Task.FromResult<RealtimeScreenContext?>(new RealtimeScreenContext([1], "screen", Capture()));
+            };
+        });
+        socket.Receive("""{"type":"response.created","response":{"id":"r1"}}""");
+        socket.Receive("""{"type":"response.done","response":{"id":"r1","status":"completed"}}""");
+        socket.Receive("""{"type":"response.function_call_arguments.done","name":"open_url","call_id":"c1","response_id":"r1","arguments":"{\"url\":\"https://mail.google.com\"}"}""");
+        var busy = false;
+        for (var attempt = 0; attempt < 500 && !busy; attempt++)
+        {
+            busy = await mainThread.InvokeAsync(() => client.IsBusy);
+            if (!busy) await Task.Delay(10);
+        }
+        Assert.True(busy);
+
+        await mainThread.InvokeAsync(client.StopSpeaking);
+        action.SetResult(new RealtimeToolResult("Opened Gmail.", ThenLooksAtScreen: true));
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("function_call_output"))));
+        await Task.Delay(150);
+        Assert.DoesNotContain("response.cancel", SentTypes(socket));
+        Assert.DoesNotContain("response.create", SentTypes(socket));
+        Assert.Equal(0, screensAttached);
+        Assert.False(await mainThread.InvokeAsync(() => client.IsBusy));
+    }
+
+    /// <summary>"rephrase this" on fast voice: the turn quotes the text box, and write_in_place writes over it
+    /// instead of the rewrite being read out (the Mac, 2026-10-23).</summary>
+    [Fact]
+    public async Task ARephraseIsWrittenOverTheTextTheTurnQuoted()
+    {
+        var (client, socket, _) = await ConnectedClientAsync();
+        var host = new RecordingWriteInPlaceHost(new WritingFieldSnapshot("chrome.exe", "Google Chrome", "Edit", true, false, "hey can u send it", null));
+        await mainThread.InvokeAsync(() =>
+        {
+            client.ScreenContextProvider = () => Task.FromResult<RealtimeScreenContext?>(new RealtimeScreenContext([1], "screen", Capture()));
+            client.WritingTargetProvider = () => WritingTarget.CaptureFromFrontAppAsync(host, delay: _ => Task.CompletedTask);
+            client.WriteInPlaceHost = host;
+        });
+        await mainThread.RunAsync(() => client.SendTextTurnAsync("make this sound professional"));
+        Assert.Contains(socket.SentTexts, text => text.Contains("«hey can u send it»"));
+        socket.Receive("""{"type":"response.function_call_arguments.done","call_id":"w","name":"write_in_place","arguments":"{\"text\":\"Could you send it, please?\"}"}""");
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("function_call_output"))));
+        Assert.Equal(["select all", "insert Could you send it, please?", "copy hey can u send it"], host.Steps);
+        Assert.Contains(socket.SentTexts, text => text.Contains("it's in place") && text.Contains("never read the new text out"));
+    }
+
+    private sealed class RecordingWriteInPlaceHost(WritingFieldSnapshot snapshot) : IWriteInPlaceHost
+    {
+        public List<string> Steps { get; } = [];
+        public bool CanReadFocusedFields => true;
+        public bool IsOwnProcessInFront() => false;
+        public WritingFieldSnapshot SnapshotFocusedField() => snapshot;
+        public void SelectAllInFocusedField() => Steps.Add("select all");
+        public void Insert(string text) => Steps.Add("insert " + text);
+        public Task<WriteInPlaceLanding> VerifyLandingAsync(string text, WritingFieldSnapshot before) => Task.FromResult(WriteInPlaceLanding.Verified);
+        public void CopyToClipboard(string text) => Steps.Add("copy " + text);
+        public Task<string?> CopySelectionAsync() => Task.FromResult<string?>(null);
+    }
+
+    /// <summary>Push-to-talk listens only while the keys are held, so it has nothing to end.</summary>
+    [Fact]
+    public async Task ASignOffOutsideHandsFreeEndsNothing()
+    {
+        var (client, socket, _) = await ConnectedClientAsync();
+        var stopRequests = 0;
+        await mainThread.InvokeAsync(() => client.OnStopListeningRequested = () => stopRequests++);
+        socket.Receive("""{"type":"response.function_call_arguments.done","name":"stop_listening","call_id":"call_1","arguments":"{}"}""");
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("Hands-free is not on"))));
+        socket.Receive("""{"type":"response.done","response":{"status":"completed"}}""");
+        await Task.Delay(150);
+        Assert.Equal(0, stopRequests);
     }
 
     [Fact]

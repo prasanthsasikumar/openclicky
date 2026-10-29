@@ -103,14 +103,54 @@ public sealed record ModelDownload(Uri Url, string Sha256, long Bytes)
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
-    private static async Task UnpackAsync(string archive, string folder, IProcessRunner unpacker, CancellationToken cancellationToken)
+    /// <summary>
+    /// Unpacks into a staging folder beside the model, then moves what it holds into <paramref name="folder"/>. Unpacked
+    /// in place, a model's files exist long before they are whole (Parakeet's 650 MB encoder takes half a minute), and
+    /// IsInstalled only checks that they exist: on a fresh install the voice and hands-free used Kokoro and Parakeet
+    /// mid-unpack and failed with "the offline speech model didn't load" (2026-10-29). A folder move on one volume is
+    /// immediate, so the model appears whole or not at all.
+    /// </summary>
+    internal static async Task UnpackAsync(string archive, string folder, IProcessRunner unpacker, CancellationToken cancellationToken)
     {
-        var result = await unpacker.RunAsync(new ProcessLaunchRequest
+        var staging = Path.Combine(folder, ".unpacking");
+        TryDeleteFolder(staging);
+        Directory.CreateDirectory(staging);
+        try
         {
-            Command = TarExecutablePath,
-            Arguments = ["-xjf", archive, "-C", folder],
-        }, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (result.ExitCode != 0) throw ModelDownloadException.UnpackFailed($"tar exited with {result.ExitCode}");
+            var result = await unpacker.RunAsync(new ProcessLaunchRequest
+            {
+                Command = TarExecutablePath,
+                Arguments = ["-xjf", archive, "-C", staging],
+            }, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (result.ExitCode != 0) throw ModelDownloadException.UnpackFailed($"tar exited with {result.ExitCode}");
+            foreach (var entry in Directory.EnumerateFileSystemEntries(staging))
+            {
+                var destination = Path.Combine(folder, Path.GetFileName(entry));
+                if (Directory.Exists(entry))
+                {
+                    TryDeleteFolder(destination);
+                    Directory.Move(entry, destination);
+                }
+                else
+                {
+                    File.Move(entry, destination, overwrite: true);
+                }
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            throw ModelDownloadException.UnpackFailed(error.Message);
+        }
+        finally
+        {
+            TryDeleteFolder(staging);
+        }
+    }
+
+    private static void TryDeleteFolder(string path)
+    {
+        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
 
     private static void TryDelete(string path)

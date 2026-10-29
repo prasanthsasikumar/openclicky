@@ -13,6 +13,7 @@ using OpenClicky.Core.Actions;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
@@ -72,10 +73,12 @@ public sealed partial class CompanionManager
             {
                 LastTranscript = text;
                 AppLog.Write($"talk: you said ({text.Length} chars)");
+                TeacherPlugin.StartLesson(text, client.LastScreenCapture);
             }
             else
             {
                 AppLog.Write($"talk: openclicky said ({text.Length} chars)");
+                TeacherPlugin.WriteAnswerIfTheyCannotHear(text, lastQuestionWasTyped, client.LastScreenCapture);
                 RememberExchange(LastTranscript ?? "", text);
             }
         };
@@ -91,6 +94,7 @@ public sealed partial class CompanionManager
             Overlay.ScheduleTransientHideIfNeeded();
         };
         client.OnEvent = line => AppLog.Write($"realtime: {line}");
+        client.OnStopListeningRequested = EndHandsFreeBySignOff;
         // A socket that died under a turn used to leave the state on processing for good, which also
         // refused dictation. Unstick it and say why; the next press reconnects.
         client.OnTurnHeardNothing = () =>
@@ -111,8 +115,16 @@ public sealed partial class CompanionManager
         };
         client.ScreenContextProvider = CaptureCursorScreenContextAsync;
         client.SelectedTextProvider = ReadSelectedTextAsync;
+        // "rephrase this" on fast voice: the turn quotes the highlight or the text box, and write_in_place
+        // writes over it, as on the ask lane.
+        client.WritingTargetProvider = () => WritingTarget.CaptureFromFrontAppAsync(services.WriteInPlace, AppLog.Write);
+        client.WriteInPlaceHost = services.WriteInPlace;
+        client.OnWroteInPlace = () => LastSuccessfulQuickActionAt = DateTimeOffset.Now;
         client.InstructionsProvider = () =>
-            AskLanePrompts.ComposeTalkInstructions(AskLanePrompts.WithReplyLanguage(client.BaseInstructions), TalkSkillsBlock());
+            AskLanePrompts.ComposeTalkInstructions(AskLanePrompts.WithReplyLanguage(client.BaseInstructions + PluginPromptLines()), TalkSkillsBlock());
+        client.PluginToolDefinitions = () => TeacherPlugin.IsEnabled ? TeacherPlugin.RealtimeToolDefinitions() : [];
+        client.OnPluginToolCall = (toolName, arguments, capture) =>
+            Task.FromResult(TeacherPlugin.Perform(toolName, TeacherPlugin.StringArguments(arguments), capture));
         client.OnPointAt = (screenshotPoint, label, capture) => PointAt(screenshotPoint, label, capture);
         client.OnAgentTask = async task =>
         {
@@ -135,8 +147,10 @@ public sealed partial class CompanionManager
             if (outcome is null) return null;
             if (outcome.DidSomething) LastSuccessfulQuickActionAt = DateTimeOffset.Now;
             return new RealtimeToolResult(outcome.SpokenSentence, WasRejected: outcome is DesktopActionOutcome.InvalidName or DesktopActionOutcome.InvalidAppName
-                or DesktopActionOutcome.UnknownLocation or DesktopActionOutcome.InvalidUrl);
+                or DesktopActionOutcome.UnknownLocation or DesktopActionOutcome.InvalidUrl or DesktopActionOutcome.InvalidQuery or DesktopActionOutcome.InvalidRecipient,
+                ModelOutput: outcome.ToolOutput, ThenLooksAtScreen: outcome.ThenLooksAtScreen, LogDescription: outcome.LogDescription);
         };
+        client.FrontAppProvider = () => services.FrontmostApp.CurrentWithoutUrl()?.ProcessId;
         client.Pointing = MakePointingServices();
         client.PropertyChanged += (_, eventArgs) =>
         {
@@ -144,6 +158,35 @@ public sealed partial class CompanionManager
             if (!UsesRealtimeVoice || VoiceState != CompanionVoiceState.Listening) return;
             CurrentAudioPowerLevel = client.InputLevel;
         };
+    }
+
+    /// <summary>
+    /// Whether esc goes to the fast voice lane (the Mac's EscapeTarget.realtime): never while a dictation
+    /// take is in progress (esc cancels the take), and only while the lane has something to stop. Esc
+    /// used to know only the dictation take: pressed while Gmail loaded, it did nothing and Clicky read
+    /// the inbox (the Mac, 2026-10-28).
+    /// </summary>
+    public static bool EscStopsFastVoice(bool dictationTakeInProgress, bool usesRealtimeVoice, bool realtimeIsBusy) =>
+        !dictationTakeInProgress && usesRealtimeVoice && realtimeIsBusy;
+
+    /// <summary>The fast voice lane stops: the reply ends, and an action still working says nothing when it
+    /// finishes (its output stays in the conversation for the next turn).</summary>
+    private void StopFastVoiceOnEscape()
+    {
+        AppLog.Write("realtime: stopped (esc)");
+        RealtimeVoiceClient.StopSpeaking();
+        VoiceState = CompanionVoiceState.Idle;
+        ShowAskCaption("stopped", 1.5);
+        Overlay.ScheduleTransientHideIfNeeded();
+    }
+
+    /// <summary>"that's all, thanks" while hands-free is on: the Realtime model called `stop_listening` and
+    /// its goodbye has played. Ends hands-free exactly as the shortcut does.</summary>
+    private void EndHandsFreeBySignOff()
+    {
+        if (!IsAlwaysListening) return;
+        SetAlwaysListening(false);
+        AnnounceHandsFreeChange("by voice");
     }
 
     /// <summary>The cursor's screen, with a caption that says where the pointer is in it.</summary>
@@ -164,11 +207,23 @@ public sealed partial class CompanionManager
         }
     }
 
-    /// <summary>The point_at chain's steps after the OCR snap: browser tabs, UI Automation, then Claude.</summary>
+    /// <summary>
+    /// The point_at chain's steps after the OCR snap: a window's caption buttons and browser tabs,
+    /// UI Automation, then Claude. The caption buttons ride in the browser-tab step (they run first,
+    /// as on the Mac) so RealtimeVoiceClient's chain is left as it is; its log then says
+    /// "browser tab \"close button of …\"".
+    /// </summary>
     private RealtimePointingServices MakePointingServices() => new()
     {
         LocateBrowserTab = (label, text, userRequest, capture) => Task.Run(() =>
         {
+            // A window's close / minimize / maximize buttons: the front window's own frame says
+            // exactly where they are.
+            var windowControl = WindowControlLocator.Locate(label, text, userRequest, GeometryOf(capture), FrontWindowCaptionButtons, AppLog.Write);
+            if (windowControl is not null)
+            {
+                return ((ScreenPoint Point, string Title)?)(windowControl.Point, $"{WindowControlLocator.Name(windowControl.Control)} button of {windowControl.AppName}");
+            }
             var located = BrowserTabLocator.Locate(label, text, userRequest, GeometryOf(capture), services.BrowserTabs,
                 services.WindowList.OwnProcessId, AppLog.Write);
             return located is null ? ((ScreenPoint Point, string Title)?)null : (located.Point, located.Tab.Title);
@@ -189,6 +244,13 @@ public sealed partial class CompanionManager
             ScreenElementGrounding.LocateAsync(label, text, userRequest, capture.ImageData, capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels),
     };
 
+    /// <summary>The caption buttons of the app in front (never OpenClicky's own window).</summary>
+    private CaptionButtonLayout? FrontWindowCaptionButtons()
+    {
+        if (services.FrontmostApp.CurrentWithoutUrl() is not { WindowHandle: not 0 } front) return null;
+        return services.WindowList.CaptionButtonLayout(front.WindowHandle, front.DisplayName ?? front.ProcessName ?? "the front app");
+    }
+
     private static ScreenCaptureGeometry GeometryOf(CompanionScreenCapture capture) =>
         new(new ScreenRect(capture.DisplayFrame.Left, capture.DisplayFrame.Top, capture.DisplayFrame.Width, capture.DisplayFrame.Height),
             capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels);
@@ -200,6 +262,7 @@ public sealed partial class CompanionManager
         switch (transition)
         {
             case BuddyPushToTalkShortcut.ShortcutTransition.Pressed:
+                lastQuestionWasTyped = false;
                 if (IsDictatingToFrontApp) return;
                 LastQuestionFailed = false;
                 Overlay.DismissCursorCaption();
@@ -207,6 +270,7 @@ public sealed partial class CompanionManager
                 if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible) Overlay.ShowOverlayOnAllScreens();
                 InterruptCurrentAnswer(includingAgentWork: true);
                 Overlay.ClearDetectedElementLocation();
+                TeacherPlugin.ClearBoard("a new question");
                 VoiceState = CompanionVoiceState.Listening;
                 _ = BeginRealtimePushToTalkAsync();
                 break;

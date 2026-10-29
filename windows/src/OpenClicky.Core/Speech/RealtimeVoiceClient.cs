@@ -21,6 +21,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CommunityToolkit.Mvvm.ComponentModel;
+using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Pointing;
@@ -32,9 +33,15 @@ namespace OpenClicky.Core.Speech;
 /// pointer position, and the capture it came from, so `point_at` coordinates map back onto the display.</summary>
 public sealed record RealtimeScreenContext(byte[] Jpeg, string Caption, CompanionScreenCapture Capture);
 
-/// <summary>What a desktop action (the fast lane) said: the sentence the model repeats, and whether
-/// the arguments were refused rather than the action run.</summary>
-public sealed record RealtimeToolResult(string SpokenSentence, bool WasRejected = false);
+/// <summary>What a desktop action (the fast lane) said: the sentence for the person, and whether the
+/// arguments were refused rather than the action run.</summary>
+/// <param name="ModelOutput">What the model is told in the tool's output when it differs from the sentence
+/// (a screenshot to read, a rule to keep); null → the sentence.</param>
+/// <param name="ThenLooksAtScreen">The action changed the screen (a page opened): the model sees a fresh
+/// screenshot, once it has settled, before it speaks.</param>
+/// <param name="LogDescription">The log's words when the sentence would carry something private; null → the sentence.</param>
+public sealed record RealtimeToolResult(string SpokenSentence, bool WasRejected = false, string? ModelOutput = null,
+                                        bool ThenLooksAtScreen = false, string? LogDescription = null);
 
 /// <summary>
 /// The `point_at` resolution steps after the OCR snap (which the client does itself through
@@ -109,12 +116,20 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         + "click, point at it with the point_at tool while you explain, one call per step, in order, with the element's "
         + "exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking "
         + "at. "
-        + "Do simple local things yourself with the fast tools (open_app, open_url, create_folder, "
-        + "reveal_in_explorer, set_volume, media_control) and then say the one sentence they give back. "
+        + "Do simple local things yourself with the fast tools (open_app, open_url, web_search, create_folder, "
+        + "reveal_in_explorer, set_volume, media_control, play_music, minimize_all, restore_windows, check_email, "
+        + "draft_email) and then say what they give back in a few words. You cannot know live facts (the weather, news, "
+        + "scores, prices, opening hours): call web_search for them and answer from the results, never say you cannot check. "
+        + Answers.AskLanePrompts.CommandOrQuestionInstruction + " "
         + "For anything bigger (creating or editing files or code, running commands, using integrations, research, "
         + "multi-step tasks), first say one short sentence acknowledging it, then call the send_to_agent "
         + "tool with a clear, self-contained task, and afterwards tell the user in one sentence what happened. "
-        + "Never pretend work was done without the tool. Do not read file paths aloud character by character.";
+        + "Never pretend work was done without the tool. Do not read file paths aloud character by character. "
+        + "When the screen context quotes text they highlighted or the text box they are in, and they ask you to rephrase, "
+        + "rewrite, shorten, fix, polish or translate it (\"rephrase this\", \"make this sound professional\", \"do that for me\"), "
+        + "call write_in_place with the complete new text, then say only a few words about what you changed; never read the "
+        + "new text out. If they ask how to rephrase it or for suggestions, answer in words and change nothing. "
+        + "If no text was quoted, ask them to highlight it and ask again.";
 
     // MARK: - Connection rules (pure, tested)
 
@@ -224,6 +239,9 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public Action<string>? OnConnectionLost { get; set; }
     /// <summary>A push-to-talk turn ended with (almost) no audio, and was not sent.</summary>
     public Action? OnTurnHeardNothing { get; set; }
+    /// <summary>Hands-free only: the person signed off by voice ("that's all, thanks"). Called once the
+    /// goodbye that answers the sign-off has finished playing; the companion turns hands-free off.</summary>
+    public Action? OnStopListeningRequested { get; set; }
     /// <summary>Runs the agent for a `send_to_agent` tool call; the returned text is spoken by the model.</summary>
     public Func<string, Task<string>>? OnAgentTask { get; set; }
     /// <summary>A desktop action (open an app, make a folder…) by tool name and arguments; null when the
@@ -231,16 +249,38 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public Func<string, JsonObject, Task<RealtimeToolResult?>>? OnDesktopAction { get; set; }
     /// <summary>The desktop actions' tool definitions, offered next to send_to_agent and point_at.</summary>
     public Func<IReadOnlyList<JsonObject>>? DesktopActionToolDefinitions { get; set; }
+    /// <summary>The process in front, for "act, then look": the screen has settled once a different app is
+    /// in front (a browser opened) or the wait runs out. Null → only the wait.</summary>
+    public Func<int?>? FrontAppProvider { get; set; }
+    /// <summary>Tools a plugin adds to the session while it is on (the Teacher's drawing tools). Read with every session
+    /// update; a plugin switched on or off also changes the instructions, which is what sends the update.</summary>
+    public Func<IReadOnlyList<JsonObject>>? PluginToolDefinitions { get; set; }
+    /// <summary>Runs a plugin's tool call with the screenshot the turn carried; null when no plugin owns the tool. Must
+    /// return quickly: tool calls are handled on the receive loop.</summary>
+    public Func<string, JsonObject, CompanionScreenCapture?, Task<string?>>? OnPluginToolCall { get; set; }
     /// <summary>The screen context attached to every turn; null → the turn goes out without an image.</summary>
     public Func<Task<RealtimeScreenContext?>>? ScreenContextProvider { get; set; }
     /// <summary>The highlighted text in the app in front (IFocusedElementReader.SelectedTextAsync).</summary>
     public Func<Task<string?>>? SelectedTextProvider { get; set; }
+    /// <summary>Reads the text a "rephrase this" would replace (the highlight, or the focused text box) when a
+    /// turn's screen is attached; the turn quotes it and `write_in_place` writes over it.</summary>
+    public Func<Task<WritingTarget?>>? WritingTargetProvider { get; set; }
+    /// <summary>The OS side of `write_in_place` (UI Automation, the clipboard, SendInput); null → the tool says it cannot.</summary>
+    public IWriteInPlaceHost? WriteInPlaceHost { get; set; }
+    /// <summary>A rewrite landed in place (the ask lane counts it as a successful quick action too).</summary>
+    public Action? OnWroteInPlace { get; set; }
+    /// <summary>The text to write over for the turn in flight, captured with its screen.</summary>
+    public WritingTarget? LastWritingTarget { get; private set; }
     /// <summary>A `point_at` call resolved: screenshot pixels, the model's label, and the capture they refer to.</summary>
     public Action<ScreenPoint, string, CompanionScreenCapture>? OnPointAt { get; set; }
     /// <summary>Builds the session instructions for the next turn: the base prompt plus the skills that
     /// apply right now. Read at connect and before every turn; only a change is sent as `session.update`.</summary>
     public Func<string>? InstructionsProvider { get; set; }
     public RealtimePointingServices Pointing { get; set; } = new();
+
+    /// <summary>Whether Esc has anything to stop here: a reply being made or played, or a tool call still
+    /// working (an action whose page is settling before the look, the agent).</summary>
+    public bool IsBusy => responseInProgress || IsSpeaking || pendingToolCalls > 0;
 
     /// <summary>The capture behind the most recently attached screen context; `point_at` maps onto it.</summary>
     public CompanionScreenCapture? LastScreenCapture { get; private set; }
@@ -306,6 +346,12 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// <summary>Responses we cancelled (barge-in). Their late tool calls still get an output item, but never arm a continuation.</summary>
     private readonly HashSet<string> cancelledResponseIds = [];
     private bool wasListeningContinuouslyBeforeDictation;
+    /// <summary>A sign-off was heard: hands-free ends after the goodbye response is done and has played.</summary>
+    private bool stopListeningAfterGoodbye;
+    /// <summary>Counts the turns: bumped whenever the conversation moves on (a cancel, a barge-in, a new
+    /// turn's response). A tool call whose turn has moved on by the time it finishes still sends its
+    /// output (it belongs in the conversation) but asks for no continuation and takes no second look.</summary>
+    private int turnGeneration;
 
     /// <summary>OCR of `LastScreenCapture`, started as soon as the screen is attached so it is ready by the first `point_at`.</summary>
     private Task<IReadOnlyList<ScreenTextLine>>? lastScreenText;
@@ -483,6 +529,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         lastServerEventAt = null;
         StopForwardingMicrophone();
         pushToTalkArmed = false;
+        // A sign-off heard on a session that is going away belongs to that session only.
+        stopListeningAfterGoodbye = false;
         idlePauseCancellation?.Cancel();
         FlushPlayback();
         audio.Release();
@@ -849,7 +897,10 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 },
             },
         };
+        tools.Add(WriteInPlace.RealtimeToolDefinition());
         foreach (var tool in extraTools ?? []) tools.Add(tool.DeepClone());
+        // Ending hands-free by voice only makes sense while hands-free is on.
+        if (mode == RealtimeTurnMode.AlwaysOn) tools.Add(StopListeningToolDefinition());
         return new JsonObject
         {
             ["type"] = "session.update",
@@ -864,8 +915,25 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         };
     }
 
+    public const string StopListeningToolName = "stop_listening";
+
+    /// <summary>
+    /// The model decides what counts as a sign-off, since people end in many ways; fixed words would
+    /// also fire on "how do I quit Photoshop" (the standard lane's HandsFreeSignOff is fixed only
+    /// because a model round trip costs it seconds). A missed sign-off costs one key press, a wrong one
+    /// cuts the person off, so the description leans towards keeping on listening.
+    /// </summary>
+    public static JsonObject StopListeningToolDefinition() => new()
+    {
+        ["type"] = "function",
+        ["name"] = StopListeningToolName,
+        ["description"] = "Turn hands-free listening off and go back to push-to-talk. Call it only when the user clearly signs off from talking to you: \"that's all I need\", \"stop listening\", \"I'm done, you can stop\", \"ok bye\", \"that's it for now\". Never for thanks alone (\"thank you\", \"great, thanks\"), and never when they ask to stop or quit something else (an app, music, a task, an answer). If you are not sure, keep listening and do not call it. Call it before saying anything; its result tells you what to say.",
+        ["parameters"] = new JsonObject { ["type"] = "object", ["properties"] = new JsonObject(), ["required"] = new JsonArray() },
+    };
+
     private JsonObject SessionUpdate(RealtimeTurnMode mode, string instructionsText) =>
-        BuildSessionUpdate(mode, instructionsText, voice, ReplyLanguage.CurrentCode, DesktopActionToolDefinitions?.Invoke());
+        BuildSessionUpdate(mode, instructionsText, voice, ReplyLanguage.CurrentCode,
+            [.. DesktopActionToolDefinitions?.Invoke() ?? [], .. PluginToolDefinitions?.Invoke() ?? []]);
 
     // MARK: - Instructions (skills)
 
@@ -1049,6 +1117,15 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         Log("always-on listening resumed after dictation");
     }
 
+    /// <summary>The turn's caption: the screenshot's own, then the text a rewrite would replace (quoted in
+    /// full) or, without one, the highlighted text as context for "what does this mean".</summary>
+    public static string ScreenCaption(string caption, WritingTarget? writingTarget, string? selectedText)
+    {
+        if (writingTarget is not null) return caption + " " + writingTarget.ContextLine;
+        if (!string.IsNullOrEmpty(selectedText)) return caption + " " + SelectedTextContextLine(selectedText);
+        return caption;
+    }
+
     /// <summary>Adds the current screen to the conversation so the model can answer "what is this?".</summary>
     private async Task AttachScreenContextAsync()
     {
@@ -1069,14 +1146,19 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             Log("no screen context (screen capture failed?)");
             return;
         }
-        var caption = context.Caption;
-        if (SelectedTextProvider is { } selectedTextProvider)
+        LastWritingTarget = null;
+        if (WritingTargetProvider is { } writingTargetProvider)
         {
-            string? selectedText = null;
+            try { LastWritingTarget = await writingTargetProvider(); }
+            catch (Exception error) { Log($"write in place: target unreadable ({error.GetType().Name})"); }
+        }
+        string? selectedText = null;
+        if (LastWritingTarget is null && SelectedTextProvider is { } selectedTextProvider)
+        {
             try { selectedText = await selectedTextProvider(); }
             catch (Exception) { }
-            if (!string.IsNullOrEmpty(selectedText)) caption += " " + SelectedTextContextLine(selectedText);
         }
+        var caption = ScreenCaption(context.Caption, LastWritingTarget, selectedText);
         TrySend(new JsonObject
         {
             ["type"] = "conversation.item.create",
@@ -1269,6 +1351,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             case "input_audio_buffer.speech_started":
                 Log("listening…");
                 FlushPlayback();
+                turnGeneration += 1;
                 if (responseInProgress) CancelActiveResponse();
                 if (currentMode == RealtimeTurnMode.AlwaysOn) RefreshInstructionsIfNeeded();
                 // A vendor that replies on its own gets the screen while the person is still talking.
@@ -1350,6 +1433,11 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                     OnResponseFinished?.Invoke();
                     ScheduleIdlePauseIfNeeded();
                     ReconnectAfterGoAwayIfQuiet();
+                    if (stopListeningAfterGoodbye)
+                    {
+                        stopListeningAfterGoodbye = false;
+                        _ = EndHandsFreeOnceTheGoodbyeHasPlayedAsync();
+                    }
                 }
                 break;
             }
@@ -1387,9 +1475,13 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             {
             }
         }
-        if (name is not ("send_to_agent" or "point_at") && OnDesktopAction is { } desktopAction)
+        // The turn this call belongs to: Esc, the person speaking or a new turn moves it on while an
+        // action (or the agent) is still working, and then nothing may follow its output.
+        var generation = turnGeneration;
+        if (name is not ("send_to_agent" or "point_at" or StopListeningToolName or WriteInPlace.ToolName) && OnDesktopAction is { } desktopAction)
         {
             var startedAt = now();
+            var frontAppBefore = FrontAppProvider?.Invoke();
             RealtimeToolResult? outcome;
             try
             {
@@ -1401,11 +1493,19 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             }
             if (outcome is not null)
             {
+                // Act, then look: the model describes what is on screen now, not what was there before the page opened.
+                // Not once the turn moved on: Esc while the page loads stops the look too.
+                if (outcome.ThenLooksAtScreen && !outcome.WasRejected && turnGeneration == generation)
+                {
+                    await WaitForScreenToSettleAsync(frontAppBefore);
+                    if (turnGeneration == generation) await AttachScreenContextAsync();
+                }
+                var logged = outcome.LogDescription ?? outcome.SpokenSentence;
                 Log(outcome.WasRejected
-                    ? $"desktop action: {name} rejected, {outcome.SpokenSentence}"
-                    : $"desktop action: {name} {outcome.SpokenSentence} in {(now() - startedAt).TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s");
-                SendToolOutput(callId, outcome.SpokenSentence);
-                RequestContinuation(serverEvent);
+                    ? $"desktop action: {name} rejected, {logged}"
+                    : $"desktop action: {name} {logged} in {(now() - startedAt).TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s");
+                SendToolOutput(callId, outcome.ModelOutput ?? outcome.SpokenSentence);
+                ContinueUnlessTheTurnMovedOn(serverEvent, generation);
                 return;
             }
         }
@@ -1424,10 +1524,83 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             case "point_at":
                 output = QueuePointAt(arguments);
                 break;
+            case WriteInPlace.ToolName:
+            {
+                var newText = SpeechJson.String(arguments["text"]) ?? "";
+                if (LastWritingTarget is { } target && WriteInPlaceHost is { } host)
+                {
+                    var outcome = await WriteInPlace.ReplaceAsync(target, newText, host, Log);
+                    Log($"write in place: {outcome}");
+                    if (outcome.DidReplace()) OnWroteInPlace?.Invoke();
+                    output = outcome.SpokenSentence() + " Say only that, in a few words; never read the new text out.";
+                }
+                else
+                {
+                    Log("write in place: no text to write over");
+                    output = "No highlighted text or text box was found, so nothing was changed. Ask them to highlight the text and ask again; do not read a rewrite out.";
+                }
+                break;
+            }
+            case StopListeningToolName:
+                if (currentMode == RealtimeTurnMode.AlwaysOn)
+                {
+                    Log("hands-free: sign-off heard");
+                    stopListeningAfterGoodbye = true;
+                    output = "Hands-free listening is ending. Say a short goodbye in a few words, nothing else.";
+                }
+                else
+                {
+                    output = "Hands-free is not on; nothing to stop. Do not mention it.";
+                }
+                break;
+            default:
+                if (OnPluginToolCall is { } pluginToolCall && await pluginToolCall(name, arguments, LastScreenCapture) is { } pluginOutput)
+                {
+                    Log($"plugin tool: {name}");
+                    output = pluginOutput;
+                }
+                break;
         }
         // The output goes out immediately; the follow-up response is requested once, on response.done.
         SendToolOutput(callId, output);
-        RequestContinuation(serverEvent);
+        ContinueUnlessTheTurnMovedOn(serverEvent, generation);
+    }
+
+    /// <summary>
+    /// A tool output whose turn has moved on (Esc, speech or a new turn since the call came in) stays in
+    /// the conversation for the next turn but asks for no continuation: Esc while Gmail loads must not
+    /// be followed by Clicky reading the inbox.
+    /// </summary>
+    private void ContinueUnlessTheTurnMovedOn(JsonObject serverEvent, int generation)
+    {
+        if (turnGeneration == generation) RequestContinuation(serverEvent);
+        else Log("tool output after the turn moved on (esc, speech or a new turn): no continuation");
+    }
+
+    /// <summary>
+    /// How much longer to wait for the screen to settle after an action, or null to stop. Two phases:
+    /// another app coming to the front (<paramref name="frontChangedAt"/>, waited for up to 1.5 s; a
+    /// browser already in front never changes), then a second for the page to paint; four seconds in
+    /// all at most.
+    /// </summary>
+    public static TimeSpan? SettleDelay(TimeSpan? frontChangedAt, TimeSpan elapsed)
+    {
+        var paintStartsAt = frontChangedAt ?? TimeSpan.FromSeconds(1.5);
+        var settledAt = TimeSpan.FromTicks(Math.Min((paintStartsAt + TimeSpan.FromSeconds(1)).Ticks, TimeSpan.FromSeconds(4).Ticks));
+        return elapsed >= settledAt ? null : TimeSpan.FromSeconds(0.25);
+    }
+
+    private async Task WaitForScreenToSettleAsync(int? frontAppBefore)
+    {
+        var startedAt = now();
+        TimeSpan? frontChangedAt = null;
+        while (true)
+        {
+            var elapsed = now() - startedAt;
+            if (frontChangedAt is null && FrontAppProvider is { } frontApp && frontApp() != frontAppBefore) frontChangedAt = elapsed;
+            if (SettleDelay(frontChangedAt, elapsed) is not { } wait) return;
+            await Task.Delay(wait);
+        }
     }
 
     private void SendToolOutput(string callId, string output) => TrySend(new JsonObject
@@ -1573,6 +1746,19 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         OnPointAt?.Invoke(point, label, capture);
     }
 
+    /// <summary>
+    /// response.done arrives when the server has sent the goodbye, not when it has played: turning
+    /// hands-free off closes the session, which would cut it off. Waits for playback to end (at most
+    /// 8 s, in case no audio came) before asking the companion to stop.
+    /// </summary>
+    private async Task EndHandsFreeOnceTheGoodbyeHasPlayedAsync()
+    {
+        var deadline = now() + TimeSpan.FromSeconds(8);
+        while (IsSpeaking && now() < deadline) await Task.Delay(TimeSpan.FromMilliseconds(100));
+        Log("hands-free: ending after the goodbye");
+        OnStopListeningRequested?.Invoke();
+    }
+
     /// <summary>Ask the model to continue after a tool output: the barge-in and ordering rules, in one place.</summary>
     private void RequestContinuation(JsonObject serverEvent)
     {
@@ -1638,16 +1824,23 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     /// remembered as cancelled so its tool calls still in flight cannot re-arm the continuation.</summary>
     private void CancelActiveResponse()
     {
+        turnGeneration += 1;
         needsContinuationAfterResponse = false;
+        // Only cancel what is in progress: OpenAI answers a cancel with nothing active with an error
+        // ("no active response found"), and the generation bump above is what stops a late action
+        // from continuing. Gemini's dialect sends nothing for a cancel but drops the turn's open
+        // calls, so their late outputs do not make Gemini carry on by itself: it always gets it.
+        var hadActiveResponse = responseInProgress;
         if (activeResponseId is not null) cancelledResponseIds.Add(activeResponseId);
         activeResponseId = null;
         responseInProgress = false;
-        TrySend(new JsonObject { ["type"] = "response.cancel" });
+        if (hadActiveResponse || dialect is not OpenAIWireDialect) TrySend(new JsonObject { ["type"] = "response.cancel" });
     }
 
     /// <summary>Request the reply for a committed user turn; any queued continuation is superseded (one create per turn).</summary>
     private void RequestTurnResponse()
     {
+        turnGeneration += 1;
         needsContinuationAfterResponse = false;
         TrySend(new JsonObject { ["type"] = "response.create" });
     }

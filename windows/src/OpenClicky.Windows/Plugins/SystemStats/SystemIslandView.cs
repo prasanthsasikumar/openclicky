@@ -23,8 +23,8 @@ internal sealed class SystemIslandView : Grid, IIslandContent
     /// <summary>The app's one store (the Mac's NotchHUDManager.systemStats).</summary>
     public static SystemStatsStore Store { get; } = new(new WindowsSystemStatsSampler());
 
-    private const double RingSize = 28;
-    private const double RingThickness = 3;
+    internal const double RingSize = 28;
+    internal const double RingThickness = 3;
 
     private readonly StackPanel row = new()
     {
@@ -112,7 +112,7 @@ internal sealed class SystemIslandView : Grid, IIslandContent
     }
 
     /// <summary>The ring's filled part, clockwise from 12 o'clock, on the stroke's centre line.</summary>
-    private static Geometry Arc(double fraction)
+    internal static Geometry Arc(double fraction)
     {
         var radius = (RingSize - RingThickness) / 2;
         var centre = new Point(RingSize / 2, RingSize / 2);

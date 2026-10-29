@@ -13,6 +13,8 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
+using OpenClicky.Core.Dictation;
+using OpenClicky.Core.Platform;
 
 namespace OpenClicky.Core.Answers;
 
@@ -50,6 +52,14 @@ public enum WritingSource
     /// and a browser that answers late reads the same here. Checked again the same way before the paste.
     /// </summary>
     Clipboard,
+    /// <summary>
+    /// An editable box that reports no text at all (the Mac's Apple Mail message body, 2026-10-24; here
+    /// a Document or generic element that UI Automation calls editable but gives no text for). The model
+    /// reads it from the screenshot, and the whole box is selected and replaced only when it asks to
+    /// rewrite, never on capture (selecting on every question would leave an email selected for the next
+    /// keystroke to wipe).
+    /// </summary>
+    ScreenOnly,
 }
 
 /// <summary>The text a rewrite would replace, captured when the question was asked.</summary>
@@ -85,14 +95,36 @@ public sealed record WritingTarget(WritingScope Scope, string Text, string? AppP
     {
         if (Target(snapshot, ownProcessName) is { } readTarget) return readTarget;
         if (!CopyIsWorthTrying(snapshot, ownProcessName)) return null;
-        if (copiedSelection is null || string.IsNullOrWhiteSpace(copiedSelection) || CharacterCount(copiedSelection) > MaximumCharacters) return null;
-        return new WritingTarget(WritingScope.Selection, copiedSelection, snapshot.AppProcessName, snapshot.AppName, WritingSource.Clipboard);
+        if (copiedSelection is not null && !string.IsNullOrWhiteSpace(copiedSelection))
+        {
+            if (CharacterCount(copiedSelection) > MaximumCharacters) return null;
+            return new WritingTarget(WritingScope.Selection, copiedSelection, snapshot.AppProcessName, snapshot.AppName, WritingSource.Clipboard);
+        }
+        // Nothing highlighted in an editable box that reports no text: the whole box, read by the model
+        // from the screenshot. Only the roles that need evidence to count as a box: an empty Edit is
+        // empty, not unreadable.
+        if (snapshot.IsEditable && snapshot.Role is { } role && FocusedFieldEditability.EditableWithEvidenceRoles.Contains(role)
+            && string.IsNullOrWhiteSpace(snapshot.Value))
+        {
+            return new WritingTarget(WritingScope.WholeField, "", snapshot.AppProcessName, snapshot.AppName, WritingSource.ScreenOnly);
+        }
+        return null;
     }
 
-    /// <summary>Whether copying the highlight could give a target the snapshot did not.</summary>
+    /// <summary>For a box read from the screen: the cursor is still in an editable box of the same app, so
+    /// Ctrl+A selects that box and nothing else.</summary>
+    public bool CursorIsStillInTheBox(WritingFieldSnapshot snapshot) =>
+        Source == WritingSource.ScreenOnly && SameApp(snapshot.AppProcessName, AppProcessName) && snapshot.IsEditable && !snapshot.IsSecure;
+
+    /// <summary>
+    /// Whether copying the highlight could give a target the snapshot did not. Never in a terminal: it
+    /// counts as editable (it takes dictation) but reads no text, and Ctrl+C there interrupts whatever
+    /// runs; fast voice captures on every turn, hands-free on every sentence.
+    /// </summary>
     public static bool CopyIsWorthTrying(WritingFieldSnapshot snapshot, string? ownProcessName = OwnProcessName)
     {
         if (snapshot.IsSecure || SameApp(snapshot.AppProcessName, ownProcessName)) return false;
+        if (snapshot.AppProcessName is { } processName && LiveTypingExclusions.TerminalProcessNames.Contains(NormalizedProcessName(processName))) return false;
         return snapshot.Role is null || snapshot.IsEditable;
     }
 
@@ -119,6 +151,8 @@ public sealed record WritingTarget(WritingScope Scope, string Text, string? AppP
         get
         {
             var place = AppName is null ? "" : $" in {AppName}";
+            if (Source == WritingSource.ScreenOnly)
+                return $"The user's cursor is in a text box{place} whose text cannot be read directly; read it from the screenshot. If they ask to rephrase, rewrite, shorten, fix, polish or translate it (\"this email\", \"this\", \"what i wrote\"), call write_in_place with the complete new text for the whole box.";
             return Scope switch
             {
                 WritingScope.Selection =>
@@ -168,7 +202,7 @@ public sealed record WritingTarget(WritingScope Scope, string Text, string? AppP
     internal static string TargetKind(WritingTarget target) => target.Scope switch
     {
         WritingScope.Selection => target.Source == WritingSource.Clipboard ? "copied highlight" : "highlight",
-        _ => "whole box",
+        _ => target.Source == WritingSource.ScreenOnly ? "whole box read from the screen" : "whole box",
     };
 
     /// <summary>Process names compared without case and with or without ".exe".</summary>
@@ -284,6 +318,23 @@ public static class WriteInPlace
         },
     };
 
+    /// <summary>
+    /// The same tool for the Realtime session (OpenAI's function shape; Gemini Live's dialect translates
+    /// it). That lane never had it: with an own key the question goes to fast voice, and "rephrase this"
+    /// in a Gmail draft was read out instead of written over (the Mac, 2026-10-23).
+    /// </summary>
+    public static JsonObject RealtimeToolDefinition()
+    {
+        var anthropic = AnthropicToolDefinition();
+        return new JsonObject
+        {
+            ["type"] = "function",
+            ["name"] = ToolName,
+            ["description"] = anthropic["description"]!.DeepClone(),
+            ["parameters"] = anthropic["input_schema"]!.DeepClone(),
+        };
+    }
+
     /// <summary>Added to the ask prompt when the tool is offered.</summary>
     public const string PromptInstruction =
         "writing in place: when the user asks you to rephrase, rewrite, shorten, fix or translate the text quoted as highlighted or in their text box, call write_in_place with the complete new text, and say only a few words about what you changed (for example \"made it warmer and shorter.\"). openclicky puts it in their email and tells them how to undo it. never read the new text out.";
@@ -303,6 +354,29 @@ public static class WriteInPlace
         if (string.IsNullOrWhiteSpace(newText)) return WriteInPlaceOutcome.EmptyText;
         var trimmedNewText = KeepingSurroundingSpace(target.Text, newText);
         if (!host.CanReadFocusedFields) return WriteInPlaceOutcome.NoAccessibility;
+        if (target.Source == WritingSource.ScreenOnly)
+        {
+            // Selected only now that a rewrite was asked for, and only while the cursor is still in that
+            // box; the original is copied on the way, so it stays one Ctrl+V away.
+            if (!target.CursorIsStillInTheBox(host.SnapshotFocusedField()))
+            {
+                log?.Invoke("write in place: the cursor left the box, nothing pasted");
+                return WriteInPlaceOutcome.TargetGone;
+            }
+            host.SelectAllInFocusedField();
+            await delay(TimeSpan.FromMilliseconds(150));
+            var original = await host.CopySelectionAsync();
+            if (original is null || string.IsNullOrWhiteSpace(original))
+            {
+                log?.Invoke("write in place: the box read from the screen was empty, nothing pasted");
+                return WriteInPlaceOutcome.TargetGone;
+            }
+            host.Insert(KeepingSurroundingSpace(original, newText));
+            await delay(TimeSpan.FromMilliseconds(400));
+            host.CopyToClipboard(original);
+            log?.Invoke($"write in place: whole box read from the screen in {target.AppName ?? "an app"}, {WritingTarget.CharacterCount(original)} chars replaced, posted");
+            return WriteInPlaceOutcome.ProbablyReplaced;
+        }
         if (target.Source == WritingSource.Clipboard)
         {
             // UI Automation could not read this box: the highlight is checked the way it was read,

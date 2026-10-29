@@ -18,6 +18,7 @@
 //    CompanionManager.Onboarding.cs  the welcome tour's hooks, model downloads, uses
 //    CompanionManager.Skills.cs      skills in the talk lanes, the connect card, skill drafting
 //    CompanionManager.Dictation.cs   the dictation take controller's wiring
+//    CompanionManager.Teacher.cs     the Teacher plugin's hooks (labels, clearing the board, typed questions)
 //
 //  Threading: as the Mac's @MainActor class, everything here runs on the UI thread (IMainThread);
 //  callbacks from elsewhere are posted to it.
@@ -212,6 +213,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         Overlay.WelcomeFinished += SetupOnboardingVideo;
         AgentCard.FollowUpRequested += (text, threadId) => SubmitTextToAgent(text, threadId: string.IsNullOrEmpty(threadId) ? null : threadId);
         WireIslandButtons();
+        WireTeacher();
     }
 
     private void OnOverlayPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs eventArgs)
@@ -245,6 +247,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         });
         Island.QuitRequested += QuitWithFarewell;
         Island.StopSpeakingRequested += StopSpeaking;
+        Island.StopAskRequested += () => StopAskLane("the island");
         Island.EngineSetupRequested += () => ShowSettings(IslandVoiceDestination.SetupPage(DictationSettings.Engine,
             DictationEngineResolver.UnavailableReason(DictationSettings.Engine)));
         Island.PermissionGrantRequested += PermissionPromptController.Grant;
@@ -295,10 +298,13 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         preferences.Set(RealtimeVoiceEnabledKey, isEnabled);
         if (isEnabled) WarmUpRealtimeVoice();
         else RealtimeVoiceClient.Disconnect("realtime voice turned off");
+        // Hands-free carries on, on whichever lane is now the one.
+        ApplyHandsFreeLane();
     }
 
     private bool isAlwaysListening;
-    /// <summary>Always-on listening (server VAD, barge-in) instead of push-to-talk. Session-only.</summary>
+    /// <summary>Always-on listening instead of push-to-talk: fast voice's own turn detection when it is on, else the
+    /// standard lane listening on this PC (CompanionManager.StandardHandsFree.cs). Session-only.</summary>
     public bool IsAlwaysListening => isAlwaysListening;
 
     public void SetAlwaysListening(bool isOn)
@@ -306,6 +312,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         SetProperty(ref isAlwaysListening, isOn, nameof(IsAlwaysListening));
         Island.IsAlwaysListening = isOn;
         WarmUpRealtimeVoice();
+        ApplyHandsFreeLane();
     }
 
     private bool isTrayIconVisible;
@@ -506,6 +513,8 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         AppLog.Write("shell.json credentials changed; reconnecting realtime");
         ApplyHearingForAccount();
         if (UsesRealtimeVoice) WarmUpRealtimeVoice();
+        // A key added or removed can move hands-free between fast voice and the standard lane.
+        ApplyHandsFreeLane();
     });
 
     private void OnAccountProfileChanged() => services.MainThread.Post(ApplyHearingForAccount);
@@ -518,6 +527,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         PermissionPromptController.Dismiss();
         AppConnectPromptController.Stop();
         RealtimeVoiceClient.Disconnect(null);
+        StopStandardHandsFree();
         services.Shortcuts.Stop();
         services.Shortcuts.ShortcutTransition -= HandleShortcutTransition;
         services.Shortcuts.CompanionShortcut -= HandleCompanionShortcut;
@@ -553,6 +563,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
     public void Dispose()
     {
         Stop();
+        teacherSwitchObservation?.Dispose();
         RealtimeVoiceClient.Dispose();
         BuddyDictationManager.Dispose();
         SkillLibraryStore.Dispose();

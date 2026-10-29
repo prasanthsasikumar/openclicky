@@ -35,6 +35,22 @@ public class BrowserTabLocatorTests
     }
 
     [Fact]
+    public void ABrowserBehindTheFrontAppIsOnlyPointedAtWhenTheUserNamesTheTab()
+    {
+        // A terminal in front, Chrome behind showing "New session - Claude". The model read that title off the
+        // screenshot and passed it as the element text; the user never said it.
+        var tabsBehind = Tabs.Append(BrowserTab.From("New session - Claude", "https://claude.ai/new")).ToArray();
+        var background = BrowserTabLocator.MatchTexts(false, "tab title", "New session - Claude", "Show me how to minimize this tab.");
+        Assert.Null(BrowserTabLocator.BestMatch(background, tabsBehind));
+        // The user naming the site still finds it behind the front app.
+        var named = BrowserTabLocator.MatchTexts(false, "tab", "", "where is my claude tab");
+        Assert.Equal(5, BrowserTabLocator.BestMatch(named, tabsBehind));
+        // The active browser keeps the model's reading of the strip.
+        var active = BrowserTabLocator.MatchTexts(true, "tab title", "New session - Claude", "point at this tab");
+        Assert.Equal(5, BrowserTabLocator.BestMatch(active, tabsBehind));
+    }
+
+    [Fact]
     public void TitleWordsMatchWhenTheHostDoesNot()
     {
         Assert.Equal(0, BrowserTabLocator.BestMatch(new[] { "changelog tab", "changelog", null }, Tabs));

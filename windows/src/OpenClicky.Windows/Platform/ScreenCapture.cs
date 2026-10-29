@@ -2,6 +2,7 @@ using System.IO;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using OpenClicky.Core.Platform;
 using static OpenClicky.Windows.Platform.NativeMethods;
 
@@ -58,6 +59,25 @@ public sealed class ScreenCapture(IScreens screens) : IScreenCapture
     {
         var captures = await CaptureAllScreensAsync((options ?? new ScreenCaptureOptions()) with { CursorScreenOnly = true }, cancellationToken).ConfigureAwait(false);
         return captures.FirstOrDefault();
+    }
+
+    /// <summary>The ask lane's close-up: a square cut from the screenshot the model sees, at its full size.</summary>
+    public byte[]? CropJpeg(byte[] imageData, PixelRect area, int jpegQuality = 85)
+    {
+        try
+        {
+            using var stream = new MemoryStream(imageData);
+            using var image = new Bitmap(stream);
+            var cropArea = Rectangle.Intersect(new Rectangle(area.Left, area.Top, area.Width, area.Height), new Rectangle(0, 0, image.Width, image.Height));
+            if (cropArea.Width <= 0 || cropArea.Height <= 0) return null;
+            using var cropped = image.Clone(cropArea, PixelFormat.Format24bppRgb);
+            return Encode(cropped, new ScreenCaptureOptions { Format = ScreenImageFormat.Jpeg, JpegQuality = jpegQuality });
+        }
+        catch (Exception error) when (error is ArgumentException or OutOfMemoryException or ExternalException)
+        {
+            // Not an image GDI+ can read (or an area it refuses): the question goes without a close-up.
+            return null;
+        }
     }
 
     private static CompanionScreenCapture? Capture(ScreenInfo screen, ScreenCaptureOptions options, string label)

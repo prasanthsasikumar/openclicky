@@ -54,8 +54,12 @@ public static class AskLanePrompts
         - element is on screen 2 (not where cursor is): "[POINT:400,300:terminal:screen2] that's over on your other monitor, see the terminal window?"
 
         guided steps:
-        when they ask how to do something that takes more than one step on screen, give only the first step, point at it, and end your reply with {{GuidedStepMarker.Marker}}. a step is one click, or one thing to type, nothing more. openclicky then waits for them to do it (a click, or return or tab after typing) and asks you on its own with "{{GuidedStepRules.NextStepRequestOpening}} …" and a fresh screenshot. look at the new screen and give the next step the same way: one step, pointed at, ending with {{GuidedStepMarker.Marker}} while more steps remain. leave {{GuidedStepMarker.Marker}} off the last step, and off any answer that isn't a step. if the new screen shows they clicked something else or went somewhere unexpected, gently help them back, still ending with {{GuidedStepMarker.Marker}}. if the screen hasn't changed the way that step should change it, it didn't work yet: point at the same thing again and say to try once more. if you can't tell whether the step worked, say what they should see and what to do then, and end with {{GuidedStepMarker.Marker}} so you keep waiting with them. never end a step with a question. if a permission, password or security prompt is on screen and it isn't what they asked about, it is not a step: never point at it or tell them which button to pick. reply as usual, the tag first pointing at the first step of their task, then a few words that the prompt is theirs to decide, then the step, ending with {{GuidedStepMarker.Marker}}. for a step that is typing, say what to type and to press tab or click the next thing when they're done.
+        when they ask how to do something that takes more than one step on screen, give only the first step, point at it, and end your reply with {{GuidedStepMarker.Marker}}. a step is one click, or one thing to type, nothing more. openclicky then waits for them to do it (a click, or return or tab after typing) and asks you on its own with "{{GuidedStepRules.NextStepRequestOpening}} …" and a fresh screenshot. look at the new screen and give the next step the same way: one step, pointed at, ending with {{GuidedStepMarker.Marker}} while more steps remain. leave {{GuidedStepMarker.Marker}} off the last step, and off any answer that isn't a step. if the new screen shows they clicked something else or went somewhere unexpected, gently help them back, still ending with {{GuidedStepMarker.Marker}}. when openclicky's question starts with "{{GuidedStepRules.OffTargetRequestOpening}} …", their click landed away from where you pointed; your pointing is only approximate, so it may still have been right. check the new screen: if it was the right thing, give the next step as usual; if not, gently point them back, still ending with {{GuidedStepMarker.Marker}}. if the screen hasn't changed the way that step should change it, it didn't work yet: point at the same thing again and say to try once more. if you can't tell whether the step worked, say what they should see and what to do then, and end with {{GuidedStepMarker.Marker}} so you keep waiting with them. never end a step with a question. if a permission, password or security prompt is on screen and it isn't what they asked about, it is not a step: never point at it or tell them which button to pick. reply as usual, the tag first pointing at the first step of their task, then a few words that the prompt is theirs to decide, then the step, ending with {{GuidedStepMarker.Marker}}. for a step that is typing, say what to type and to press tab or click the next thing when they're done.
         example: user asks how to attach a file in outlook: "[POINT:612,88:attach button] click the paperclip at the top of your message. {{GuidedStepMarker.Marker}}"
+
+        not sure:
+        if you can't find the control they need on the screen, or can't tell which one it is, don't guess with the pointer. start your reply with {{UnsureMarker.Marker}}, send no point tag at all, and say in words what they should look for (its name, what it looks like, roughly where it usually is), or ask them to tell you what they see. leave {{GuidedStepMarker.Marker}} off that reply.
+        example: "{{UnsureMarker.Marker}} i can't spot the display settings on this screen. look for a gear icon called settings in your start menu, or tell me what you see."
 
         keep your first sentence short: it is spoken while the rest of your answer is still being written.
         """.ReplaceLineEndings("\n");
@@ -81,9 +85,17 @@ public static class AskLanePrompts
     /// <summary>The question the pointing demo asks with its screenshot.</summary>
     public const string OnboardingDemoUserPrompt = "look around my screen and find something interesting to point at";
 
+    /// <summary>
+    /// Shared by the Realtime prompt and the ask lane's quick-actions line: a command is done, a
+    /// question is taught, and nothing is ever sent.
+    /// </summary>
+    public const string CommandOrQuestionInstruction =
+        "When the user tells you to do something you have a tool for (\"open…\", \"play…\", \"minimize…\", \"search for…\", \"check my email\", \"draft an email\"), do it with the tool and confirm in a few words. Do not explain how they could do it themselves and do not point. When they ask how to do something (\"how do I…\", \"where is…\", \"show me how\"), teach: explain and point, and do not do it for them. If you are not sure which they meant, ask in one short question. You never send email: a draft is left open for the user to read and send.";
+
     /// <summary>Added to the ask prompt when the quick actions are offered.</summary>
     public const string AccountToolsInstruction =
-        "When the user asks you to open an app or a website, make or show a folder, change the volume or control playback, call the matching tool instead of describing the steps. For anything else you can only explain and point.";
+        "When the user asks you to open an app or a website, search the web, make or show a folder, change the volume, control playback or play a song, minimize everything, check your email or draft an email, call the matching tool instead of describing the steps. For anything else you can only explain and point. "
+        + CommandOrQuestionInstruction;
 
     /// <summary>The ask lane remembers this many exchanges for the next question.</summary>
     public const int MaximumRememberedExchanges = 10;
@@ -133,26 +145,34 @@ public static class AskLanePrompts
     /// <summary>
     /// The ask lane's whole system prompt: the companion prompt with the reply language, the quick
     /// actions line when they are offered, the write-in-place line when there is text to write
-    /// over, then the talk skills.
+    /// over, then the talk skills. <paramref name="pluginPromptLines"/> (the Teacher's, while it is on) go
+    /// straight after the companion prompt, before the reply language.
     /// </summary>
-    public static string AskSystemPrompt(bool quickActionsOffered, bool hasWritingTarget, string skillsBlock, string? languageCode = null)
+    public static string AskSystemPrompt(bool quickActionsOffered, bool hasWritingTarget, string skillsBlock, string? languageCode = null,
+                                         string pluginPromptLines = "")
     {
         var toolsLine = quickActionsOffered ? "\n\n" + AccountToolsInstruction : "";
         var writeInPlaceLine = "\n\n" + (hasWritingTarget ? WriteInPlace.PromptInstruction : WriteInPlace.NoTargetPromptInstruction);
-        return ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt, languageCode) + toolsLine + writeInPlaceLine, skillsBlock);
+        return ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt + pluginPromptLines, languageCode) + toolsLine + writeInPlaceLine, skillsBlock);
     }
 
     /// <summary>
-    /// The question as sent: what was said, plus the text it may be about. A text to write over
-    /// carries the exact words (the highlight in full, or the box's text); otherwise a highlight is
-    /// quoted the short way, as context for "what does this mean".
+    /// The question as sent: what was said, plus the text it may be about, where the pointer is, and
+    /// whether it is the same question again. A text to write over carries the exact words (the
+    /// highlight in full, or the box's text); otherwise a highlight is quoted the short way, as
+    /// context for "what does this mean". Each line of context sits in its own brackets.
     /// </summary>
     /// <param name="selectedText">The text highlighted in the app in front (the Platform layer reads it); null for none.</param>
-    public static string AskUserPrompt(string transcript, WritingTarget? writingTarget, string? selectedText = null)
+    public static string AskUserPrompt(string transcript, WritingTarget? writingTarget, string? selectedText = null,
+                                       PointerInCapture? pointer = null, bool isRepeatedQuestion = false)
     {
-        if (writingTarget is not null) return transcript + "\n\n[" + writingTarget.ContextLine + "]";
-        if (!string.IsNullOrWhiteSpace(selectedText)) return transcript + "\n\n[" + SelectedTextContextLine(selectedText) + "]";
-        return transcript;
+        var contextLines = new List<string>();
+        if (writingTarget is not null) contextLines.Add(writingTarget.ContextLine);
+        else if (!string.IsNullOrWhiteSpace(selectedText)) contextLines.Add(SelectedTextContextLine(selectedText));
+        if (pointer is not null) contextLines.Add(pointer.PromptLine);
+        if (isRepeatedQuestion) contextLines.Add(RepeatedQuestion.PromptLine);
+        if (contextLines.Count == 0) return transcript;
+        return transcript + "\n\n" + string.Join("\n", contextLines.Select(line => "[" + line + "]"));
     }
 
     /// <summary>SelectedTextReader.contextLine: what a highlight adds to a question.</summary>

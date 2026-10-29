@@ -3,6 +3,7 @@
 // theQuestionCarriesTheExactWords (CompanionManager.askUserPrompt) is in AskLaneTests.cs (AskLanePrompts.AskUserPrompt).
 
 using OpenClicky.Core.Answers;
+using OpenClicky.Core.Speech;
 
 namespace OpenClicky.Core.Tests.Answers;
 
@@ -206,6 +207,82 @@ public class WriteInPlaceTests
         Assert.Equal(new[] { "insert Hello", "copy Hello" }, host.Steps);
     }
 
+    // The Mac's Apple Mail message body is an editable web area that reports no text, so "rephrase this"
+    // with the cursor in an email (nothing highlighted) found nothing to write over (2026-10-24). Windows
+    // has no Apple Mail; the same holds for any box UI Automation calls editable but gives no text for.
+    private static WritingFieldSnapshot UnreadableBody(string? value = "", string role = "Document", bool editable = true, string app = "OUTLOOK.EXE") =>
+        new(app, "Outlook", role, editable, false, value, null);
+
+    [Fact]
+    public void AnEditableBoxWithNoReadableTextIsTheWholeBoxReadFromTheScreen()
+    {
+        foreach (var body in new[] { UnreadableBody(), UnreadableBody(value: null), UnreadableBody(role: "Group"), UnreadableBody(value: "\r") })
+        {
+            var target = WritingTarget.Target(body, copiedSelection: null, ownProcessName: "OpenClicky.exe");
+            Assert.Equal(WritingSource.ScreenOnly, target?.Source);
+            Assert.Equal(WritingScope.WholeField, target?.Scope);
+            Assert.Equal("OUTLOOK.EXE", target?.AppProcessName);
+        }
+    }
+
+    [Fact]
+    public void AHighlightStillWinsAndRealTextBoxesAreNotGuessed()
+    {
+        // Words highlighted in the body are copied and used as they are.
+        Assert.Equal(WritingSource.Clipboard, WritingTarget.Target(UnreadableBody(), copiedSelection: "tmrw", ownProcessName: "x")?.Source);
+        // An empty plain text box is empty, not unreadable.
+        Assert.Null(WritingTarget.Target(UnreadableBody(role: "Edit"), copiedSelection: null, ownProcessName: "x"));
+        // A page that is not editable, OpenClicky's own window, or a terminal is no target.
+        Assert.Null(WritingTarget.Target(UnreadableBody(editable: false), copiedSelection: null, ownProcessName: "x"));
+        Assert.Null(WritingTarget.Target(UnreadableBody(app: "OpenClicky.exe"), copiedSelection: null, ownProcessName: "OpenClicky.exe"));
+        Assert.Null(WritingTarget.Target(UnreadableBody(app: "WindowsTerminal.exe"), copiedSelection: null, ownProcessName: "x"));
+        // A box with text UI Automation reads is that text, not the screen's.
+        Assert.Equal(WritingSource.Accessibility, WritingTarget.Target(UnreadableBody(value: "Hi Ravi"), copiedSelection: null, ownProcessName: "x")?.Source);
+    }
+
+    [Fact]
+    public void TheModelIsToldToReadTheBoxFromTheScreenshot()
+    {
+        var target = new WritingTarget(WritingScope.WholeField, "", "OUTLOOK.EXE", "Outlook", WritingSource.ScreenOnly);
+        Assert.Contains("screenshot", target.ContextLine);
+        Assert.Contains("write_in_place", target.ContextLine);
+        Assert.Equal("whole box read from the screen", WritingTarget.TargetKind(target));
+    }
+
+    [Fact]
+    public async Task ItIsOnlyReplacedWhileTheCursorIsStillInThatBox()
+    {
+        var target = new WritingTarget(WritingScope.WholeField, "", "OUTLOOK.EXE", "Outlook", WritingSource.ScreenOnly);
+        Assert.True(target.CursorIsStillInTheBox(UnreadableBody()));
+        Assert.False(target.CursorIsStillInTheBox(UnreadableBody(editable: false)));
+        Assert.False(target.CursorIsStillInTheBox(UnreadableBody(app: "chrome.exe")));
+
+        // Selected only when the rewrite comes, the original copied on the way and left on the clipboard.
+        var host = new FakeHost { Snapshot = UnreadableBody(), CopiedSelection = "hey can u send it\r\n" };
+        Assert.Equal(WriteInPlaceOutcome.ProbablyReplaced, await WriteInPlace.ReplaceAsync(target, "Could you send it?", host, delay: _ => Task.CompletedTask));
+        Assert.Equal(new[] { "select all", "copy selection", "insert Could you send it?\r\n", "copy hey can u send it\r\n" }, host.Steps);
+
+        var moved = new FakeHost { Snapshot = UnreadableBody(app: "chrome.exe"), CopiedSelection = "x" };
+        Assert.Equal(WriteInPlaceOutcome.TargetGone, await WriteInPlace.ReplaceAsync(target, "Could you send it?", moved, delay: _ => Task.CompletedTask));
+        Assert.Empty(moved.Steps);
+        var empty = new FakeHost { Snapshot = UnreadableBody(), CopiedSelection = null };
+        Assert.Equal(WriteInPlaceOutcome.TargetGone, await WriteInPlace.ReplaceAsync(target, "Could you send it?", empty, delay: _ => Task.CompletedTask));
+        Assert.DoesNotContain(empty.Steps, step => step.StartsWith("insert", StringComparison.Ordinal));
+    }
+
+    /// <summary>A terminal takes dictation, so it reads as editable, but Ctrl+C there interrupts what runs:
+    /// fast voice captures a target on every turn, so a terminal is never copied from.</summary>
+    [Fact]
+    public async Task ATerminalIsNeverCopiedFrom()
+    {
+        var terminal = new WritingFieldSnapshot("WindowsTerminal.exe", "Terminal", "Document", true, false, null, null);
+        Assert.False(WritingTarget.CopyIsWorthTrying(terminal, ownProcessName: "x"));
+        Assert.False(WritingTarget.CopyIsWorthTrying(terminal with { AppProcessName = "pwsh" }, ownProcessName: "x"));
+        var host = new FakeHost { Snapshot = terminal, CopiedSelection = "^C" };
+        Assert.Null(await WritingTarget.CaptureFromFrontAppAsync(host, delay: _ => Task.CompletedTask));
+        Assert.DoesNotContain("copy selection", host.Steps);
+    }
+
     // From HUDPlacementTests.swift: everyGoodbyeSaysHowToComeBackOrIsShort (Windows wording).
     [Fact]
     public void EveryGoodbyeSaysHowToComeBackOrIsShort()
@@ -216,5 +293,41 @@ public class WriteInPlaceTests
             Assert.True(farewell.Text.Length <= 90, farewell.Text);
         }
         Assert.Contains(Farewell.Random(), Farewell.All);
+    }
+}
+
+/// <summary>The fast voice lane rewrites in place too. It never had the tool: with an own key the question goes to
+/// fast voice, and "rephrase this" in a Gmail draft was read out (the Mac, 2026-10-23).</summary>
+public class RealtimeWriteInPlaceTests
+{
+    [Fact]
+    public void TheRealtimeSessionGetsTheTool()
+    {
+        var tool = WriteInPlace.RealtimeToolDefinition();
+        Assert.Equal("function", tool["type"]!.GetValue<string>());
+        Assert.Equal(WriteInPlace.ToolName, tool["name"]!.GetValue<string>());
+        Assert.Equal(["text"], tool["parameters"]!["required"]!.AsArray().Select(node => node!.GetValue<string>()));
+        var names = RealtimeVoiceClient.BuildSessionUpdate(RealtimeTurnMode.PushToTalk, "x", null, "en")["session"]!["tools"]!
+            .AsArray().Select(node => node!["name"]!.GetValue<string>());
+        Assert.Contains(WriteInPlace.ToolName, names);
+    }
+
+    [Fact]
+    public void TheTurnCarriesTheTextToWriteOver()
+    {
+        var target = new WritingTarget(WritingScope.Selection, "hey can u send it", "chrome.exe", "Google Chrome");
+        var caption = RealtimeVoiceClient.ScreenCaption("Screenshot of the screen.", target, "ignored");
+        Assert.Contains("«hey can u send it»", caption);
+        Assert.Contains("write_in_place", caption);
+        Assert.DoesNotContain("ignored", caption);
+        Assert.Equal("Screenshot of the screen.", RealtimeVoiceClient.ScreenCaption("Screenshot of the screen.", null, null));
+        Assert.Contains("«this»", RealtimeVoiceClient.ScreenCaption("Screenshot.", null, "this"));
+    }
+
+    [Fact]
+    public void DoingItAndExplainingHowAreToldApart()
+    {
+        Assert.Contains("write_in_place", RealtimeVoiceClient.DefaultInstructions);
+        Assert.Contains("how to rephrase", RealtimeVoiceClient.DefaultInstructions);
     }
 }

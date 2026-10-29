@@ -126,24 +126,34 @@ public sealed class FocusedElementReader : IFocusedElementReader
     }
 
     /// <summary>
-    /// Edit (not read-only), Document (a focused page or rich document: the Mac counts AXWebArea as a
-    /// paste target), an editable ComboBox, and — for Electron and web apps that focus a generic
-    /// element — a writable value or an editable ancestor within six levels.
+    /// Edit (not read-only), an editable ComboBox, a Document only with evidence (a writable value, text
+    /// not reported read-only, or an editable ancestor: a web page with nothing clicked is not a text
+    /// box), and — for Electron and web apps that focus a generic element — a writable value or an
+    /// editable ancestor within six levels. The rules are Core's FocusedFieldEditability.
     /// </summary>
-    private static bool IsEditable(AutomationElement element, ControlType? controlType, ValuePattern? valuePattern, TextPattern? textPattern)
+    private static bool IsEditable(AutomationElement element, ControlType? controlType, ValuePattern? valuePattern, TextPattern? textPattern) =>
+        FocusedFieldEditability.IsEditable(
+            UiaSupport.ControlTypeName(controlType),
+            valuePattern is not null,
+            () => ValueIsWritable(valuePattern),
+            () => TextAccessOf(textPattern),
+            () => HasEditableAncestor(element));
+
+    private static bool ValueIsWritable(ValuePattern? valuePattern) =>
+        valuePattern is not null && UiaSupport.Safe(() => !valuePattern.Current.IsReadOnly);
+
+    /// <summary>UIA's IsReadOnly text attribute over the whole document: a page says read-only (or mixed,
+    /// with a box somewhere on it), an editor says writable.</summary>
+    private static DocumentTextAccess TextAccessOf(TextPattern? textPattern)
     {
-        var valueIsWritable = valuePattern is not null && UiaSupport.Safe(() => !valuePattern.Current.IsReadOnly);
-        if (controlType == ControlType.Edit) return valuePattern is null || valueIsWritable;
-        if (controlType == ControlType.Document) return true;
-        if (controlType == ControlType.ComboBox) return valueIsWritable;
-        if (controlType == ControlType.Group || controlType == ControlType.Text || controlType == ControlType.Custom
-            || controlType == ControlType.Pane || controlType is null)
-        {
-            return valueIsWritable || HasEditableAncestor(element);
-        }
-        return false;
+        if (textPattern is null) return DocumentTextAccess.NotReported;
+        var value = UiaSupport.Safe(() => textPattern.DocumentRange.GetAttributeValue(TextPattern.IsReadOnlyAttribute));
+        if (value is bool isReadOnly) return isReadOnly ? DocumentTextAccess.ReadOnly : DocumentTextAccess.Writable;
+        return value is not null && value == TextPattern.MixedAttributeValue ? DocumentTextAccess.Mixed : DocumentTextAccess.NotReported;
     }
 
+    /// <summary>An Edit, or a Document that takes typing, within six levels: a generic element inside a
+    /// read-only page is not in a text box.</summary>
     private static bool HasEditableAncestor(AutomationElement element)
     {
         var walker = TreeWalker.ControlViewWalker;
@@ -153,7 +163,12 @@ public sealed class FocusedElementReader : IFocusedElementReader
             var parent = UiaSupport.Safe(() => walker.GetParent(current));
             if (parent is null || parent == AutomationElement.RootElement) return false;
             var parentType = UiaSupport.Safe(() => parent.Current.ControlType);
-            if (parentType == ControlType.Edit || parentType == ControlType.Document) return true;
+            if (parentType == ControlType.Edit) return true;
+            if (parentType == ControlType.Document)
+            {
+                return FocusedFieldEditability.DocumentTakesText(ValueIsWritable(UiaSupport.ValuePatternOf(parent)),
+                                                                 TextAccessOf(UiaSupport.TextPatternOf(parent)));
+            }
             current = parent;
         }
         return false;

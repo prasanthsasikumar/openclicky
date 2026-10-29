@@ -138,18 +138,23 @@ What the Mac gained after the port (git log da71df7..HEAD -- macos), and where W
 | Island: components in the panel's slot, a capsule to flip them, Settings → Plugins (default, order) | Done (framework; `Core/Companion/IslandComponents.cs`) |
 | Plugin: System (CPU, memory, disk, battery rings) | Done (`Core/Plugins/SystemStats`, `Windows/Plugins/SystemStats`) |
 | Island: transcript and agent components (the moment picks them), "follow up" on an agent thread | Done (`CompanionManager.IslandContext.cs`) |
-| Plugin: Shelf (drop on the island, drag out, copy) | Not yet |
-| Plugin: Coding agents (Claude Code / Codex sessions, plan limits) | Not yet |
-| Plugin: Now playing (artwork, progress, controls) | Not yet: Windows' media session API covers every player |
-| Plugin: Teacher (draws lessons on screen) | Not yet |
+| Plugin: Shelf (drop on the island, drag out, copy) | Done (`Core/Plugins/Shelf`, `Windows/Plugins/Shelf`; the collapsed island catches drags with an alpha-1 rectangle only while the Shelf is on) |
+| Plugin: Coding agents (Claude Code / Codex sessions, plan limits) | Done (`Core/Plugins/CodingAgents`, `Windows/Plugins/CodingAgents`): logs under `%USERPROFILE%\.claude\projects` and `.codex\sessions`; plan limits from Claude Code's `.credentials.json` (the Mac's Keychain item); the peek line names a live session |
+| Plugin: Now playing (artwork, progress, controls) | Done: Windows' media sessions, so every player that reports to Windows (`Core/Plugins/Media`, `Windows/Plugins/Media`) |
+| Plugin: Teacher (draws lessons on screen) | Done (`Core/Plugins/Teacher`, `Windows/Plugins/Teacher`; both lanes' tools, early lessons, written answers when they cannot hear; handwriting in Ink Free; `--openclicky-teacher-smoke`) |
 | Island: glass under the open panel | Not needed: the Mac went back to solid black (f0abb80) |
 | Island: docking the pointer removed (2bf8edb) | Done: no dock button, tray item or setting; a stored dock flag is cleared once (CursorFlightPlanner still knows ToDock, unused) |
 | Ask lane: simple requests answered on the device (Apple's on-device model) | Mac only for now: no Windows equivalent chosen |
-| Voice: minimize everything / bring it back, web search, Spotify by name, stop that song | Not yet (check each) |
-| Voice: check email, draft one (never sent); act, then look again | Not yet (check each) |
-| Ask lane: pause before sending, Esc stops it, mouse close-up, [UNSURE], window buttons | Not yet |
-| Hands-free ends on a goodbye | Not yet |
-| Rephrase in place | Not yet (check) |
+| Voice: minimize everything / bring it back (one app by name), web search, stop that song (pause/play on the player) | Done (`Core/Actions`, `Windows/Platform/DesktopActionExecutor.Extras.cs`: Win32 windows, Windows media sessions) |
+| Voice: play a song in Spotify by name; own Spotify credentials in Keys & Plans | Done, unverified live: Windows opens the `spotify:track:` URI and confirms playback through Spotify's media session; unconfirmed, it says "press play" (no AppleScript `play track`) |
+| Voice: check email, draft one (never sent); Settings → Voice → Email | Done for Gmail and Outlook on the web (Windows has no Apple Mail to script): the inbox opens and is read from a fresh screenshot |
+| Voice: act, then look again; the model told more than the person (toolOutput / logDescription) | Done (`RealtimeVoiceClient.SettleDelay`, `RealtimeToolResult.ModelOutput`), OpenAI and Gemini Live alike |
+| Prompts: a command is done, a question is taught, email is never sent (070fbd8) | Done (`AskLanePrompts.CommandOrQuestionInstruction`) |
+| Ask lane: pause before sending, Esc stops it, mouse close-up, [UNSURE], window buttons | Done: Esc and the island's strip stop the ask lane (`AskLaneEscape`, `CompanionManager.StopAskLane`; order take → ask lane → fast voice); 1.2 s pause before the capture, Settings → Privacy "Pause before sending my screen" (`AskSendPause`); off-target click check in guides, in DIPs (`GuidedStepClickCheck`); `[UNSURE]` (`UnsureMarker`); pointer place + 480 px close-up + repeated question (`AskPointerContext.cs`, crop by `IScreenCapture.CropJpeg`); caption buttons top right from DWM or the window rect (`WindowControlLocator`, in the fast lane's point_at), a background browser matched on the person's words (`BrowserTabLocator.MatchTexts`). No colour words for the buttons; a guide's "what's next?" is never a repeated question. Needs a live check |
+| Hands-free without a realtime key: the standard lane listens on this PC (066eefb) | Done (`Core/Speech/StandardHandsFree.cs`, `CompanionManager.StandardHandsFree.cs`); unverified on a live microphone |
+| Hands-free ends on a goodbye | Done: the standard lane by fixed sign-offs (`HandsFreeSignOff`); fast voice (OpenAI and Gemini Live) offers `stop_listening` in hands-free only, and ends after the goodbye has played (`RealtimeVoiceClient`, `CompanionManager.EndHandsFreeBySignOff`); unverified live |
+| Esc stops the fast voice lane: a reply, or an action still working on its look (a429390, b9dbcc8) | Done (`RealtimeVoiceClient.IsBusy` / turn generation, `CompanionManager.EscStopsFastVoice`), OpenAI and Gemini Live alike; a dictation take still keeps esc first |
+| Rephrase in place | Done: the ask lane had it; fast voice now gets `write_in_place` and its turn quotes the highlight or text box (`RealtimeVoiceClient.ScreenCaption`), OpenAI and Gemini Live alike. A web page with nothing clicked (UIA Document whose text is read-only or mixed) is no longer a text box (`Core/Platform/FocusedFieldEditability.cs`); a terminal is never copied from. With nothing highlighted, an editable box that reports no text (the Mac's Apple Mail body; here a Document or generic element UIA gives no text for) is read by the model from the screenshot and selected and replaced only when it rewrites (`WritingSource.ScreenOnly`). Classic Outlook's and Chromium's boxes usually report their text, so this is the fallback. Unverified live |
 
 ## Status (2026-10-14)
 

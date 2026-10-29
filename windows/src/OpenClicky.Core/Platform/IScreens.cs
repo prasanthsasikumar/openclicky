@@ -124,4 +124,10 @@ public interface IScreenCapture
 
     /// <summary>The monitor the cursor is on.</summary>
     Task<CompanionScreenCapture?> CaptureCursorScreenAsync(ScreenCaptureOptions? options = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// <paramref name="area"/> (in the image's own pixels) cut out of an encoded screenshot and
+    /// encoded as JPEG: the ask lane's close-up around the pointer. Null when it cannot be cut.
+    /// </summary>
+    byte[]? CropJpeg(byte[] imageData, PixelRect area, int jpegQuality = 85) => null;
 }

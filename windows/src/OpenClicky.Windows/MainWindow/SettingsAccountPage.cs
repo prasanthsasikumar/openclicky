@@ -60,7 +60,7 @@ internal sealed partial class SettingsRowFactory
             var isChecking = keysState.Checking.Contains(provider);
             var detail = keysState.RowStatus.TryGetValue(provider, out var status) ? status : $"{provider.Detail()} {ProviderKeys.Masked(provider.SavedKey(shell)!)}";
             var testButton = Ui.Button(isChecking ? "Testing…" : "Test", () => TestKey(provider, redraw), isEnabled: !isChecking,
-                toolTip: provider.SpeechVoiceId() is null ? "Ask it what colour a red square is" : "Have it say a word");
+                toolTip: provider == ProviderKey.Spotify ? "Look one song up" : provider.SpeechVoiceId() is null ? "Ask it what colour a red square is" : "Have it say a word");
             var removeButton = Ui.Button("Remove", () =>
             {
                 if (!SheetWindow.Confirm(actions.OwnerWindow, Settings, $"Remove the {provider.Title()} key?",
@@ -132,6 +132,8 @@ internal sealed partial class SettingsRowFactory
                 if (provider.AnswerSource() is { } source) sentence = await services.Services.TestAnswerSourceAsync(source);
                 // A voice key is checked by having it say one word.
                 else if (provider.SpeechVoiceId() is { } voiceId) sentence = await services.Services.TestVoiceKeyAsync(voiceId);
+                // Spotify credentials are checked by looking one song up.
+                else if (provider == ProviderKey.Spotify) sentence = await Core.Actions.MusicLookup.TestCredentialsAsync(provider.SavedKey(OpenClickyConfiguration.Settings));
                 else sentence = "Saved.";
             }
             catch (Exception error)

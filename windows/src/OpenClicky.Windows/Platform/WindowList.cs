@@ -1,4 +1,6 @@
+using System.Runtime.InteropServices;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Pointing;
 using static OpenClicky.Windows.Platform.NativeMethods;
 
 namespace OpenClicky.Windows.Platform;
@@ -7,6 +9,35 @@ namespace OpenClicky.Windows.Platform;
 public sealed class WindowList : IWindowList
 {
     public int OwnProcessId => Environment.ProcessId;
+
+    private const int DWMWA_CAPTION_BUTTON_BOUNDS = 5;
+    private const long WS_MINIMIZEBOX = 0x00020000;
+    private const long WS_MAXIMIZEBOX = 0x00010000;
+
+    /// <summary>
+    /// The visible frame, DWM's caption-button area (reported relative to GetWindowRect's corner, so
+    /// moved into global pixels here), the minimize / maximize boxes and the window's scale.
+    /// </summary>
+    public CaptionButtonLayout? CaptionButtonLayout(nint windowHandle, string appName)
+    {
+        if (windowHandle == 0 || !IsWindowVisible(windowHandle) || IsIconic(windowHandle)) return null;
+        var frame = VisibleFrame(windowHandle);
+        var windowBounds = new ScreenRect(frame.Left, frame.Top, frame.Right - frame.Left, frame.Bottom - frame.Top);
+        ScreenRect? buttonArea = null;
+        if (GetWindowRect(windowHandle, out var outer)
+            && DwmGetWindowAttribute(windowHandle, DWMWA_CAPTION_BUTTON_BOUNDS, out RECT relative, Marshal.SizeOf<RECT>()) == 0
+            && relative.Right > relative.Left && relative.Bottom > relative.Top)
+        {
+            buttonArea = new ScreenRect(outer.Left + relative.Left, outer.Top + relative.Top, relative.Right - relative.Left, relative.Bottom - relative.Top);
+        }
+        var style = (long)GetWindowLongPtr(windowHandle, GWL_STYLE);
+        var dpi = GetDpiForWindow(windowHandle);
+        return new CaptionButtonLayout(windowBounds, buttonArea, (style & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) != 0,
+                                       dpi == 0 ? 1 : dpi / 96.0, appName);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(nint hwnd);
 
     public IReadOnlyList<OnScreenWindowInfo> VisibleWindows(bool includeCloaked = false)
     {
