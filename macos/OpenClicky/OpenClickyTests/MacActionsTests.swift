@@ -138,6 +138,13 @@ struct MacActionRunnerTests {
         var playSucceeds = true
         var spotifySearches: [String] = []
         var spotifyInstalled = true
+        var scrollResult: ScrollResult = .scrolled
+        var scrolls: [String] = []
+        var openedFolders: [URL] = []
+        var foundFiles: [URL] = []
+        var fileSearches: [String] = []
+        var findOnPageResult: FindOnPageResult = .typed
+        var pageSearches: [String] = []
     }
 
     private func makeRunner(root: URL, recorder: Recorder) -> MacActionRunner {
@@ -178,7 +185,21 @@ struct MacActionRunnerTests {
                     recorder.playedURIs.append(uri)
                     return recorder.playSucceeds
                 },
-                openSpotifySearch: { query in recorder.spotifySearches.append(query) }
+                openSpotifySearch: { query in recorder.spotifySearches.append(query) },
+                scrollFrontWindow: { direction, amount in
+                    recorder.scrolls.append("\(direction.rawValue) \(amount.rawValue)")
+                    return recorder.scrollResult
+                },
+                openFolder: { folderURL in recorder.openedFolders.append(folderURL) },
+                findFiles: { query in
+                    recorder.fileSearches.append(query)
+                    return recorder.foundFiles
+                },
+                revealFiles: { fileURLs in recorder.revealedURLs.append(contentsOf: fileURLs) },
+                findOnPage: { text in
+                    recorder.pageSearches.append(text)
+                    return recorder.findOnPageResult
+                }
             )
         )
     }
@@ -187,6 +208,76 @@ struct MacActionRunnerTests {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mac-actions-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root.appendingPathComponent("Desktop"), withIntermediateDirectories: true)
         return root
+    }
+
+    @Test func scrollingGoesToTheWindowInFrontAndSaysWhere() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        #expect(await runner.perform(.scroll(direction: .down, amount: .page)) == .scrolled(.down, .page))
+        #expect(await runner.perform(.scroll(direction: .up, amount: .end)) == .scrolled(.up, .end))
+        #expect(recorder.scrolls == ["down page", "up end"])
+        #expect(MacActionOutcome.scrolled(.up, .end).spokenSentence == "Scrolled to the top.")
+        #expect(MacActionOutcome.scrolled(.down, .little).spokenSentence == "Scrolled down a little.")
+
+        recorder.scrollResult = .noWindow
+        #expect(await runner.perform(.scroll(direction: .down, amount: .page)) == .nothingToScroll)
+        recorder.scrollResult = .notAllowed
+        #expect(await runner.perform(.scroll(direction: .down, amount: .page)) == .needsAccessibility)
+    }
+
+    /// "Open downloads" went to reveal_in_finder as a folder called Downloads inside Downloads,
+    /// which does not exist (2026-10-29).
+    @Test func openingAFolderOpensTheLocationItselfOrAFolderInIt() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Desktop/Riti"), withIntermediateDirectories: true)
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        #expect(await runner.perform(.openFolder(name: nil, location: .downloads)) == .openedFolder(name: nil, location: .downloads))
+        #expect(await runner.perform(.openFolder(name: "Riti", location: .desktop)) == .openedFolder(name: "Riti", location: .desktop))
+        #expect(await runner.perform(.openFolder(name: "Missing", location: .desktop)) == .nothingToReveal(name: "Missing", location: .desktop))
+        #expect(await runner.perform(.openFolder(name: "../etc", location: .desktop)) == .invalidName)
+        #expect(recorder.openedFolders == [root.appendingPathComponent("Downloads"), root.appendingPathComponent("Desktop/Riti")])
+        #expect(MacActionOutcome.openedFolder(name: nil, location: .downloads).spokenSentence == "Opened your Downloads folder.")
+    }
+
+    @Test func findingFilesSelectsTheBestMatchAndNeverLogsNames() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        #expect(await runner.perform(.findFiles(query: "tax return")) == .noFilesFound(query: "tax return"))
+        #expect(recorder.revealedURLs.isEmpty)
+
+        let files = [URL(fileURLWithPath: "/Users/tester/Documents/Tax return 2025.pdf"), URL(fileURLWithPath: "/Users/tester/Desktop/tax return draft.docx")]
+        recorder.foundFiles = files
+        let outcome = await runner.perform(.findFiles(query: "tax return"))
+        #expect(outcome == .foundFiles(query: "tax return", files: files))
+        #expect(recorder.revealedURLs == [files[0]])
+        #expect(outcome.spokenSentence == "Found 2 matches; Tax return 2025.pdf is selected in Finder.")
+        #expect(outcome.toolOutput.contains("tax return draft.docx — in Desktop"))
+        #expect(!outcome.logDescription.contains("Tax"))
+        #expect(outcome.thenLooksAtScreen)
+    }
+
+    @Test func findingOnThePageTypesOnlyIntoAFindBar() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        #expect(await runner.perform(.findOnPage(text: "price")) == .searchedPage(text: "price"))
+        recorder.findOnPageResult = .noFindField
+        #expect(await runner.perform(.findOnPage(text: "price")) == .noFindBar)
+        recorder.findOnPageResult = .noApp
+        #expect(await runner.perform(.findOnPage(text: "price")) == .nothingInFront)
+        #expect(recorder.pageSearches == ["price", "price", "price"])
+        #expect(!MacActionOutcome.searchedPage(text: "secret words").logDescription.contains("secret"))
     }
 
     @Test func openingAnInstalledAppLaunchesItAndSaysSo() async throws {
@@ -532,6 +623,15 @@ struct MacActionParsingTests {
 
     @Test func playMusicParsesItsQuery() {
         #expect(MacAction.parse(toolName: "play_music", arguments: ["query": "Blinding Lights"]) == .action(.playMusic(query: "Blinding Lights")))
+        #expect(MacAction.parse(toolName: "scroll", arguments: ["direction": "Down"]) == .action(.scroll(direction: .down, amount: .page)))
+        #expect(MacAction.parse(toolName: "scroll", arguments: ["direction": "up", "amount": "end"]) == .action(.scroll(direction: .up, amount: .end)))
+        #expect(MacAction.parse(toolName: "scroll", arguments: ["direction": "sideways"]) == .badArguments(.failed("I need up, down, left or right")))
+        #expect(MacAction.parse(toolName: "open_folder", arguments: ["location": "downloads"]) == .action(.openFolder(name: nil, location: .downloads)))
+        #expect(MacAction.parse(toolName: "open_folder", arguments: ["location": "icloud"]) == .badArguments(.unknownLocation("icloud")))
+        #expect(MacAction.parse(toolName: "find_files", arguments: ["query": "tax return"]) == .action(.findFiles(query: "tax return")))
+        #expect(MacAction.parse(toolName: "find_on_page", arguments: ["text": "price"]) == .action(.findOnPage(text: "price")))
+        #expect(MacAction.parse(toolName: "find_on_page", arguments: ["text": String(repeating: "a", count: 101)]) == .badArguments(.invalidQuery))
+        #expect(MacAction.parse(toolName: "find_on_page", arguments: ["text": "a\nb"]) == .badArguments(.invalidQuery))
         #expect(MacAction.parse(toolName: "play_music", arguments: ["query": ""]) == .badArguments(.invalidQuery))
     }
 
@@ -583,7 +683,7 @@ struct FastActionToolDefinitionTests {
 
     @Test func everyFastActionIsOfferedToTheModel() {
         let names = MacAction.realtimeToolDefinitions().compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows", "scroll", "open_folder", "find_files", "find_on_page"])
     }
 
     @Test func createFolderDeclaresTheClosedLocationSet() throws {
@@ -674,6 +774,16 @@ struct FastActionToolDefinitionTests {
                 #expect(app == arguments["app"] as? String)
             case .playMusic(let query):
                 #expect(query == arguments["query"] as? String)
+            case .scroll(let direction, let amount):
+                #expect(direction.rawValue == arguments["direction"] as? String)
+                #expect(amount.rawValue == arguments["amount"] as? String)
+            case .openFolder(let name, let location):
+                #expect(name == arguments["name"] as? String)
+                #expect(location.rawValue == arguments["location"] as? String)
+            case .findFiles(let query):
+                #expect(query == arguments["query"] as? String)
+            case .findOnPage(let text):
+                #expect(text == arguments["text"] as? String)
             }
         }
     }

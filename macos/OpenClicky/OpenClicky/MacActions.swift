@@ -89,12 +89,21 @@ enum MacActionOutcome: Equatable {
     case unknownLocation(String)
     case invalidURL
     case permissionDenied(MacActionLocation)
+    case scrolled(ScrollDirection, ScrollAmount)
+    case nothingToScroll
+    case nothingInFront
+    case needsAccessibility
+    case openedFolder(name: String?, location: MacActionLocation)
+    case foundFiles(query: String, files: [URL])
+    case noFilesFound(query: String)
+    case searchedPage(text: String)
+    case noFindBar
     case failed(String)
 
     /// True when the action did what was asked (the tour counts it as a task handed over).
     var didSomething: Bool {
         switch self {
-        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail, .playingTrack, .openedSpotifySearch: return true
+        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail, .playingTrack, .openedSpotifySearch, .scrolled, .openedFolder, .foundFiles, .searchedPage: return true
         default: return false
         }
     }
@@ -118,6 +127,15 @@ enum MacActionOutcome: Equatable {
             return spokenSentence + " If they ask you to send it, say you never send email and that it is open in front of them."
         case .windowAppNotRunning:
             return spokenSentence + " Call open_app if they want it opened."
+        case .scrolled:
+            return spokenSentence + " Say only a word or two; the next screenshot shows where the page is now."
+        case .foundFiles(let query, let files):
+            let lines = files.map { "\($0.lastPathComponent) — in \($0.deletingLastPathComponent().lastPathComponent)" }.joined(separator: "\n")
+            return "Files whose names match \(query), best first (the first is selected in Finder, which is in the latest screenshot):\n\(lines)\nSay how many and name the first one or two briefly; never read folder paths character by character."
+        case .searchedPage(let text):
+            return "Searched the page for \(text) with the app's find bar; the first match is highlighted and the find bar shows how many there are. Say so in a few words."
+        case .noFindBar:
+            return spokenSentence + " Do not try again; if they want, point at the text in the screenshot instead."
         default:
             return spokenSentence
         }
@@ -136,6 +154,13 @@ enum MacActionOutcome: Equatable {
             return "draft_email: mail script failed"
         case .mailUnavailable:
             return "check_email: mail script failed"
+        // File names and searched words can be private.
+        case .foundFiles(_, let files):
+            return "find_files: \(files.count) found"
+        case .noFilesFound:
+            return "find_files: nothing found"
+        case .searchedPage(let text):
+            return "find_on_page: \(text.count)-character search typed"
         default:
             return spokenSentence
         }
@@ -145,7 +170,7 @@ enum MacActionOutcome: Equatable {
     /// changed what is on screen in a way worth describing (a page opened), false for the rest.
     var thenLooksAtScreen: Bool {
         switch self {
-        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable: return true
+        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable, .openedFolder, .foundFiles: return true
         case .draftedEmail(let app, _, _): return app == .gmail
         default: return false
         }
@@ -231,6 +256,35 @@ enum MacActionOutcome: Equatable {
             return "That doesn't look like a web address I can open."
         case .permissionDenied(let location):
             return "macOS hasn't granted access to \(location.spokenName) yet. I asked for it."
+        case .scrolled(let direction, .end):
+            switch direction {
+            case .up: return "Scrolled to the top."
+            case .down: return "Scrolled to the bottom."
+            case .left, .right: return "Scrolled all the way \(direction.rawValue)."
+            }
+        case .scrolled(let direction, .little):
+            return "Scrolled \(direction.rawValue) a little."
+        case .scrolled(let direction, .page):
+            return "Scrolled \(direction.rawValue)."
+        case .nothingToScroll:
+            return "There's no window in front for me to scroll."
+        case .nothingInFront:
+            return "There's no app in front for me to search."
+        case .needsAccessibility:
+            return "I need the Accessibility permission for that: System Settings, Privacy & Security, Accessibility."
+        case .openedFolder(nil, let location):
+            return "Opened \(location.spokenName)."
+        case .openedFolder(let name?, let location):
+            return "Opened \(name) on \(location.spokenName)."
+        case .foundFiles(_, let files):
+            let firstFileName = files.first?.lastPathComponent ?? ""
+            return files.count == 1 ? "Found \(firstFileName); it's selected in Finder." : "Found \(files.count) matches; \(firstFileName) is selected in Finder."
+        case .noFilesFound(let query):
+            return "I couldn't find a file called \(query) on this Mac."
+        case .searchedPage(let text):
+            return "Looking for \(text) on the page."
+        case .noFindBar:
+            return "This app didn't open a find bar, so I didn't type anything."
         case .failed(let reason):
             return "That didn't work: \(reason)."
         }
@@ -306,6 +360,14 @@ enum MacAction: Equatable {
     case checkEmail(app: String?)
     case draftEmail(to: String, subject: String, body: String, app: String?)
     case playMusic(query: String)
+    /// Scrolls the window in front.
+    case scroll(direction: ScrollDirection, amount: ScrollAmount)
+    /// A whole folder in Finder ("open downloads"), or a folder inside it when one is named.
+    case openFolder(name: String?, location: MacActionLocation)
+    /// Spotlight: files under the home folder whose names hold every word said.
+    case findFiles(query: String)
+    /// The front app's find bar (⌘F) with these words.
+    case findOnPage(text: String)
 }
 
 /// Performs the fast-lane actions. The AppKit calls are injected so the whole runner can be tested
@@ -342,6 +404,14 @@ final class MacActionRunner {
         var playTrack: (String) async -> Bool
         /// Opens Spotify's own search page for the words.
         var openSpotifySearch: (String) -> Void
+        var scrollFrontWindow: (ScrollDirection, ScrollAmount) -> ScrollResult
+        /// Opens a folder in Finder.
+        var openFolder: (URL) -> Void
+        /// Spotlight's best matches for the words, best first.
+        var findFiles: (String) async -> [URL]
+        /// Selects a found file in Finder.
+        var revealFiles: ([URL]) -> Void
+        var findOnPage: (String) async -> FindOnPageResult
 
         init(
             controlPlayer: @escaping (MediaCommand) async -> Bool = { _ in false },
@@ -356,7 +426,12 @@ final class MacActionRunner {
             spotifyIsRunning: @escaping () -> Bool = { false },
             launchSpotify: @escaping () async -> Bool = { false },
             playTrack: @escaping (String) async -> Bool = { _ in false },
-            openSpotifySearch: @escaping (String) -> Void = { _ in }
+            openSpotifySearch: @escaping (String) -> Void = { _ in },
+            scrollFrontWindow: @escaping (ScrollDirection, ScrollAmount) -> ScrollResult = { _, _ in .noWindow },
+            openFolder: @escaping (URL) -> Void = { _ in },
+            findFiles: @escaping (String) async -> [URL] = { _ in [] },
+            revealFiles: @escaping ([URL]) -> Void = { _ in },
+            findOnPage: @escaping (String) async -> FindOnPageResult = { _ in .noApp }
         ) {
             self.controlPlayer = controlPlayer
             self.minimizeAllWindows = minimizeAllWindows
@@ -371,6 +446,11 @@ final class MacActionRunner {
             self.launchSpotify = launchSpotify
             self.playTrack = playTrack
             self.openSpotifySearch = openSpotifySearch
+            self.scrollFrontWindow = scrollFrontWindow
+            self.openFolder = openFolder
+            self.findFiles = findFiles
+            self.revealFiles = revealFiles
+            self.findOnPage = findOnPage
         }
 
         static let inert = Extras()
@@ -527,6 +607,42 @@ final class MacActionRunner {
             }
             guard await extras.playTrack(track.uri) else { return .playFailed }
             return .playingTrack(name: track.name, artist: track.artists.first ?? "")
+
+        case .scroll(let direction, let amount):
+            switch extras.scrollFrontWindow(direction, amount) {
+            case .scrolled: return .scrolled(direction, amount)
+            case .noWindow: return .nothingToScroll
+            case .notAllowed: return .needsAccessibility
+            }
+
+        case .openFolder(let rawName, let location):
+            let directory = location.directoryURL(homeDirectory: homeDirectory, workspaceDirectory: workspaceDirectory)
+            guard let rawName else {
+                extras.openFolder(directory)
+                return .openedFolder(name: nil, location: location)
+            }
+            guard let name = MacActionValidation.folderName(rawName) else { return .invalidName }
+            let target = directory.appendingPathComponent(name)
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                return .nothingToReveal(name: name, location: location)
+            }
+            extras.openFolder(target)
+            return .openedFolder(name: name, location: location)
+
+        case .findFiles(let query):
+            let files = await extras.findFiles(query)
+            guard let bestMatch = files.first else { return .noFilesFound(query: query) }
+            extras.revealFiles([bestMatch])
+            return .foundFiles(query: query, files: files)
+
+        case .findOnPage(let text):
+            switch await extras.findOnPage(text) {
+            case .typed: return .searchedPage(text: text)
+            case .noFindField: return .noFindBar
+            case .noApp: return .nothingInFront
+            case .notAllowed: return .needsAccessibility
+            }
         }
     }
 
@@ -614,7 +730,12 @@ final class MacActionRunner {
                 spotifyIsRunning: { SpotifyPlayer.isRunning() },
                 launchSpotify: { await SpotifyPlayer.launchAndWait() },
                 playTrack: { uri in await SpotifyPlayer.play(uri: uri) },
-                openSpotifySearch: { query in SpotifyPlayer.openSearch(for: query) }
+                openSpotifySearch: { query in SpotifyPlayer.openSearch(for: query) },
+                scrollFrontWindow: { direction, amount in ScreenNavigation.scrollFrontWindow(direction, amount) },
+                openFolder: { folderURL in NSWorkspace.shared.open(folderURL) },
+                findFiles: { query in await ScreenNavigation.findFiles(named: query) },
+                revealFiles: { fileURLs in NSWorkspace.shared.activateFileViewerSelecting(fileURLs) },
+                findOnPage: { text in await ScreenNavigation.findOnPage(text) }
             )
         )
     }
@@ -715,7 +836,7 @@ extension MacAction {
             [
                 "type": "function",
                 "name": "reveal_in_finder",
-                "description": "Show an existing file or folder in Finder.",
+                "description": "Show an existing file or folder in Finder, selected inside the location. To open a whole folder ('open downloads') use open_folder.",
                 "parameters": [
                     "type": "object",
                     "properties": [
@@ -796,6 +917,44 @@ extension MacAction {
                     "properties": ["app": ["type": "string", "description": "Only when they named one app: its name, e.g. 'Terminal'. Never leave it out when they named one."]],
                     "required": [String](),
                 ],
+            ],
+            [
+                "type": "function",
+                "name": "scroll",
+                "description": "Scroll the window in front, the way the person would with a trackpad. For 'scroll down', 'go down', 'next page', 'back to the top', 'scroll a bit'. Do it; never explain how to scroll.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "direction": ["type": "string", "enum": ScrollDirection.allCases.map(\.rawValue)],
+                        "amount": ["type": "string", "enum": ScrollAmount.allCases.map(\.rawValue), "description": "page (the default) for a screenful, little for 'a bit', end for 'to the top' / 'to the bottom'."],
+                    ],
+                    "required": ["direction"],
+                ],
+            ],
+            [
+                "type": "function",
+                "name": "open_folder",
+                "description": "Open a folder in a Finder window: 'open downloads', 'show my desktop', 'open the Projects folder in Documents'.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "location": ["type": "string", "enum": locations, "description": "Which folder, or where the named folder is."],
+                        "name": ["type": "string", "description": "Only for a folder inside the location: its name. Leave it out to open the location itself."],
+                    ],
+                    "required": ["location"],
+                ],
+            ],
+            [
+                "type": "function",
+                "name": "find_files",
+                "description": "Look for files on the Mac by name with Spotlight and select the best match in Finder: 'find my tax return', 'look for the budget spreadsheet', 'where is resume.pdf'. Not for text on the screen.",
+                "parameters": ["type": "object", "properties": ["query": ["type": "string", "description": "Words from the file's name, e.g. 'tax return 2025'."]], "required": ["query"]],
+            ],
+            [
+                "type": "function",
+                "name": "find_on_page",
+                "description": "Find words on the page or document in front with its find bar (command F) and jump to the first match: 'find price on this page', 'look for shipping here'. Not for files.",
+                "parameters": ["type": "object", "properties": ["text": ["type": "string", "description": "The words to find, as said."]], "required": ["text"]],
             ],
         ]
     }
@@ -885,6 +1044,28 @@ extension MacAction {
             guard !body.isEmpty else { return .badArguments(.failed("I need something to write")) }
             let app = string("app")
             return .action(.draftEmail(to: recipient, subject: string("subject"), body: body, app: app.isEmpty ? nil : app))
+
+        case "scroll":
+            guard let direction = ScrollDirection(rawValue: string("direction").lowercased()) else {
+                return .badArguments(.failed("I need up, down, left or right"))
+            }
+            let rawAmount = string("amount").lowercased()
+            let amount = rawAmount.isEmpty ? .page : (ScrollAmount(rawValue: rawAmount) ?? .page)
+            return .action(.scroll(direction: direction, amount: amount))
+
+        case "open_folder":
+            guard let location = MacActionLocation.named(string("location")) else { return .badArguments(.unknownLocation(string("location"))) }
+            let name = string("name")
+            return .action(.openFolder(name: name.isEmpty ? nil : name, location: location))
+
+        case "find_files":
+            guard let query = MacActionValidation.searchQuery(string("query")) else { return .badArguments(.invalidQuery) }
+            return .action(.findFiles(query: query))
+
+        case "find_on_page":
+            // Typed into a find bar, so a shorter cap than a web search's.
+            guard let text = MacActionValidation.searchQuery(string("text")), text.count <= 100 else { return .badArguments(.invalidQuery) }
+            return .action(.findOnPage(text: text))
 
         default:
             return .notAFastAction
