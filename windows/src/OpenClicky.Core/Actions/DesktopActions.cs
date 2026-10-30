@@ -135,6 +135,8 @@ public abstract record DesktopActionOutcome
     public sealed record PermissionDenied(DesktopActionLocation Location) : DesktopActionOutcome;
     public sealed record Scrolled(ScrollDirection Direction, ScrollAmount Amount) : DesktopActionOutcome;
     public sealed record NothingToScroll : DesktopActionOutcome;
+    public sealed record StoppedScrolling : DesktopActionOutcome;
+    public sealed record WasNotScrolling : DesktopActionOutcome;
     public sealed record NothingInFront : DesktopActionOutcome;
     /// <summary>The window in front runs as administrator, and Windows drops input from this app to it (the Mac's needsAccessibility).</summary>
     public sealed record InputBlocked : DesktopActionOutcome;
@@ -157,7 +159,7 @@ public abstract record DesktopActionOutcome
     /// <summary>True when the action did what was asked (the tour counts it as a task handed over).</summary>
     public bool DidSomething => this is OpenedApp or CreatedFolder or FolderAlreadyExists or Revealed or OpenedUrl or VolumeSet or MediaControlled
         or PlayerControlled or Searched or MinimizedWindows or RestoredWindows or OpenedInbox or DraftedEmail or PlayingTrack or OpenedTrack or OpenedSpotifySearch
-        or Scrolled or OpenedFolder or FoundFiles or SearchedPage or SwitchedTab;
+        or Scrolled or StoppedScrolling or OpenedFolder or FoundFiles or SearchedPage or SwitchedTab;
 
     /// <summary>
     /// What the Realtime model is told in the tool's output. The same as the sentence unless an outcome
@@ -169,6 +171,7 @@ public abstract record DesktopActionOutcome
         OpenedInbox inbox => $"{inbox.App.Title()}'s inbox is open and attached as the latest screenshot. Unread rows are in bold. Read out sender and subject of the unread ones briefly, newest first, at most five, then stop.",
         DraftedEmail => SpokenSentence + " If they ask you to send it, say you never send email and that it is open in front of them.",
         WindowAppNotRunning => SpokenSentence + " Call open_app if they want it opened.",
+        Scrolled { Amount: ScrollAmount.Continuous } => SpokenSentence + " It keeps going on its own. Say so in a few words; when they say stop (or 'that's enough', 'hold on'), call stop_scrolling.",
         Scrolled => SpokenSentence + " The latest screenshot shows the page now. If it looks the same as the one before, say the page didn't move (it may already be at the top or bottom, or a pop-up may be in the way) instead of saying it scrolled. Otherwise say only a word or two.",
         Failed { Reason: "nothing is playing" } => "Nothing is playing that Windows can control, so nothing was paused. If they meant a video on a web page, call click on that video now (it pauses or plays the way a mouse click does); otherwise tell them nothing is playing.",
         FoundFiles found => $"Files whose names match {found.Query}, best first (the first is selected in File Explorer, which is in the latest screenshot):\n"
@@ -196,10 +199,13 @@ public abstract record DesktopActionOutcome
     /// Whether the model should see a fresh screenshot before it speaks: true for an action that
     /// changed what is on screen in a way worth describing (a page or a folder opened), false for the rest.
     /// </summary>
-    public bool ThenLooksAtScreen => this is OpenedUrl or Searched or OpenedInbox or DraftedEmail or OpenedFolder or FoundFiles or SwitchedTab or Scrolled;
+    /// A continuous scroll is still moving, so a screenshot would show nothing settled.
+    public bool ThenLooksAtScreen => this is OpenedUrl or Searched or OpenedInbox or DraftedEmail or OpenedFolder or FoundFiles or SwitchedTab
+        or Scrolled { Amount: not ScrollAmount.Continuous };
 
     /// <summary>Whether that look can come at once: a scroll changes the window in front within a frame or two,
-    /// unlike a page that has to load ("scroll up" on a page that could not move was answered "Scrolled up.").</summary>
+    /// unlike a page that has to load ("scroll up" on a page that could not move was answered "Scrolled up.").
+    /// A slow scroll returns once its glide is over, so the look still comes after it.</summary>
     public bool LooksWithoutWaitingForAPage => this is Scrolled;
 
     public string SpokenSentence => this switch
@@ -251,8 +257,12 @@ public abstract record DesktopActionOutcome
             _ => $"Scrolled all the way {scrolled.Direction.RawValue()}.",
         },
         Scrolled { Amount: ScrollAmount.Little } scrolled => $"Scrolled {scrolled.Direction.RawValue()} a little.",
+        Scrolled { Amount: ScrollAmount.Slow } scrolled => $"Scrolled {scrolled.Direction.RawValue()} slowly.",
+        Scrolled { Amount: ScrollAmount.Continuous } scrolled => $"Scrolling {scrolled.Direction.RawValue()}; say stop when you want me to stop.",
         Scrolled scrolled => $"Scrolled {scrolled.Direction.RawValue()}.",
         NothingToScroll => "There's no window in front for me to scroll.",
+        StoppedScrolling => "Stopped.",
+        WasNotScrolling => "I wasn't scrolling.",
         NothingInFront => "There's no app in front for me to search.",
         InputBlocked => "Windows won't let me do that in an app that runs as administrator.",
         OpenedFolder { Name: null } opened => $"Opened {opened.Location.SpokenName()}.",
@@ -382,6 +392,8 @@ public abstract record DesktopAction
     public sealed record PlayMusic(string Query) : DesktopAction;
     /// <summary>Scrolls the window in front.</summary>
     public sealed record Scroll(ScrollDirection Direction, ScrollAmount Amount) : DesktopAction;
+    /// <summary>Ends a continuous scroll.</summary>
+    public sealed record StopScrolling : DesktopAction;
     /// <summary>A whole folder in File Explorer ("open downloads"), or a folder inside it when one is named.</summary>
     public sealed record OpenFolder(string? Name, DesktopActionLocation Location) : DesktopAction;
     /// <summary>Windows Search: files under the home folder whose names hold every word said.</summary>
@@ -406,6 +418,7 @@ public abstract record DesktopAction
     public const string PlayMusicToolName = "play_music";
     public const string RestoreWindowsToolName = "restore_windows";
     public const string ScrollToolName = "scroll";
+    public const string StopScrollingToolName = "stop_scrolling";
     public const string OpenFolderToolName = "open_folder";
     public const string FindFilesToolName = "find_files";
     public const string FindOnPageToolName = "find_on_page";
@@ -533,10 +546,13 @@ public abstract record DesktopAction
                          {
                              ["type"] = "string",
                              ["enum"] = new JsonArray(ScreenNavigation.AllAmounts.Select(amount => (JsonNode)amount.RawValue()).ToArray()),
-                             ["description"] = "page (the default) for a screenful, little for 'a bit', end for 'to the top' / 'to the bottom'.",
+                             ["description"] = "page (the default) for a screenful, little for 'a bit', end for 'to the top' / 'to the bottom', slow for 'scroll down slowly' (a screenful that glides), continuous for 'keep scrolling' / 'scroll slowly so I can read' (keeps going until stop_scrolling).",
                          },
                      },
                      "direction"),
+            Function(StopScrollingToolName,
+                     "Stop a continuous scroll: 'stop', 'that's enough', 'hold on' while the page is still scrolling.",
+                     new JsonObject()),
             Function(OpenFolderToolName,
                      "Open a folder in a File Explorer window: 'open downloads', 'show my desktop', 'open the Projects folder in Documents'.",
                      new JsonObject
@@ -592,7 +608,7 @@ public abstract record DesktopAction
     {
         OpenAppToolName, OpenUrlToolName, CreateFolderToolName, RevealInExplorerToolName, RevealInFinderToolName,
         SetVolumeToolName, MediaControlToolName, WebSearchToolName, MinimizeAllToolName, CheckEmailToolName, DraftEmailToolName,
-        PlayMusicToolName, RestoreWindowsToolName, ScrollToolName, OpenFolderToolName, FindFilesToolName, FindOnPageToolName,
+        PlayMusicToolName, RestoreWindowsToolName, ScrollToolName, StopScrollingToolName, OpenFolderToolName, FindFilesToolName, FindOnPageToolName,
         SwitchTabToolName,
     };
 
@@ -704,6 +720,9 @@ public abstract record DesktopAction
                 var amount = ScreenNavigation.Amount(StringArgument("amount")) ?? ScrollAmount.Page;
                 return new DesktopActionParseResult.Action(new Scroll(direction, amount));
             }
+
+            case StopScrollingToolName:
+                return new DesktopActionParseResult.Action(new StopScrolling());
 
             case OpenFolderToolName:
             {
@@ -1058,6 +1077,9 @@ public sealed class DesktopActionRunner
                     ScrollResult.NotAllowed => new DesktopActionOutcome.InputBlocked(),
                     _ => new DesktopActionOutcome.NothingToScroll(),
                 };
+
+            case DesktopAction.StopScrolling:
+                return executor.StopScrolling() ? new DesktopActionOutcome.StoppedScrolling() : new DesktopActionOutcome.WasNotScrolling();
 
             case DesktopAction.OpenFolder openFolder:
             {

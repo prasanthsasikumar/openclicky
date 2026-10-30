@@ -191,6 +191,14 @@ public sealed class DesktopActionRunnerTests : IDisposable
             return ScrollResultToGive;
         }
 
+        public bool IsScrolling { get; set; }
+        public bool StopScrolling()
+        {
+            var was = IsScrolling;
+            IsScrolling = false;
+            return was;
+        }
+
         public bool OpenFolder(string path) { OpenedFolders.Add(path); return true; }
 
         public Task<IReadOnlyList<string>> FindFilesAsync(string words)
@@ -371,6 +379,20 @@ public sealed class DesktopActionRunnerTests : IDisposable
         Assert.Contains("call click on that video", nothingPlaying.ToolOutput);
         Assert.DoesNotContain("click", nothingPlaying.SpokenSentence);
 
+        // "Scroll down slowly" looks once the glide is over; "keep scrolling" is still moving, so it
+        // doesn't look, and the model is told to call stop_scrolling on "stop" (a6d4ba4).
+        Assert.Equal("Scrolled down slowly.", new DesktopActionOutcome.Scrolled(ScrollDirection.Down, ScrollAmount.Slow).SpokenSentence);
+        Assert.True(new DesktopActionOutcome.Scrolled(ScrollDirection.Down, ScrollAmount.Slow).ThenLooksAtScreen);
+        var continuous = new DesktopActionOutcome.Scrolled(ScrollDirection.Down, ScrollAmount.Continuous);
+        Assert.Equal("Scrolling down; say stop when you want me to stop.", continuous.SpokenSentence);
+        Assert.Contains("call stop_scrolling", continuous.ToolOutput);
+        Assert.False(continuous.ThenLooksAtScreen);
+        recorder.IsScrolling = true;
+        Assert.Equal(new DesktopActionOutcome.StoppedScrolling(), await runner.PerformAsync(new DesktopAction.StopScrolling()));
+        Assert.Equal(new DesktopActionOutcome.WasNotScrolling(), await runner.PerformAsync(new DesktopAction.StopScrolling()));
+        Assert.Equal("Stopped.", new DesktopActionOutcome.StoppedScrolling().SpokenSentence);
+        Assert.Equal("I wasn't scrolling.", new DesktopActionOutcome.WasNotScrolling().SpokenSentence);
+
         recorder.ScrollResultToGive = ScrollResult.NoWindow;
         Assert.Equal(new DesktopActionOutcome.NothingToScroll(), await runner.PerformAsync(new DesktopAction.Scroll(ScrollDirection.Down, ScrollAmount.Page)));
         recorder.ScrollResultToGive = ScrollResult.NotAllowed;
@@ -499,6 +521,9 @@ public class DesktopActionParsingTests
         Assert.Equal(Action(new DesktopAction.Scroll(ScrollDirection.Up, ScrollAmount.End)), Parse("scroll", new JsonObject { ["direction"] = "up", ["amount"] = "end" }));
         Assert.Equal(new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.Failed("I need up, down, left or right")),
                      Parse("scroll", new JsonObject { ["direction"] = "sideways" }));
+        Assert.Equal(Action(new DesktopAction.Scroll(ScrollDirection.Down, ScrollAmount.Slow)), Parse("scroll", new JsonObject { ["direction"] = "down", ["amount"] = "slow" }));
+        Assert.Equal(Action(new DesktopAction.Scroll(ScrollDirection.Down, ScrollAmount.Continuous)), Parse("scroll", new JsonObject { ["direction"] = "down", ["amount"] = "continuous" }));
+        Assert.Equal(Action(new DesktopAction.StopScrolling()), Parse("stop_scrolling", new JsonObject()));
         Assert.Equal(Action(new DesktopAction.OpenFolder(null, DesktopActionLocation.Downloads)), Parse("open_folder", new JsonObject { ["location"] = "downloads" }));
         Assert.Equal(Action(new DesktopAction.OpenFolder("Projects", DesktopActionLocation.Documents)),
                      Parse("open_folder", new JsonObject { ["location"] = "documents", ["name"] = "Projects" }));
@@ -592,7 +617,7 @@ public class FastActionToolDefinitionTests
         var names = DesktopAction.RealtimeToolDefinitions().Select(definition => definition["name"]!.GetValue<string>());
         Assert.Equal(["open_app", "open_url", "create_folder", "reveal_in_explorer", "set_volume", "media_control",
                       "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows",
-                      "scroll", "open_folder", "find_files", "find_on_page", "switch_tab"], names);
+                      "scroll", "stop_scrolling", "open_folder", "find_files", "find_on_page", "switch_tab"], names);
     }
 
     [Fact]
@@ -630,7 +655,7 @@ public class FastActionToolDefinitionTests
         }
         // They fit the ask lane's hook.
         var tools = AskLanePrompts.AskTools(offersQuickActions: true, hasWritingTarget: false, anthropic);
-        Assert.Equal(17, tools.Count);
+        Assert.Equal(18, tools.Count);
     }
 
     /// <summary>
@@ -704,6 +729,9 @@ public class FastActionToolDefinitionTests
                     Assert.Equal(arguments["direction"]!.GetValue<string>(), scroll.Direction.RawValue());
                     Assert.Equal(arguments["amount"]!.GetValue<string>(), scroll.Amount.RawValue());
                     break;
+                case DesktopAction.StopScrolling:
+                    Assert.Empty(properties);
+                    break;
                 case DesktopAction.OpenFolder openFolder:
                     Assert.Equal(arguments["name"]!.GetValue<string>(), openFolder.Name);
                     Assert.Equal(arguments["location"]!.GetValue<string>(), openFolder.Location.RawValue());
@@ -738,7 +766,7 @@ public class DesktopActionPlanToolTests
     public void InstructionBlockNamesEveryRealToolWithItsDescriptionAndSchema()
     {
         var block = PlanToolProtocol.InstructionBlock(QuickActionTools);
-        Assert.Equal(17, QuickActionTools.Count);
+        Assert.Equal(18, QuickActionTools.Count);
         foreach (var tool in QuickActionTools)
         {
             Assert.Contains($"- {tool.Name}: {tool.Description}", block);
