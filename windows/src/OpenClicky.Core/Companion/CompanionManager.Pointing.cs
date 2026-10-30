@@ -80,6 +80,46 @@ public sealed partial class CompanionManager
         PointAt(pointCoordinate, parseResult.ElementLabel, targetScreenCapture);
     }
 
+    /// <summary>
+    /// The ask lane's `click` (AskLaneClick): the buddy flies to Claude's point, then a real click there,
+    /// a web link followed in its own tab. Words that commit something are pointed at and never pressed.
+    /// Returns the sentence said after the answer.
+    /// </summary>
+    private async Task<string> ClickForAskLaneAsync(IReadOnlyDictionary<string, string> arguments,
+                                                    IReadOnlyList<CompanionScreenCapture> screenCaptures, CancellationToken cancellationToken)
+    {
+        if (Actions.AskLaneClick.Parse(arguments) is not { } request) return Actions.AskLaneClick.UnreadableSentence;
+        var capture = request.ScreenNumber is { } screenNumber && screenNumber <= screenCaptures.Count
+            ? screenCaptures[screenNumber - 1]
+            : screenCaptures.FirstOrDefault(screen => screen.IsCursorScreen) ?? screenCaptures.FirstOrDefault();
+        if (capture is null) return Actions.AskLaneClick.UnreadableSentence;
+        var screenshotPoint = new ScreenPoint(request.X, request.Y);
+        if (Actions.ScreenNavigation.ClickIsRisky(request.Label, request.Text))
+        {
+            PointAt(screenshotPoint, request.Label, capture);
+            AppLog.Write($"click: \"{request.Label}\" refused, it could commit something");
+            return Actions.AskLaneClick.RiskySentence(request.Label);
+        }
+        if (!PointAt(ScreenLocation(screenshotPoint, capture), FrameOf(capture), request.Label))
+        {
+            AppLog.Write("click: not done, it was on a windows permission prompt");
+            return Actions.AskLaneClick.UnreadableSentence;
+        }
+        // Let the buddy arrive first, so the person sees where the click lands.
+        try { await Task.Delay(AskLaneClickFlightDelay, cancellationToken); }
+        catch (OperationCanceledException) { return ""; }
+        var result = await services.DesktopActions.ClickAsync(capture.GlobalPoint(request.X, request.Y), request.InNewTab);
+        if (result is Actions.ScreenClickResult.Clicked or Actions.ScreenClickResult.FollowedLink or Actions.ScreenClickResult.OpenedLinkInNewTab)
+        {
+            LastSuccessfulQuickActionAt = DateTimeOffset.Now;
+        }
+        AppLog.Write($"click: ({request.X:0}, {request.Y:0}) \"{request.Label}\" on the ask lane → {result}");
+        return Actions.AskLaneClick.SpokenSentence(result, request.Label);
+    }
+
+    /// <summary>How long the buddy has to fly to the spot before the ask lane clicks it.</summary>
+    private static readonly TimeSpan AskLaneClickFlightDelay = TimeSpan.FromMilliseconds(600);
+
     // MARK: - The pointing demo (onboarding and the tour's "watch this")
 
     /// <summary>
