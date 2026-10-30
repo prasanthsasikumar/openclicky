@@ -12,6 +12,19 @@ public class ScreenTextLocatorTests
         new(text, new ScreenRect(x, y, width, height));
 
     [Fact]
+    public void AButtonReadingTheWordsBeatsASentenceMentioningThem()
+    {
+        // A cookie banner: the sentence about "Accept All" sat nearer the guess than the button.
+        var lines = new[]
+        {
+            Line("By clicking \"Accept All\", you consent to our use of cookies.", 300, 420, 560),
+            Line("Accept All", 900, 600, 110),
+        };
+        var match = ScreenTextLocator.Locate("Accept All", new ScreenPoint(560, 430), lines, 1000, 128);
+        Assert.Equal("Accept All", match?.Text);
+    }
+
+    [Fact]
     public void ClearlyNearestMatchWins()
     {
         var lines = new[] { Line("Star", 800, 500, 30), Line("Star", 800, 1400, 30) };

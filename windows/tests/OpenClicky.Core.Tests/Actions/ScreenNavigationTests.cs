@@ -61,6 +61,34 @@ public sealed class ScreenNavigationTests : IDisposable
         Assert.False(ScreenNavigation.ClickIsRisky("posts tab", "Posts"));
         Assert.False(ScreenNavigation.ClickIsRisky("sign in", "Sign in"));
         Assert.False(ScreenNavigation.ClickIsRisky("orders", "Your Orders"));
+        // A cookie banner has to be clickable to browse by voice at all (2026-10-29).
+        Assert.False(ScreenNavigation.ClickIsRisky("Accept All button", "Accept All"));
+    }
+
+    [Fact]
+    public void VideosAndPicturesAreAimedAtTheImageNotTheCaption()
+    {
+        Assert.True(ScreenNavigation.NamesAPicture("first video"));
+        Assert.True(ScreenNavigation.NamesAPicture("video thumbnail"));
+        Assert.True(ScreenNavigation.NamesAPicture("play button"));
+        Assert.False(ScreenNavigation.NamesAPicture("first link"));
+        Assert.False(ScreenNavigation.NamesAPicture("Accept All button"));
+    }
+
+    [Fact]
+    public void ASpotUnderTheTaskbarIsNotClickedUnlessAWindowFillsTheMonitor()
+    {
+        var monitor = new PixelRect(0, 0, 1920, 1080);
+        var workArea = new PixelRect(0, 0, 1920, 1032);
+        var maximized = new PixelRect(0, 0, 1920, 1032);
+        Assert.True(ScreenNavigation.IsUnderTaskbar(new PixelPoint(900, 1050), monitor, workArea, maximized));
+        // The last few pixels above the taskbar are its edge too, as the Mac's 4 pt inset.
+        Assert.True(ScreenNavigation.IsUnderTaskbar(new PixelPoint(900, 1030), monitor, workArea, maximized));
+        Assert.False(ScreenNavigation.IsUnderTaskbar(new PixelPoint(900, 1000), monitor, workArea, maximized));
+        // Full screen (F11, a video) hides the taskbar.
+        Assert.False(ScreenNavigation.IsUnderTaskbar(new PixelPoint(900, 1050), monitor, workArea, monitor));
+        // A point on another monitor is that monitor's business.
+        Assert.False(ScreenNavigation.IsUnderTaskbar(new PixelPoint(2500, 1050), monitor, workArea, null));
     }
 
     [Fact]

@@ -16,7 +16,9 @@
 // (SystemIndex), with a bounded walk of the home folder when the index does not answer;
 // AppData stands in for ~/Library among the paths a person is never shown; Ctrl+F is left alone
 // in Outlook, where it forwards an email; OpenClicky's own window under a click is found by
-// WindowFromPoint (the hit test the click itself gets) rather than a window list.
+// WindowFromPoint (the hit test the click itself gets) rather than a window list; the Mac's
+// "under the Dock or menu bar" is outside the monitor's work area, except under a window that
+// fills the monitor (full screen hides the taskbar).
 
 using OpenClicky.Core.Platform;
 
@@ -66,6 +68,8 @@ public enum ScreenClickResult
     Clicked,
     /// <summary>The spot is on one of OpenClicky's own windows.</summary>
     OwnWindow,
+    /// <summary>Under the taskbar (outside the monitor's work area): a click there lands on it, not on the page.</summary>
+    UnderTaskbar,
     /// <summary>The window there runs as administrator, or nothing can click on this PC.</summary>
     NotAllowed,
 }
@@ -155,13 +159,42 @@ public static class ScreenNavigation
     [
         "send", "buy", "pay", "purchase", "order", "checkout", "check out", "delete", "remove",
         "erase", "trash", "submit", "confirm", "transfer", "donate", "subscribe", "unsubscribe",
-        "sign out", "log out", "uninstall", "publish", "post", "place order", "book now", "accept",
+        "sign out", "log out", "uninstall", "publish", "post", "place order", "book now",
     ];
 
     public static bool ClickIsRisky(string label, string text)
     {
         var joined = " " + string.Join(" ", Words($"{label} {text}")) + " ";
         return RiskyClickWords.Any(word => joined.Contains($" {word} ", StringComparison.Ordinal));
+    }
+
+    private static readonly HashSet<string> PictureWords = new(StringComparer.Ordinal)
+    {
+        "video", "videos", "thumbnail", "image", "picture", "photo", "play", "player",
+    };
+
+    /// <summary>
+    /// Whether the model's label names a picture rather than words: a video, thumbnail, image. Such a
+    /// target is aimed at the image itself, not snapped to the caption under it.
+    /// </summary>
+    public static bool NamesAPicture(string label) => Words(label).Any(PictureWords.Contains);
+
+    /// <summary>
+    /// Whether a click at <paramref name="point"/> would land on the taskbar rather than the page: the
+    /// point is on <paramref name="monitor"/> but outside its work area (less 4 px at the top and
+    /// bottom, the Mac's inset). A window that fills the whole monitor (a full-screen video, F11) has
+    /// the taskbar hidden under it, so nothing is under the edge then.
+    /// </summary>
+    public static bool IsUnderTaskbar(PixelPoint point, PixelRect monitor, PixelRect workArea, PixelRect? windowAtPoint)
+    {
+        if (!monitor.Contains(point)) return false;
+        if (windowAtPoint is { } window && window.Left <= monitor.Left && window.Top <= monitor.Top
+            && window.Right >= monitor.Right && window.Bottom >= monitor.Bottom)
+        {
+            return false;
+        }
+        var visible = PixelRect.FromEdges(workArea.Left, workArea.Top + 4, workArea.Right, workArea.Bottom - 4);
+        return !visible.Contains(point);
     }
 
     /// <summary>Lower-cased runs of letters and digits; everything else separates.</summary>

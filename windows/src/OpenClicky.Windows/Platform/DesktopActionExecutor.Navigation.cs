@@ -215,7 +215,30 @@ public sealed partial class DesktopActionExecutor
         var processId = root == 0 ? 0 : ProcessIdOf(root);
         if (processId == Environment.ProcessId) return ScreenClickResult.OwnWindow;
         if (processId != 0 && IsProcessElevated(processId) == true && IsProcessElevated(Environment.ProcessId) != true) return ScreenClickResult.NotAllowed;
+        if (IsUnderTaskbar(point, root)) return ScreenClickResult.UnderTaskbar;
         var sent = Send(AbsoluteMoveInput(point.X, point.Y), MouseInput(MOUSEEVENTF_LEFTDOWN), MouseInput(MOUSEEVENTF_LEFTUP));
         return sent == 3 ? ScreenClickResult.Clicked : ScreenClickResult.NotAllowed;
+    }
+
+    /// <summary>
+    /// The point is outside its monitor's work area, where the taskbar sits (ScreenNavigation.IsUnderTaskbar),
+    /// unless <paramref name="rootWindow"/> fills the monitor. The taskbar's own window is not the test: a
+    /// page whose bottom row hides behind it is what the model aims at, and only the work area says so.
+    /// </summary>
+    private static bool IsUnderTaskbar(PixelPoint point, nint rootWindow)
+    {
+        var monitor = MonitorFromPoint(new POINT { X = point.X, Y = point.Y }, MONITOR_DEFAULTTONEAREST);
+        var info = new MONITORINFOEX { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFOEX>(), szDevice = string.Empty };
+        if (monitor == 0 || !GetMonitorInfo(monitor, ref info)) return false;
+        PixelRect? window = null;
+        if (rootWindow != 0)
+        {
+            var frame = VisibleFrame(rootWindow);
+            window = PixelRect.FromEdges(frame.Left, frame.Top, frame.Right, frame.Bottom);
+        }
+        return ScreenNavigation.IsUnderTaskbar(point,
+            PixelRect.FromEdges(info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Right, info.rcMonitor.Bottom),
+            PixelRect.FromEdges(info.rcWork.Left, info.rcWork.Top, info.rcWork.Right, info.rcWork.Bottom),
+            window);
     }
 }

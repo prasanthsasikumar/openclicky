@@ -1764,6 +1764,10 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                         clickLog = "clicked";
                         clickOutput = $"Clicked {label}. The screen after the click is the latest screenshot; say in a few words what happened (which page or window opened). Do not read the page out unless asked.";
                         break;
+                    case Actions.ScreenClickResult.UnderTaskbar:
+                        clickLog = "refused, under the taskbar";
+                        clickOutput = $"Not clicked: {label} is at the edge of the screen, under the taskbar. Call scroll with amount little (down if it is near the bottom, up if near the top), then call click again for it without asking.";
+                        break;
                     case Actions.ScreenClickResult.OwnWindow:
                         clickLog = "refused, OpenClicky's own window";
                         clickOutput = "Not clicked: that spot is on OpenClicky's own window.";
@@ -1805,6 +1809,9 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         var point = guess;
         var resolution = "using the guess";
         var resolved = false;
+        // A video or picture is the image itself, not its caption: snapping "first video" to the title
+        // under the thumbnail clicked words at the window's bottom edge (2026-10-29).
+        var aimsAtPicture = Actions.ScreenNavigation.NamesAPicture(label);
         // A browser tab is a favicon plus a truncated title, which no screenshot model reads reliably;
         // the browser's own tab strip does.
         if (Pointing.LocateBrowserTab is { } locateBrowserTab)
@@ -1828,7 +1835,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         // closer together than the model's own error cannot be told apart by distance.
         var ambiguityMargin = capture.ScreenshotWidthInPixels * 0.1;
         IReadOnlyList<ScreenTextLine> lines = [];
-        if (!resolved && elementText.Length > 0 && screenText is not null)
+        if (!resolved && !aimsAtPicture && elementText.Length > 0 && screenText is not null)
         {
             lines = await screenText;
             if (lines.Count > 0 && ScreenTextLocator.Locate(elementText, guess, lines, radius, ambiguityMargin) is { } match)
@@ -1840,7 +1847,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         }
         // UI Automation knows what the pixels cannot: the control's role, and the title of the row
         // it sits in. It costs nothing, so it runs before paying for a Claude round trip.
-        if (!resolved && Pointing.LocateAccessibleElement is { } locateAccessibleElement)
+        if (!resolved && !aimsAtPicture && Pointing.LocateAccessibleElement is { } locateAccessibleElement)
         {
             try
             {
@@ -1869,11 +1876,14 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             if (located is not null)
             {
                 point = located.Point;
-                // Not resolved, as on the Mac: Claude can be ~150 px off, so click points here instead of clicking.
-                resolution =$"located by Claude ({Formatted(point.X)}, {Formatted(point.Y)}) in {(int)(now() - started).TotalMilliseconds} ms";
+                // Located, as on the Mac since 5602681: Claude found the element on the same screenshot,
+                // and leaving this unresolved refused every click it found ("click on the video", 2026-10-29).
+                resolved = true;
+                resolution = $"located by Claude ({Formatted(point.X)}, {Formatted(point.Y)}) in {(int)(now() - started).TotalMilliseconds} ms";
                 // Claude picks the right element and misplaces it by up to ~150 px; the text it named
-                // has an exact box in the OCR of the same screenshot, with a tighter margin.
-                if (located.VisibleText is { } visibleText && screenText is not null)
+                // has an exact box in the OCR of the same screenshot, with a tighter margin. Not for a
+                // picture, whose caption is not the thing to click.
+                if (!aimsAtPicture && located.VisibleText is { } visibleText && screenText is not null)
                 {
                     if (lines.Count == 0) lines = await screenText;
                     if (lines.Count > 0 && ScreenTextLocator.Locate(visibleText, located.Point, lines, radius * 0.6, ambiguityMargin * 0.5) is { } match)
