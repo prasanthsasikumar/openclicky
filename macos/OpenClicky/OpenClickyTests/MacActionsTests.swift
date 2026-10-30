@@ -145,6 +145,8 @@ struct MacActionRunnerTests {
         var fileSearches: [String] = []
         var findOnPageResult: FindOnPageResult = .typed
         var pageSearches: [String] = []
+        var tabSwitchResult: BrowserTabSwitchResult = .switched(title: "Cars & Bids")
+        var tabTargets: [BrowserTabTarget] = []
     }
 
     private func makeRunner(root: URL, recorder: Recorder) -> MacActionRunner {
@@ -199,6 +201,10 @@ struct MacActionRunnerTests {
                 findOnPage: { text in
                     recorder.pageSearches.append(text)
                     return recorder.findOnPageResult
+                },
+                switchTab: { target in
+                    recorder.tabTargets.append(target)
+                    return recorder.tabSwitchResult
                 }
             )
         )
@@ -278,6 +284,24 @@ struct MacActionRunnerTests {
         #expect(await runner.perform(.findOnPage(text: "price")) == .nothingInFront)
         #expect(recorder.pageSearches == ["price", "price", "price"])
         #expect(!MacActionOutcome.searchedPage(text: "secret words").logDescription.contains("secret"))
+    }
+
+    /// "Show me that tab" was answered with how to click the tab strip (2026-10-29).
+    @Test func switchingTabsSaysWhichTabAndLooks() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        let outcome = await runner.perform(.switchTab(.newest))
+        #expect(outcome == .switchedTab(title: "Cars & Bids"))
+        #expect(outcome.thenLooksAtScreen)
+        #expect(!outcome.logDescription.contains("Cars"))
+        recorder.tabSwitchResult = .noSuchTab
+        #expect(await runner.perform(.switchTab(.named("reddit"))) == .noSuchTab)
+        recorder.tabSwitchResult = .noBrowser
+        #expect(await runner.perform(.switchTab(.next)) == .noBrowserOpen)
+        #expect(recorder.tabTargets == [.newest, .named("reddit"), .next])
     }
 
     @Test func openingAnInstalledAppLaunchesItAndSaysSo() async throws {
@@ -630,6 +654,10 @@ struct MacActionParsingTests {
         #expect(MacAction.parse(toolName: "open_folder", arguments: ["location": "icloud"]) == .badArguments(.unknownLocation("icloud")))
         #expect(MacAction.parse(toolName: "find_files", arguments: ["query": "tax return"]) == .action(.findFiles(query: "tax return")))
         #expect(MacAction.parse(toolName: "find_on_page", arguments: ["text": "price"]) == .action(.findOnPage(text: "price")))
+        #expect(MacAction.parse(toolName: "switch_tab", arguments: ["which": "newest"]) == .action(.switchTab(.newest)))
+        #expect(MacAction.parse(toolName: "switch_tab", arguments: ["which": "named", "name": "cars and bids"]) == .action(.switchTab(.named("cars and bids"))))
+        #expect(MacAction.parse(toolName: "switch_tab", arguments: ["which": "named"]) == .badArguments(.noSuchTab))
+        #expect(MacAction.parse(toolName: "switch_tab", arguments: ["which": "Next"]) == .action(.switchTab(.next)))
         #expect(MacAction.parse(toolName: "find_on_page", arguments: ["text": String(repeating: "a", count: 101)]) == .badArguments(.invalidQuery))
         #expect(MacAction.parse(toolName: "find_on_page", arguments: ["text": "a\nb"]) == .badArguments(.invalidQuery))
         #expect(MacAction.parse(toolName: "play_music", arguments: ["query": ""]) == .badArguments(.invalidQuery))
@@ -683,7 +711,7 @@ struct FastActionToolDefinitionTests {
 
     @Test func everyFastActionIsOfferedToTheModel() {
         let names = MacAction.realtimeToolDefinitions().compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows", "scroll", "open_folder", "find_files", "find_on_page"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows", "scroll", "open_folder", "find_files", "find_on_page", "switch_tab"])
     }
 
     @Test func createFolderDeclaresTheClosedLocationSet() throws {
@@ -784,6 +812,9 @@ struct FastActionToolDefinitionTests {
                 #expect(query == arguments["query"] as? String)
             case .findOnPage(let text):
                 #expect(text == arguments["text"] as? String)
+            case .switchTab(let target):
+                #expect(arguments["which"] as? String == "named")
+                #expect(target == .named(arguments["name"] as? String ?? ""))
             }
         }
     }

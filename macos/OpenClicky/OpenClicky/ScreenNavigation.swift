@@ -46,6 +46,8 @@ enum FindOnPageResult: Equatable {
 
 enum ScreenClickResult: Equatable {
     case clicked
+    /// A web link in a browser, loaded in its own tab (or a new selected tab when asked).
+    case followedLink(URL, inNewTab: Bool)
     /// The spot is on one of OpenClicky's own windows.
     case ownWindow
     case notAllowed
@@ -168,16 +170,28 @@ extension ScreenNavigation {
     }
 
     /// One left click at an AppKit screen point. The pointer goes there (the buddy has just flown
-    /// there too), the way a person's click would leave it.
-    static func click(atAppKitPoint point: CGPoint) -> ScreenClickResult {
+    /// there too), the way a person's click would leave it. A web link in a browser is followed in
+    /// its own tab instead: a page may open a link in a background tab, which someone using their
+    /// voice cannot reach. `inNewTab` asks for a new tab (a link opens there, selected; anything
+    /// else gets ⌘-click).
+    static func click(atAppKitPoint point: CGPoint, inNewTab: Bool = false) -> ScreenClickResult {
         guard AXIsProcessTrusted() else { return .notAllowed }
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let location = eventPoint(fromAppKit: point, primaryScreenHeight: primaryHeight)
-        if ownerOfWindow(at: location, in: OnScreenWindows.current()) == ownPID { return .ownWindow }
+        let ownerPID = ownerOfWindow(at: location, in: OnScreenWindows.current())
+        if ownerPID == ownPID { return .ownWindow }
+        if let browser = BrowserControl.browser(frontOnly: true), ownerPID == browser.processIdentifier,
+           let link = BrowserControl.webLink(atEventPoint: location, inAppWithPID: browser.processIdentifier) {
+            CGWarpMouseCursorPosition(location)
+            if BrowserControl.open(link, inNewTab: inNewTab, browser: browser) { return .followedLink(link, inNewTab: inNewTab) }
+        }
         let source = CGEventSource(stateID: .hidSystemState)
         for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
             guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: location, mouseButton: .left) else { continue }
-            if type != .mouseMoved { event.setIntegerValueField(.mouseEventClickState, value: 1) }
+            if type != .mouseMoved {
+                event.setIntegerValueField(.mouseEventClickState, value: 1)
+                event.flags = inNewTab ? .maskCommand : []
+            }
             event.post(tap: .cghidEventTap)
         }
         return .clicked

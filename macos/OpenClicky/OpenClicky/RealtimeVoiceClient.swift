@@ -247,6 +247,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     When they tell you to click, open or press something on screen ("click the first link", "open that video"), call \
     click with the element's on-screen text; do not point at it or explain instead. "Scroll down", "go back to the top" \
     is the scroll tool. "Look for" a file is find_files; "look for" words on this page is find_on_page. \
+    A link opens in the same tab; pass new_tab only when they say "in a new tab" or "in another tab". "Go to that tab", \
+    "next tab", "the YouTube tab" is switch_tab. \
     \(CompanionManager.commandOrQuestionInstruction) \
     For anything bigger (creating or editing files or code, running commands, using integrations, research, \
     multi-step tasks), first say one short sentence acknowledging it, then call the send_to_agent \
@@ -696,8 +698,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         let clickTool: [String: Any] = [
             "type": "function",
             "name": Self.clickToolName,
-            "description": "Click a link, button, tab or field on screen for the user, the way they would with the mouse. Use it when they tell you to click or open something they can see ('click the first link', 'open that video', 'press Sign in'); point_at is for teaching instead. Same arguments as point_at: always pass the element's visible text. It never presses anything that sends, buys, pays, deletes or confirms; those it points at for them to click.",
-            "parameters": pointTool["parameters"] ?? [:],
+            "description": "Click a link, button or field on screen for the user, the way they would with the mouse. Use it when they tell you to click or open something they can see ('click the first link', 'open that video', 'press Sign in'); point_at is for teaching instead. Same arguments as point_at: always pass the element's visible text. A link opens in the same tab unless new_tab is true. It never presses anything that sends, buys, pays, deletes or confirms; those it points at for them to click.",
+            "parameters": Self.clickToolParameters(pointParameters: pointTool["parameters"] as? [String: Any] ?? [:]),
         ]
         // Ending hands-free by voice only makes sense while hands-free is on.
         let handsFreeTools = mode == .alwaysOn ? [Self.stopListeningToolDefinition()] : []
@@ -715,6 +717,15 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
 
     static let stopListeningToolName = "stop_listening"
     static let clickToolName = "click"
+
+    /// point_at's parameters plus `new_tab`, only for "open it in a new tab".
+    nonisolated static func clickToolParameters(pointParameters: [String: Any]) -> [String: Any] {
+        var parameters = pointParameters
+        var properties = parameters["properties"] as? [String: Any] ?? [:]
+        properties["new_tab"] = ["type": "boolean", "description": "True only when they asked to open it in a new or another tab. Otherwise leave it out."]
+        parameters["properties"] = properties
+        return parameters
+    }
 
     /// The model decides what counts as a sign-off, since people end in many ways; fixed words
     /// would also fire on "how do I quit Photoshop". A missed sign-off costs one key press, a
@@ -1364,6 +1375,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             if label.isEmpty { label = "it" }
             let guess = CGPoint(x: x, y: y)
             let elementText = (arguments["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let wantsNewTab = (arguments["new_tab"] as? Bool) ?? ((arguments["new_tab"] as? String)?.lowercased() == "true")
             let previousPointing = pointingChain
             let screenText = lastScreenText
             let userRequest = lastUserTranscript
@@ -1396,7 +1408,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                     clickOutput = "Not clicked: they stopped it."
                 } else {
                     self.onPointAt?(target.point, label, capture)
-                    switch ScreenNavigation.click(atAppKitPoint: location) {
+                    switch ScreenNavigation.click(atAppKitPoint: location, inNewTab: wantsNewTab) {
+                    case .followedLink(_, let inNewTab):
+                        await self.waitForScreenToSettle(frontAppBefore: frontAppBefore)
+                        guard !Task.isCancelled else { return }
+                        await self.attachScreenContext()
+                        clickLog = inNewTab ? "opened the link in a new tab" : "followed the link in this tab"
+                        clickOutput = "Opened \(label)\(inNewTab ? " in a new tab, which is now the one in front" : ""). The page is the latest screenshot; say in a few words what opened. Do not read the page out unless asked."
                     case .clicked:
                         await self.waitForScreenToSettle(frontAppBefore: frontAppBefore)
                         guard !Task.isCancelled else { return }

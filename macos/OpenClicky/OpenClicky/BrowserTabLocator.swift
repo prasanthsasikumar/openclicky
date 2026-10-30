@@ -20,7 +20,7 @@ nonisolated struct BrowserTab: Equatable {
 
 nonisolated enum BrowserTabLocator {
     /// Browsers whose AppleScript dictionary lists `tabs of front window` with a URL and a title.
-    private static let scriptableBrowsers: [String: (tabsExpression: String, titleProperty: String)] = [
+    static let scriptableBrowsers: [String: (tabsExpression: String, titleProperty: String)] = [
         "com.google.Chrome": ("tabs of front window", "title"),
         "com.brave.Browser": ("tabs of front window", "title"),
         "com.microsoft.edgemac": ("tabs of front window", "title"),
@@ -142,7 +142,7 @@ nonisolated enum BrowserTabLocator {
 
     /// The front window's tabs in strip order via AppleScript (nil URL for a tab whose URL is not a URL).
     @MainActor
-    private static func tabList(bundleIdentifier: String, browser: (tabsExpression: String, titleProperty: String)) -> [BrowserTab] {
+    static func tabList(bundleIdentifier: String, browser: (tabsExpression: String, titleProperty: String)) -> [BrowserTab] {
         // Two lists separated by a marker so titles containing commas survive the round trip.
         let source = """
         tell application id "\(bundleIdentifier)"

@@ -98,12 +98,16 @@ enum MacActionOutcome: Equatable {
     case noFilesFound(query: String)
     case searchedPage(text: String)
     case noFindBar
+    case switchedTab(title: String)
+    case noBrowserOpen
+    case noSuchTab
+    case browserNotAllowed
     case failed(String)
 
     /// True when the action did what was asked (the tour counts it as a task handed over).
     var didSomething: Bool {
         switch self {
-        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail, .playingTrack, .openedSpotifySearch, .scrolled, .openedFolder, .foundFiles, .searchedPage: return true
+        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail, .playingTrack, .openedSpotifySearch, .scrolled, .openedFolder, .foundFiles, .searchedPage, .switchedTab: return true
         default: return false
         }
     }
@@ -136,6 +140,10 @@ enum MacActionOutcome: Equatable {
             return "Searched the page for \(text) with the app's find bar; the first match is highlighted and the find bar shows how many there are. Say so in a few words."
         case .noFindBar:
             return spokenSentence + " Do not try again; if they want, point at the text in the screenshot instead."
+        case .switchedTab(let title):
+            return "Switched to the tab \(title). It is the latest screenshot; say in a few words what is on it."
+        case .noSuchTab:
+            return spokenSentence + " Name the open tabs you can see in the screenshot, briefly, so they can pick one."
         default:
             return spokenSentence
         }
@@ -161,6 +169,8 @@ enum MacActionOutcome: Equatable {
             return "find_files: nothing found"
         case .searchedPage(let text):
             return "find_on_page: \(text.count)-character search typed"
+        case .switchedTab:
+            return "switch_tab: switched"
         default:
             return spokenSentence
         }
@@ -170,7 +180,7 @@ enum MacActionOutcome: Equatable {
     /// changed what is on screen in a way worth describing (a page opened), false for the rest.
     var thenLooksAtScreen: Bool {
         switch self {
-        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable, .openedFolder, .foundFiles: return true
+        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable, .openedFolder, .foundFiles, .switchedTab: return true
         case .draftedEmail(let app, _, _): return app == .gmail
         default: return false
         }
@@ -285,6 +295,14 @@ enum MacActionOutcome: Equatable {
             return "Looking for \(text) on the page."
         case .noFindBar:
             return "This app didn't open a find bar, so I didn't type anything."
+        case .switchedTab(let title):
+            return "Here's \(title)."
+        case .noBrowserOpen:
+            return "There's no browser open for me to switch tabs in."
+        case .noSuchTab:
+            return "I couldn't find that tab."
+        case .browserNotAllowed:
+            return "macOS didn't let me control the browser. Allow OpenClicky under System Settings, Privacy & Security, Automation."
         case .failed(let reason):
             return "That didn't work: \(reason)."
         }
@@ -368,6 +386,8 @@ enum MacAction: Equatable {
     case findFiles(query: String)
     /// The front app's find bar (⌘F) with these words.
     case findOnPage(text: String)
+    /// Another tab of the browser in front.
+    case switchTab(BrowserTabTarget)
 }
 
 /// Performs the fast-lane actions. The AppKit calls are injected so the whole runner can be tested
@@ -412,6 +432,7 @@ final class MacActionRunner {
         /// Selects a found file in Finder.
         var revealFiles: ([URL]) -> Void
         var findOnPage: (String) async -> FindOnPageResult
+        var switchTab: (BrowserTabTarget) -> BrowserTabSwitchResult
 
         init(
             controlPlayer: @escaping (MediaCommand) async -> Bool = { _ in false },
@@ -431,7 +452,8 @@ final class MacActionRunner {
             openFolder: @escaping (URL) -> Void = { _ in },
             findFiles: @escaping (String) async -> [URL] = { _ in [] },
             revealFiles: @escaping ([URL]) -> Void = { _ in },
-            findOnPage: @escaping (String) async -> FindOnPageResult = { _ in .noApp }
+            findOnPage: @escaping (String) async -> FindOnPageResult = { _ in .noApp },
+            switchTab: @escaping (BrowserTabTarget) -> BrowserTabSwitchResult = { _ in .noBrowser }
         ) {
             self.controlPlayer = controlPlayer
             self.minimizeAllWindows = minimizeAllWindows
@@ -451,6 +473,7 @@ final class MacActionRunner {
             self.findFiles = findFiles
             self.revealFiles = revealFiles
             self.findOnPage = findOnPage
+            self.switchTab = switchTab
         }
 
         static let inert = Extras()
@@ -643,6 +666,14 @@ final class MacActionRunner {
             case .noApp: return .nothingInFront
             case .notAllowed: return .needsAccessibility
             }
+
+        case .switchTab(let target):
+            switch extras.switchTab(target) {
+            case .switched(let title): return .switchedTab(title: title)
+            case .noBrowser: return .noBrowserOpen
+            case .noSuchTab: return .noSuchTab
+            case .notAllowed: return .browserNotAllowed
+            }
         }
     }
 
@@ -735,7 +766,8 @@ final class MacActionRunner {
                 openFolder: { folderURL in NSWorkspace.shared.open(folderURL) },
                 findFiles: { query in await ScreenNavigation.findFiles(named: query) },
                 revealFiles: { fileURLs in NSWorkspace.shared.activateFileViewerSelecting(fileURLs) },
-                findOnPage: { text in await ScreenNavigation.findOnPage(text) }
+                findOnPage: { text in await ScreenNavigation.findOnPage(text) },
+                switchTab: { target in BrowserControl.switchTab(to: target) }
             )
         )
     }
@@ -956,6 +988,19 @@ extension MacAction {
                 "description": "Find words on the page or document in front with its find bar (command F) and jump to the first match: 'find price on this page', 'look for shipping here'. Not for files.",
                 "parameters": ["type": "object", "properties": ["text": ["type": "string", "description": "The words to find, as said."]], "required": ["text"]],
             ],
+            [
+                "type": "function",
+                "name": "switch_tab",
+                "description": "Go to another tab of the browser: 'go to that tab', 'show me the new tab', 'next tab', 'go back to the YouTube tab'. Use newest for the tab that just opened.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "which": ["type": "string", "enum": ["named", "next", "previous", "newest", "first"], "description": "named when they said the tab's site or title."],
+                        "name": ["type": "string", "description": "For named: the site or title words they said, e.g. 'cars and bids'."],
+                    ],
+                    "required": ["which"],
+                ],
+            ],
         ]
     }
 
@@ -1061,6 +1106,18 @@ extension MacAction {
         case "find_files":
             guard let query = MacActionValidation.searchQuery(string("query")) else { return .badArguments(.invalidQuery) }
             return .action(.findFiles(query: query))
+
+        case "switch_tab":
+            switch string("which").lowercased() {
+            case "next": return .action(.switchTab(.next))
+            case "previous": return .action(.switchTab(.previous))
+            case "newest", "": return string("name").isEmpty ? .action(.switchTab(.newest)) : .action(.switchTab(.named(string("name"))))
+            case "first": return .action(.switchTab(.first))
+            case "named":
+                guard let name = MacActionValidation.searchQuery(string("name")) else { return .badArguments(.noSuchTab) }
+                return .action(.switchTab(.named(name)))
+            default: return .badArguments(.noSuchTab)
+            }
 
         case "find_on_page":
             // Typed into a find bar, so a shorter cap than a web search's.
