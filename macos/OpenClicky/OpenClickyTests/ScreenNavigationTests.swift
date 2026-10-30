@@ -38,6 +38,16 @@ struct ScreenNavigationTests {
         #expect(!ScreenNavigation.clickIsRisky(label: "posts tab", text: "Posts"))
         #expect(!ScreenNavigation.clickIsRisky(label: "sign in", text: "Sign in"))
         #expect(!ScreenNavigation.clickIsRisky(label: "orders", text: "Your Orders"))
+        // A cookie banner has to be clickable to browse by voice at all (2026-10-29).
+        #expect(!ScreenNavigation.clickIsRisky(label: "Accept All button", text: "Accept All"))
+    }
+
+    @Test func videosAndPicturesAreAimedAtTheImageNotTheCaption() {
+        #expect(ScreenNavigation.namesAPicture("first video"))
+        #expect(ScreenNavigation.namesAPicture("video thumbnail"))
+        #expect(ScreenNavigation.namesAPicture("play button"))
+        #expect(!ScreenNavigation.namesAPicture("first link"))
+        #expect(!ScreenNavigation.namesAPicture("Accept All button"))
     }
 
     @Test func appKitPointsFlipToEventCoordinates() {

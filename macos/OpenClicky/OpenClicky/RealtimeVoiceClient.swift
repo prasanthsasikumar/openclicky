@@ -1421,6 +1421,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                         await self.attachScreenContext()
                         clickLog = "clicked"
                         clickOutput = "Clicked \(label). The screen after the click is the latest screenshot; say in a few words what happened (which page or window opened). Do not read the page out unless asked."
+                    case .underScreenEdge:
+                        clickLog = "refused, under the Dock or menu bar"
+                        clickOutput = "Not clicked: \(label) is at the edge of the screen, under the Dock or the menu bar. Call scroll with amount little (down if it is near the bottom, up if near the top), then call click again for it without asking."
                     case .ownWindow:
                         clickLog = "refused, OpenClicky's own window"
                         clickOutput = "Not clicked: that spot is on OpenClicky's own window."
@@ -1463,6 +1466,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         var point = guess
         var resolution = "using the guess"
         var resolved = false
+        // A video or picture is the image itself, not its caption: snapping "first video" to the
+        // title under the thumbnail clicked words at the window's bottom edge (2026-10-29).
+        let aimsAtPicture = ScreenNavigation.namesAPicture(label)
         // A window's close / minimize / zoom buttons have no caption and are 12 px
         // across; macOS reports their exact frames.
         if let control = WindowControlLocator.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
@@ -1483,7 +1489,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         // be told apart by distance, so a locator that only knows pixels reports
         // nothing rather than guessing between them.
         let ambiguityMargin = CGFloat(capture.screenshotWidthInPixels) * 0.1
-        if !resolved, !elementText.isEmpty, let lines = await screenText?.value, !lines.isEmpty {
+        if !resolved, !aimsAtPicture, !elementText.isEmpty, let lines = await screenText?.value, !lines.isEmpty {
             if let match = ScreenTextLocator.locate(elementText, near: guess, in: lines, maxDistance: radius, ambiguityMargin: ambiguityMargin) {
                 point = match.center
                 resolved = true
@@ -1493,7 +1499,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         // Accessibility knows what the pixels cannot: the control's role, and the
         // title of the row it sits in. That is what separates repeated captions, and
         // it costs nothing, so it runs before paying for a Claude round trip.
-        if !resolved,
+        if !resolved, !aimsAtPicture,
            let element = AccessibleElementLocator.locate(
                label: label, text: elementText, userRequest: userRequest, near: guess,
                in: capture, maxDistance: radius, ambiguityMargin: ambiguityMargin
@@ -1507,12 +1513,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             let started = Date()
             if let located = await ScreenElementGrounder.locate(label: label, text: elementText, userRequest: userRequest, in: capture) {
                 point = located.point
+                resolved = true
                 resolution = "located by Claude (\(formatted(point.x)), \(formatted(point.y))) in \(Int(Date().timeIntervalSince(started) * 1000)) ms"
                 // Claude picks the right element and misplaces it by up to ~150 px;
                 // the text it named has an exact box in the OCR of the same screenshot.
                 // Claude's point is far closer than the Realtime guess, so the snap
                 // uses a tighter ambiguity margin than the one above.
-                if let visibleText = located.visibleText,
+                if !aimsAtPicture, let visibleText = located.visibleText,
                    let lines = await screenText?.value, !lines.isEmpty,
                    let match = ScreenTextLocator.locate(
                        visibleText, near: located.point, in: lines,

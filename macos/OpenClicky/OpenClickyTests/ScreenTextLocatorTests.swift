@@ -17,6 +17,16 @@ struct ScreenTextLocatorTests {
         ScreenTextLine(text: text, box: CGRect(x: x, y: y, width: width, height: height))
     }
 
+    @Test func aButtonReadingTheWordsBeatsASentenceMentioningThem() {
+        // A cookie banner: the sentence about "Accept All" sat nearer the guess than the button.
+        let lines = [
+            line("By clicking \"Accept All\", you consent to our use of cookies.", x: 300, y: 420, width: 560),
+            line("Accept All", x: 900, y: 600, width: 110),
+        ]
+        let match = ScreenTextLocator.locate("Accept All", near: CGPoint(x: 560, y: 430), in: lines, maxDistance: 1000, ambiguityMargin: 128)
+        #expect(match?.text == "Accept All")
+    }
+
     @Test func clearlyNearestMatchWins() {
         // Two "Star" buttons, one of them far down the page: the guess is off by up to 100 px, which
         // is nowhere near enough to confuse these two, so distance decides.

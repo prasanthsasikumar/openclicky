@@ -50,6 +50,8 @@ enum ScreenClickResult: Equatable {
     case followedLink(URL, inNewTab: Bool)
     /// The spot is on one of OpenClicky's own windows.
     case ownWindow
+    /// Under the Dock or the menu bar: a click there lands on them, not on the page.
+    case underScreenEdge
     case notAllowed
 }
 
@@ -87,8 +89,14 @@ nonisolated enum ScreenNavigation {
     static let riskyClickWords: [String] = [
         "send", "buy", "pay", "purchase", "order", "checkout", "check out", "delete", "remove",
         "erase", "trash", "submit", "confirm", "transfer", "donate", "subscribe", "unsubscribe",
-        "sign out", "log out", "uninstall", "publish", "post", "place order", "book now", "accept",
+        "sign out", "log out", "uninstall", "publish", "post", "place order", "book now",
     ]
+
+    /// Whether the model's label names a picture rather than words: a video, thumbnail, image.
+    static func namesAPicture(_ label: String) -> Bool {
+        let words = Set(label.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted))
+        return !words.isDisjoint(with: ["video", "videos", "thumbnail", "image", "picture", "photo", "play", "player"])
+    }
 
     static func clickIsRisky(label: String, text: String) -> Bool {
         let words = "\(label) \(text)".lowercased()
@@ -176,6 +184,11 @@ extension ScreenNavigation {
     /// else gets ⌘-click).
     static func click(atAppKitPoint point: CGPoint, inNewTab: Bool = false) -> ScreenClickResult {
         guard AXIsProcessTrusted() else { return .notAllowed }
+        // The Dock owns a full-screen window, so window bounds cannot say what it covers; the
+        // screen's visible frame (without the Dock and menu bar) can.
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }), !screen.visibleFrame.insetBy(dx: 0, dy: 4).contains(point) {
+            return .underScreenEdge
+        }
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let location = eventPoint(fromAppKit: point, primaryScreenHeight: primaryHeight)
         let ownerPID = ownerOfWindow(at: location, in: OnScreenWindows.current())

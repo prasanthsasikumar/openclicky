@@ -62,6 +62,11 @@ nonisolated enum ScreenTextLocator {
         let needle = normalize(hint)
         guard needle.count >= 3, !genericWords.contains(needle) else { return nil }
 
+        // A line that is the caption itself (a button reading "Accept All") before a sentence that
+        // only mentions it ("By clicking "Accept All", you consent…"), which is what a cookie
+        // banner put nearer the guess (2026-10-29).
+        let wholeLineMatches = exactMatches(of: needle, in: lines).filter { normalize($0.text) == needle }
+        if let match = nearest(wholeLineMatches, to: guess, within: maxDistance, ambiguityMargin: ambiguityMargin) { return match }
         if let match = nearest(exactMatches(of: needle, in: lines), to: guess, within: maxDistance, ambiguityMargin: ambiguityMargin) { return match }
 
         let words = needle.split(separator: " ").map(String.init)
