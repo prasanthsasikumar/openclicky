@@ -31,8 +31,13 @@ public sealed partial class DesktopActionExecutor
 
     // MARK: - Scroll
 
+    /// <summary>The continuous scroll running now, if any (static: Esc and a click stop it from anywhere).</summary>
+    private static readonly object ContinuousScrollLock = new();
+    private static CancellationTokenSource? continuousScroll;
+
     public ScrollResult ScrollFrontWindow(ScrollDirection direction, ScrollAmount amount)
     {
+        StopScrolling();
         var window = GetForegroundWindow();
         if (window == 0 || IsIconic(window) || ProcessIdOf(window) == Environment.ProcessId) return ScrollResult.NoWindow;
         var frame = VisibleFrame(window);
@@ -50,14 +55,80 @@ public sealed partial class DesktopActionExecutor
 
         var dpi = GetDpiForWindow(window);
         var steps = ScreenNavigation.ScrollSteps(direction, amount, width, height, dpi == 0 ? 1 : dpi / 96.0);
+        if (amount == ScrollAmount.Continuous)
+        {
+            GetCursorPos(out var scrollPoint);
+            StartContinuousScroll(steps[0], ProcessIdOf(window), new PixelPoint(scrollPoint.X, scrollPoint.Y));
+            return ScrollResult.Scrolled;
+        }
         foreach (var (vertical, horizontal) in steps)
         {
-            var input = vertical != 0 ? MouseInput(MOUSEEVENTF_WHEEL, data: vertical) : MouseInput(MOUSEEVENTF_HWHEEL, data: horizontal);
-            if (Send(input) != 1) return ScrollResult.NotAllowed;
-            // "To the bottom" is ten turns; a moment between them lets a smooth-scrolling page keep up.
-            if (steps.Count > 1) Thread.Sleep(20);
+            if (!SendWheel(vertical, horizontal)) return ScrollResult.NotAllowed;
+            // "To the bottom" is ten turns, and a moment between them lets a smooth-scrolling page keep
+            // up; a slow scroll's glide is many small steps, about a second and a half in all. Runs on
+            // a pool thread (DesktopActionRunner), so the sleeps hold up nothing else.
+            if (steps.Count > 1) Thread.Sleep(amount == ScrollAmount.Slow ? ScreenNavigation.SlowGlideStepInterval : TimeSpan.FromMilliseconds(20));
         }
         return ScrollResult.Scrolled;
+    }
+
+    public bool StopScrolling()
+    {
+        lock (ContinuousScrollLock)
+        {
+            if (continuousScroll is null) return false;
+            continuousScroll.Cancel();
+            continuousScroll = null;
+            return true;
+        }
+    }
+
+    private static bool SendWheel(int vertical, int horizontal) =>
+        Send(vertical != 0 ? MouseInput(MOUSEEVENTF_WHEEL, data: vertical) : MouseInput(MOUSEEVENTF_HWHEEL, data: horizontal)) == 1;
+
+    /// <summary>
+    /// A background thread that turns the wheel a few units at a time, timed by the clock, until it is
+    /// cancelled (stop_scrolling, esc, a new scroll or click), another app comes to the front, the
+    /// pointer moves away (the person took over), Windows refuses the input, or ten minutes pass.
+    /// </summary>
+    private static void StartContinuousScroll((int Vertical, int Horizontal) tick, int scrollingProcessId, PixelPoint scrollPoint)
+    {
+        var cancellation = new CancellationTokenSource();
+        lock (ContinuousScrollLock) continuousScroll = cancellation;
+        var thread = new Thread(() =>
+        {
+            var clock = Stopwatch.StartNew();
+            var unitsSent = 0;
+            var reason = "ten minutes";
+            while (clock.Elapsed < ScreenNavigation.ContinuousScrollLimit)
+            {
+                if (cancellation.IsCancellationRequested) { reason = null; break; }
+                GetCursorPos(out var pointer);
+                var front = GetForegroundWindow();
+                if (ScreenNavigation.ContinuousScrollShouldStop(front == 0 ? 0 : ProcessIdOf(front), scrollingProcessId, Environment.ProcessId,
+                                                                new PixelPoint(pointer.X, pointer.Y), scrollPoint))
+                {
+                    reason = "another app or the pointer moved";
+                    break;
+                }
+                var due = ScreenNavigation.ContinuousUnitsDue(clock.Elapsed);
+                if (due > unitsSent)
+                {
+                    var units = due - unitsSent;
+                    if (!SendWheel(Math.Sign(tick.Vertical) * units, Math.Sign(tick.Horizontal) * units)) { reason = "Windows refused the input"; break; }
+                    unitsSent = due;
+                }
+                if (cancellation.Token.WaitHandle.WaitOne(ScreenNavigation.ContinuousStepInterval)) { reason = null; break; }
+            }
+            if (reason is not null) AppLog.Write($"scroll: continuous scroll ended ({reason})");
+            lock (ContinuousScrollLock)
+            {
+                if (continuousScroll == cancellation) continuousScroll = null;
+            }
+            cancellation.Dispose();
+        })
+        { IsBackground = true, Name = "OpenClicky continuous scroll" };
+        thread.Start();
     }
 
     // MARK: - Folders and files
@@ -213,6 +284,7 @@ public sealed partial class DesktopActionExecutor
     /// </summary>
     public async Task<ScreenClickResult> ClickAsync(PixelPoint point, bool inNewTab = false)
     {
+        StopScrolling();
         var hit = WindowFromPoint(new POINT { X = point.X, Y = point.Y });
         var root = hit == 0 ? 0 : GetAncestor(hit, GA_ROOT);
         var processId = root == 0 ? 0 : ProcessIdOf(root);

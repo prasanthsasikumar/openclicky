@@ -87,6 +87,8 @@ public sealed partial class CompanionManager
                 ToggleHandsFree();
                 break;
             case CompanionShortcutEventKind.EscapePressed:
+                // A continuous scroll by voice stops on esc whatever else is going on.
+                if (services.DesktopActions.StopScrolling()) AppLog.Write("scroll: continuous scroll stopped (esc)");
                 // A dictation take in progress keeps esc to itself (it cancels the take, as always);
                 // otherwise esc stops whatever the ask lane is doing, and then the fast voice lane when
                 // it is answering, speaking or still working on an action (the Mac's order).

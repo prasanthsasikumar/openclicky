@@ -104,8 +104,13 @@ public interface IDesktopActionExecutor
     /// <summary>
     /// Scrolls the window in front with the mouse wheel. Wheel events go to the window under the
     /// pointer, so the pointer is moved to the window's middle only when it is somewhere else.
+    /// A slow scroll returns once the glide is over; a continuous one returns at once and keeps
+    /// going. Any new scroll ends a continuous one first.
     /// </summary>
     Actions.ScrollResult ScrollFrontWindow(Actions.ScrollDirection direction, Actions.ScrollAmount amount) => Actions.ScrollResult.NoWindow;
+
+    /// <summary>Ends a continuous scroll; false when none was running.</summary>
+    bool StopScrolling() => false;
 
     /// <summary>Opens a folder in a File Explorer window.</summary>
     bool OpenFolder(string path) => false;

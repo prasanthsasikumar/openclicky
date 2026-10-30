@@ -49,6 +49,43 @@ public sealed class ScreenNavigationTests : IDisposable
     }
 
     [Fact]
+    public void AGlideStartsAndEndsGentlyAndAddsUpToThePage()
+    {
+        var steps = ScreenNavigation.GlideSteps(720, 45);
+        Assert.Equal(45, steps.Count);
+        Assert.Equal(720, steps.Sum());
+        // Smoothstep: the middle step is the biggest, the first and last the smallest.
+        Assert.True(steps[22] > steps[0]);
+        Assert.True(steps[22] > steps[44]);
+        Assert.Equal([5], ScreenNavigation.GlideSteps(5, 1));
+
+        // "Scroll down slowly" is the same screenful as "scroll down", in 45 steps of less than a notch.
+        var slow = ScreenNavigation.ScrollSteps(ScrollDirection.Down, ScrollAmount.Slow, 1200, 800);
+        Assert.Equal(ScreenNavigation.SlowGlideStepCount, slow.Count);
+        Assert.Equal(-720, slow.Sum(step => step.Vertical));
+        Assert.All(slow, step => Assert.True(step.Vertical is <= 0 and > -ScreenNavigation.WheelDelta));
+        Assert.Equal(1200, ScreenNavigation.ScrollSteps(ScrollDirection.Right, ScrollAmount.Slow, 1200, 800).Sum(step => step.Horizontal));
+    }
+
+    [Fact]
+    public void KeepScrollingMovesAtReadingPaceUntilThePersonTakesOver()
+    {
+        // One small tick; the live loop repeats it.
+        Assert.Equal([(-ScreenNavigation.ContinuousStepUnits, 0)], ScreenNavigation.ScrollSteps(ScrollDirection.Down, ScrollAmount.Continuous, 1200, 800));
+        // 75 wheel units a second, timed by the clock: about 62 DIPs a second in Chrome.
+        Assert.Equal(75, ScreenNavigation.ContinuousUnitsDue(TimeSpan.FromSeconds(1)));
+        Assert.Equal(0, ScreenNavigation.ContinuousUnitsDue(TimeSpan.FromMilliseconds(39)));
+
+        var scrollPoint = new PixelPoint(500, 400);
+        Assert.False(ScreenNavigation.ContinuousScrollShouldStop(10, 10, 99, new PixelPoint(510, 420), scrollPoint));
+        // The pointer moved more than 40 px: they took over.
+        Assert.True(ScreenNavigation.ContinuousScrollShouldStop(10, 10, 99, new PixelPoint(545, 400), scrollPoint));
+        // Another app came to the front, but not OpenClicky's own island.
+        Assert.True(ScreenNavigation.ContinuousScrollShouldStop(11, 10, 99, scrollPoint, scrollPoint));
+        Assert.False(ScreenNavigation.ContinuousScrollShouldStop(99, 10, 99, scrollPoint, scrollPoint));
+    }
+
+    [Fact]
     public void ClicksThatCommitSomethingAreLeftToThePerson()
     {
         Assert.True(ScreenNavigation.ClickIsRisky("send button", "Send"));

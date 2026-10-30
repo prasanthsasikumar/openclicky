@@ -40,6 +40,13 @@ public enum ScrollAmount
     Little,
     /// <summary>All the way: the top for up, the bottom for down.</summary>
     End,
+    /// <summary>A screenful, gliding over a second and a half so the eye can follow the page ("scroll down slowly").</summary>
+    Slow,
+    /// <summary>
+    /// Keeps moving at reading pace until stop_scrolling, esc, a new scroll or click, another app in
+    /// front, or the person moving the pointer ("keep scrolling").
+    /// </summary>
+    Continuous,
 }
 
 public enum ScrollResult
@@ -88,7 +95,7 @@ public static class ScreenNavigation
 
     public static readonly IReadOnlyList<ScrollDirection> AllDirections = [ScrollDirection.Up, ScrollDirection.Down, ScrollDirection.Left, ScrollDirection.Right];
 
-    public static readonly IReadOnlyList<ScrollAmount> AllAmounts = [ScrollAmount.Page, ScrollAmount.Little, ScrollAmount.End];
+    public static readonly IReadOnlyList<ScrollAmount> AllAmounts = [ScrollAmount.Page, ScrollAmount.Little, ScrollAmount.End, ScrollAmount.Slow, ScrollAmount.Continuous];
 
     public static ScrollDirection? Direction(string raw) =>
         AllDirections.Cast<ScrollDirection?>().FirstOrDefault(direction => direction!.Value.RawValue() == raw.Trim().ToLowerInvariant());
@@ -110,40 +117,87 @@ public static class ScreenNavigation
     /// scrolls up (the content moves down), as a wheel turned away from the person; positive
     /// horizontal scrolls right (MOUSEEVENTF_HWHEEL's tilt to the right). <paramref name="viewportWidth"/>
     /// and <paramref name="viewportHeight"/> are physical pixels, <paramref name="scale"/> the
-    /// window's DPI / 96: a page is 80 % of the window, a little 25 %, at least one notch.
+    /// window's DPI / 96: a page is 80 % of the window, a little 25 %, at least one notch. A slow
+    /// scroll is a page split into <see cref="SlowGlideStepCount"/> steps of less than a notch (Chrome
+    /// and Edge move a fraction of a notch for a fraction of 120, the way a precision touchpad's
+    /// wheel does); a continuous one is a single tick the live loop repeats.
     /// </summary>
     public static IReadOnlyList<(int Vertical, int Horizontal)> ScrollSteps(ScrollDirection direction, ScrollAmount amount,
                                                                              double viewportWidth, double viewportHeight, double scale = 1)
     {
         var span = (direction is ScrollDirection.Up or ScrollDirection.Down ? viewportHeight : viewportWidth) / Math.Max(scale, 0.1);
-        int notches;
-        int count;
-        switch (amount)
+        var pageNotches = Math.Max(1, (int)Math.Round(span * 0.8 / DipsPerNotch));
+        IReadOnlyList<int> distances = amount switch
         {
-            case ScrollAmount.Little:
-                notches = Math.Max(1, (int)Math.Round(span * 0.25 / DipsPerNotch));
-                count = 1;
-                break;
+            ScrollAmount.Little => [Math.Max(1, (int)Math.Round(span * 0.25 / DipsPerNotch)) * WheelDelta],
             // Ten big steps reach the end of any page a person would scroll by voice (the Mac's ten
             // 5,000 px steps).
-            case ScrollAmount.End:
-                notches = 50;
-                count = 10;
-                break;
-            default:
-                notches = Math.Max(1, (int)Math.Round(span * 0.8 / DipsPerNotch));
-                count = 1;
-                break;
-        }
-        var step = notches * WheelDelta;
-        (int, int) one = direction switch
+            ScrollAmount.End => Enumerable.Repeat(50 * WheelDelta, 10).ToList(),
+            ScrollAmount.Slow => GlideSteps(pageNotches * WheelDelta, SlowGlideStepCount),
+            ScrollAmount.Continuous => [ContinuousStepUnits],
+            _ => [pageNotches * WheelDelta],
+        };
+        return distances.Select(step => direction switch
         {
             ScrollDirection.Up => (step, 0),
             ScrollDirection.Down => (-step, 0),
             ScrollDirection.Left => (0, -step),
             _ => (0, step),
-        };
-        return Enumerable.Repeat(one, count).ToList();
+        }).ToList();
+    }
+
+    /// <summary>
+    /// <paramref name="distance"/> split into <paramref name="count"/> steps that start and end gently
+    /// (smoothstep), summing to it exactly, so a slow scroll reads as a glide rather than a crawl at one speed.
+    /// </summary>
+    public static IReadOnlyList<int> GlideSteps(int distance, int count)
+    {
+        if (count <= 1) return [distance];
+        var steps = new List<int>(count);
+        var previous = 0;
+        for (var index = 1; index <= count; index++)
+        {
+            var t = (double)index / count;
+            var reached = (int)Math.Round(distance * t * t * (3 - 2 * t));
+            steps.Add(reached - previous);
+            previous = reached;
+        }
+        return steps;
+    }
+
+    /// <summary>The slow glide: 45 steps 33 ms apart, about a second and a half.</summary>
+    public const int SlowGlideStepCount = 45;
+    public static readonly TimeSpan SlowGlideStepInterval = TimeSpan.FromMilliseconds(33);
+
+    /// <summary>
+    /// Reading pace, in wheel units: 3 every 40 ms is 75 a second, about 62 DIPs a second in Chrome
+    /// and Edge (the Mac's 2 px 30 times a second). A Win32 list that only moves on whole notches
+    /// moves three lines every second and a half instead, still readable.
+    /// </summary>
+    public const int ContinuousStepUnits = 3;
+    public static readonly TimeSpan ContinuousStepInterval = TimeSpan.FromMilliseconds(40);
+
+    /// <summary>A continuous scroll nobody stopped ends on its own after this long.</summary>
+    public static readonly TimeSpan ContinuousScrollLimit = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How many wheel units a continuous scroll owes after <paramref name="elapsed"/>: the ticks are
+    /// timed by the clock rather than counted, since a 40 ms sleep on Windows can last 47.
+    /// </summary>
+    public static int ContinuousUnitsDue(TimeSpan elapsed) =>
+        (int)(elapsed.TotalMilliseconds / ContinuousStepInterval.TotalMilliseconds) * ContinuousStepUnits;
+
+    /// <summary>
+    /// Whether a continuous scroll should end: another app came to the front, or the pointer moved
+    /// more than 40 px from where the scroll put it (the person took over with the mouse). OpenClicky
+    /// itself coming forward (the island while they say "stop") does not end it.
+    /// </summary>
+    public static bool ContinuousScrollShouldStop(int frontProcessId, int scrollingProcessId, int ownProcessId, PixelPoint pointer, PixelPoint scrollPoint)
+    {
+        if (frontProcessId != scrollingProcessId && frontProcessId != ownProcessId) return true;
+        var dx = pointer.X - scrollPoint.X;
+        var dy = pointer.Y - scrollPoint.Y;
+        return dx * dx + dy * dy > 40 * 40;
     }
 
     /// <summary>
