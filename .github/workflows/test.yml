@@ -66,6 +66,16 @@ jobs:
         run: |
           # Swift Testing says which check failed in "recorded an issue" / "Expectation failed" lines.
           grep -E "error:|failed on|recorded an issue|Expectation failed" build.log test.log 2>/dev/null | sort -u | head -60 || true
+      # The grep above can miss why a test failed (no issue line); the whole log says.
+      - name: Keep the test log when the tests failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-test-log
+          path: |
+            macos/OpenClicky/test.log
+            macos/OpenClicky/build.log
+          retention-days: 7
 
   linux-client:
     # The Linux client (linux/, docs/linux.md). Its X11 tests start their own Xvfb and press keys
