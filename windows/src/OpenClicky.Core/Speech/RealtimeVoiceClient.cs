@@ -42,8 +42,9 @@ public sealed record RealtimeScreenContext(byte[] Jpeg, string Caption, Companio
 /// <param name="ThenLooksAtScreen">The action changed the screen (a page opened): the model sees a fresh
 /// screenshot, once it has settled, before it speaks.</param>
 /// <param name="LogDescription">The log's words when the sentence would carry something private; null → the sentence.</param>
+/// <param name="LooksWithoutWaitingForAPage">The look comes after 0.4 s instead of the page settle (a scroll).</param>
 public sealed record RealtimeToolResult(string SpokenSentence, bool WasRejected = false, string? ModelOutput = null,
-                                        bool ThenLooksAtScreen = false, string? LogDescription = null);
+                                        bool ThenLooksAtScreen = false, string? LogDescription = null, bool LooksWithoutWaitingForAPage = false);
 
 /// <summary>
 /// The `point_at` resolution steps after the OCR snap (which the client does itself through
@@ -125,7 +126,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         + "click with the element's on-screen text; do not point at it or explain instead. \"Scroll down\", \"go back to the top\" "
         + "is the scroll tool. \"Look for\" a file is find_files; \"look for\" words on this page is find_on_page. "
         + "A link opens in the same tab; pass new_tab only when they say \"in a new tab\" or \"in another tab\". \"Go to that tab\", "
-        + "\"next tab\", \"the YouTube tab\" is switch_tab. "
+        + "\"next tab\", \"the YouTube tab\" is switch_tab. To pause, stop or play a video on a web page, try media_control; "
+        + "if nothing is playing that Windows can control, click on the video. "
         + "You cannot know live facts (the weather, news, "
         + "scores, prices, opening hours): call web_search for them and answer from the results, never say you cannot check. "
         + Answers.AskLanePrompts.CommandOrQuestionInstruction + " "
@@ -1529,7 +1531,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 // Not once the turn moved on: Esc while the page loads stops the look too.
                 if (outcome.ThenLooksAtScreen && !outcome.WasRejected && turnGeneration == generation)
                 {
-                    await WaitForScreenToSettleAsync(frontAppBefore);
+                    if (outcome.LooksWithoutWaitingForAPage) await Task.Delay(TimeSpan.FromMilliseconds(400));
+                    else await WaitForScreenToSettleAsync(frontAppBefore);
                     if (turnGeneration == generation) await AttachScreenContextAsync();
                 }
                 var logged = outcome.LogDescription ?? outcome.SpokenSentence;

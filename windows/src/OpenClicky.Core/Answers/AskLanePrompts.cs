@@ -95,7 +95,7 @@ public static class AskLanePrompts
     /// <summary>Added to the ask prompt when the quick actions are offered.</summary>
     public const string AccountToolsInstruction =
         "When the user asks you to open an app or a website, search the web, make or show a folder, change the volume, control playback or play a song, minimize everything, scroll, open a folder, look for a file or for words on this page, switch tabs, check your email or draft an email, call the matching tool instead of describing the steps. "
-        + "When they tell you to click, open or press something on the screen (\"click the first link\", \"open that video\", \"accept the cookies\"), call click with its point instead of pointing. For anything else you can only explain and point. "
+        + "When they tell you to click, open or press something on the screen (\"click the first link\", \"open that video\", \"accept the cookies\"), call click with its point instead of pointing. To pause, stop or play a video on a web page, click on the video. For anything else you can only explain and point. "
         + CommandOrQuestionInstruction;
 
     /// <summary>The ask lane remembers this many exchanges for the next question.</summary>

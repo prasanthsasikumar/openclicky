@@ -169,7 +169,8 @@ public abstract record DesktopActionOutcome
         OpenedInbox inbox => $"{inbox.App.Title()}'s inbox is open and attached as the latest screenshot. Unread rows are in bold. Read out sender and subject of the unread ones briefly, newest first, at most five, then stop.",
         DraftedEmail => SpokenSentence + " If they ask you to send it, say you never send email and that it is open in front of them.",
         WindowAppNotRunning => SpokenSentence + " Call open_app if they want it opened.",
-        Scrolled => SpokenSentence + " Say only a word or two; the next screenshot shows where the page is now.",
+        Scrolled => SpokenSentence + " The latest screenshot shows the page now. If it looks the same as the one before, say the page didn't move (it may already be at the top or bottom, or a pop-up may be in the way) instead of saying it scrolled. Otherwise say only a word or two.",
+        Failed { Reason: "nothing is playing" } => "Nothing is playing that Windows can control, so nothing was paused. If they meant a video on a web page, call click on that video now (it pauses or plays the way a mouse click does); otherwise tell them nothing is playing.",
         FoundFiles found => $"Files whose names match {found.Query}, best first (the first is selected in File Explorer, which is in the latest screenshot):\n"
             + string.Join("\n", found.Files.Select(file => $"{Path.GetFileName(file.TrimEnd('\\', '/'))} — in {Path.GetFileName(Path.GetDirectoryName(file.TrimEnd('\\', '/')) ?? "")}"))
             + "\nSay how many and name the first one or two briefly; never read folder paths character by character.",
@@ -195,7 +196,11 @@ public abstract record DesktopActionOutcome
     /// Whether the model should see a fresh screenshot before it speaks: true for an action that
     /// changed what is on screen in a way worth describing (a page or a folder opened), false for the rest.
     /// </summary>
-    public bool ThenLooksAtScreen => this is OpenedUrl or Searched or OpenedInbox or DraftedEmail or OpenedFolder or FoundFiles or SwitchedTab;
+    public bool ThenLooksAtScreen => this is OpenedUrl or Searched or OpenedInbox or DraftedEmail or OpenedFolder or FoundFiles or SwitchedTab or Scrolled;
+
+    /// <summary>Whether that look can come at once: a scroll changes the window in front within a frame or two,
+    /// unlike a page that has to load ("scroll up" on a page that could not move was answered "Scrolled up.").</summary>
+    public bool LooksWithoutWaitingForAPage => this is Scrolled;
 
     public string SpokenSentence => this switch
     {
@@ -468,7 +473,7 @@ public abstract record DesktopAction
                      new JsonObject { ["level"] = new JsonObject { ["type"] = "integer", ["description"] = "0 to 100." } },
                      "level"),
             Function(MediaControlToolName,
-                     "Pause, resume, or skip whatever is playing. Use pause for 'stop', 'pause', 'be quiet'; play to resume; playpause only when they say play/pause without saying which.",
+                     "Pause, resume, or skip music or a video that Windows' media controls show (Spotify, a browser video that reports to Windows). Use pause for 'stop', 'pause', 'be quiet'; play to resume; playpause only when they say play/pause without saying which. If nothing is playing that Windows can control, click on the video to pause or play it.",
                      new JsonObject { ["action"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("playpause", "next", "previous", "pause", "play") } },
                      "action"),
             Function(WebSearchToolName,

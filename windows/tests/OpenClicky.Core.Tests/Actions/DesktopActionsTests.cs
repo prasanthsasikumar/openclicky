@@ -358,7 +358,18 @@ public sealed class DesktopActionRunnerTests : IDisposable
         Assert.Equal("Scrolled to the top.", new DesktopActionOutcome.Scrolled(ScrollDirection.Up, ScrollAmount.End).SpokenSentence);
         Assert.Equal("Scrolled down a little.", new DesktopActionOutcome.Scrolled(ScrollDirection.Down, ScrollAmount.Little).SpokenSentence);
         Assert.Equal("Scrolled right.", new DesktopActionOutcome.Scrolled(ScrollDirection.Right, ScrollAmount.Page).SpokenSentence);
-        Assert.StartsWith("Scrolled down. Say only a word or two", new DesktopActionOutcome.Scrolled(ScrollDirection.Down, ScrollAmount.Page).ToolOutput);
+        // A scroll looks before it says so, at once rather than after a page settle (1f70bca).
+        var scrolled = new DesktopActionOutcome.Scrolled(ScrollDirection.Down, ScrollAmount.Page);
+        Assert.StartsWith("Scrolled down. The latest screenshot shows the page now.", scrolled.ToolOutput);
+        Assert.Contains("didn't move", scrolled.ToolOutput);
+        Assert.True(scrolled.ThenLooksAtScreen);
+        Assert.True(scrolled.LooksWithoutWaitingForAPage);
+        Assert.False(new DesktopActionOutcome.OpenedFolder(null, DesktopActionLocation.Downloads).LooksWithoutWaitingForAPage);
+
+        // "Stop the video" with nothing Windows can pause: the model is told to click the video (1f70bca).
+        var nothingPlaying = new DesktopActionOutcome.Failed("nothing is playing");
+        Assert.Contains("call click on that video", nothingPlaying.ToolOutput);
+        Assert.DoesNotContain("click", nothingPlaying.SpokenSentence);
 
         recorder.ScrollResultToGive = ScrollResult.NoWindow;
         Assert.Equal(new DesktopActionOutcome.NothingToScroll(), await runner.PerformAsync(new DesktopAction.Scroll(ScrollDirection.Down, ScrollAmount.Page)));
