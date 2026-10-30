@@ -26,7 +26,7 @@ enum IslandHomeColumn: String, Equatable, CaseIterable {
 struct IslandHomeLayout: Equatable {
     static let calendarEnabledKey = "openclicky.calendar.enabled"
     static let weatherEnabledKey = "openclicky.weather.enabled"
-    static let calendarWidth: CGFloat = 268
+    static let calendarWidth: CGFloat = CalendarDashboardColumn.width
 
     let columns: [IslandHomeColumn]
 
@@ -171,7 +171,7 @@ struct IslandHomeView: View {
 // The calendar, weather and system pieces live in their plugin folders; these name what home
 // embeds, so the row above reads the same whatever each one draws.
 struct IslandHomeCalendarColumn: View {
-    var body: some View { Color.clear }
+    var body: some View { CalendarDashboardColumn() }
 }
 
 struct IslandHomeWeatherTile: View {
