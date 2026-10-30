@@ -1869,8 +1869,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             if (located is not null)
             {
                 point = located.Point;
-                // Claude found the element itself: no longer the model's raw guess, so a click may follow.
-                resolved = true;
+                // Not resolved, as on the Mac: Claude can be ~150 px off, so click points here instead of clicking.
                 resolution =$"located by Claude ({Formatted(point.X)}, {Formatted(point.Y)}) in {(int)(now() - started).TotalMilliseconds} ms";
                 // Claude picks the right element and misplaces it by up to ~150 px; the text it named
                 // has an exact box in the OCR of the same screenshot, with a tighter margin.
