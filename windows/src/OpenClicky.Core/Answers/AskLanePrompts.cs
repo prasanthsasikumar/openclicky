@@ -90,11 +90,12 @@ public static class AskLanePrompts
     /// question is taught, and nothing is ever sent.
     /// </summary>
     public const string CommandOrQuestionInstruction =
-        "When the user tells you to do something you have a tool for (\"open…\", \"play…\", \"minimize…\", \"search for…\", \"check my email\", \"draft an email\"), do it with the tool and confirm in a few words. Do not explain how they could do it themselves and do not point. When they ask how to do something (\"how do I…\", \"where is…\", \"show me how\"), teach: explain and point, and do not do it for them. If you are not sure which they meant, ask in one short question. You never send email: a draft is left open for the user to read and send.";
+        "When the user tells you to do something you have a tool for (\"open…\", \"play…\", \"minimize…\", \"search for…\", \"scroll down\", \"click…\", \"look for…\", \"check my email\", \"draft an email\"), do it with the tool and confirm in a few words. Do not explain how they could do it themselves and do not point. When they ask how to do something (\"how do I…\", \"where is…\", \"show me how\"), teach: explain and point, and do not do it for them. If you are not sure which they meant, ask in one short question. You never send email: a draft is left open for the user to read and send.";
 
     /// <summary>Added to the ask prompt when the quick actions are offered.</summary>
     public const string AccountToolsInstruction =
-        "When the user asks you to open an app or a website, search the web, make or show a folder, change the volume, control playback or play a song, minimize everything, check your email or draft an email, call the matching tool instead of describing the steps. For anything else you can only explain and point. "
+        "When the user asks you to open an app or a website, search the web, make or show a folder, change the volume, control playback or play a song, minimize everything, scroll, open a folder, look for a file or for words on this page, switch tabs, check your email or draft an email, call the matching tool instead of describing the steps. "
+        + "When they tell you to click, open or press something on the screen (\"click the first link\", \"open that video\", \"accept the cookies\"), call click with its point instead of pointing. To pause, stop or play a video on a web page, click on the video. For anything else you can only explain and point. "
         + CommandOrQuestionInstruction;
 
     /// <summary>The ask lane remembers this many exchanges for the next question.</summary>

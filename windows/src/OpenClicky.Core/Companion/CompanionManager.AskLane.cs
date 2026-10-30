@@ -216,6 +216,8 @@ public sealed partial class CompanionManager
         IReadOnlyList<System.Text.Json.Nodes.JsonObject> askTools =
         [
             .. AskLanePrompts.AskTools(offersQuickActions, writingTarget is not null, DesktopAction.AnthropicToolDefinitions()),
+            // Windows only: with no fast voice (a free account), "click the first link" is answered here.
+            .. offersQuickActions ? [AskLaneClick.AnthropicToolDefinition()] : Array.Empty<System.Text.Json.Nodes.JsonObject>(),
             .. teacherIsOn ? TeacherPlugin.AnthropicToolDefinitions() : [],
         ];
         var systemPrompt = AskLanePrompts.AskSystemPrompt(offersQuickActions, writingTarget is not null, TalkSkillsBlock(),
@@ -284,6 +286,11 @@ public sealed partial class CompanionManager
                 var rewrite = await WriteInPlace.ReplaceAsync(writingTarget, call.Arguments.GetValueOrDefault("text") ?? "", services.WriteInPlace, AppLog.Write);
                 if (rewrite.DidReplace()) LastSuccessfulQuickActionAt = DateTimeOffset.Now;
                 toolOutcomes.Add(rewrite.SpokenSentence());
+                continue;
+            }
+            if (call.Name == AskLaneClick.ToolName)
+            {
+                toolOutcomes.Add(await ClickForAskLaneAsync(call.Arguments, screenCaptures, cancellationToken));
                 continue;
             }
             switch (DesktopAction.Parse(call.Name, call.Arguments))

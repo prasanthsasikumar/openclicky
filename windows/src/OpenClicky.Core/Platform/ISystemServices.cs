@@ -98,6 +98,34 @@ public interface IDesktopActionExecutor
 
     /// <summary>Opens a spotify: URI (Spotify's own search page) in the desktop app.</summary>
     bool OpenSpotifyUri(string uri) => false;
+
+    // Moving around by voice (ScreenNavigation.swift's live half).
+
+    /// <summary>
+    /// Scrolls the window in front with the mouse wheel. Wheel events go to the window under the
+    /// pointer, so the pointer is moved to the window's middle only when it is somewhere else.
+    /// </summary>
+    Actions.ScrollResult ScrollFrontWindow(Actions.ScrollDirection direction, Actions.ScrollAmount amount) => Actions.ScrollResult.NoWindow;
+
+    /// <summary>Opens a folder in a File Explorer window.</summary>
+    bool OpenFolder(string path) => false;
+
+    /// <summary>Files under the home folder whose names hold every word said, best first (at most five).</summary>
+    Task<IReadOnlyList<string>> FindFilesAsync(string words) => Task.FromResult<IReadOnlyList<string>>([]);
+
+    /// <summary>Ctrl+F in the app in front, then the words and Enter, typed only once the focus moved into a new text field.</summary>
+    Task<Actions.FindOnPageResult> FindOnPageAsync(string text) => Task.FromResult(Actions.FindOnPageResult.NoApp);
+
+    /// <summary>
+    /// One left click at a physical virtual-desktop pixel (the Realtime `click` tool), never on
+    /// OpenClicky's own window or under the taskbar. A web link in the browser in front is loaded in
+    /// its own tab instead (a page may open it in a background tab, out of reach by voice);
+    /// <paramref name="inNewTab"/> opens it in a new selected tab (anything else gets Ctrl+click).
+    /// </summary>
+    Task<Actions.ScreenClickResult> ClickAsync(PixelPoint point, bool inNewTab = false) => Task.FromResult(Actions.ScreenClickResult.NotAllowed);
+
+    /// <summary>Selects the tab the target names in the browser in front, or the one on screen, which is brought to the front.</summary>
+    Task<Actions.BrowserTabSwitchResult> SwitchTabAsync(Actions.BrowserTabTarget target) => Task.FromResult<Actions.BrowserTabSwitchResult>(new Actions.BrowserTabSwitchResult.NoBrowser());
 }
 
 public enum PlayerCommand

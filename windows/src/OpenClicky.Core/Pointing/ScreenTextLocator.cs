@@ -58,7 +58,13 @@ public static class ScreenTextLocator
         var needle = Normalize(hint);
         if (needle.Length < 3 || GenericWords.Contains(needle)) return null;
 
-        if (Nearest(ExactMatches(needle, lines), guess, maxDistance, ambiguityMargin) is { } match) return match;
+        // A line that is the caption itself (a button reading "Accept All") before a sentence that only
+        // mentions it ("By clicking "Accept All", you consent…"), which is what a cookie banner put
+        // nearer the guess (2026-10-29).
+        var exactMatches = ExactMatches(needle, lines);
+        var wholeLineMatches = exactMatches.Where(exact => Normalize(exact.Text) == needle).ToList();
+        if (Nearest(wholeLineMatches, guess, maxDistance, ambiguityMargin) is { } lineMatch) return lineMatch;
+        if (Nearest(exactMatches, guess, maxDistance, ambiguityMargin) is { } match) return match;
 
         var words = needle.Split(' ')
             .Where(word => word.Length >= 3 && !GenericWords.Contains(word))

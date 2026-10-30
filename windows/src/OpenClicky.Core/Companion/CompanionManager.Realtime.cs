@@ -4,7 +4,7 @@
 //
 //  Speech-to-speech over OpenAI Realtime or Gemini Live: the session is kept warm so a press only starts audio;
 //  point_at goes through the pointing chain (browser tab → OCR snap → UI Automation → Claude) and
-//  ends in pointAt; send_to_agent runs the agent lane; the fast tools run the desktop actions; the
+//  ends in pointAt; click goes through the same chain and ends in a real click; send_to_agent runs the agent lane; the fast tools run the desktop actions; the
 //  instructions carry the skills for the app in front.
 //
 
@@ -126,6 +126,12 @@ public sealed partial class CompanionManager
         client.OnPluginToolCall = (toolName, arguments, capture) =>
             Task.FromResult(TeacherPlugin.Perform(toolName, TeacherPlugin.StringArguments(arguments), capture));
         client.OnPointAt = (screenshotPoint, label, capture) => PointAt(screenshotPoint, label, capture);
+        client.OnClick = async (point, inNewTab) =>
+        {
+            var result = await services.DesktopActions.ClickAsync(point, inNewTab);
+            if (result is ScreenClickResult.Clicked or ScreenClickResult.FollowedLink or ScreenClickResult.OpenedLinkInNewTab) LastSuccessfulQuickActionAt = DateTimeOffset.Now;
+            return result;
+        };
         client.OnAgentTask = async task =>
         {
             AgentActivityText = "starting agent…";
@@ -148,7 +154,8 @@ public sealed partial class CompanionManager
             if (outcome.DidSomething) LastSuccessfulQuickActionAt = DateTimeOffset.Now;
             return new RealtimeToolResult(outcome.SpokenSentence, WasRejected: outcome is DesktopActionOutcome.InvalidName or DesktopActionOutcome.InvalidAppName
                 or DesktopActionOutcome.UnknownLocation or DesktopActionOutcome.InvalidUrl or DesktopActionOutcome.InvalidQuery or DesktopActionOutcome.InvalidRecipient,
-                ModelOutput: outcome.ToolOutput, ThenLooksAtScreen: outcome.ThenLooksAtScreen, LogDescription: outcome.LogDescription);
+                ModelOutput: outcome.ToolOutput, ThenLooksAtScreen: outcome.ThenLooksAtScreen, LogDescription: outcome.LogDescription,
+                LooksWithoutWaitingForAPage: outcome.LooksWithoutWaitingForAPage);
         };
         client.FrontAppProvider = () => services.FrontmostApp.CurrentWithoutUrl()?.ProcessId;
         client.Pointing = MakePointingServices();

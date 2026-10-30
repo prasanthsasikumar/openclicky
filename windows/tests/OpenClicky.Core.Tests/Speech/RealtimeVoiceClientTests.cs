@@ -161,11 +161,38 @@ public class RealtimeSessionUpdateTests
         var openApp = new JsonObject { ["type"] = "function", ["name"] = "open_app" };
         var update = RealtimeVoiceClient.BuildSessionUpdate(RealtimeTurnMode.PushToTalk, "x", null, "en", [openApp]);
         var names = update["session"]!["tools"]!.AsArray().Select(tool => tool!["name"]!.GetValue<string>()).ToList();
-        Assert.Equal(["send_to_agent", "point_at", "write_in_place", "open_app"], names);
+        Assert.Equal(["send_to_agent", "point_at", "click", "write_in_place", "open_app"], names);
         Assert.Equal("auto", update["session"]!["tool_choice"]!.GetValue<string>());
         Assert.Equal("session.update", update["type"]!.GetValue<string>());
         var pointRequired = update["session"]!["tools"]![1]!["parameters"]!["required"]!.AsArray().Select(node => node!.GetValue<string>());
         Assert.Equal(["x", "y", "label", "text"], pointRequired);
+    }
+
+    /// <summary>`click` takes point_at's arguments (it goes through the same locator chain) and says what it never presses.</summary>
+    [Fact]
+    public void ClickTakesPointAtsArgumentsAndNamesWhatItNeverPresses()
+    {
+        var tools = RealtimeVoiceClient.BuildSessionUpdate(RealtimeTurnMode.PushToTalk, "x", null, "en")["session"]!["tools"]!.AsArray();
+        var pointAt = tools.Single(tool => tool!["name"]!.GetValue<string>() == "point_at")!;
+        var click = tools.Single(tool => tool!["name"]!.GetValue<string>() == RealtimeVoiceClient.ClickToolName)!;
+        // point_at's arguments plus new_tab, which is never required (2026-10-29: tabs by voice).
+        var clickParameters = click["parameters"]!.AsObject();
+        Assert.Equal(pointAt["parameters"]!["required"]!.ToJsonString(), clickParameters["required"]!.ToJsonString());
+        foreach (var (key, schema) in pointAt["parameters"]!["properties"]!.AsObject())
+        {
+            Assert.Equal(schema!.ToJsonString(), clickParameters["properties"]![key]!.ToJsonString());
+        }
+        Assert.Equal("boolean", clickParameters["properties"]!["new_tab"]!["type"]!.GetValue<string>());
+        Assert.Null(pointAt["parameters"]!["properties"]!["new_tab"]);
+        Assert.Contains("A link opens in the same tab unless new_tab is true", click["description"]!.GetValue<string>());
+        Assert.Contains("never presses anything that sends, buys, pays, deletes or confirms", click["description"]!.GetValue<string>());
+        // Gemini Live gets it too: the dialect turns every session tool into a declaration.
+        var declaration = GeminiLiveDialect.FunctionDeclaration(click.AsObject());
+        Assert.Equal("click", declaration!["name"]!.GetValue<string>());
+        Assert.Contains("call click with the element's on-screen text", RealtimeVoiceClient.DefaultInstructions);
+        Assert.Contains("find_on_page", RealtimeVoiceClient.DefaultInstructions);
+        Assert.Contains("pass new_tab only when they say \"in a new tab\"", RealtimeVoiceClient.DefaultInstructions);
+        Assert.Contains("is switch_tab", RealtimeVoiceClient.DefaultInstructions);
     }
 
     /// <summary>Hands-free ends by voice ("that's all, thanks"): the model gets a tool for it, but only while

@@ -10,6 +10,8 @@
 //   --openclicky-answer-smoke                      one real question (a red square) through ClaudeAPI
 //   --openclicky-teacher-smoke [sketch | picture:<words> | lesson:<question>] [--shot <png>]
 //                                                  draws a Teacher lesson on the cursor's screen (Plugins/Teacher/TeacherSmoke)
+//   --openclicky-action-smoke <tool> [<json>] [--after <seconds>]
+//                                                  one fast action through the real executor, e.g. scroll {"direction":"down"}
 
 using System.Diagnostics;
 using System.IO;
@@ -83,7 +85,40 @@ internal static class SmokeCommands
             return Task.Run(AnswerSmokeAsync).GetAwaiter().GetResult();
         }
         if (args.Contains(Plugins.Teacher.TeacherSmoke.Flag)) return Plugins.Teacher.TeacherSmoke.Run(args);
+        if (Argument("--openclicky-action-smoke") is { } toolName)
+        {
+            ConsoleAttachment.Attach();
+            var argumentsJson = Argument("--openclicky-action-smoke", 2) ?? "{}";
+            var delaySeconds = double.TryParse(Argument("--after"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var after) ? after : 0;
+            return Task.Run(() => ActionSmokeAsync(toolName, argumentsJson, delaySeconds)).GetAwaiter().GetResult();
+        }
         return null;
+    }
+
+    /// <summary>
+    /// One fast action (open_folder, find_files, scroll, find_on_page…) through the app's runner and
+    /// the real executor, after <paramref name="delaySeconds"/> (time to bring a window to the front).
+    /// Prints the three texts; the console is the person's own, so file names may show there.
+    /// </summary>
+    private static async Task<int> ActionSmokeAsync(string toolName, string argumentsJson, double delaySeconds)
+    {
+        NativeMethods.SetProcessDpiAwarenessContext(NativeMethods.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        if (delaySeconds > 0) await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+        var clipboard = new Win32Clipboard();
+        var executor = new DesktopActionExecutor(new FrontAppTextInserter(clipboard), new FocusedElementReader());
+        var arguments = System.Text.Json.Nodes.JsonNode.Parse(argumentsJson) as System.Text.Json.Nodes.JsonObject ?? [];
+        var stopwatch = Stopwatch.StartNew();
+        var outcome = await Core.Actions.DesktopActionRunner.Live(executor).PerformToolCallAsync(toolName, arguments);
+        if (outcome is null)
+        {
+            Console.WriteLine($"{toolName} is not a fast action");
+            return 2;
+        }
+        Console.WriteLine($"outcome: {outcome.GetType().Name} in {stopwatch.ElapsedMilliseconds} ms");
+        Console.WriteLine($"spoken: {outcome.SpokenSentence}");
+        Console.WriteLine($"model: {outcome.ToolOutput}");
+        Console.WriteLine($"log: {outcome.LogDescription}");
+        return outcome.DidSomething ? 0 : 1;
     }
 
     private static async Task<int> SmokeRunAsync(string transcript)

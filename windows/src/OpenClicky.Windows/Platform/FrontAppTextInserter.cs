@@ -12,7 +12,7 @@ public sealed class FrontAppTextInserter : ITextInserter
 {
     private static readonly TimeSpan ClipboardRestoreDelay = TimeSpan.FromSeconds(0.6);
 
-    private static readonly int[] ModifiersReleasedBeforePaste =
+    internal static readonly int[] ModifiersReleasedBeforePaste =
     [
         VirtualKeys.LeftShift, VirtualKeys.RightShift, VirtualKeys.LeftAlt, VirtualKeys.RightAlt,
         VirtualKeys.LeftWindows, VirtualKeys.RightWindows,
@@ -157,7 +157,7 @@ public sealed class FrontAppTextInserter : ITextInserter
     /// Key-ups for the listed modifiers that are physically down. When Alt or Win is among them the
     /// unassigned key is tapped first so their release opens neither the menu bar nor Start.
     /// </summary>
-    private static void AddModifierRelease(List<INPUT> inputs, int[] modifiers)
+    internal static void AddModifierRelease(List<INPUT> inputs, int[] modifiers)
     {
         var held = modifiers.Where(IsPhysicallyDown).ToList();
         if (held.Count == 0) return;
@@ -169,13 +169,13 @@ public sealed class FrontAppTextInserter : ITextInserter
         foreach (var key in held) inputs.Add(VirtualKeyInput(key, keyUp: true));
     }
 
-    private static bool IsPhysicallyDown(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+    internal static bool IsPhysicallyDown(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 
     /// <summary>
     /// False when nothing is in front or the window in front belongs to an elevated process: UIPI
     /// drops input from this unelevated process without telling anyone, so the text stays on the clipboard.
     /// </summary>
-    private static bool CanSendInputToForeground()
+    internal static bool CanSendInputToForeground()
     {
         var foreground = GetForegroundWindow();
         if (foreground == 0) return false;

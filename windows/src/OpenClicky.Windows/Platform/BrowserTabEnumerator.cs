@@ -36,18 +36,34 @@ public sealed class BrowserTabEnumerator(IWindowList windowList) : IBrowserTabEn
 
     private static (IReadOnlyList<BrowserTabItem> Tabs, string? Url) ReadTabs(nint windowHandle)
     {
+        var stopwatch = Stopwatch.StartNew();
+        var found = ReadTabElements(windowHandle, PerWindowBudget);
+        if (found.Count == 0) return ([], null);
+        var tabs = found.Select((tab, index) => new BrowserTabItem(tab.Title, tab.Bounds, index, tab.IsSelected)).ToList();
+
+        var remaining = PerWindowBudget - stopwatch.Elapsed;
+        var url = BrowserAddressBar.ReadUrl(windowHandle, remaining > TimeSpan.FromMilliseconds(80) ? remaining : TimeSpan.FromMilliseconds(80));
+        return (tabs, url);
+    }
+
+    /// <summary>
+    /// The window's TabItems in strip order with their UIA elements (switch_tab selects one through
+    /// them). Call on a UIA thread (UiaSupport.RunAsync).
+    /// </summary>
+    internal static IReadOnlyList<(AutomationElement Element, string Title, PixelRect Bounds, bool IsSelected)> ReadTabElements(nint windowHandle, TimeSpan budget)
+    {
         var window = UiaSupport.Safe(() => AutomationElement.FromHandle(windowHandle));
-        if (window is null) return ([], null);
+        if (window is null) return [];
         var request = UiaSupport.WalkCacheRequest();
         var root = UiaSupport.Safe(() => window.GetUpdatedCache(request));
-        if (root is null) return ([], null);
+        if (root is null) return [];
 
-        var found = new List<(string Title, PixelRect Bounds, bool IsSelected)>();
+        var found = new List<(AutomationElement Element, string Title, PixelRect Bounds, bool IsSelected)>();
         var stopwatch = Stopwatch.StartNew();
         var queue = new Queue<(AutomationElement Element, int Depth)>();
         queue.Enqueue((root, 0));
         var visited = 0;
-        while (queue.Count > 0 && visited < 600 && stopwatch.Elapsed < PerWindowBudget)
+        while (queue.Count > 0 && visited < 600 && stopwatch.Elapsed < budget)
         {
             var (element, depth) = queue.Dequeue();
             visited++;
@@ -59,24 +75,20 @@ public sealed class BrowserTabEnumerator(IWindowList windowList) : IBrowserTabEn
                 var title = UiaSupport.Cached<string>(element, AutomationElement.NameProperty) ?? string.Empty;
                 if (!bounds.IsEmpty && bounds.Height < 120)
                 {
-                    found.Add((title, bounds, UiaSupport.Cached<bool>(element, SelectionItemPattern.IsSelectedProperty)));
+                    found.Add((element, title, bounds, UiaSupport.Cached<bool>(element, SelectionItemPattern.IsSelectedProperty)));
                 }
                 continue;
             }
             if (depth >= 12) continue;
             foreach (var child in UiaSupport.CachedChildren(element, request)) queue.Enqueue((child, depth + 1));
         }
-        if (found.Count == 0) return ([], null);
+        if (found.Count == 0) return [];
 
         // Strip order: left to right, or top to bottom for vertical tabs (Edge, Vivaldi, Arc).
         var isVertical = found.Count > 1 && found.Max(tab => tab.Bounds.Left) - found.Min(tab => tab.Bounds.Left) < found.Max(tab => tab.Bounds.Top) - found.Min(tab => tab.Bounds.Top);
         var ordered = isVertical
             ? found.OrderBy(tab => tab.Bounds.Top).ThenBy(tab => tab.Bounds.Left)
             : found.OrderBy(tab => tab.Bounds.Left).ThenBy(tab => tab.Bounds.Top);
-        var tabs = ordered.Select((tab, index) => new BrowserTabItem(tab.Title, tab.Bounds, index, tab.IsSelected)).ToList();
-
-        var remaining = PerWindowBudget - stopwatch.Elapsed;
-        var url = BrowserAddressBar.ReadUrl(windowHandle, remaining > TimeSpan.FromMilliseconds(80) ? remaining : TimeSpan.FromMilliseconds(80));
-        return (tabs, url);
+        return ordered.ToList();
     }
 }
