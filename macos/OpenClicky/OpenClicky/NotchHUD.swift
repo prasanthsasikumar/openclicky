@@ -258,6 +258,12 @@ final class NotchHUDModel: ObservableObject {
     /// The default or the order changed in Settings: pick again.
     func refreshComponentSettings() {
         recomputeSelection()
+        // Home's size follows its switches (a column on or off), which no selection change
+        // reports: let the window follow while the island is open.
+        if expansion == .full {
+            objectWillChange.send()
+            onLayoutChanged?()
+        }
     }
 
     private func recomputeSelection() {
