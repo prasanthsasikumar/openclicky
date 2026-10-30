@@ -186,6 +186,11 @@ Two template changes for the 2026-10-11 sign-up guard (not applied yet):
   openclicky. If you didn't ask for this, ignore this email.</p>`. Older apps can't type it, so
   their guests could not confirm: hold this until most people have updated.
 
+**Email templates (since 2026-10-30):** the sign-in, sign-up and email-confirm mails all show the
+code in one layout with a short "three things to try" intro. They are built, not hand-edited:
+`node backend/scripts/build-auth-emails.mjs` writes `backend/supabase/emails/auth-email-settings.json`
+(PATCH it as above; it replaces the template fields in the JSON above) and a preview of each mail.
+
 Check the fields read back. Already in place and unchanged:
 `mailer_autoconfirm=false`, `site_url=https://api.openclicky.flowsxr.com`, the `uri_allow_list`
 containing `https://api.openclicky.flowsxr.com/auth/confirmed`, SMTP through Resend from
