@@ -19,7 +19,7 @@ import SwiftUI
 /// you press, the AI keys you pay with, your account, privacy and about.
 /// docs/superpowers/specs/2026-10-12-settings-revamp.md has the reasoning.
 enum DictationSettingsPage: String, CaseIterable, Identifiable {
-    case general, dictation, clicky, voice, orb, plugins, keyboard, keys, account, privacy, about
+    case general, dictation, clicky, voice, appearance, music, widgets, calendar, tools, orb, keyboard, keys, account, privacy, about
     var id: String { rawValue }
 
     /// True for the pages the sidebar lists above your two pages: what you set up first (General,
@@ -27,7 +27,7 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
     var showsBeforeYourPages: Bool {
         switch self {
         case .general, .dictation, .clicky, .voice: return true
-        case .orb, .plugins, .keyboard, .keys, .account, .privacy, .about: return false
+        case .appearance, .music, .widgets, .calendar, .tools, .orb, .keyboard, .keys, .account, .privacy, .about: return false
         }
     }
 
@@ -44,7 +44,11 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         case .clicky: return "Clicky"
         case .voice: return "Voice"
         case .orb: return "The Orb"
-        case .plugins: return "Plugins"
+        case .appearance: return "Appearance"
+        case .music: return "Music"
+        case .widgets: return "Widgets"
+        case .calendar: return "Calendar"
+        case .tools: return "Tools"
         case .keyboard: return "Shortcuts"
         case .keys: return "Keys & Plans"
         case .account: return "Account"
@@ -61,7 +65,11 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         case .clicky: return "cursorarrow"
         case .voice: return "speaker.wave.2.fill"
         case .orb: return "capsule.fill"
-        case .plugins: return "puzzlepiece.extension.fill"
+        case .appearance: return "circle.lefthalf.filled"
+        case .music: return "music.note"
+        case .widgets: return "square.grid.2x2.fill"
+        case .calendar: return "calendar"
+        case .tools: return "switch.2"
         case .keyboard: return "command"
         case .keys: return "key.fill"
         case .account: return "person.crop.circle.fill"
@@ -77,7 +85,11 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         case .clicky: return Color(red: 1.0, green: 0.584, blue: 0.0)
         case .voice: return Color(red: 0.996, green: 0.176, blue: 0.333)
         case .orb: return Color(red: 0.11, green: 0.11, blue: 0.118)
-        case .plugins: return Color(red: 0.69, green: 0.32, blue: 0.87)
+        case .appearance: return Color(red: 0.11, green: 0.11, blue: 0.118)
+        case .music: return Color(red: 0.98, green: 0.18, blue: 0.33)
+        case .widgets: return Color(red: 0.0, green: 0.478, blue: 1.0)
+        case .calendar: return Color(red: 1.0, green: 0.231, blue: 0.188)
+        case .tools: return Color(red: 0.557, green: 0.557, blue: 0.576)
         case .keyboard: return Color(red: 0.388, green: 0.388, blue: 0.4)
         case .keys: return Color(red: 0.545, green: 0.42, blue: 0.0)
         case .account: return Color(red: 0.204, green: 0.78, blue: 0.349)

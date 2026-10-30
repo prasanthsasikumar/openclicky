@@ -2,9 +2,9 @@
 //  SettingsPluginsPage.swift
 //  OpenClicky
 //
-//  Settings → Plugins: the island's optional extras, built for the Mac, one row with a switch
-//  each (what it reads, what macOS may ask), and under them how the island picks between the
-//  components it has: the default and the capsule's order.
+//  The island's settings pages (Appearance, Music, Widgets, Calendar, Tools): each plugin's switch
+//  on the page it belongs to, and under Tools how the island picks between the components it
+//  has: the default and the capsule's order. Each plugin folder adds its own rows.
 //
 
 import AppKit
@@ -12,33 +12,60 @@ import Combine
 import SwiftUI
 
 extension SettingsCatalog {
-    func pluginsItems() -> [SettingsItem] {
-        let pluginRows = IslandPluginRegistry.all.map { plugin in
-            SettingsItem(
-                id: "plugins.\(plugin.id)", page: .plugins, section: "",
-                title: plugin.title, detail: plugin.settingsDetail ?? "",
-                keywords: ["plugin", "plugins", "island", "extra", plugin.title.lowercased(), plugin.id],
-                view: AnyView(IslandPluginRow(plugin: plugin)))
-        }
-        return pluginRows + [
-            SettingsItem(
-                id: "plugins.islandDefault", page: .plugins, section: "On the island",
-                title: "Default component", detail: "What the open island shows when nothing else is going on.",
-                keywords: ["island", "component", "panel", "shortcuts", "transcript", "agent", "default", "slot"],
-                view: AnyView(IslandDefaultComponentRow())),
-            SettingsItem(
-                id: "plugins.islandOrder", page: .plugins, section: "On the island",
-                title: "Component order", detail: "The order of the island's capsule when there is more than one to flip to.",
-                keywords: ["island", "component", "order", "capsule", "arrange", "reorder"],
-                view: AnyView(IslandComponentOrderRow())),
-        ]
+    /// One plugin's switch row, on whichever island page it belongs to.
+    func pluginItem(_ id: String, page: DictationSettingsPage, section: String = "", keywords: [String] = []) -> SettingsItem? {
+        guard let plugin = IslandPluginRegistry.all.first(where: { $0.id == id }) else { return nil }
+        return SettingsItem(
+            id: "plugins.\(plugin.id)", page: page, section: section,
+            title: plugin.title, detail: plugin.settingsDetail ?? "",
+            keywords: ["plugin", "island", plugin.title.lowercased(), plugin.id] + keywords,
+            view: AnyView(IslandPluginRow(plugin: plugin)))
+    }
+
+    /// Settings → Appearance: how the island looks.
+    func appearanceItems() -> [SettingsItem] {
+        islandAppearanceItems()
+    }
+
+    /// Settings → Music: the Now playing player.
+    func musicItems() -> [SettingsItem] {
+        [pluginItem(IslandPluginRegistry.mediaID, page: .music, keywords: ["music", "spotify", "now playing", "song"])].compactMap { $0 }
+    }
+
+    /// Settings → Widgets: the tiles beside the calendar.
+    func widgetsItems() -> [SettingsItem] {
+        weatherSettingsItems() + [pluginItem(IslandPluginRegistry.systemID, page: .widgets, keywords: ["cpu", "memory", "widget"])].compactMap { $0 }
+    }
+
+    /// Settings → Calendar.
+    func calendarItems() -> [SettingsItem] {
+        calendarSettingsItems()
+    }
+
+    /// Settings → Tools: the island's extras, each with a button on the island once on.
+    func toolsItems() -> [SettingsItem] {
+        [pluginItem(IslandPluginRegistry.shelfID, page: .tools, keywords: ["file tray", "files", "drop"])].compactMap { $0 }
+            + clipboardSettingsItems() + notesSettingsItems() + timerSettingsItems()
+            + [IslandPluginRegistry.agentsID, IslandPluginRegistry.teacherID].compactMap { pluginItem($0, page: .tools) }
+            + [
+                SettingsItem(
+                    id: "plugins.islandDefault", page: .tools, section: "On the island",
+                    title: "Default component", detail: "What the open island shows when nothing else is going on.",
+                    keywords: ["island", "component", "panel", "shortcuts", "transcript", "agent", "default", "slot", "dashboard"],
+                    view: AnyView(IslandDefaultComponentRow())),
+                SettingsItem(
+                    id: "plugins.islandOrder", page: .tools, section: "On the island",
+                    title: "Component order", detail: "The order of the island's capsule when there is more than one to flip to.",
+                    keywords: ["island", "component", "order", "capsule", "arrange", "reorder"],
+                    view: AnyView(IslandComponentOrderRow())),
+            ]
     }
 }
 
 // MARK: - one plugin
 
 /// A plugin's switch, with its name and what it does on the left like every other row.
-private struct IslandPluginRow: View {
+struct IslandPluginRow: View {
     let plugin: any IslandComponent
     @State private var isOn = false
 
