@@ -62,7 +62,7 @@ const propagate = (e: unknown): never => {
 
 const withCommonOptions = (cmd: Command) =>
   cmd
-    .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL; default https://api.openclicky.flowsxr.com, the hosted backend — point it at http://localhost:8787 to use your own)")
+    .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL; default https://api.openclicky.org, the hosted backend — point it at http://localhost:8787 to use your own)")
     .option("--token <token>", "Supabase JWT or session token (env OPENCLICKY_TOKEN)")
     .option("--image <path>", "attach a local screenshot/image")
     .option("--screenshot", "capture the screen now (macOS screencapture, Windows, Linux grim/gnome-screenshot/spectacle/scrot/import) and attach it")

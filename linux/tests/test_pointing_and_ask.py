@@ -142,7 +142,7 @@ def test_saving_keeps_every_other_key_and_is_private(tmp_path):
     shell_json = tmp_path / "shell.json"
     shell_json.write_text(json.dumps({"refreshToken": "keep-me", "speechVoice": "kokoro", "openaiApiKey": "old"}))
     save_settings({"openai_api_key": " sk-new ", "anthropic_api_key": "", "dictation_key": "Alt_R",
-                   "pointer_presence": "whenAnswering", "backend_url": "https://api.openclicky.flowsxr.com/"}, shell_json)
+                   "pointer_presence": "whenAnswering", "backend_url": "https://api.openclicky.org/"}, shell_json)
     saved = json.loads(shell_json.read_text())
     assert saved == {"refreshToken": "keep-me", "speechVoice": "kokoro", "openaiApiKey": "sk-new",
                      "linuxDictationKey": "Alt_R", "linuxPointer": "whenAnswering"}

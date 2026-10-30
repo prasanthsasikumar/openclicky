@@ -18,7 +18,7 @@
 # `root@<address>` published both where the server is and that it is reached as root — to anyone
 # reading the repo, and to every fork. Set it in your shell or an untracked env file:
 #
-#   export OPENCLICKY_SERVER=root@api.openclicky.flowsxr.com
+#   export OPENCLICKY_SERVER=root@api.openclicky.org
 #
 # Prefer the hostname over a raw IP: the address can change without this command changing, and a
 # hostname is already public in a way an origin IP is not.
@@ -28,8 +28,8 @@ if [[ -z "${OPENCLICKY_SERVER:-}" ]]; then
   cat >&2 <<'USAGE'
 OPENCLICKY_SERVER is not set — this script has no default deploy target on purpose.
 
-  export OPENCLICKY_SERVER=root@api.openclicky.flowsxr.com   # ssh target, host or user@host
-  export OPENCLICKY_API_HOST=api.openclicky.flowsxr.com      # optional, the public hostname Caddy serves
+  export OPENCLICKY_SERVER=root@api.openclicky.org   # ssh target, host or user@host
+  export OPENCLICKY_API_HOST=api.openclicky.org      # optional, the public hostname Caddy serves
 
 Then run this script again.
 USAGE
@@ -37,7 +37,7 @@ USAGE
 fi
 
 SERVER="$OPENCLICKY_SERVER"
-API_HOST="${OPENCLICKY_API_HOST:-api.openclicky.flowsxr.com}"
+API_HOST="${OPENCLICKY_API_HOST:-api.openclicky.org}"
 REMOTE_DIR=/opt/openclicky
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"

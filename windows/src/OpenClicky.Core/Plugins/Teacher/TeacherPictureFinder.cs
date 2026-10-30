@@ -24,7 +24,7 @@ public static class TeacherPictureFinder
 {
     /// <summary>Wikimedia asks every client to name itself, with a way to reach its makers.</summary>
     public static string UserAgent =>
-        $"OpenClicky-Windows/{AppBundleConfiguration.ShortVersionString.Replace(' ', '-')} (https://openclicky.flowsxr.com)";
+        $"OpenClicky-Windows/{AppBundleConfiguration.ShortVersionString.Replace(' ', '-')} (https://openclicky.org)";
 
     public const int ThumbnailWidth = 900;
 

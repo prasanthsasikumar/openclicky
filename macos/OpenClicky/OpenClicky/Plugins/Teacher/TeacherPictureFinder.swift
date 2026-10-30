@@ -20,7 +20,7 @@ struct TeacherPicture {
 
 enum TeacherPictureFinder {
     /// Wikimedia asks every client to name itself.
-    static let userAgent = "OpenClicky/\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1") (https://openclicky.flowsxr.com)"
+    static let userAgent = "OpenClicky/\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1") (https://openclicky.org)"
     static let thumbnailWidth = 900
 
     static func find(query: String, caption: String) async -> TeacherPicture? {
