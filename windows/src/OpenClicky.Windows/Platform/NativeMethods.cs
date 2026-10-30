@@ -28,7 +28,19 @@ internal static class NativeMethods
     public const uint LLKHF_ALTDOWN = 0x20;
     public const uint LLKHF_UP = 0x80;
 
+    public const uint INPUT_MOUSE = 0;
     public const uint INPUT_KEYBOARD = 1;
+    public const uint MOUSEEVENTF_MOVE = 0x0001;
+    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    public const uint MOUSEEVENTF_WHEEL = 0x0800;
+    public const uint MOUSEEVENTF_HWHEEL = 0x1000;
+    public const uint MOUSEEVENTF_VIRTUALDESK = 0x4000;
+    public const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
+    public const int SM_XVIRTUALSCREEN = 76;
+    public const int SM_YVIRTUALSCREEN = 77;
+    public const int SM_CXVIRTUALSCREEN = 78;
+    public const int SM_CYVIRTUALSCREEN = 79;
     public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
     public const uint KEYEVENTF_KEYUP = 0x0002;
     public const uint KEYEVENTF_UNICODE = 0x0004;
@@ -273,6 +285,15 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int nIndex);
+
+    [DllImport("user32.dll")]
+    public static extern nint WindowFromPoint(POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(nint hwnd);
 
     // ---------------------------------------------------------------- user32: clipboard
 
@@ -647,6 +668,36 @@ internal static class NativeMethods
         or 0x21 or 0x22 or 0x23 or 0x24 /* PGUP PGDN END HOME */ or 0x25 or 0x26 or 0x27 or 0x28 /* arrows */
         or 0x90 /* NUMLOCK */ or 0x2C /* SNAPSHOT */ or 0x6F /* DIVIDE */
         or 0xAD or 0xAE or 0xAF or 0xB0 or 0xB1 or 0xB2 or 0xB3 /* volume + media */;
+
+    /// <summary>A mouse event: a wheel turn (<paramref name="data"/> is the signed delta), a button, or an absolute move.</summary>
+    public static INPUT MouseInput(uint flags, int dx = 0, int dy = 0, int data = 0) => new()
+    {
+        type = INPUT_MOUSE,
+        U = new InputUnion
+        {
+            mi = new MOUSEINPUT
+            {
+                dx = dx,
+                dy = dy,
+                mouseData = unchecked((uint)data),
+                dwFlags = flags,
+                time = 0,
+                dwExtraInfo = 0,
+            },
+        },
+    };
+
+    /// <summary>
+    /// An absolute move to a physical virtual-desktop pixel. The process is per-monitor DPI aware, so
+    /// the virtual screen metrics are physical pixels too and the point lands on the same monitor at
+    /// any scale or arrangement.
+    /// </summary>
+    public static INPUT AbsoluteMoveInput(int x, int y)
+    {
+        var dx = Core.Actions.ScreenNavigation.AbsoluteMouseCoordinate(x, GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_CXVIRTUALSCREEN));
+        var dy = Core.Actions.ScreenNavigation.AbsoluteMouseCoordinate(y, GetSystemMetrics(SM_YVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN));
+        return MouseInput(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK, dx, dy);
+    }
 
     public static uint Send(params INPUT[] inputs) =>
         inputs.Length == 0 ? 0 : SendInput((uint)inputs.Length, inputs, INPUT.Size);

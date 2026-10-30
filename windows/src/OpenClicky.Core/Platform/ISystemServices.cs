@@ -98,6 +98,26 @@ public interface IDesktopActionExecutor
 
     /// <summary>Opens a spotify: URI (Spotify's own search page) in the desktop app.</summary>
     bool OpenSpotifyUri(string uri) => false;
+
+    // Moving around by voice (ScreenNavigation.swift's live half).
+
+    /// <summary>
+    /// Scrolls the window in front with the mouse wheel. Wheel events go to the window under the
+    /// pointer, so the pointer is moved to the window's middle only when it is somewhere else.
+    /// </summary>
+    Actions.ScrollResult ScrollFrontWindow(Actions.ScrollDirection direction, Actions.ScrollAmount amount) => Actions.ScrollResult.NoWindow;
+
+    /// <summary>Opens a folder in a File Explorer window.</summary>
+    bool OpenFolder(string path) => false;
+
+    /// <summary>Files under the home folder whose names hold every word said, best first (at most five).</summary>
+    Task<IReadOnlyList<string>> FindFilesAsync(string words) => Task.FromResult<IReadOnlyList<string>>([]);
+
+    /// <summary>Ctrl+F in the app in front, then the words and Enter, typed only once the focus moved into a new text field.</summary>
+    Task<Actions.FindOnPageResult> FindOnPageAsync(string text) => Task.FromResult(Actions.FindOnPageResult.NoApp);
+
+    /// <summary>One left click at a physical virtual-desktop pixel (the Realtime `click` tool), never on OpenClicky's own window.</summary>
+    Actions.ScreenClickResult ClickAt(PixelPoint point) => Actions.ScreenClickResult.NotAllowed;
 }
 
 public enum PlayerCommand

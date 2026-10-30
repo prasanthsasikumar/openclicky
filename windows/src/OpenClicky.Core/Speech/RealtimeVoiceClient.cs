@@ -12,6 +12,8 @@
 // - `send_to_agent` tool calls hand real work to the agent lane and speak the result.
 // - `point_at` tool calls fly the pointer to a spot in the screenshot attached to the turn, one call
 //   per step, resolved on a serial chain so the model can point while it explains.
+// - `click` tool calls go through the same chain, then click for real and look again (never a
+//   control that sends, buys or deletes, nor a target nothing located).
 //
 // Threading: as the Mac's @MainActor class, every public member is called on the main thread
 // (IMainThread); socket events, audio frames and timers are posted back to it.
@@ -117,8 +119,12 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         + "exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking "
         + "at. "
         + "Do simple local things yourself with the fast tools (open_app, open_url, web_search, create_folder, "
-        + "reveal_in_explorer, set_volume, media_control, play_music, minimize_all, restore_windows, check_email, "
-        + "draft_email) and then say what they give back in a few words. You cannot know live facts (the weather, news, "
+        + "reveal_in_explorer, open_folder, find_files, find_on_page, scroll, set_volume, media_control, play_music, minimize_all, "
+        + "restore_windows, check_email, draft_email) and then say what they give back in a few words. "
+        + "When they tell you to click, open or press something on screen (\"click the first link\", \"open that video\"), call "
+        + "click with the element's on-screen text; do not point at it or explain instead. \"Scroll down\", \"go back to the top\" "
+        + "is the scroll tool. \"Look for\" a file is find_files; \"look for\" words on this page is find_on_page. "
+        + "You cannot know live facts (the weather, news, "
         + "scores, prices, opening hours): call web_search for them and answer from the results, never say you cannot check. "
         + Answers.AskLanePrompts.CommandOrQuestionInstruction + " "
         + "For anything bigger (creating or editing files or code, running commands, using integrations, research, "
@@ -273,6 +279,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public WritingTarget? LastWritingTarget { get; private set; }
     /// <summary>A `point_at` call resolved: screenshot pixels, the model's label, and the capture they refer to.</summary>
     public Action<ScreenPoint, string, CompanionScreenCapture>? OnPointAt { get; set; }
+    /// <summary>The `click` tool's left click at a physical virtual-desktop pixel (IDesktopActionExecutor.ClickAt); null → nothing is clicked.</summary>
+    public Func<PixelPoint, Actions.ScreenClickResult>? OnClick { get; set; }
     /// <summary>Builds the session instructions for the next turn: the base prompt plus the skills that
     /// apply right now. Read at connect and before every turn; only a change is sent as `session.update`.</summary>
     public Func<string>? InstructionsProvider { get; set; }
@@ -897,6 +905,13 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 },
             },
         };
+        tools.Add(new JsonObject
+        {
+            ["type"] = "function",
+            ["name"] = ClickToolName,
+            ["description"] = "Click a link, button, tab or field on screen for the user, the way they would with the mouse. Use it when they tell you to click or open something they can see ('click the first link', 'open that video', 'press Sign in'); point_at is for teaching instead. Same arguments as point_at: always pass the element's visible text. It never presses anything that sends, buys, pays, deletes or confirms; those it points at for them to click.",
+            ["parameters"] = tools.OfType<JsonObject>().First(tool => SpeechJson.String(tool["name"]) == "point_at")["parameters"]!.DeepClone(),
+        });
         tools.Add(WriteInPlace.RealtimeToolDefinition());
         foreach (var tool in extraTools ?? []) tools.Add(tool.DeepClone());
         // Ending hands-free by voice only makes sense while hands-free is on.
@@ -916,6 +931,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     }
 
     public const string StopListeningToolName = "stop_listening";
+    public const string ClickToolName = "click";
 
     /// <summary>
     /// The model decides what counts as a sign-off, since people end in many ways; fixed words would
@@ -1478,7 +1494,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         // The turn this call belongs to: Esc, the person speaking or a new turn moves it on while an
         // action (or the agent) is still working, and then nothing may follow its output.
         var generation = turnGeneration;
-        if (name is not ("send_to_agent" or "point_at" or StopListeningToolName or WriteInPlace.ToolName) && OnDesktopAction is { } desktopAction)
+        if (name is not ("send_to_agent" or "point_at" or ClickToolName or StopListeningToolName or WriteInPlace.ToolName) && OnDesktopAction is { } desktopAction)
         {
             var startedAt = now();
             var frontAppBefore = FrontAppProvider?.Invoke();
@@ -1523,6 +1539,11 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             }
             case "point_at":
                 output = QueuePointAt(arguments);
+                break;
+            case ClickToolName:
+                // The output goes out from the pointing chain once the click (and the look after it) is done.
+                if (QueueClick(arguments, callId, serverEvent, generation) is not { } refusal) return;
+                output = refusal;
                 break;
             case WriteInPlace.ToolName:
             {
@@ -1637,11 +1658,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         return $"pointing at {label}";
     }
 
-    /// <summary>
-    /// The model's guess is coarse (30–100 px off for captions, hundreds for icons): the browser's tab
-    /// strip first, then a snap to the element's visible text (OCR of the screenshot it saw), then UI
-    /// Automation, then Claude on the same screenshot (2–4 s). Off the receive path, one after another.
-    /// </summary>
+    /// <summary>Resolves one `point_at` on the chain, off the receive path, one after another.</summary>
     private async Task ResolvePointAtAsync(Task? previousPointing, ScreenPoint guess, string label, string elementText, string? userRequest,
                                            CompanionScreenCapture capture, Task<IReadOnlyList<ScreenTextLine>>? screenText, CancellationToken cancellationToken)
     {
@@ -1653,7 +1670,137 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             catch (Exception) { }
         }
         if (cancellationToken.IsCancellationRequested) return;
-        static string Formatted(double value) => value.ToString("0", CultureInfo.InvariantCulture);
+        var target = await LocateElementAsync(guess, label, elementText, userRequest, capture, screenText);
+        if (cancellationToken.IsCancellationRequested) return;
+        var location = capture.GlobalPoint(target.Point.X, target.Point.Y);
+        Log($"point_at ({Formatted(guess.X)}, {Formatted(guess.Y)}) \"{label}\" {target.Resolution} → screen ({location.X}, {location.Y}){(OnPointAt is null ? " (no handler)" : "")}");
+        OnPointAt?.Invoke(target.Point, label, capture);
+    }
+
+    /// <summary>
+    /// Queues one `click` on the pointing chain (after any `point_at` still flying). Null when it was
+    /// queued: its output goes out from the chain. Otherwise the output for arguments it cannot use.
+    /// </summary>
+    private string? QueueClick(JsonObject arguments, string callId, JsonObject serverEvent, int generation)
+    {
+        if (SpeechJson.Number(arguments["x"]) is not { } x || SpeechJson.Number(arguments["y"]) is not { } y || !double.IsFinite(x) || !double.IsFinite(y))
+            return "invalid coordinates: click needs finite integer x and y";
+        if (LastScreenCapture is not { } capture)
+        {
+            Log("click ignored: no screenshot attached to this turn");
+            return "no screenshot attached; nothing was clicked";
+        }
+        var label = (SpeechJson.String(arguments["label"]) ?? "").Trim();
+        if (label.Length == 0) label = "it";
+        var elementText = (SpeechJson.String(arguments["text"]) ?? "").Trim();
+        var previousPointing = pointingChain;
+        var screenText = lastScreenText;
+        var userRequest = lastUserTranscript;
+        var frontAppBefore = FrontAppProvider?.Invoke();
+        // Esc has something to stop while the element is being found (Claude can take 4 s).
+        pendingToolCalls += 1;
+        pointingChain = ClickAsync(previousPointing, new ScreenPoint(x, y), label, elementText, userRequest, capture, screenText,
+                                   frontAppBefore, callId, serverEvent, generation, pointingCancellation.Token);
+        return null;
+    }
+
+    /// <summary>
+    /// point_at's locator chain, the buddy flies there, a real left click, then act-then-look. Never
+    /// clicks a control whose words commit something (ScreenNavigation.ClickIsRisky), a target nothing
+    /// located (the model's raw guess), OpenClicky's own window, or once the turn moved on (Esc, the
+    /// person speaking) while the locator was still working: those are pointed at instead, or dropped.
+    /// </summary>
+    private async Task ClickAsync(Task? previousPointing, ScreenPoint guess, string label, string elementText, string? userRequest,
+                                  CompanionScreenCapture capture, Task<IReadOnlyList<ScreenTextLine>>? screenText, int? frontAppBefore,
+                                  string callId, JsonObject serverEvent, int generation, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Yield();
+            if (previousPointing is not null)
+            {
+                try { await previousPointing; }
+                catch (Exception) { }
+            }
+            if (cancellationToken.IsCancellationRequested) return;
+            var startedAt = now();
+            var target = await LocateElementAsync(guess, label, elementText, userRequest, capture, screenText);
+            if (cancellationToken.IsCancellationRequested) return;
+            var location = capture.GlobalPoint(target.Point.X, target.Point.Y);
+            string clickLog;
+            string clickOutput;
+            if (Actions.ScreenNavigation.ClickIsRisky(label, elementText))
+            {
+                // Pointed at, never pressed: a misheard "click send" must not send.
+                OnPointAt?.Invoke(target.Point, label, capture);
+                clickLog = "refused, it could commit something";
+                clickOutput = $"Not clicked: {label} could send, buy, delete or confirm something, so the person clicks it themselves. The pointer is on it; tell them in a few words.";
+            }
+            else if (!target.IsLocated)
+            {
+                OnPointAt?.Invoke(target.Point, label, capture);
+                clickLog = "refused, not found precisely";
+                clickOutput = $"Not clicked: {label} could not be found precisely enough to click safely. The pointer is at the best guess; ask them to click it or to say it differently.";
+            }
+            else if (turnGeneration != generation)
+            {
+                // Esc or new speech while the element was still being found.
+                clickLog = "dropped, the turn moved on";
+                clickOutput = "Not clicked: they stopped it.";
+            }
+            else
+            {
+                OnPointAt?.Invoke(target.Point, label, capture);
+                switch (OnClick?.Invoke(location) ?? Actions.ScreenClickResult.NotAllowed)
+                {
+                    case Actions.ScreenClickResult.Clicked:
+                        // Act, then look, as the fast actions do; not once the turn moved on.
+                        if (turnGeneration == generation)
+                        {
+                            await WaitForScreenToSettleAsync(frontAppBefore);
+                            if (cancellationToken.IsCancellationRequested) return;
+                            if (turnGeneration == generation) await AttachScreenContextAsync();
+                        }
+                        clickLog = "clicked";
+                        clickOutput = $"Clicked {label}. The screen after the click is the latest screenshot; say in a few words what happened (which page or window opened). Do not read the page out unless asked.";
+                        break;
+                    case Actions.ScreenClickResult.OwnWindow:
+                        clickLog = "refused, OpenClicky's own window";
+                        clickOutput = "Not clicked: that spot is on OpenClicky's own window.";
+                        break;
+                    default:
+                        clickLog = "refused, Windows would not take the click";
+                        clickOutput = "Not clicked: Windows won't let me click in an app that runs as administrator. Ask them to click it.";
+                        break;
+                }
+            }
+            if (cancellationToken.IsCancellationRequested) return;
+            Log($"click \"{label}\" {target.Resolution} → screen ({location.X}, {location.Y}): {clickLog} in {(now() - startedAt).TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s");
+            SendToolOutput(callId, clickOutput);
+            ContinueUnlessTheTurnMovedOn(serverEvent, generation);
+        }
+        finally
+        {
+            pendingToolCalls -= 1;
+        }
+    }
+
+    private static string Formatted(double value) => value.ToString("0", CultureInfo.InvariantCulture);
+
+    /// <summary>Where an element the model named really is, and how that was found. IsLocated is false
+    /// only when nothing found it and the model's guess is all there is.</summary>
+    private sealed record LocatedElement(ScreenPoint Point, string Resolution, bool IsLocated);
+
+    /// <summary>
+    /// Where an element the model named really is in <paramref name="capture"/> (the Mac's
+    /// locateElement, shared by `point_at` and `click`). The model's guess is coarse (30–100 px off
+    /// for captions, hundreds for icons): the window's caption buttons and the browser's tab strip
+    /// first, then a snap to the element's visible text (OCR of the screenshot it saw), then UI
+    /// Automation, then Claude on the same screenshot (2–4 s).
+    /// </summary>
+    private async Task<LocatedElement> LocateElementAsync(ScreenPoint guess, string label, string elementText, string? userRequest,
+                                                          CompanionScreenCapture capture, Task<IReadOnlyList<ScreenTextLine>>? screenText)
+    {
         static string Prefix(string text, int length) => text.Length <= length ? text : text[..length];
         var point = guess;
         var resolution = "using the guess";
@@ -1722,7 +1869,9 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             if (located is not null)
             {
                 point = located.Point;
-                resolution = $"located by Claude ({Formatted(point.X)}, {Formatted(point.Y)}) in {(int)(now() - started).TotalMilliseconds} ms";
+                // Claude found the element itself: no longer the model's raw guess, so a click may follow.
+                resolved = true;
+                resolution =$"located by Claude ({Formatted(point.X)}, {Formatted(point.Y)}) in {(int)(now() - started).TotalMilliseconds} ms";
                 // Claude picks the right element and misplaces it by up to ~150 px; the text it named
                 // has an exact box in the OCR of the same screenshot, with a tighter margin.
                 if (located.VisibleText is { } visibleText && screenText is not null)
@@ -1740,10 +1889,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 resolution = "Claude could not locate it; using the guess";
             }
         }
-        if (cancellationToken.IsCancellationRequested) return;
-        var location = capture.GlobalPoint(point.X, point.Y);
-        Log($"point_at ({Formatted(guess.X)}, {Formatted(guess.Y)}) \"{label}\" {resolution} → screen ({location.X}, {location.Y}){(OnPointAt is null ? " (no handler)" : "")}");
-        OnPointAt?.Invoke(point, label, capture);
+        return new LocatedElement(point, resolution, resolved);
     }
 
     /// <summary>

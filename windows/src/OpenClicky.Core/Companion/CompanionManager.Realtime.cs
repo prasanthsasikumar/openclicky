@@ -4,7 +4,7 @@
 //
 //  Speech-to-speech over OpenAI Realtime or Gemini Live: the session is kept warm so a press only starts audio;
 //  point_at goes through the pointing chain (browser tab → OCR snap → UI Automation → Claude) and
-//  ends in pointAt; send_to_agent runs the agent lane; the fast tools run the desktop actions; the
+//  ends in pointAt; click goes through the same chain and ends in a real click; send_to_agent runs the agent lane; the fast tools run the desktop actions; the
 //  instructions carry the skills for the app in front.
 //
 
@@ -126,6 +126,12 @@ public sealed partial class CompanionManager
         client.OnPluginToolCall = (toolName, arguments, capture) =>
             Task.FromResult(TeacherPlugin.Perform(toolName, TeacherPlugin.StringArguments(arguments), capture));
         client.OnPointAt = (screenshotPoint, label, capture) => PointAt(screenshotPoint, label, capture);
+        client.OnClick = point =>
+        {
+            var result = services.DesktopActions.ClickAt(point);
+            if (result == ScreenClickResult.Clicked) LastSuccessfulQuickActionAt = DateTimeOffset.Now;
+            return result;
+        };
         client.OnAgentTask = async task =>
         {
             AgentActivityText = "starting agent…";

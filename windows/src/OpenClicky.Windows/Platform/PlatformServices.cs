@@ -15,6 +15,8 @@ public sealed class PlatformServices : IDisposable
         MainThread = new DispatcherMainThread(uiDispatcher);
         Clipboard = new Win32Clipboard();
         TextInserter = new FrontAppTextInserter(Clipboard);
+        // find_on_page types into the find bar the way live dictation types, once UI Automation says it has the focus.
+        DesktopActions = new DesktopActionExecutor(TextInserter, FocusedElements);
         WindowList = new WindowList();
         BrowserTabs = new BrowserTabEnumerator(WindowList);
         screens = new Screens();
@@ -45,7 +47,7 @@ public sealed class PlatformServices : IDisposable
     public ISystemVoice SystemVoice { get; } = new WindowsSystemVoice();
     public ILoginItem LoginItem { get; } = new RunKeyLoginItem();
     public INetworkReachability Network { get; } = new NetworkReachability();
-    public IDesktopActionExecutor DesktopActions { get; } = new DesktopActionExecutor();
+    public IDesktopActionExecutor DesktopActions { get; }
     public IProcessRunner Processes { get; } = new ProcessRunner();
     public ISingleInstance SingleInstance { get; } = new SingleInstance();
 

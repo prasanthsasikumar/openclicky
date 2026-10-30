@@ -14,7 +14,8 @@
 // Windows rules (reserved device names, `<>:"/\|?*`, a trailing dot or space); the four known
 // folders come from the shell (redirected folders included) through IDesktopActionExecutor. The
 // log prefix stays `mac action:` so macos/OpenClicky/scripts/measure-actions.sh reads Windows
-// logs unchanged.
+// logs unchanged. `scroll`, `open_folder`, `find_files` and `find_on_page` (2026-10-29) are the
+// moving-around set; their pure parts and Windows differences are in ScreenNavigation.cs.
 
 using System.Globalization;
 using System.Text.Json;
@@ -131,11 +132,28 @@ public abstract record DesktopActionOutcome
     public sealed record UnknownLocation(string Raw) : DesktopActionOutcome;
     public sealed record InvalidUrl : DesktopActionOutcome;
     public sealed record PermissionDenied(DesktopActionLocation Location) : DesktopActionOutcome;
+    public sealed record Scrolled(ScrollDirection Direction, ScrollAmount Amount) : DesktopActionOutcome;
+    public sealed record NothingToScroll : DesktopActionOutcome;
+    public sealed record NothingInFront : DesktopActionOutcome;
+    /// <summary>The window in front runs as administrator, and Windows drops input from this app to it (the Mac's needsAccessibility).</summary>
+    public sealed record InputBlocked : DesktopActionOutcome;
+    public sealed record OpenedFolder(string? Name, DesktopActionLocation Location) : DesktopActionOutcome;
+    /// <summary>Best first; the first is selected in File Explorer.</summary>
+    public sealed record FoundFiles(string Query, IReadOnlyList<string> Files) : DesktopActionOutcome
+    {
+        // A list compares by reference; two outcomes with the same files are the same outcome.
+        public bool Equals(FoundFiles? other) => other is not null && Query == other.Query && Files.SequenceEqual(other.Files);
+        public override int GetHashCode() => HashCode.Combine(Query, Files.Count);
+    }
+    public sealed record NoFilesFound(string Query) : DesktopActionOutcome;
+    public sealed record SearchedPage(string Text) : DesktopActionOutcome;
+    public sealed record NoFindBar : DesktopActionOutcome;
     public sealed record Failed(string Reason) : DesktopActionOutcome;
 
     /// <summary>True when the action did what was asked (the tour counts it as a task handed over).</summary>
     public bool DidSomething => this is OpenedApp or CreatedFolder or FolderAlreadyExists or Revealed or OpenedUrl or VolumeSet or MediaControlled
-        or PlayerControlled or Searched or MinimizedWindows or RestoredWindows or OpenedInbox or DraftedEmail or PlayingTrack or OpenedTrack or OpenedSpotifySearch;
+        or PlayerControlled or Searched or MinimizedWindows or RestoredWindows or OpenedInbox or DraftedEmail or PlayingTrack or OpenedTrack or OpenedSpotifySearch
+        or Scrolled or OpenedFolder or FoundFiles or SearchedPage;
 
     /// <summary>
     /// What the Realtime model is told in the tool's output. The same as the sentence unless an outcome
@@ -147,21 +165,30 @@ public abstract record DesktopActionOutcome
         OpenedInbox inbox => $"{inbox.App.Title()}'s inbox is open and attached as the latest screenshot. Unread rows are in bold. Read out sender and subject of the unread ones briefly, newest first, at most five, then stop.",
         DraftedEmail => SpokenSentence + " If they ask you to send it, say you never send email and that it is open in front of them.",
         WindowAppNotRunning => SpokenSentence + " Call open_app if they want it opened.",
+        Scrolled => SpokenSentence + " Say only a word or two; the next screenshot shows where the page is now.",
+        FoundFiles found => $"Files whose names match {found.Query}, best first (the first is selected in File Explorer, which is in the latest screenshot):\n"
+            + string.Join("\n", found.Files.Select(file => $"{Path.GetFileName(file.TrimEnd('\\', '/'))} — in {Path.GetFileName(Path.GetDirectoryName(file.TrimEnd('\\', '/')) ?? "")}"))
+            + "\nSay how many and name the first one or two briefly; never read folder paths character by character.",
+        SearchedPage searched => $"Searched the page for {searched.Text} with the app's find bar; the first match is highlighted and the find bar shows how many there are. Say so in a few words.",
+        NoFindBar => SpokenSentence + " Do not try again; if they want, point at the text in the screenshot instead.",
         _ => SpokenSentence,
     };
 
-    /// <summary>What goes in app.log. The same as the sentence unless it would carry something private (an email's recipient).</summary>
+    /// <summary>What goes in app.log. The same as the sentence unless it would carry something private (an email's recipient, a file name, the words searched for).</summary>
     public string LogDescription => this switch
     {
         DraftedEmail drafted => $"draft_email: {drafted.App.RawValue()}, {drafted.BodyLength}-character body, {(drafted.To.Contains('@') ? "address" : "name")} given",
+        FoundFiles found => $"find_files: {found.Files.Count} found",
+        NoFilesFound => "find_files: nothing found",
+        SearchedPage searched => $"find_on_page: {searched.Text.Length}-character search typed",
         _ => SpokenSentence,
     };
 
     /// <summary>
     /// Whether the model should see a fresh screenshot before it speaks: true for an action that
-    /// changed what is on screen in a way worth describing (a page opened), false for the rest.
+    /// changed what is on screen in a way worth describing (a page or a folder opened), false for the rest.
     /// </summary>
-    public bool ThenLooksAtScreen => this is OpenedUrl or Searched or OpenedInbox or DraftedEmail;
+    public bool ThenLooksAtScreen => this is OpenedUrl or Searched or OpenedInbox or DraftedEmail or OpenedFolder or FoundFiles;
 
     public string SpokenSentence => this switch
     {
@@ -205,9 +232,30 @@ public abstract record DesktopActionOutcome
         // The Mac's TCC prompt has no Windows twin; Controlled folder access (Windows Security) is
         // what refuses a write to Documents or the Desktop, and it is allowed from there.
         PermissionDenied denied => $"Windows hasn't allowed access to {denied.Location.SpokenName()}. Windows Security can allow it.",
+        Scrolled { Amount: ScrollAmount.End } scrolled => scrolled.Direction switch
+        {
+            ScrollDirection.Up => "Scrolled to the top.",
+            ScrollDirection.Down => "Scrolled to the bottom.",
+            _ => $"Scrolled all the way {scrolled.Direction.RawValue()}.",
+        },
+        Scrolled { Amount: ScrollAmount.Little } scrolled => $"Scrolled {scrolled.Direction.RawValue()} a little.",
+        Scrolled scrolled => $"Scrolled {scrolled.Direction.RawValue()}.",
+        NothingToScroll => "There's no window in front for me to scroll.",
+        NothingInFront => "There's no app in front for me to search.",
+        InputBlocked => "Windows won't let me do that in an app that runs as administrator.",
+        OpenedFolder { Name: null } opened => $"Opened {opened.Location.SpokenName()}.",
+        OpenedFolder opened => $"Opened {opened.Name} on {opened.Location.SpokenName()}.",
+        FoundFiles found => found.Files.Count == 1
+            ? $"Found {FileName(found.Files[0])}; it's selected in File Explorer."
+            : $"Found {found.Files.Count} matches; {FileName(found.Files[0])} is selected in File Explorer.",
+        NoFilesFound missing => $"I couldn't find a file called {missing.Query} on this PC.",
+        SearchedPage searched => $"Looking for {searched.Text} on the page.",
+        NoFindBar => "This app didn't open a find bar, so I didn't type anything.",
         Failed failed => $"That didn't work: {failed.Reason}.",
         _ => "Done.",
     };
+
+    private static string FileName(string path) => Path.GetFileName(path.TrimEnd('\\', '/'));
 }
 
 /// <summary>Argument checks. Both return null for anything the fast lane will not act on.</summary>
@@ -317,6 +365,14 @@ public abstract record DesktopAction
     public sealed record CheckEmail(string? App) : DesktopAction;
     public sealed record DraftEmail(string To, string Subject, string Body, string? App) : DesktopAction;
     public sealed record PlayMusic(string Query) : DesktopAction;
+    /// <summary>Scrolls the window in front.</summary>
+    public sealed record Scroll(ScrollDirection Direction, ScrollAmount Amount) : DesktopAction;
+    /// <summary>A whole folder in File Explorer ("open downloads"), or a folder inside it when one is named.</summary>
+    public sealed record OpenFolder(string? Name, DesktopActionLocation Location) : DesktopAction;
+    /// <summary>Windows Search: files under the home folder whose names hold every word said.</summary>
+    public sealed record FindFiles(string Query) : DesktopAction;
+    /// <summary>The front app's find bar (Ctrl+F) with these words.</summary>
+    public sealed record FindOnPage(string Text) : DesktopAction;
 
     public const string OpenAppToolName = "open_app";
     public const string OpenUrlToolName = "open_url";
@@ -332,8 +388,15 @@ public abstract record DesktopAction
     public const string DraftEmailToolName = "draft_email";
     public const string PlayMusicToolName = "play_music";
     public const string RestoreWindowsToolName = "restore_windows";
+    public const string ScrollToolName = "scroll";
+    public const string OpenFolderToolName = "open_folder";
+    public const string FindFilesToolName = "find_files";
+    public const string FindOnPageToolName = "find_on_page";
 
     public const string VolumeArgumentMessage = "I need a volume between 0 and 100";
+    public const string ScrollArgumentMessage = "I need up, down, left or right";
+    /// <summary>Typed into a find bar, so a shorter cap than a web search's.</summary>
+    public const int FindOnPageMaximumLength = 100;
 
     /// <summary>
     /// The local actions OpenClicky performs itself, as Realtime function tools. Typed arguments
@@ -380,7 +443,7 @@ public abstract record DesktopAction
                      },
                      "name"),
             Function(RevealInExplorerToolName,
-                     "Show an existing file or folder in File Explorer.",
+                     "Show an existing file or folder in File Explorer, selected inside the location. To open a whole folder ('open downloads') use open_folder.",
                      new JsonObject
                      {
                          ["name"] = new JsonObject { ["type"] = "string", ["description"] = "The file or folder's name." },
@@ -439,6 +502,44 @@ public abstract record DesktopAction
             Function(RestoreWindowsToolName,
                      "Bring minimized windows back. Without app: every window minimize_all minimized ('bring them back', 'restore my windows'). With app: that app's windows only, nothing else ('show just the terminal', 'bring back Chrome').",
                      new JsonObject { ["app"] = new JsonObject { ["type"] = "string", ["description"] = "Only when they named one app: its name, e.g. 'Terminal'. Never leave it out when they named one." } }),
+            Function(ScrollToolName,
+                     "Scroll the window in front, the way the person would with the mouse wheel. For 'scroll down', 'go down', 'next page', 'back to the top', 'scroll a bit'. Do it; never explain how to scroll.",
+                     new JsonObject
+                     {
+                         ["direction"] = new JsonObject
+                         {
+                             ["type"] = "string",
+                             ["enum"] = new JsonArray(ScreenNavigation.AllDirections.Select(direction => (JsonNode)direction.RawValue()).ToArray()),
+                         },
+                         ["amount"] = new JsonObject
+                         {
+                             ["type"] = "string",
+                             ["enum"] = new JsonArray(ScreenNavigation.AllAmounts.Select(amount => (JsonNode)amount.RawValue()).ToArray()),
+                             ["description"] = "page (the default) for a screenful, little for 'a bit', end for 'to the top' / 'to the bottom'.",
+                         },
+                     },
+                     "direction"),
+            Function(OpenFolderToolName,
+                     "Open a folder in a File Explorer window: 'open downloads', 'show my desktop', 'open the Projects folder in Documents'.",
+                     new JsonObject
+                     {
+                         ["location"] = new JsonObject
+                         {
+                             ["type"] = "string",
+                             ["enum"] = new JsonArray(DesktopActionLocations.All.Select(location => (JsonNode)location.RawValue()).ToArray()),
+                             ["description"] = "Which folder, or where the named folder is.",
+                         },
+                         ["name"] = new JsonObject { ["type"] = "string", ["description"] = "Only for a folder inside the location: its name. Leave it out to open the location itself." },
+                     },
+                     "location"),
+            Function(FindFilesToolName,
+                     "Look for files on the PC by name with Windows Search and select the best match in File Explorer: 'find my tax return', 'look for the budget spreadsheet', 'where is resume.pdf'. Not for text on the screen.",
+                     new JsonObject { ["query"] = new JsonObject { ["type"] = "string", ["description"] = "Words from the file's name, e.g. 'tax return 2025'." } },
+                     "query"),
+            Function(FindOnPageToolName,
+                     "Find words on the page or document in front with its find bar (Ctrl+F) and jump to the first match: 'find price on this page', 'look for shipping here'. Not for files.",
+                     new JsonObject { ["text"] = new JsonObject { ["type"] = "string", ["description"] = "The words to find, as said." } },
+                     "text"),
         ];
     }
 
@@ -460,7 +561,7 @@ public abstract record DesktopAction
     {
         OpenAppToolName, OpenUrlToolName, CreateFolderToolName, RevealInExplorerToolName, RevealInFinderToolName,
         SetVolumeToolName, MediaControlToolName, WebSearchToolName, MinimizeAllToolName, CheckEmailToolName, DraftEmailToolName,
-        PlayMusicToolName, RestoreWindowsToolName,
+        PlayMusicToolName, RestoreWindowsToolName, ScrollToolName, OpenFolderToolName, FindFilesToolName, FindOnPageToolName,
     };
 
     /// <summary>
@@ -560,6 +661,39 @@ public abstract record DesktopAction
                 var app = StringArgument("app");
                 return new DesktopActionParseResult.Action(new DraftEmail(recipient, StringArgument("subject"), body, app.Length == 0 ? null : app));
             }
+
+            case ScrollToolName:
+            {
+                if (ScreenNavigation.Direction(StringArgument("direction")) is not { } direction)
+                {
+                    return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.Failed(ScrollArgumentMessage));
+                }
+                // A missing or unknown amount is a screenful, the common case.
+                var amount = ScreenNavigation.Amount(StringArgument("amount")) ?? ScrollAmount.Page;
+                return new DesktopActionParseResult.Action(new Scroll(direction, amount));
+            }
+
+            case OpenFolderToolName:
+            {
+                // The location is required here: "open downloads" names it, and nothing should open
+                // the workspace in its place.
+                if (DesktopActionLocations.Named(StringArgument("location")) is not { } location)
+                {
+                    return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.UnknownLocation(StringArgument("location")));
+                }
+                var name = StringArgument("name");
+                return new DesktopActionParseResult.Action(new OpenFolder(name.Length == 0 ? null : name, location));
+            }
+
+            case FindFilesToolName:
+                return DesktopActionValidation.SearchQuery(StringArgument("query")) is { } fileQuery
+                    ? new DesktopActionParseResult.Action(new FindFiles(fileQuery))
+                    : new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidQuery());
+
+            case FindOnPageToolName:
+                return DesktopActionValidation.SearchQuery(StringArgument("text")) is { Length: <= FindOnPageMaximumLength } pageText
+                    ? new DesktopActionParseResult.Action(new FindOnPage(pageText))
+                    : new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidQuery());
 
             default:
                 return new DesktopActionParseResult.NotAFastAction();
@@ -694,8 +828,27 @@ public sealed class DesktopActionRunner
     {
         DesktopAction.PlayMusic playMusic => PlayMusicAsync(playMusic.Query),
         DesktopAction.MediaControl { Action: "pause" or "play" } mediaControl => ControlPlayerAsync(mediaControl.Action),
+        DesktopAction.FindFiles findFiles => FindFilesAsync(findFiles.Query),
+        DesktopAction.FindOnPage findOnPage => FindOnPageAsync(findOnPage.Text),
         _ => Task.Run(() => Perform(action)),
     };
+
+    private async Task<DesktopActionOutcome> FindFilesAsync(string query)
+    {
+        var files = await executor.FindFilesAsync(query).ConfigureAwait(false);
+        if (files.Count == 0) return new DesktopActionOutcome.NoFilesFound(query);
+        executor.RevealInExplorer(files[0]);
+        return new DesktopActionOutcome.FoundFiles(query, files);
+    }
+
+    private async Task<DesktopActionOutcome> FindOnPageAsync(string text) =>
+        await executor.FindOnPageAsync(text).ConfigureAwait(false) switch
+        {
+            FindOnPageResult.Typed => new DesktopActionOutcome.SearchedPage(text),
+            FindOnPageResult.NoFindField => new DesktopActionOutcome.NoFindBar(),
+            FindOnPageResult.NotAllowed => new DesktopActionOutcome.InputBlocked(),
+            _ => new DesktopActionOutcome.NothingInFront(),
+        };
 
     /// <summary>
     /// "Stop that song" goes to the player itself: the play/pause key toggles, so with nothing playing
@@ -836,6 +989,31 @@ public sealed class DesktopActionRunner
                 var app = extras.ChooseEmailApp(draftEmail.App);
                 if (!executor.OpenUrl(app.ComposeUrl(recipient, subject, body))) return new DesktopActionOutcome.Failed("the browser didn't open");
                 return new DesktopActionOutcome.DraftedEmail(app, recipient, body.Length);
+            }
+
+            case DesktopAction.Scroll scroll:
+                return executor.ScrollFrontWindow(scroll.Direction, scroll.Amount) switch
+                {
+                    ScrollResult.Scrolled => new DesktopActionOutcome.Scrolled(scroll.Direction, scroll.Amount),
+                    ScrollResult.NotAllowed => new DesktopActionOutcome.InputBlocked(),
+                    _ => new DesktopActionOutcome.NothingToScroll(),
+                };
+
+            case DesktopAction.OpenFolder openFolder:
+            {
+                var directory = DirectoryPath(openFolder.Location);
+                if (openFolder.Name is null)
+                {
+                    // The workspace exists once something was made in it; until then there is nothing to open.
+                    if (!Directory.Exists(directory)) return new DesktopActionOutcome.Failed("that folder isn't there yet");
+                    if (!executor.OpenFolder(directory)) return new DesktopActionOutcome.Failed("File Explorer didn't open");
+                    return new DesktopActionOutcome.OpenedFolder(null, openFolder.Location);
+                }
+                if (DesktopActionValidation.FolderName(openFolder.Name) is not { } name) return new DesktopActionOutcome.InvalidName();
+                var target = Path.Combine(directory, name);
+                if (!Directory.Exists(target)) return new DesktopActionOutcome.NothingToReveal(name, openFolder.Location);
+                if (!executor.OpenFolder(target)) return new DesktopActionOutcome.Failed("File Explorer didn't open");
+                return new DesktopActionOutcome.OpenedFolder(name, openFolder.Location);
             }
 
             default:

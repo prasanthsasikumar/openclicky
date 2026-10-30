@@ -176,6 +176,34 @@ public sealed class DesktopActionRunnerTests : IDisposable
         public bool SetVolume(int percent) { VolumeLevels.Add(percent); return true; }
         public int? GetVolume() => VolumeLevels.LastOrDefault();
         public bool SendMediaKey(string action) { MediaKeys.Add(action); return true; }
+
+        public ScrollResult ScrollResultToGive { get; set; } = ScrollResult.Scrolled;
+        public List<string> Scrolls { get; } = [];
+        public List<string> OpenedFolders { get; } = [];
+        public IReadOnlyList<string> FilesToFind { get; set; } = [];
+        public List<string> FileSearches { get; } = [];
+        public FindOnPageResult FindOnPageResultToGive { get; set; } = FindOnPageResult.Typed;
+        public List<string> PageSearches { get; } = [];
+
+        public ScrollResult ScrollFrontWindow(ScrollDirection direction, ScrollAmount amount)
+        {
+            Scrolls.Add($"{direction.RawValue()} {amount.RawValue()}");
+            return ScrollResultToGive;
+        }
+
+        public bool OpenFolder(string path) { OpenedFolders.Add(path); return true; }
+
+        public Task<IReadOnlyList<string>> FindFilesAsync(string words)
+        {
+            FileSearches.Add(words);
+            return Task.FromResult(FilesToFind);
+        }
+
+        public Task<FindOnPageResult> FindOnPageAsync(string text)
+        {
+            PageSearches.Add(text);
+            return Task.FromResult(FindOnPageResultToGive);
+        }
     }
 
     private readonly string root;
@@ -312,6 +340,91 @@ public sealed class DesktopActionRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task ScrollingGoesToTheWindowInFrontAndSaysWhere()
+    {
+        var runner = MakeRunner();
+        Assert.Equal(new DesktopActionOutcome.Scrolled(ScrollDirection.Down, ScrollAmount.Page), await runner.PerformAsync(new DesktopAction.Scroll(ScrollDirection.Down, ScrollAmount.Page)));
+        Assert.Equal(new DesktopActionOutcome.Scrolled(ScrollDirection.Up, ScrollAmount.End), await runner.PerformAsync(new DesktopAction.Scroll(ScrollDirection.Up, ScrollAmount.End)));
+        Assert.Equal(["down page", "up end"], recorder.Scrolls);
+        Assert.Equal("Scrolled to the top.", new DesktopActionOutcome.Scrolled(ScrollDirection.Up, ScrollAmount.End).SpokenSentence);
+        Assert.Equal("Scrolled down a little.", new DesktopActionOutcome.Scrolled(ScrollDirection.Down, ScrollAmount.Little).SpokenSentence);
+        Assert.Equal("Scrolled right.", new DesktopActionOutcome.Scrolled(ScrollDirection.Right, ScrollAmount.Page).SpokenSentence);
+        Assert.StartsWith("Scrolled down. Say only a word or two", new DesktopActionOutcome.Scrolled(ScrollDirection.Down, ScrollAmount.Page).ToolOutput);
+
+        recorder.ScrollResultToGive = ScrollResult.NoWindow;
+        Assert.Equal(new DesktopActionOutcome.NothingToScroll(), await runner.PerformAsync(new DesktopAction.Scroll(ScrollDirection.Down, ScrollAmount.Page)));
+        recorder.ScrollResultToGive = ScrollResult.NotAllowed;
+        Assert.Equal(new DesktopActionOutcome.InputBlocked(), await runner.PerformAsync(new DesktopAction.Scroll(ScrollDirection.Down, ScrollAmount.Page)));
+    }
+
+    /// <summary>"Open downloads" went to reveal_in_finder as a folder called Downloads inside Downloads,
+    /// which does not exist (the Mac, 2026-10-29).</summary>
+    [Fact]
+    public async Task OpeningAFolderOpensTheLocationItselfOrAFolderInIt()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "Downloads"));
+        Directory.CreateDirectory(Path.Combine(root, "Desktop", "Riti"));
+        File.WriteAllText(Path.Combine(root, "Desktop", "notes.txt"), "x");
+        var runner = MakeRunner();
+
+        Assert.Equal(new DesktopActionOutcome.OpenedFolder(null, DesktopActionLocation.Downloads),
+                     await runner.PerformAsync(new DesktopAction.OpenFolder(null, DesktopActionLocation.Downloads)));
+        Assert.Equal(new DesktopActionOutcome.OpenedFolder("Riti", DesktopActionLocation.Desktop),
+                     await runner.PerformAsync(new DesktopAction.OpenFolder("Riti", DesktopActionLocation.Desktop)));
+        Assert.Equal(new DesktopActionOutcome.NothingToReveal("Missing", DesktopActionLocation.Desktop),
+                     await runner.PerformAsync(new DesktopAction.OpenFolder("Missing", DesktopActionLocation.Desktop)));
+        // A file is not a folder to open.
+        Assert.Equal(new DesktopActionOutcome.NothingToReveal("notes.txt", DesktopActionLocation.Desktop),
+                     await runner.PerformAsync(new DesktopAction.OpenFolder("notes.txt", DesktopActionLocation.Desktop)));
+        Assert.Equal(new DesktopActionOutcome.InvalidName(), await runner.PerformAsync(new DesktopAction.OpenFolder(@"..\Windows", DesktopActionLocation.Desktop)));
+        // The workspace before anything was made in it.
+        Assert.IsType<DesktopActionOutcome.Failed>(await runner.PerformAsync(new DesktopAction.OpenFolder(null, DesktopActionLocation.Workspace)));
+        Assert.Equal([Path.Combine(root, "Downloads"), Path.Combine(root, "Desktop", "Riti")], recorder.OpenedFolders);
+        Assert.Equal("Opened your Downloads folder.", new DesktopActionOutcome.OpenedFolder(null, DesktopActionLocation.Downloads).SpokenSentence);
+        Assert.Equal("Opened Riti on your Desktop.", new DesktopActionOutcome.OpenedFolder("Riti", DesktopActionLocation.Desktop).SpokenSentence);
+        Assert.True(new DesktopActionOutcome.OpenedFolder(null, DesktopActionLocation.Downloads).ThenLooksAtScreen);
+    }
+
+    [Fact]
+    public async Task FindingFilesSelectsTheBestMatchAndNeverLogsNames()
+    {
+        var runner = MakeRunner();
+        Assert.Equal(new DesktopActionOutcome.NoFilesFound("tax return"), await runner.PerformAsync(new DesktopAction.FindFiles("tax return")));
+        Assert.Empty(recorder.RevealedPaths);
+        Assert.Equal("find_files: nothing found", new DesktopActionOutcome.NoFilesFound("tax return").LogDescription);
+
+        IReadOnlyList<string> files = [@"C:\Users\tester\Documents\Tax return 2025.pdf", @"C:\Users\tester\Desktop\tax return draft.docx"];
+        recorder.FilesToFind = files;
+        var outcome = await runner.PerformAsync(new DesktopAction.FindFiles("tax return"));
+        Assert.Equal(new DesktopActionOutcome.FoundFiles("tax return", files), outcome);
+        Assert.Equal([files[0]], recorder.RevealedPaths);
+        Assert.Equal(["tax return", "tax return"], recorder.FileSearches);
+        Assert.Equal("Found 2 matches; Tax return 2025.pdf is selected in File Explorer.", outcome.SpokenSentence);
+        Assert.Equal("Found Riti.txt; it's selected in File Explorer.", new DesktopActionOutcome.FoundFiles("riti", [@"C:\Riti.txt"]).SpokenSentence);
+        Assert.Contains("tax return draft.docx — in Desktop", outcome.ToolOutput);
+        Assert.DoesNotContain("Tax", outcome.LogDescription);
+        Assert.Equal("find_files: 2 found", outcome.LogDescription);
+        Assert.True(outcome.ThenLooksAtScreen);
+        Assert.True(outcome.DidSomething);
+    }
+
+    [Fact]
+    public async Task FindingOnThePageTypesOnlyIntoAFindBar()
+    {
+        var runner = MakeRunner();
+        Assert.Equal(new DesktopActionOutcome.SearchedPage("price"), await runner.PerformAsync(new DesktopAction.FindOnPage("price")));
+        recorder.FindOnPageResultToGive = FindOnPageResult.NoFindField;
+        Assert.Equal(new DesktopActionOutcome.NoFindBar(), await runner.PerformAsync(new DesktopAction.FindOnPage("price")));
+        recorder.FindOnPageResultToGive = FindOnPageResult.NoApp;
+        Assert.Equal(new DesktopActionOutcome.NothingInFront(), await runner.PerformAsync(new DesktopAction.FindOnPage("price")));
+        recorder.FindOnPageResultToGive = FindOnPageResult.NotAllowed;
+        Assert.Equal(new DesktopActionOutcome.InputBlocked(), await runner.PerformAsync(new DesktopAction.FindOnPage("price")));
+        Assert.Equal(["price", "price", "price", "price"], recorder.PageSearches);
+        Assert.DoesNotContain("secret", new DesktopActionOutcome.SearchedPage("secret words").LogDescription);
+        Assert.StartsWith("This app didn't open a find bar, so I didn't type anything. Do not try again", new DesktopActionOutcome.NoFindBar().ToolOutput);
+    }
+
+    [Fact]
     public async Task AToolCallIsParsedPerformedAndAnythingElseIsLeftAlone()
     {
         var runner = MakeRunner();
@@ -338,6 +451,25 @@ public class DesktopActionParsingTests
         Assert.Equal(Action(new DesktopAction.RevealInExplorer("Test", DesktopActionLocation.Downloads)),
                      Parse("reveal_in_explorer", new JsonObject { ["name"] = "Test", ["location"] = "downloads" }));
         Assert.Equal(Action(new DesktopAction.MediaControl("next")), Parse("media_control", new JsonObject { ["action"] = "next" }));
+    }
+
+    [Fact]
+    public void TheMovingAroundToolsParseTheirArguments()
+    {
+        Assert.Equal(Action(new DesktopAction.Scroll(ScrollDirection.Down, ScrollAmount.Page)), Parse("scroll", new JsonObject { ["direction"] = "Down" }));
+        Assert.Equal(Action(new DesktopAction.Scroll(ScrollDirection.Up, ScrollAmount.End)), Parse("scroll", new JsonObject { ["direction"] = "up", ["amount"] = "end" }));
+        Assert.Equal(new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.Failed("I need up, down, left or right")),
+                     Parse("scroll", new JsonObject { ["direction"] = "sideways" }));
+        Assert.Equal(Action(new DesktopAction.OpenFolder(null, DesktopActionLocation.Downloads)), Parse("open_folder", new JsonObject { ["location"] = "downloads" }));
+        Assert.Equal(Action(new DesktopAction.OpenFolder("Projects", DesktopActionLocation.Documents)),
+                     Parse("open_folder", new JsonObject { ["location"] = "documents", ["name"] = "Projects" }));
+        Assert.Equal(new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.UnknownLocation("icloud")), Parse("open_folder", new JsonObject { ["location"] = "icloud" }));
+        Assert.Equal(Action(new DesktopAction.FindFiles("tax return")), Parse("find_files", new JsonObject { ["query"] = "tax return" }));
+        Assert.Equal(Action(new DesktopAction.FindOnPage("price")), Parse("find_on_page", new JsonObject { ["text"] = "price" }));
+        Assert.Equal(new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidQuery()), Parse("find_on_page", new JsonObject { ["text"] = new string('a', 101) }));
+        Assert.Equal(Action(new DesktopAction.FindOnPage(new string('a', 100))), Parse("find_on_page", new JsonObject { ["text"] = new string('a', 100) }));
+        Assert.Equal(new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidQuery()), Parse("find_on_page", new JsonObject { ["text"] = "a\nb" }));
+        Assert.Equal(new DesktopActionParseResult.NotAFastAction(), Parse("click", new JsonObject { ["x"] = 1, ["y"] = 2 }));
     }
 
     [Fact]
@@ -412,7 +544,8 @@ public class FastActionToolDefinitionTests
     {
         var names = DesktopAction.RealtimeToolDefinitions().Select(definition => definition["name"]!.GetValue<string>());
         Assert.Equal(["open_app", "open_url", "create_folder", "reveal_in_explorer", "set_volume", "media_control",
-                      "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows"], names);
+                      "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows",
+                      "scroll", "open_folder", "find_files", "find_on_page"], names);
     }
 
     [Fact]
@@ -450,7 +583,7 @@ public class FastActionToolDefinitionTests
         }
         // They fit the ask lane's hook.
         var tools = AskLanePrompts.AskTools(offersQuickActions: true, hasWritingTarget: false, anthropic);
-        Assert.Equal(12, tools.Count);
+        Assert.Equal(16, tools.Count);
     }
 
     /// <summary>
@@ -520,6 +653,20 @@ public class FastActionToolDefinitionTests
                 case DesktopAction.PlayMusic playMusic:
                     Assert.Equal(arguments["query"]!.GetValue<string>(), playMusic.Query);
                     break;
+                case DesktopAction.Scroll scroll:
+                    Assert.Equal(arguments["direction"]!.GetValue<string>(), scroll.Direction.RawValue());
+                    Assert.Equal(arguments["amount"]!.GetValue<string>(), scroll.Amount.RawValue());
+                    break;
+                case DesktopAction.OpenFolder openFolder:
+                    Assert.Equal(arguments["name"]!.GetValue<string>(), openFolder.Name);
+                    Assert.Equal(arguments["location"]!.GetValue<string>(), openFolder.Location.RawValue());
+                    break;
+                case DesktopAction.FindFiles findFiles:
+                    Assert.Equal(arguments["query"]!.GetValue<string>(), findFiles.Query);
+                    break;
+                case DesktopAction.FindOnPage findOnPage:
+                    Assert.Equal(arguments["text"]!.GetValue<string>(), findOnPage.Text);
+                    break;
                 default:
                     Assert.Fail($"{toolName} parsed into an unexpected action");
                     break;
@@ -540,7 +687,7 @@ public class DesktopActionPlanToolTests
     public void InstructionBlockNamesEveryRealToolWithItsDescriptionAndSchema()
     {
         var block = PlanToolProtocol.InstructionBlock(QuickActionTools);
-        Assert.Equal(12, QuickActionTools.Count);
+        Assert.Equal(16, QuickActionTools.Count);
         foreach (var tool in QuickActionTools)
         {
             Assert.Contains($"- {tool.Name}: {tool.Description}", block);
