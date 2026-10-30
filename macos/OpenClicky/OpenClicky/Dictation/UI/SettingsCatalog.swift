@@ -191,11 +191,14 @@ func settingsHighlighted(_ text: String, query: String) -> AttributedString {
 struct SettingsRow<Trailing: View>: View {
     let title: String
     var detail: String?
+    /// A feature's coloured icon on the left (the island's pages); most rows have none.
+    var icon: SettingsFeatureTile?
     @ViewBuilder var trailing: Trailing
     @Environment(\.settingsSearchQuery) private var searchQuery
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
+            if let icon { icon.padding(.trailing, -6) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(settingsHighlighted(title, query: searchQuery)).font(SettingsLook.rowTitle)
                 if let detail, !detail.isEmpty {

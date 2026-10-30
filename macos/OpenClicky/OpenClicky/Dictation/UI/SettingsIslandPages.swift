@@ -69,8 +69,21 @@ struct IslandPluginRow: View {
     let plugin: any IslandComponent
     @State private var isOn = false
 
+    /// Each plugin's tile colour on its settings row.
+    static func tint(for id: String) -> Color {
+        switch id {
+        case IslandPluginRegistry.mediaID: return Color(red: 0.98, green: 0.18, blue: 0.33)
+        case IslandPluginRegistry.systemID, IslandPluginRegistry.shelfID: return Color(red: 0.0, green: 0.478, blue: 1.0)
+        case "notes": return Color(red: 1.0, green: 0.8, blue: 0.0)
+        case "timer": return Color(red: 1.0, green: 0.584, blue: 0.0)
+        case IslandPluginRegistry.teacherID: return Color(red: 0.204, green: 0.78, blue: 0.349)
+        case IslandPluginRegistry.agentsID: return Color(red: 0.11, green: 0.11, blue: 0.118)
+        default: return Color(red: 0.557, green: 0.557, blue: 0.576)
+        }
+    }
+
     var body: some View {
-        SettingsRow(title: plugin.title, detail: plugin.settingsDetail ?? "") {
+        SettingsRow(title: plugin.title, detail: plugin.settingsDetail ?? "", icon: SettingsFeatureTile(symbol: plugin.symbolName, tint: Self.tint(for: plugin.id))) {
             SettingsSwitch(isOn: Binding(
                 get: { isOn },
                 set: { newValue in

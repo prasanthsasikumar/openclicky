@@ -36,7 +36,7 @@ private struct WeatherEnabledRow: View {
     @AppStorage(WeatherSettingsKeys.useLocation) private var useLocation = true
 
     var body: some View {
-        SettingsRow(title: "Weather", detail: "Today's weather on the island, from Open-Meteo.") {
+        SettingsRow(title: "Weather", detail: "Today's weather on the island, from Open-Meteo.", icon: SettingsFeatureTile(symbol: "cloud.sun.fill", tint: Color(red: 0.0, green: 0.478, blue: 1.0))) {
             SettingsSwitch(isOn: Binding(get: { isEnabled }, set: { newValue in
                 isEnabled = newValue
                 // Turning it on is the person's action, so this is the moment to ask for the location.

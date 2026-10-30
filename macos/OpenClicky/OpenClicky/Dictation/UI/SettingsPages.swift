@@ -57,6 +57,27 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The page's header card: one line on what lives here.
+    var subtitle: String {
+        switch self {
+        case .general: return "Starting up, the island's place and the menu bar."
+        case .dictation: return "How a take is heard, written and pasted."
+        case .clicky: return "The pointer that answers, points and does things for you."
+        case .voice: return "How Clicky sounds when it talks back."
+        case .appearance: return "How the island looks when it opens."
+        case .music: return "What's playing, on the island with its controls."
+        case .widgets: return "Small tiles beside the calendar on the island."
+        case .calendar: return "Your week on the island, and adding events from it."
+        case .tools: return "Handy extras on the island, each with its own button at the top."
+        case .orb: return "The orb at the bottom of the screen while you dictate."
+        case .keyboard: return "The keys that dictate, talk and type to Clicky."
+        case .keys: return "Your own AI keys and plans, and what each one pays for."
+        case .account: return "Your OpenClicky account, if you use one."
+        case .privacy: return "What OpenClicky may use, and what stays on this Mac."
+        case .about: return "Version, updates and where to get help."
+        }
+    }
+
     /// The sidebar icon, white on `tint`.
     var symbol: String {
         switch self {
@@ -102,12 +123,17 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
 /// One page (or the search results) as a grouped form: a section per group, its footer under it.
 struct SettingsFormView: View {
     let groups: [SettingsSectionGroup]
+    /// The page's header card above its first group; none for search results.
+    var page: DictationSettingsPage?
     /// The Settings tour asks for a row to be scrolled into view before it points at it.
     @ObservedObject private var tourTargets = SettingsTourTargets.shared
 
     var body: some View {
         ScrollViewReader { scrollProxy in
         Form {
+            if let page {
+                Section { SettingsPageHeader(page: page) }
+            }
             ForEach(groups) { group in
                 Section {
                     ForEach(group.items) { item in
@@ -179,7 +205,7 @@ struct SettingsSwitch: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .labelsHidden()
-            .tint(SettingsLook.accent)
+            .tint(Color(nsColor: .controlAccentColor))
             .pointerCursor()
     }
 }
@@ -204,5 +230,44 @@ struct SettingsKeys: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The card at the top of a page, like System Settings': the page's icon large in its coloured
+/// tile, its name, and a line on what it holds.
+struct SettingsPageHeader: View {
+    let page: DictationSettingsPage
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: page.symbol)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(page.tint.gradient))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(page.title).font(.system(size: 15, weight: .semibold))
+                Text(page.subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A feature's icon beside its row: a small coloured tile with a white symbol.
+struct SettingsFeatureTile: View {
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
+            .background(RoundedRectangle(cornerRadius: 5.5, style: .continuous).fill(tint.gradient))
+            .accessibilityHidden(true)
     }
 }

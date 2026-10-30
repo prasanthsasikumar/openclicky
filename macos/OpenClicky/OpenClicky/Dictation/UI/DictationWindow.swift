@@ -246,7 +246,7 @@ struct DictationRootView: View {
         } else {
             switch model.destination {
             case .settings(let page):
-                SettingsFormView(groups: SettingsSectionGroup.groups(relevantItems.filter { $0.page == page && $0.searchOnlyGroup == nil }))
+                SettingsFormView(groups: SettingsSectionGroup.groups(relevantItems.filter { $0.page == page && $0.searchOnlyGroup == nil }), page: page)
                     .id(page)
                     .navigationTitle(page.title)
             case .section(let section):
