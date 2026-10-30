@@ -85,7 +85,7 @@ function resolveCuaDriverBin(configured: string | undefined, home: string): stri
 export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.ProcessEnv = process.env): AgentConfig {
   const home = env.HOME ?? os.homedir();
   return {
-    backendUrl: stripSlash(flags.backendUrl ?? env.OPENCLICKY_BACKEND_URL ?? env.BACKEND_URL ?? "https://api.openclicky.flowsxr.com"),
+    backendUrl: stripSlash(flags.backendUrl ?? env.OPENCLICKY_BACKEND_URL ?? env.BACKEND_URL ?? "https://api.openclicky.org"),
     token: flags.token ?? env.OPENCLICKY_TOKEN ?? undefined,
     codexHome: flags.codexHome ?? env.OPENCLICKY_CODEX_HOME ?? path.join(home, ".openclicky", "codex-home"),
     codexBin: flags.codexBin ?? env.OPENCLICKY_CODEX_BIN ?? "codex",

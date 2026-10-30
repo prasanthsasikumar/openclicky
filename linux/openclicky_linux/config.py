@@ -34,7 +34,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-HOSTED_BACKEND_URL = "https://api.openclicky.flowsxr.com"
+HOSTED_BACKEND_URL = "https://api.openclicky.org"
 # Left ctrl, where fn is on a Mac keyboard (the Mac app's dictation key).
 DEFAULT_DICTATION_KEY = "Control_L"
 POINTER_PRESENCES = ("always", "whileMoving", "onShake", "whenAnswering")

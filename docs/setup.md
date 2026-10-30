@@ -83,7 +83,7 @@ then `wrangler secret put` each secret.
 
 OpenClicky is open source and free for anyone to use. **Your own keys are the primary route, and need
 no account**: with a key, the app and the CLI call OpenAI and Anthropic directly and OpenClicky's
-servers are not involved. The hosted backend (`https://api.openclicky.flowsxr.com`, the app's default)
+servers are not involved. The hosted backend (`https://api.openclicky.org`, the app's default)
 and its free accounts are for people without keys who want to try the features; it runs on a research
 grant (`GRANT_ACCOUNTS=true`).
 
@@ -135,7 +135,7 @@ is metered, which is what a self-hosted backend wants), `SUPABASE_PUBLISHABLE_KE
 
 `npm run deploy:backend` rsyncs the repo to the VPS, builds `backend/Dockerfile` there, starts the
 container from `backend/deploy/docker-compose.yml` (bound to 127.0.0.1:8787, 256 MB cap) and adds the
-Caddy site block for `api.openclicky.flowsxr.com` once. `--env` also uploads `backend/.dev.vars` as
+Caddy site block for `api.openclicky.org` once. `--env` also uploads `backend/.dev.vars` as
 `/opt/openclicky/backend.env`; the hosted deploy uses `DEPLOY_ENV_FILE=backend/.hosted.vars` (see the
 accounts runbook — never deploy it without `GRANT_ACCOUNTS=true`). DNS: an A record
 for the hostname pointing at the server.

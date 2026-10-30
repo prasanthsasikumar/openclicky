@@ -146,7 +146,7 @@ extension OpenClickyShellSettings {
 
 enum OpenClickyConfiguration {
     /// Where the app talks to unless shell.json says otherwise.
-    static let hostedBackendURL = "https://api.openclicky.flowsxr.com"
+    static let hostedBackendURL = "https://api.openclicky.org"
     /// Connectors (Composio app connections): the "connect <app> to openclicky?" card, the composio
     /// tile in the HUD, and the Composio tools handed to the agent. Off for 0.8.0; a later release
     /// turns them back on by flipping this.

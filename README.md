@@ -8,9 +8,9 @@ when it is more than a question, hand the task to a Codex agent. MIT licensed.
 
 <p align="center">
   <a href="https://github.com/prasanthsasikumar/openclicky/releases/latest"><img alt="Download for macOS" src="https://img.shields.io/badge/Download_for_macOS-F0452B?style=for-the-badge&logo=apple&logoColor=white"></a>
-  <a href="https://openclicky.flowsxr.com/download/windows/"><img alt="Windows (new)" src="https://img.shields.io/badge/Windows_(new)-22201C?style=for-the-badge&logo=windows&logoColor=white"></a>
+  <a href="https://openclicky.org/download/windows/"><img alt="Windows (new)" src="https://img.shields.io/badge/Windows_(new)-22201C?style=for-the-badge&logo=windows&logoColor=white"></a>
   <a href="docs/linux.md"><img alt="Linux" src="https://img.shields.io/badge/Linux-22201C?style=for-the-badge&logo=linux&logoColor=white"></a>
-  <a href="https://openclicky.flowsxr.com"><img alt="Website" src="https://img.shields.io/badge/Website-22201C?style=for-the-badge&logo=safari&logoColor=white"></a>
+  <a href="https://openclicky.org"><img alt="Website" src="https://img.shields.io/badge/Website-22201C?style=for-the-badge&logo=safari&logoColor=white"></a>
   <a href="https://discord.gg/zGGERnM5eq"><img alt="Join the Discord" src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
   <a href="docs/architecture.md"><img alt="How it works" src="https://img.shields.io/badge/How_it_works-5E5A52?style=for-the-badge"></a>
   <a href="CONTRIBUTING.md"><img alt="Contributing" src="https://img.shields.io/badge/Contributing-5E5A52?style=for-the-badge"></a>
@@ -72,7 +72,7 @@ Hyprland) and X11. `sh linux/install.sh` from a clone (or with the `.whl` from t
 A native Windows port, contributed by [Tan Wei Jie (Justin)](https://github.com/weijietan97): dictation,
 ask out loud with the pointer, the agent lane, skills, the island and every settings page, in C# and WPF.
 Hold Ctrl + Win to talk and right Ctrl to dictate; private offline dictation is Parakeet. x64 and ARM64,
-Windows 10 (2004 or later) and 11. [Download it for Windows](https://openclicky.flowsxr.com/download/windows/)
+Windows 10 (2004 or later) and 11. [Download it for Windows](https://openclicky.org/download/windows/)
 (the Setup.exe on the [latest release](https://github.com/prasanthsasikumar/openclicky/releases/latest); not
 code-signed yet, so SmartScreen may warn), or build it from [`windows/`](windows/README.md).
 

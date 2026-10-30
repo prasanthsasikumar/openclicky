@@ -401,7 +401,7 @@ class SettingsWindow:
         layout = self._page("about", "About")
         self._heading(layout, f"OpenClicky {__version__} for Linux")
         layout.pack_start(self._small_label("Dictation anywhere, and a pointer that answers about your screen. Open source, MIT."), False, False, 0)
-        for title, address in (("Website", "https://openclicky.flowsxr.com"), ("Source", "https://github.com/prasanthsasikumar/openclicky")):
+        for title, address in (("Website", "https://openclicky.org"), ("Source", "https://github.com/prasanthsasikumar/openclicky")):
             link = Gtk.LinkButton(uri=address, label=address)
             link.set_halign(Gtk.Align.START)
             self._row(layout, title, link)

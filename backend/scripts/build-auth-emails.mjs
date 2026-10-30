@@ -54,7 +54,7 @@ function layout({ preheader, heading, middle }) {
 ${tipsBlock}
 <tr><td style="padding:20px 32px 28px;border-top:1px solid ${line};font:14px/22px ${font};color:${muted}">
   Free and open source. Questions or ideas? Just reply, a person reads every one.<br>
-  <a href="https://openclicky.flowsxr.com" style="color:${ink}">Website</a> &nbsp;·&nbsp;
+  <a href="https://openclicky.org" style="color:${ink}">Website</a> &nbsp;·&nbsp;
   <a href="https://discord.gg/zGGERnM5eq" style="color:${ink}">Discord</a> &nbsp;·&nbsp;
   <a href="https://github.com/prasanthsasikumar/openclicky" style="color:${ink}">GitHub</a>
 </td></tr>

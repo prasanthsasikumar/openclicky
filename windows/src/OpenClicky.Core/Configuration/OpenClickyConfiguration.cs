@@ -13,7 +13,7 @@ namespace OpenClicky.Core.Configuration;
 public static class OpenClickyConfiguration
 {
     /// <summary>Where the app talks to unless shell.json says otherwise.</summary>
-    public const string HostedBackendUrl = "https://api.openclicky.flowsxr.com";
+    public const string HostedBackendUrl = "https://api.openclicky.org";
 
     /// <summary>
     /// Connectors (Composio app connections). Off for 0.8.0; a later release turns them back on by

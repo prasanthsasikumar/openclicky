@@ -254,7 +254,7 @@ def http_request(source: Source, request: AnswerRequest, settings, stream: bool 
         headers = {"Authorization": f"Bearer {getattr(settings, source.key_field)}", "Content-Type": "application/json"}
         if source.id == "openRouter":
             # OpenRouter's app attribution headers: shown on its dashboard, never needed to answer.
-            headers.update({"HTTP-Referer": "https://openclicky.flowsxr.com", "X-Title": "OpenClicky for Linux"})
+            headers.update({"HTTP-Referer": "https://openclicky.org", "X-Title": "OpenClicky for Linux"})
         return urllib.request.Request(source.chat_completions_url, data=json.dumps(openai_body(request, model, stream)).encode(),
                                       method="POST", headers=headers)
     raise ValueError(f"{source.id} does not answer over HTTP")
