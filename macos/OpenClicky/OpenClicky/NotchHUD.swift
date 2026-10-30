@@ -889,6 +889,42 @@ final class NotchHUDManager {
         composerThreadId = nil
     }
 
+    // MARK: Typing in a component (the Notes plugin's editor)
+
+    /// The app that had the keyboard before a component's editor took it.
+    private var applicationActiveBeforeComponentTyping: NSRunningApplication?
+
+    /// Gives the keyboard to an editor inside the open island, when it is clicked. Like the
+    /// composer: the panel is non-activating, so OpenClicky activates itself and makes the
+    /// island's window key and the editor first responder; macOS 14's cooperative activation can
+    /// land late and hand key status elsewhere, so the window is made key again a moment later.
+    func beginComponentTyping(in view: NSView) {
+        guard let window = view.window else { return }
+        let frontApplication = NSWorkspace.shared.frontmostApplication
+        if frontApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            applicationActiveBeforeComponentTyping = frontApplication
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(view)
+        for delay in [0.05, 0.25] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
+                guard let view, let window = view.window, window.firstResponder === view, !window.isKeyWindow else { return }
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
+    /// The editor is done (esc, or it left the island): it lets go of the keyboard, and the app
+    /// that had it gets it back, unless a click elsewhere already gave it to another app.
+    func endComponentTyping(in view: NSView) {
+        if let window = view.window, window.firstResponder === view { window.makeFirstResponder(nil) }
+        let previousApplication = applicationActiveBeforeComponentTyping
+        applicationActiveBeforeComponentTyping = nil
+        guard NSApp.isActive, let previousApplication, !previousApplication.isTerminated else { return }
+        previousApplication.activate()
+    }
+
     // MARK: Caption (the goodbye on quit)
 
     private var captionTypingTimer: Timer?
