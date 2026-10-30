@@ -105,7 +105,7 @@ struct ShelfIslandView: View {
                     .frame(width: tileSize.width - 4)
             }
             .frame(width: tileSize.width, height: tileSize.height)
-            .background(RoundedRectangle(cornerRadius: DS.HUD.tileRadius, style: .continuous).fill(hoveredID == item.id ? (model.glassLevel > 0 ? DS.HUD.glassTileHovered : DS.HUD.surfaceRaisedSoft) : Color.clear))
+            .background(RoundedRectangle(cornerRadius: DS.HUD.tileRadius, style: .continuous).fill(hoveredID == item.id ? (model.look.hasGlass ? DS.HUD.glassTileHovered : DS.HUD.surfaceRaisedSoft) : Color.clear))
             .overlay(
                 ShelfTileDragView(
                     item: item,

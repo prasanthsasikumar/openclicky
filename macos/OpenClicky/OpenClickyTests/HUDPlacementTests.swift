@@ -24,8 +24,9 @@ struct HUDPlacementTests {
         return model
     }
 
-    @Test func theOpenPanelUnderTheNotchIsAtMost88PointsTall() {
+    @Test func theShortcutsRowUnderTheNotchIsAtMost88PointsTall() {
         let island = model(.notch)
+        island.selectComponent("shortcuts")
         island.openPinned()
         #expect(island.height <= 88)
         #expect(island.width == 512)

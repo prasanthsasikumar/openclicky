@@ -118,7 +118,11 @@ final class NotchHUDModel: ObservableObject {
     let composerWidth: CGFloat = 460
     let composerContentHeight: CGFloat = 52
     /// A side drawer is a narrow column with its content stacked, not the notch panel moved.
-    var fullWidth: CGFloat { placement.isSideDrawer ? 360 : 512 }
+    var fullWidth: CGFloat {
+        if placement.isSideDrawer { return 360 }
+        let component = registry.first { $0.id == selection.active } ?? registry[0]
+        return max(component.preferredWidth ?? 512, 512)
+    }
 
     /// The open panel's band row: the band plus a little air above the controls, so the pill and
     /// the round buttons never touch the top edge of the screen.
@@ -245,7 +249,8 @@ final class NotchHUDModel: ObservableObject {
     }
 
     /// The capsule: show this component until the moment changes.
-    func selectComponent(_ id: String) {
+    /// Nil goes back to what the moment or the default asks for.
+    func selectComponent(_ id: String?) {
         componentOverride = id
         recomputeSelection()
     }
@@ -258,19 +263,31 @@ final class NotchHUDModel: ObservableObject {
     private func recomputeSelection() {
         let selection = IslandComponentSelector.select(registry: registry, order: componentSettings.order, defaultID: componentSettings.defaultID, override: componentOverride, context: context, enabled: enabledComponentIDs)
         guard selection != self.selection else { return }
-        let heightBefore = fullHeight
+        let sizeBefore = (fullWidth, fullHeight)
         self.selection = selection
-        if expansion == .full && fullHeight != heightBefore { onLayoutChanged?() }
+        if expansion == .full && (fullWidth, fullHeight) != sizeBefore { onLayoutChanged?() }
+    }
+
+    /// What the capsule flips between: everything available but the tools (they have buttons of
+    /// their own) and the parts home already shows (Now playing, System).
+    var capsuleIDs: [String] {
+        let shownElsewhere = Set(IslandPluginRegistry.toolIDs + [IslandPluginRegistry.mediaID, IslandPluginRegistry.systemID])
+        return selection.available.filter { !shownElsewhere.contains($0) }
+    }
+
+    /// The tools switched on, in toolbar order.
+    var toolIDs: [String] {
+        IslandPluginRegistry.toolIDs.filter { selection.available.contains($0) }
     }
 
     /// The capsule shows in the band only when there is something to flip to.
-    var showsCapsule: Bool { selection.available.count > 1 }
+    var showsCapsule: Bool { capsuleIDs.count > 1 }
 
     /// The active component's height: 45 pt for the shortcuts row under a notch, 92 in a side
     /// drawer (the (i) stacks over the shortcut grid), else what the component asks for.
     var slotHeight: CGFloat {
         let component = registry.first { $0.id == selection.active } ?? registry[0]
-        if placement.isSideDrawer && component.id == IslandComponentRegistry.shortcutsID { return 92 }
+        if placement.isSideDrawer && (component.id == IslandComponentRegistry.shortcutsID || component.id == IslandComponentRegistry.homeID) { return 92 }
         return component.preferredHeight
     }
 
@@ -517,8 +534,8 @@ final class NotchHUDModel: ObservableObject {
     /// True from mouse-down to mouse-up on the island, so the view can scale it a touch.
     @Published private(set) var isPressed = false
 
-    /// Where the open panel's black melts into glass (Settings → General); 0 is all black.
-    @Published var glassLevel: Double = IslandGlass.defaultLevel
+    /// The open island's style (Settings → Appearance).
+    @Published var look: IslandLook = IslandLook.defaultLook
     /// The "Reduce motion" setting, read when the view animates; set by the HUD manager.
     var reduceMotionProvider: () -> Bool = { false }
     var reduceMotion: Bool { reduceMotionProvider() }
@@ -995,7 +1012,7 @@ final class NotchHUDManager {
             }
             let model = NotchHUDModel(geometry: geometry)
             model.placement = placement
-            model.glassLevel = UserDefaults.standard.object(forKey: IslandGlass.defaultsKey) as? Double ?? IslandGlass.defaultLevel
+            model.look = IslandLook.current()
             model.reduceMotionProvider = { [settings = companionManager.dictationSettings] in settings.reduceAnimation }
             model.setBusy(isBusy)
             model.setSpeaking(isSpeaking)
@@ -1126,9 +1143,9 @@ final class NotchHUDManager {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                let glassLevel = UserDefaults.standard.object(forKey: IslandGlass.defaultsKey) as? Double ?? IslandGlass.defaultLevel
+                let look = IslandLook.current()
                 for instance in self.instances {
-                    if instance.model.glassLevel != glassLevel { instance.model.glassLevel = glassLevel }
+                    if instance.model.look != look { instance.model.look = look }
                     instance.model.refreshComponentSettings()
                 }
                 self.syncOptionalComponents()
@@ -1302,16 +1319,6 @@ struct NotchHUDView: View {
     /// How far the top corners curve outward into the menu bar, continuing the notch housing.
     private var topCornerFlare: CGFloat { IslandCorners.topFlare(for: expansion, isSideDrawer: model.placement.isSideDrawer) }
 
-    /// Where the black band ends and the melt into glass may begin: under the band row of the open
-    /// panel, under the notch band on a card.
-    private var bandBottom: CGFloat {
-        switch expansion {
-        case .full: return model.bandRowHeight
-        case .connect, .permission, .tour, .composer: return model.cardTopInset
-        case .collapsed, .peek, .compact: return model.topBandHeight
-        }
-    }
-
     /// The island's width (its flares included) and height for the state it is in. The open
     /// panel's capsule row hangs below the surface, outside the outline.
     private var surfaceWidth: CGFloat { model.width + topCornerFlare * 2 }
@@ -1353,8 +1360,7 @@ struct NotchHUDView: View {
             expansion: expansion,
             width: model.width,
             height: surfaceHeight,
-            bandBottom: bandBottom,
-            glassLevel: model.glassLevel,
+            look: model.look,
             isSideDrawer: model.placement.isSideDrawer,
             drawerSide: model.placement
         )

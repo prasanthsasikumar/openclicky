@@ -73,33 +73,37 @@ struct NotchBandRow: View {
             Spacer(minLength: 8)
             HStack(spacing: 6) {
                 VoiceDestinationPill(companionManager: companionManager, settings: companionManager.dictationSettings)
+                // One round button per tool that is on: it shows that tool, and a second click
+                // goes back to where the island was.
+                ForEach(model.toolIDs, id: \.self) { toolID in
+                    if let tool = model.registry.first(where: { $0.id == toolID }) {
+                        let isActive = model.selection.active == toolID
+                        Button(action: { model.selectComponent(isActive ? nil : toolID) }) {
+                            Image(systemName: tool.symbolName)
+                        }
+                        .buttonStyle(IslandIconButtonStyle(size: 11, frameScale: 2, isActive: isActive))
+                        .help(tool.title)
+                        .accessibilityLabel(tool.title)
+                        .accessibilityAddTraits(isActive ? .isSelected : [])
+                    }
+                }
                 // Settings live in the window only: an island page of switches was a second,
                 // smaller settings that stayed open behind the pointer.
-                bandIconButton(systemImage: "gearshape.fill", help: "settings") {
+                Button(action: {
                     model.dismiss()
                     companionManager.showSettings()
-                }
-                bandIconButton(systemImage: "power", help: "quit openclicky") {
-                    companionManager.quitWithFarewell()
-                }
+                }) { Image(systemName: "gearshape.fill") }
+                    .buttonStyle(IslandIconButtonStyle(size: 12, frameScale: 2))
+                    .help("settings")
+                    .accessibilityLabel("settings")
+                Button(action: { companionManager.quitWithFarewell() }) { Image(systemName: "power") }
+                    .buttonStyle(IslandIconButtonStyle(size: 11, frameScale: 2))
+                    .help("quit openclicky")
+                    .accessibilityLabel("quit openclicky")
             }
             .frame(maxWidth: sideWidth, alignment: .trailing)
         }
         .padding(.horizontal, 16)
-    }
-
-    private func bandIconButton(systemImage: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(DS.HUD.text2)
-                .frame(width: DS.HUD.pillHeight, height: DS.HUD.pillHeight)
-                .background(Circle().fill(DS.HUD.bandControl))
-        }
-        .buttonStyle(.plain)
-        .pointerCursor()
-        .help(help)
-        .accessibilityLabel(help)
     }
 }
 
@@ -283,6 +287,8 @@ struct NotchPanelBody: View {
 
     /// The body row's height: the buttons, and the grid's two 14 pt rows.
     static let rowHeight: CGFloat = 30
+    /// The shortcuts row's slot height under a notch.
+    static let shortcutsHeight: CGFloat = 45
 
     var body: some View {
         if model.placement.isSideDrawer {
@@ -310,7 +316,7 @@ struct NotchPanelBody: View {
                 .foregroundColor(DS.HUD.text)
                 .frame(width: Self.rowHeight, height: Self.rowHeight)
                 // On the glass band the tile is translucent white; on an all-black panel the raised grey.
-                .background(RoundedRectangle(cornerRadius: DS.HUD.tileRadius, style: .continuous).fill(model.glassLevel > 0 ? DS.HUD.glassTile : DS.HUD.surfaceRaisedSoft))
+                .background(RoundedRectangle(cornerRadius: DS.HUD.tileRadius, style: .continuous).fill(model.look.hasGlass ? DS.HUD.glassTile : DS.HUD.surfaceRaisedSoft))
                 .contentShape(RoundedRectangle(cornerRadius: DS.HUD.tileRadius, style: .continuous))
         }
         .buttonStyle(.plain)

@@ -11,16 +11,17 @@ import SwiftUI
 
 // MARK: - Glass
 
-/// The glass under the open panel: the system's Liquid Glass on macOS 26, a frosted material
-/// before it. Kept "active" by hand, because the island is a non-key panel of a background app
-/// and the system would otherwise grey it out.
+/// The glass under the open island: the system's Liquid Glass on macOS 26 (clear for the liquid
+/// glass style, frosted for blend), a frosted material before it. Kept "active" by hand, because
+/// the island is a non-key panel of a background app and the system would otherwise grey it out.
 struct IslandGlassBackground: NSViewRepresentable {
+    var isClear = false
+
     func makeNSView(context: Context) -> NSView {
         if #available(macOS 26.0, *) {
             let glass = NSGlassEffectView()
             glass.cornerRadius = 0
-            glass.style = .regular
-            glass.tintColor = NSColor.black.withAlphaComponent(0.2)
+            glass.style = isClear ? .clear : .regular
             return glass
         }
         let frosted = NSVisualEffectView()
@@ -30,21 +31,25 @@ struct IslandGlassBackground: NSViewRepresentable {
         return frosted
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if #available(macOS 26.0, *), let glass = nsView as? NSGlassEffectView {
+            glass.style = isClear ? .clear : .regular
+        }
+    }
 }
 
 // MARK: - Surface
 
-/// The island's body for a state: a glass layer (only when a panel or card is open and the glass
-/// level is above zero) under a black layer whose bottom fades away, both cut to the island's
-/// outline, with a shadow once open. Collapsed, peek and compact are plain black: the notch itself.
+/// The island's body for a state, in three layers cut to its outline: the glass (open panel only,
+/// any style but black), the style's tint over it (blend's black fading down, or liquid glass's
+/// light wash and the shade under the menu bar), and the notch's solid black, which fades out as
+/// the panel opens in a glass style. Collapsed, peek, compact and the cards stay solid black:
+/// the notch itself, and cards of dim text that must read on any wallpaper.
 struct IslandSurface: View {
     let expansion: NotchHUDExpansion
     let width: CGFloat
     let height: CGFloat
-    /// Where the band ends: the melt may begin under it.
-    let bandBottom: CGFloat
-    let glassLevel: Double
+    let look: IslandLook
     let isSideDrawer: Bool
     /// Which edge a drawer hangs from (ignored under the notch).
     var drawerSide: HUDPlacement = .notch
@@ -56,43 +61,39 @@ struct IslandSurface: View {
         }
     }
 
-    /// True when a material view is in the hierarchy at all: only the open panel melts. Cards
-    /// (permission, connect, the tour, the composer) are mostly dim text and show on any
-    /// wallpaper, so they stay solid black for contrast.
-    var hasGlassLayer: Bool { expansion == .full && glassLevel > 0 }
-
-    private var stops: IslandGlassStops? {
-        guard hasGlassLayer else { return nil }
-        return IslandGlass.stops(level: glassLevel, bandBottom: bandBottom, panelHeight: height)
-    }
+    /// True when a material view is in the hierarchy at all: only the open panel shows glass.
+    var hasGlassLayer: Bool { expansion == .full && look.hasGlass }
 
     private var bottomRadius: CGFloat { IslandCorners.bottomRadius(for: expansion, width: width) }
     private var topFlare: CGFloat { IslandCorners.topFlare(for: expansion, isSideDrawer: isSideDrawer) }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             if hasGlassLayer {
-                IslandGlassBackground()
-                    .overlay(Color.black.opacity(IslandGlass.wash))
+                IslandGlassBackground(isClear: look == .glass)
                     .transition(.opacity)
+                tint.transition(.opacity)
             }
-            if let stops {
-                DS.HUD.island
-                    .mask(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black, location: stops.start),
-                                .init(color: .clear, location: stops.end),
-                            ],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
-            } else {
-                DS.HUD.island
-            }
+            DS.HUD.island.opacity(hasGlassLayer ? 0 : 1)
         }
         .clipShape(outline)
-        .shadow(color: .black.opacity(isOpen ? DS.HUD.shadow.opacity : 0), radius: isOpen ? DS.HUD.shadow.radius : 0, y: isOpen ? DS.HUD.shadow.y : 0)
+        .shadow(color: .black.opacity(look.shadowOpacity(isOpen: isOpen)), radius: 14, y: 6)
+        .shadow(color: .black.opacity(expansion == .collapsed ? 0 : 0.35), radius: 2, y: 1)
+    }
+
+    @ViewBuilder private var tint: some View {
+        switch look {
+        case .blend:
+            LinearGradient(stops: IslandLook.blendStops, startPoint: .top, endPoint: .bottom)
+        case .glass:
+            ZStack(alignment: .top) {
+                Color.black.opacity(IslandLook.glassTint)
+                LinearGradient(colors: [.black.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: IslandLook.glassTopShadeHeight)
+            }
+        case .black:
+            EmptyView()
+        }
     }
 
     /// The notch outline, or a drawer whose screen-side corners are square.
@@ -195,7 +196,7 @@ struct AgentIslandView: View {
                         .foregroundColor(DS.HUD.text)
                         .padding(.horizontal, 12)
                         .frame(height: DS.HUD.pillHeight)
-                        .background(Capsule().fill(model.glassLevel > 0 ? DS.HUD.glassTile : DS.HUD.bandControl))
+                        .background(Capsule().fill(model.look.hasGlass ? DS.HUD.glassTile : DS.HUD.bandControl))
                 }
                 .buttonStyle(.plain)
                 .pointerCursor()
@@ -234,8 +235,9 @@ struct IslandNavigationCapsule: View {
     @ObservedObject var model: NotchHUDModel
     var inBand = false
 
+    /// The tools have their own buttons in the band's toolbar, so the capsule leaves them out.
     private var components: [any IslandComponent] {
-        model.selection.available.compactMap { id in model.registry.first { $0.id == id } }
+        model.capsuleIDs.compactMap { id in model.registry.first { $0.id == id } }
     }
 
     var body: some View {

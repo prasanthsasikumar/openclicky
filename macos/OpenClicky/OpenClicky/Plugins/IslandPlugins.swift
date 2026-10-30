@@ -20,6 +20,10 @@ enum IslandPluginRegistry {
     static let mediaID = "media"
     static let teacherID = TeacherPlugin.id
 
+    /// The tools: each gets a round button in the band's toolbar (in this order) instead of a
+    /// place in the capsule.
+    static let toolIDs: [String] = [shelfID, "clipboard", "notes", "timer"]
+
     /// In the order the capsule and Settings show them.
     @MainActor static var all: [any IslandComponent] {
         [SystemIslandComponent(), ShelfIslandComponent(), AgentsIslandComponent(), MediaIslandComponent(), TeacherIslandComponent()]

@@ -37,13 +37,13 @@ struct IslandContext: Equatable {
 
     /// The component the moment asks for: the shelf while a drag hovers (an explicit act that
     /// outranks everything), the transcript while a take is live or just landed, the agent while
-    /// one works or its result card is up, the track while music plays, else nothing.
+    /// one works or its result card is up, home (where the track is) while music plays, else nothing.
     var contextualKey: String? {
         if isDragHovering { return IslandPluginRegistry.shelfID }
         if isTakeLive { return IslandComponentRegistry.transcriptID }
         if let takeLandedAt, now.timeIntervalSince(takeLandedAt) < Self.landedTranscriptWindow { return IslandComponentRegistry.transcriptID }
         if agentActivityText != nil || isResultCardUp { return IslandComponentRegistry.agentID }
-        if isMediaPlaying { return IslandPluginRegistry.mediaID }
+        if isMediaPlaying { return IslandComponentRegistry.homeID }
         return nil
     }
 }
@@ -84,6 +84,8 @@ protocol IslandComponent {
     var symbolName: String { get }
     /// The slot's height for this component in the notch placement.
     var preferredHeight: CGFloat { get }
+    /// The open island's width for this component under the notch; nil for the standard 512 pt.
+    var preferredWidth: CGFloat? { get }
     /// A plugin: an optional extra, built for the Mac, that the user turns on in Settings; off,
     /// it is never available. The built-ins are not plugins. Plugins live under `Plugins/`.
     var isPlugin: Bool { get }
@@ -94,6 +96,7 @@ protocol IslandComponent {
 }
 
 extension IslandComponent {
+    var preferredWidth: CGFloat? { nil }
     var isPlugin: Bool { false }
     var settingsDetail: String? { nil }
 }
@@ -112,7 +115,7 @@ enum IslandComponentSelector {
 
     /// Disabled components are dropped first: never available, never the default, never pulled
     /// in by the moment. Then the override wins while it is available; else the moment's
-    /// component; else the user's default (the shortcuts when the stored one is disabled); else
+    /// component; else the user's default (home when the stored one is disabled); else
     /// the first available in the user's order. `available` is the registry filtered by
     /// availability, in the user's order (unknown ids ignored, missing ids appended in
     /// registration order).
@@ -120,7 +123,7 @@ enum IslandComponentSelector {
         precondition(!registry.isEmpty, "the island needs at least one component")
         let availableIDs = registry.filter { enabled.contains($0.id) && $0.isAvailable(in: context) }.map(\.id)
         let ordered = order.filter { availableIDs.contains($0) } + availableIDs.filter { !order.contains($0) }
-        let fallbackDefault = enabled.contains(defaultID) ? defaultID : IslandComponentRegistry.shortcutsID
+        let fallbackDefault = enabled.contains(defaultID) ? defaultID : IslandComponentRegistry.homeID
         let candidates = [override, context.contextualKey, fallbackDefault].compactMap { $0 }
         let active = candidates.first { ordered.contains($0) } ?? ordered.first ?? registry[0].id
         return IslandComponentSelection(active: active, available: ordered)
@@ -140,7 +143,7 @@ struct IslandComponentSettings {
     }
 
     var defaultID: String {
-        get { defaults.string(forKey: Self.defaultKey) ?? IslandComponentRegistry.shortcutsID }
+        get { defaults.string(forKey: Self.defaultKey) ?? IslandComponentRegistry.homeID }
         set { defaults.set(newValue, forKey: Self.defaultKey) }
     }
 
@@ -161,9 +164,9 @@ struct IslandComponentSettings {
         return !component.isPlugin || enabledPlugins.contains(id)
     }
 
-    /// The stored default when it is on; the shortcuts when it has been switched off since.
+    /// The stored default when it is on; home when it has been switched off since.
     func resolvedDefaultID(in registry: [any IslandComponent]) -> String {
-        isEnabled(defaultID, in: registry) ? defaultID : IslandComponentRegistry.shortcutsID
+        isEnabled(defaultID, in: registry) ? defaultID : IslandComponentRegistry.homeID
     }
 
     /// The ids the selector may use, from the registry and the user's switches.
@@ -174,12 +177,13 @@ struct IslandComponentSettings {
 
 /// The built-in components, in registration order, then the plugins (`IslandPluginRegistry`).
 enum IslandComponentRegistry {
+    static let homeID = "home"
     static let shortcutsID = "shortcuts"
     static let transcriptID = "transcript"
     static let agentID = "agent"
 
     @MainActor static var builtIns: [any IslandComponent] {
-        [ShortcutsIslandComponent(), TranscriptIslandComponent(), AgentIslandComponent()]
+        [HomeIslandComponent(), ShortcutsIslandComponent(), TranscriptIslandComponent(), AgentIslandComponent()]
     }
 
     /// The built-ins first, then the plugins (off until turned on in Settings).
@@ -191,7 +195,7 @@ struct ShortcutsIslandComponent: IslandComponent {
     let id = IslandComponentRegistry.shortcutsID
     let title = "Shortcuts"
     let symbolName = "keyboard"
-    let preferredHeight: CGFloat = 45
+    let preferredHeight: CGFloat = NotchPanelBody.shortcutsHeight
     func isAvailable(in context: IslandContext) -> Bool { true }
     @MainActor func makeView(companionManager: CompanionManager, model: NotchHUDModel) -> AnyView {
         AnyView(NotchPanelBody(model: model, companionManager: companionManager))
