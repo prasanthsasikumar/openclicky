@@ -140,6 +140,7 @@ struct MacActionRunnerTests {
         var spotifyInstalled = true
         var scrollResult: ScrollResult = .scrolled
         var scrolls: [String] = []
+        var scrollingRuns = false
         var openedFolders: [URL] = []
         var foundFiles: [URL] = []
         var fileSearches: [String] = []
@@ -192,6 +193,10 @@ struct MacActionRunnerTests {
                     recorder.scrolls.append("\(direction.rawValue) \(amount.rawValue)")
                     return recorder.scrollResult
                 },
+                stopScrolling: {
+                    defer { recorder.scrollingRuns = false }
+                    return recorder.scrollingRuns
+                },
                 openFolder: { folderURL in recorder.openedFolders.append(folderURL) },
                 findFiles: { query in
                     recorder.fileSearches.append(query)
@@ -227,6 +232,10 @@ struct MacActionRunnerTests {
         #expect(recorder.scrolls == ["down page", "up end"])
         #expect(MacActionOutcome.scrolled(.up, .end).spokenSentence == "Scrolled to the top.")
         #expect(MacActionOutcome.scrolled(.down, .little).spokenSentence == "Scrolled down a little.")
+        #expect(await runner.perform(.scroll(direction: .down, amount: .continuous)) == .scrolled(.down, .continuous))
+        recorder.scrollingRuns = true
+        #expect(await runner.perform(.stopScrolling) == .stoppedScrolling)
+        #expect(await runner.perform(.stopScrolling) == .wasNotScrolling)
 
         recorder.scrollResult = .noWindow
         #expect(await runner.perform(.scroll(direction: .down, amount: .page)) == .nothingToScroll)
@@ -649,6 +658,8 @@ struct MacActionParsingTests {
         #expect(MacAction.parse(toolName: "play_music", arguments: ["query": "Blinding Lights"]) == .action(.playMusic(query: "Blinding Lights")))
         #expect(MacAction.parse(toolName: "scroll", arguments: ["direction": "Down"]) == .action(.scroll(direction: .down, amount: .page)))
         #expect(MacAction.parse(toolName: "scroll", arguments: ["direction": "up", "amount": "end"]) == .action(.scroll(direction: .up, amount: .end)))
+        #expect(MacAction.parse(toolName: "scroll", arguments: ["direction": "down", "amount": "continuous"]) == .action(.scroll(direction: .down, amount: .continuous)))
+        #expect(MacAction.parse(toolName: "stop_scrolling", arguments: [:]) == .action(.stopScrolling))
         #expect(MacAction.parse(toolName: "scroll", arguments: ["direction": "sideways"]) == .badArguments(.failed("I need up, down, left or right")))
         #expect(MacAction.parse(toolName: "open_folder", arguments: ["location": "downloads"]) == .action(.openFolder(name: nil, location: .downloads)))
         #expect(MacAction.parse(toolName: "open_folder", arguments: ["location": "icloud"]) == .badArguments(.unknownLocation("icloud")))
@@ -711,7 +722,7 @@ struct FastActionToolDefinitionTests {
 
     @Test func everyFastActionIsOfferedToTheModel() {
         let names = MacAction.realtimeToolDefinitions().compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows", "scroll", "open_folder", "find_files", "find_on_page", "switch_tab"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows", "scroll", "stop_scrolling", "open_folder", "find_files", "find_on_page", "switch_tab"])
     }
 
     @Test func createFolderDeclaresTheClosedLocationSet() throws {
@@ -805,6 +816,8 @@ struct FastActionToolDefinitionTests {
             case .scroll(let direction, let amount):
                 #expect(direction.rawValue == arguments["direction"] as? String)
                 #expect(amount.rawValue == arguments["amount"] as? String)
+            case .stopScrolling:
+                #expect(arguments.isEmpty)
             case .openFolder(let name, let location):
                 #expect(name == arguments["name"] as? String)
                 #expect(location.rawValue == arguments["location"] as? String)

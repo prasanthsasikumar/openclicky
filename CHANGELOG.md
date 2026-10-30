@@ -17,6 +17,10 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ## 0.10.1
 
+### Mac
+
+- **Move around by voice.** "Click the first link" clicks it in the tab you're looking at ("open it in a new tab" for another); cookie banners' "Accept all" and videos work too ("stop the video" clicks it), while anything that sends, buys, deletes or confirms is only pointed at. "Switch to the YouTube tab", "next tab"; "scroll down", "scroll a little", "scroll to the top"; "scroll down slowly" glides a page so you can follow it, and "keep scrolling" moves at reading pace until you say stop or press esc. "Open my Downloads folder"; "look for my tax return" finds the file and selects it in Finder; "find price on this page" searches the page with its find bar.
+
 ### Windows
 
 - **Island plugins.** Switch on System, Shelf, Coding agents, Now playing or Teacher under Settings → Plugins. The open island shows what's happening (your words while dictating, an agent's progress), and a small capsule flips between components. Drop files on the island to keep them on the Shelf; Now playing works with any player that reports to Windows.

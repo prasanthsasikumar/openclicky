@@ -27,6 +27,33 @@ struct ScreenNavigationTests {
         #expect(toTheBottom.allSatisfy { $0.vertical < -1000 })
     }
 
+    /// "Scroll down slowly" glides a page; "keep scrolling" moves a little at a time until stopped.
+    @Test func aSlowScrollGlidesOnePageAndAContinuousOneTicks() {
+        let viewport = CGSize(width: 1200, height: 800)
+        let slow = ScreenNavigation.scrollSteps(direction: .down, amount: .slow, viewport: viewport)
+        #expect(slow.count == ScreenNavigation.slowGlideStepCount)
+        #expect(slow.map(\.vertical).reduce(0, +) == -640)
+        #expect(slow.allSatisfy { $0.vertical <= 0 && $0.horizontal == 0 })
+        // Gentle at both ends, fastest in the middle.
+        #expect(abs(slow[0].vertical) < abs(slow[22].vertical))
+        #expect(abs(slow[44].vertical) < abs(slow[22].vertical))
+        #expect(ScreenNavigation.scrollSteps(direction: .up, amount: .continuous, viewport: viewport).map(\.vertical) == [ScreenNavigation.continuousStepPixels])
+        #expect(ScreenNavigation.glideSteps(distance: 7, count: 3).reduce(0, +) == 7)
+    }
+
+    @Test func aContinuousScrollEndsWhenThePersonTakesOver() {
+        let point = CGPoint(x: 500, y: 400)
+        #expect(!ScreenNavigation.continuousScrollShouldStop(frontPID: 7, scrollingPID: 7, pointer: CGPoint(x: 510, y: 405), scrollPoint: point))
+        #expect(ScreenNavigation.continuousScrollShouldStop(frontPID: 7, scrollingPID: 7, pointer: CGPoint(x: 700, y: 400), scrollPoint: point))
+        #expect(ScreenNavigation.continuousScrollShouldStop(frontPID: 8, scrollingPID: 7, pointer: point, scrollPoint: point))
+        #expect(ScreenNavigation.continuousScrollShouldStop(frontPID: nil, scrollingPID: 7, pointer: point, scrollPoint: point))
+        // Nothing settled to look at while it moves, so the model is told to say so and wait for "stop".
+        let continuous = MacActionOutcome.scrolled(.down, .continuous)
+        #expect(!continuous.thenLooksAtScreen)
+        #expect(continuous.toolOutput.contains("stop_scrolling"))
+        #expect(MacActionOutcome.scrolled(.down, .slow).thenLooksAtScreen)
+    }
+
     @Test func clicksThatCommitSomethingAreLeftToThePerson() {
         #expect(ScreenNavigation.clickIsRisky(label: "send button", text: "Send"))
         #expect(ScreenNavigation.clickIsRisky(label: "checkout", text: "Proceed to checkout"))

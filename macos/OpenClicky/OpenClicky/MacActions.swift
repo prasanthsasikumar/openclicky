@@ -91,6 +91,8 @@ enum MacActionOutcome: Equatable {
     case permissionDenied(MacActionLocation)
     case scrolled(ScrollDirection, ScrollAmount)
     case nothingToScroll
+    case stoppedScrolling
+    case wasNotScrolling
     case nothingInFront
     case needsAccessibility
     case openedFolder(name: String?, location: MacActionLocation)
@@ -107,7 +109,7 @@ enum MacActionOutcome: Equatable {
     /// True when the action did what was asked (the tour counts it as a task handed over).
     var didSomething: Bool {
         switch self {
-        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail, .playingTrack, .openedSpotifySearch, .scrolled, .openedFolder, .foundFiles, .searchedPage, .switchedTab: return true
+        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail, .playingTrack, .openedSpotifySearch, .scrolled, .stoppedScrolling, .openedFolder, .foundFiles, .searchedPage, .switchedTab: return true
         default: return false
         }
     }
@@ -131,6 +133,8 @@ enum MacActionOutcome: Equatable {
             return spokenSentence + " If they ask you to send it, say you never send email and that it is open in front of them."
         case .windowAppNotRunning:
             return spokenSentence + " Call open_app if they want it opened."
+        case .scrolled(_, .continuous):
+            return spokenSentence + " It keeps going on its own. Say so in a few words; when they say stop (or 'that's enough', 'hold on'), call stop_scrolling."
         case .scrolled:
             return spokenSentence + " The latest screenshot shows the page now. If it looks the same as the one before, say the page didn't move (it may already be at the top or bottom, or a pop-up may be in the way) instead of saying it scrolled. Otherwise say only a word or two."
         case .failed("nothing is playing"):
@@ -189,7 +193,9 @@ enum MacActionOutcome: Equatable {
 
     var thenLooksAtScreen: Bool {
         switch self {
-        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable, .openedFolder, .foundFiles, .switchedTab, .scrolled: return true
+        // A continuous scroll is still moving, so a screenshot would show nothing settled.
+        case .scrolled(_, let amount): return amount != .continuous
+        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable, .openedFolder, .foundFiles, .switchedTab: return true
         case .draftedEmail(let app, _, _): return app == .gmail
         default: return false
         }
@@ -285,6 +291,14 @@ enum MacActionOutcome: Equatable {
             return "Scrolled \(direction.rawValue) a little."
         case .scrolled(let direction, .page):
             return "Scrolled \(direction.rawValue)."
+        case .scrolled(let direction, .slow):
+            return "Scrolled \(direction.rawValue) slowly."
+        case .scrolled(let direction, .continuous):
+            return "Scrolling \(direction.rawValue); say stop when you want me to stop."
+        case .stoppedScrolling:
+            return "Stopped."
+        case .wasNotScrolling:
+            return "I wasn't scrolling."
         case .nothingToScroll:
             return "There's no window in front for me to scroll."
         case .nothingInFront:
@@ -389,6 +403,8 @@ enum MacAction: Equatable {
     case playMusic(query: String)
     /// Scrolls the window in front.
     case scroll(direction: ScrollDirection, amount: ScrollAmount)
+    /// Ends a continuous scroll.
+    case stopScrolling
     /// A whole folder in Finder ("open downloads"), or a folder inside it when one is named.
     case openFolder(name: String?, location: MacActionLocation)
     /// Spotlight: files under the home folder whose names hold every word said.
@@ -433,7 +449,9 @@ final class MacActionRunner {
         var playTrack: (String) async -> Bool
         /// Opens Spotify's own search page for the words.
         var openSpotifySearch: (String) -> Void
-        var scrollFrontWindow: (ScrollDirection, ScrollAmount) -> ScrollResult
+        var scrollFrontWindow: (ScrollDirection, ScrollAmount) async -> ScrollResult
+        /// Ends a continuous scroll; false when none was running.
+        var stopScrolling: () -> Bool
         /// Opens a folder in Finder.
         var openFolder: (URL) -> Void
         /// Spotlight's best matches for the words, best first.
@@ -457,7 +475,8 @@ final class MacActionRunner {
             launchSpotify: @escaping () async -> Bool = { false },
             playTrack: @escaping (String) async -> Bool = { _ in false },
             openSpotifySearch: @escaping (String) -> Void = { _ in },
-            scrollFrontWindow: @escaping (ScrollDirection, ScrollAmount) -> ScrollResult = { _, _ in .noWindow },
+            scrollFrontWindow: @escaping (ScrollDirection, ScrollAmount) async -> ScrollResult = { _, _ in .noWindow },
+            stopScrolling: @escaping () -> Bool = { false },
             openFolder: @escaping (URL) -> Void = { _ in },
             findFiles: @escaping (String) async -> [URL] = { _ in [] },
             revealFiles: @escaping ([URL]) -> Void = { _ in },
@@ -478,6 +497,7 @@ final class MacActionRunner {
             self.playTrack = playTrack
             self.openSpotifySearch = openSpotifySearch
             self.scrollFrontWindow = scrollFrontWindow
+            self.stopScrolling = stopScrolling
             self.openFolder = openFolder
             self.findFiles = findFiles
             self.revealFiles = revealFiles
@@ -641,11 +661,14 @@ final class MacActionRunner {
             return .playingTrack(name: track.name, artist: track.artists.first ?? "")
 
         case .scroll(let direction, let amount):
-            switch extras.scrollFrontWindow(direction, amount) {
+            switch await extras.scrollFrontWindow(direction, amount) {
             case .scrolled: return .scrolled(direction, amount)
             case .noWindow: return .nothingToScroll
             case .notAllowed: return .needsAccessibility
             }
+
+        case .stopScrolling:
+            return extras.stopScrolling() ? .stoppedScrolling : .wasNotScrolling
 
         case .openFolder(let rawName, let location):
             let directory = location.directoryURL(homeDirectory: homeDirectory, workspaceDirectory: workspaceDirectory)
@@ -771,7 +794,8 @@ final class MacActionRunner {
                 launchSpotify: { await SpotifyPlayer.launchAndWait() },
                 playTrack: { uri in await SpotifyPlayer.play(uri: uri) },
                 openSpotifySearch: { query in SpotifyPlayer.openSearch(for: query) },
-                scrollFrontWindow: { direction, amount in ScreenNavigation.scrollFrontWindow(direction, amount) },
+                scrollFrontWindow: { direction, amount in await ScreenNavigation.scrollFrontWindow(direction, amount) },
+                stopScrolling: { ScreenNavigation.stopContinuousScroll() },
                 openFolder: { folderURL in NSWorkspace.shared.open(folderURL) },
                 findFiles: { query in await ScreenNavigation.findFiles(named: query) },
                 revealFiles: { fileURLs in NSWorkspace.shared.activateFileViewerSelecting(fileURLs) },
@@ -967,10 +991,16 @@ extension MacAction {
                     "type": "object",
                     "properties": [
                         "direction": ["type": "string", "enum": ScrollDirection.allCases.map(\.rawValue)],
-                        "amount": ["type": "string", "enum": ScrollAmount.allCases.map(\.rawValue), "description": "page (the default) for a screenful, little for 'a bit', end for 'to the top' / 'to the bottom'."],
+                        "amount": ["type": "string", "enum": ScrollAmount.allCases.map(\.rawValue), "description": "page (the default) for a screenful, little for 'a bit', end for 'to the top' / 'to the bottom', slow for 'scroll down slowly' (a screenful that glides), continuous for 'keep scrolling' / 'scroll slowly so I can read' (keeps going until stop_scrolling)."],
                     ],
                     "required": ["direction"],
                 ],
+            ],
+            [
+                "type": "function",
+                "name": "stop_scrolling",
+                "description": "Stop a continuous scroll: 'stop', 'that's enough', 'hold on' while the page is still scrolling.",
+                "parameters": ["type": "object", "properties": [String: Any](), "required": [String]()],
             ],
             [
                 "type": "function",
@@ -1106,6 +1136,9 @@ extension MacAction {
             let rawAmount = string("amount").lowercased()
             let amount = rawAmount.isEmpty ? .page : (ScrollAmount(rawValue: rawAmount) ?? .page)
             return .action(.scroll(direction: direction, amount: amount))
+
+        case "stop_scrolling":
+            return .action(.stopScrolling)
 
         case "open_folder":
             guard let location = MacActionLocation.named(string("location")) else { return .badArguments(.unknownLocation(string("location"))) }

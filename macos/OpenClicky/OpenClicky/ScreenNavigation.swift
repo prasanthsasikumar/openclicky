@@ -26,6 +26,12 @@ enum ScrollAmount: String, CaseIterable {
     case little
     /// All the way: the top for up, the bottom for down.
     case end
+    /// A screenful, gliding over a second and a half so the eye can follow the page ("scroll down
+    /// slowly").
+    case slow
+    /// Keeps moving at reading pace until stop_scrolling, esc, another app in front, or the person
+    /// moving the pointer ("keep scrolling").
+    case continuous
 }
 
 enum ScrollResult: Equatable {
@@ -61,21 +67,51 @@ nonisolated enum ScreenNavigation {
     /// down (scrolls up), the way a wheel turned towards the person does.
     static func scrollSteps(direction: ScrollDirection, amount: ScrollAmount, viewport: CGSize) -> [(vertical: Int32, horizontal: Int32)] {
         let span = direction == .up || direction == .down ? viewport.height : viewport.width
-        let distance: CGFloat
-        let count: Int
+        let pageDistance = Int32(max(span * 0.8, 100).rounded())
+        let distances: [Int32]
         switch amount {
-        case .page: distance = max(span * 0.8, 100); count = 1
-        case .little: distance = max(span * 0.25, 40); count = 1
+        case .page: distances = [pageDistance]
+        case .little: distances = [Int32(max(span * 0.25, 40).rounded())]
         // Ten big steps reach the end of any page a person would scroll by voice.
-        case .end: distance = 5_000; count = 10
+        case .end: distances = Array(repeating: 5_000, count: 10)
+        case .slow: distances = glideSteps(distance: pageDistance, count: slowGlideStepCount)
+        // One tick; the live loop repeats it.
+        case .continuous: distances = [continuousStepPixels]
         }
-        let step = Int32(distance.rounded())
         switch direction {
-        case .up: return Array(repeating: (step, 0), count: count)
-        case .down: return Array(repeating: (-step, 0), count: count)
-        case .left: return Array(repeating: (0, step), count: count)
-        case .right: return Array(repeating: (0, -step), count: count)
+        case .up: return distances.map { ($0, 0) }
+        case .down: return distances.map { (-$0, 0) }
+        case .left: return distances.map { (0, $0) }
+        case .right: return distances.map { (0, -$0) }
         }
+    }
+
+    /// `distance` split into `count` steps that start and end gently (smoothstep), summing to it
+    /// exactly, so a slow scroll reads as a glide rather than a crawl at one speed.
+    static func glideSteps(distance: Int32, count: Int) -> [Int32] {
+        guard count > 1 else { return [distance] }
+        var previous: Int32 = 0
+        return (1...count).map { index in
+            let t = Double(index) / Double(count)
+            let reached = Int32((Double(distance) * t * t * (3 - 2 * t)).rounded())
+            defer { previous = reached }
+            return reached - previous
+        }
+    }
+
+    /// The slow glide: 45 steps 33 ms apart, about a second and a half.
+    static let slowGlideStepCount = 45
+    static let slowGlideStepNanoseconds: UInt64 = 33_000_000
+    /// Reading pace: 2 px 30 times a second, 60 px a second.
+    static let continuousStepPixels: Int32 = 2
+    static let continuousStepNanoseconds: UInt64 = 33_000_000
+    /// A continuous scroll nobody stopped ends on its own after this long.
+    static let continuousScrollLimitSeconds: TimeInterval = 600
+
+    /// Whether a continuous scroll should end: another app came to the front, or the pointer moved
+    /// away from where the scroll put it (the person took over with the trackpad or mouse).
+    static func continuousScrollShouldStop(frontPID: pid_t?, scrollingPID: pid_t, pointer: CGPoint, scrollPoint: CGPoint) -> Bool {
+        frontPID != scrollingPID || hypot(pointer.x - scrollPoint.x, pointer.y - scrollPoint.y) > 40
     }
 
     /// AppKit screen point (bottom-left origin of the primary display) to the CG global
@@ -160,21 +196,67 @@ extension ScreenNavigation {
 
     private static var ownPID: pid_t { ProcessInfo.processInfo.processIdentifier }
 
+    /// The continuous scroll running now, if any, and a count that tells a finished loop whether
+    /// it is still the current one.
+    private static var continuousScroll: Task<Void, Never>?
+    private static var continuousScrollGeneration = 0
+
     /// Scrolls the window in front. Scroll events go to the window under the pointer, so when the
     /// pointer is elsewhere (on the island, another app) it is moved to the middle of that window.
-    static func scrollFrontWindow(_ direction: ScrollDirection, _ amount: ScrollAmount) -> ScrollResult {
+    /// A slow scroll returns once the glide is over; a continuous one returns at once and keeps
+    /// going. Any new scroll ends a continuous one first.
+    static func scrollFrontWindow(_ direction: ScrollDirection, _ amount: ScrollAmount) async -> ScrollResult {
+        stopContinuousScroll()
         guard AXIsProcessTrusted() else { return .notAllowed }
         guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ownPID,
               let frame = focusedWindowFrame(of: app.processIdentifier) else { return .noWindow }
         let pointer = CGEvent(source: nil)?.location ?? .zero
         let target = frame.contains(pointer) ? pointer : CGPoint(x: frame.midX, y: frame.midY)
         if target != pointer { CGWarpMouseCursorPosition(target) }
-        for step in scrollSteps(direction: direction, amount: amount, viewport: frame.size) {
-            guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: step.vertical, wheel2: step.horizontal, wheel3: 0) else { continue }
-            event.location = target
-            event.post(tap: .cghidEventTap)
+        let steps = scrollSteps(direction: direction, amount: amount, viewport: frame.size)
+        switch amount {
+        case .page, .little, .end:
+            steps.forEach { postScroll($0, at: target) }
+        case .slow:
+            for step in steps {
+                postScroll(step, at: target)
+                try? await Task.sleep(nanoseconds: slowGlideStepNanoseconds)
+            }
+        case .continuous:
+            guard let step = steps.first else { return .scrolled }
+            let scrollingPID = app.processIdentifier
+            continuousScrollGeneration += 1
+            let generation = continuousScrollGeneration
+            continuousScroll = Task { @MainActor in
+                let startedAt = Date()
+                while !Task.isCancelled, Date().timeIntervalSince(startedAt) < continuousScrollLimitSeconds {
+                    if continuousScrollShouldStop(frontPID: NSWorkspace.shared.frontmostApplication?.processIdentifier, scrollingPID: scrollingPID,
+                                                  pointer: CGEvent(source: nil)?.location ?? target, scrollPoint: target) {
+                        AppLog.append("scroll: continuous scroll ended (another app or the pointer moved)")
+                        break
+                    }
+                    postScroll(step, at: target)
+                    try? await Task.sleep(nanoseconds: continuousStepNanoseconds)
+                }
+                if continuousScrollGeneration == generation { continuousScroll = nil }
+            }
         }
         return .scrolled
+    }
+
+    /// Ends a continuous scroll; false when none was running.
+    @discardableResult
+    static func stopContinuousScroll() -> Bool {
+        guard let task = continuousScroll else { return false }
+        continuousScroll = nil
+        task.cancel()
+        return true
+    }
+
+    private static func postScroll(_ step: (vertical: Int32, horizontal: Int32), at point: CGPoint) {
+        guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: step.vertical, wheel2: step.horizontal, wheel3: 0) else { return }
+        event.location = point
+        event.post(tap: .cghidEventTap)
     }
 
     /// One left click at an AppKit screen point. The pointer goes there (the buddy has just flown
@@ -183,6 +265,7 @@ extension ScreenNavigation {
     /// voice cannot reach. `inNewTab` asks for a new tab (a link opens there, selected; anything
     /// else gets ⌘-click).
     static func click(atAppKitPoint point: CGPoint, inNewTab: Bool = false) -> ScreenClickResult {
+        stopContinuousScroll()
         guard AXIsProcessTrusted() else { return .notAllowed }
         // The Dock owns a full-screen window, so window bounds cannot say what it covers; the
         // screen's visible frame (without the Dock and menu bar) can.

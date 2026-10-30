@@ -1419,6 +1419,8 @@ final class CompanionManager: ObservableObject {
         case .dictationPressed, .dictationEditPressed, .dictationEditModifierJoined, .dictationReleased, .dictationDoubleTapped:
             dictationTakeController.handle(shortcutEvent)
         case .escapePressed:
+            // A continuous scroll by voice stops on esc whatever else is going on.
+            if ScreenNavigation.stopContinuousScroll() { AppLog.append("scroll: continuous scroll stopped (esc)") }
             // A dictation take in progress keeps esc to itself (it cancels the take, as always);
             // otherwise esc stops whatever the ask lane is doing.
             switch AskLaneEscape.target(dictationTakeInProgress: dictationTakeController.isTakeInProgress, askLaneCanBeStopped: askLaneCanBeStopped,
