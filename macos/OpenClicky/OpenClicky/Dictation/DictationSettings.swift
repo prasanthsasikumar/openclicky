@@ -264,6 +264,7 @@ final class DictationSettings: ObservableObject {
         haptics = defaults.object(forKey: Keys.haptics) == nil ? true : defaults.bool(forKey: Keys.haptics)
         reduceAnimation = defaults.bool(forKey: Keys.reduceAnimation)
         appearance = DictationAppearance(rawValue: defaults.string(forKey: Keys.appearance) ?? "") ?? .system
+        appIconColor = AppIconColor(rawValue: defaults.string(forKey: Keys.appIconColor) ?? "") ?? .signal
         inactivityTimeoutMinutes = defaults.object(forKey: Keys.inactivityTimeoutMinutes) == nil ? 3 : defaults.integer(forKey: Keys.inactivityTimeoutMinutes)
         clipboardHistoryEnabled = defaults.bool(forKey: Keys.clipboardHistoryEnabled)
         incognito = defaults.bool(forKey: Keys.incognito)
@@ -301,6 +302,7 @@ final class DictationSettings: ObservableObject {
         static let haptics = "dictation.haptics"
         static let reduceAnimation = "dictation.reduceAnimation"
         static let appearance = "dictation.appearance"
+        static let appIconColor = "general.appIconColor"
         static let inactivityTimeoutMinutes = "dictation.inactivityTimeoutMinutes"
         static let clipboardHistoryEnabled = "dictation.clipboardHistoryEnabled"
         static let incognito = "dictation.incognito"
@@ -395,6 +397,13 @@ final class DictationSettings: ObservableObject {
     /// (Sarvam, an Indian language) stays offered. The old `openclicky.region` value is ignored.
     var region: AppRegion { .world }
     @Published var appearance: DictationAppearance { didSet { defaults.set(appearance.rawValue, forKey: Keys.appearance) } }
+    /// The app icon's colour in the Dock and OpenClicky's windows (AppIconColor.apply, at launch and on change).
+    @Published var appIconColor: AppIconColor {
+        didSet {
+            defaults.set(appIconColor.rawValue, forKey: Keys.appIconColor)
+            if appIconColor != oldValue { appIconColor.apply() }
+        }
+    }
     /// A take with this long of silence ends on its own. 0 = never.
     @Published var inactivityTimeoutMinutes: Int { didSet { defaults.set(inactivityTimeoutMinutes, forKey: Keys.inactivityTimeoutMinutes) } }
     @Published var preferredMicrophoneUID: String? {
@@ -434,7 +443,7 @@ final class DictationSettings: ObservableObject {
     }
 
     func resetGeneralToDefaults() {
-        appearance = .system; inactivityTimeoutMinutes = 3; reduceAnimation = false
+        appearance = .system; appIconColor = .signal; inactivityTimeoutMinutes = 3; reduceAnimation = false
     }
 
     func resetShortcutsToDefaults() {

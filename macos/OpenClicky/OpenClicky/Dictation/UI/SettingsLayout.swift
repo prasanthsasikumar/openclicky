@@ -96,7 +96,7 @@ enum SettingsLayout {
 
     private static let generalGroups: [Group] = [
         Group(page: .general, title: "", itemIDs: [
-            "general.openAtLogin", "general.menuBarIcon", "general.reduceMotion",
+            "general.openAtLogin", "general.menuBarIcon", "general.reduceMotion", "general.appIcon",
         ]),
         // Appearance is the toolbar's button; search still finds it here.
         Group(page: .general, title: "Window", showsOnPage: false, itemIDs: ["general.appearance"]),

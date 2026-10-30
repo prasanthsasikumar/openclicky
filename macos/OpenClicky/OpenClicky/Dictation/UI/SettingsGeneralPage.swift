@@ -32,6 +32,11 @@ extension SettingsCatalog {
                 keywords: ["menu bar", "status item", "icon", "tray"],
                 view: AnyView(MenuBarIconRow(companionManager: companionManager))),
             SettingsItem(
+                id: "general.appIcon",
+                title: "App icon", detail: "Its colour in the Dock and in this window. Finder keeps the red one.",
+                keywords: ["icon", "colour", "color", "dock", "app icon", "signal", "ultraviolet", "sunset", "paper", "aqua", "purple", "blue", "pink", "red"],
+                view: AnyView(AppIconColorPicker(settings: settings))),
+            SettingsItem(
                 id: "general.openAtLogin",
                 title: "Open at login", detail: "So \(dictationKeyName) always works.",
                 keywords: ["startup", "launch", "restart", "login item", "boot"],
@@ -105,6 +110,58 @@ struct AppearanceToolbarMenu: View {
         .menuIndicator(.hidden)
         .help("Appearance: \(title(for: settings.appearance)). The orb follows it; the island stays dark.")
         .accessibilityLabel("Appearance")
+        .pointerCursor()
+    }
+}
+
+/// The app icon's colour: one tile per colour, the pick shown in the Dock at once.
+private struct AppIconColorPicker: View {
+    @ObservedObject var settings: DictationSettings
+    @Environment(\.settingsSearchQuery) private var searchQuery
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(settingsHighlighted("App icon", query: searchQuery)).font(SettingsLook.rowTitle)
+                Text(settingsHighlighted("Its colour in the Dock and in this window. Finder keeps the red one.", query: searchQuery))
+                    .font(SettingsLook.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 14) {
+                ForEach(AppIconColor.allCases) { color in
+                    AppIconColorTile(color: color, isSelected: settings.appIconColor == color) { settings.appIconColor = color }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct AppIconColorTile: View {
+    let color: AppIconColor
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(color.imageName)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 52, height: 52)
+                    .padding(3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(isSelected ? SettingsLook.accent : Color.clear, lineWidth: 2)
+                    )
+                Text(color.title)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(color.title) app icon")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .pointerCursor()
     }
 }

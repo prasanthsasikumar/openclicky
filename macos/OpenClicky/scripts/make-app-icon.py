@@ -11,15 +11,35 @@ Run from macos/OpenClicky: python3 scripts/make-app-icon.py [--preview path.png]
 --site also writes the website's icons (app-icon.png, apple-touch-icon.png, favicon-32.png,
 favicon-192.png into dir/assets, favicon.ico into dir): a full-bleed tile, no canvas margin.
 --windows path writes only the Windows .ico (16-256 px, each tier cropped to its tile):
-  python3 scripts/make-app-icon.py --windows ../../windows/src/OpenClicky.Windows/Assets/OpenClicky.ico"""
+  python3 scripts/make-app-icon.py --windows ../../windows/src/OpenClicky.Windows/Assets/OpenClicky.ico
+Every run also writes the colours people can pick in Settings → General (AppIconColor.swift) as
+AppIcon-<name>.imageset, 512 px: the Dock shows the picked one while OpenClicky runs."""
 import sys
 from pathlib import Path
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 SCALE = 4                      # supersampling
 CANVAS = 1024 * SCALE
-TILE_TOP_LEFT, TILE_BOTTOM_RIGHT = (0xFF, 0x6A, 0x3F), (0xD4, 0x16, 0x3A)
 WHITE = (255, 255, 255, 255)
+
+
+class Colours:
+    """A tile's gradient (top-left to bottom-right), the mark's colour and its glow's."""
+
+    def __init__(self, top_left, bottom_right, mark=WHITE, glow=(255, 255, 255, 140)):
+        self.top_left, self.bottom_right, self.mark, self.glow = top_left, bottom_right, mark, glow
+
+
+# The five directions from the design; Signal is the bundle's icon, the rest are picked in Settings.
+# Keep the names in step with AppIconColor.swift.
+COLOURS = {
+    "signal": Colours((0xFF, 0x6A, 0x3F), (0xD4, 0x16, 0x3A)),
+    "ultraviolet": Colours((0x8E, 0x6B, 0xFF), (0x34, 0x17, 0xC9)),
+    "sunset": Colours((0xFF, 0xBE, 0x3D), (0xFF, 0x1F, 0x7A)),
+    "paper": Colours((0xFF, 0xFB, 0xF2), (0xEF, 0xE6, 0xD2), mark=(0xF0, 0x45, 0x2B, 255), glow=(0xF0, 0x45, 0x2B, 115)),
+    "aqua": Colours((0x3C, 0xF0, 0xD8), (0x0A, 0x5B, 0xE6)),
+}
+SIGNAL = COLOURS["signal"]
 
 ARROW = [(0.3125, 0.3125), (0.7475, 0.475), (0.505, 0.52), (0.4775, 0.7525)]
 INNER = 0.4125                 # the ring's hole, as a share of the mark's side (OpenClickyMark.innerRadius)
@@ -99,7 +119,7 @@ def paint(base, colour, mask):
     return Image.alpha_composite(base, layer)
 
 
-def draw(size):
+def draw(size, colours=SIGNAL):
     icon = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     tile = tile_mask(size)
     inset = px((1024 - size.tile) / 2)
@@ -107,7 +127,7 @@ def draw(size):
 
     if size.shadow:
         icon = paint(icon, (0, 0, 0, 255), scaled(tile_mask(size, offset=px(14)).filter(ImageFilter.GaussianBlur(px(14))), 0.28))
-    body = diagonal([(0, TILE_TOP_LEFT + (255,)), (1, TILE_BOTTOM_RIGHT + (255,))], box)
+    body = diagonal([(0, colours.top_left + (255,)), (1, colours.bottom_right + (255,))], box)
     body.putalpha(ImageChops.multiply(body.getchannel("A"), tile))
     icon = Image.alpha_composite(icon, body)
     if size.sheen:
@@ -117,9 +137,9 @@ def draw(size):
 
     mark = mark_mask(size)
     if size.glow:
-        icon = paint(icon, WHITE, scaled(mark.filter(ImageFilter.GaussianBlur(px(18))), 0.55))
+        icon = paint(icon, colours.glow[:3] + (255,), scaled(mark.filter(ImageFilter.GaussianBlur(px(18))), colours.glow[3] / 255))
         icon = paint(icon, (0, 0, 0, 255), scaled(ImageChops.offset(mark, 0, px(10)).filter(ImageFilter.GaussianBlur(px(10))), 0.18))
-    return paint(icon, WHITE, mark)
+    return paint(icon, colours.mark, mark)
 
 
 def render(size, pixels):
@@ -176,6 +196,14 @@ def main():
     for pixels in (16, 32, 64, 128, 256, 512, 1024):
         mac_icon(pixels).save(out / f"{pixels}-mac.png")
     print("wrote", out)
+    for name, colours in COLOURS.items():
+        imageset = out.parent / f"AppIcon-{name}.imageset"
+        imageset.mkdir(exist_ok=True)
+        draw(LARGE, colours).resize((512, 512), Image.LANCZOS).save(imageset / "icon.png")
+        (imageset / "Contents.json").write_text(
+            '{\n  "images" : [\n    {\n      "filename" : "icon.png",\n      "idiom" : "universal"\n    }\n  ],\n'
+            '  "info" : {\n    "author" : "xcode",\n    "version" : 1\n  }\n}\n')
+    print("wrote", ", ".join(f"AppIcon-{name}" for name in COLOURS))
     if args[:1] == ["--site"]:
         write_site(args[1])
 
