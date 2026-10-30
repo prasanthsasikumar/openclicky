@@ -9,6 +9,6 @@ import SwiftUI
 
 extension SettingsCatalog {
     func clipboardSettingsItems() -> [SettingsItem] {
-        [pluginItem(IslandPluginRegistry.clipboardID, page: .tools, keywords: ["copy", "paste", "pasteboard", "history"])].compactMap { $0 }
+        [pluginItem(IslandPluginRegistry.clipboardID, keywords: ["copy", "paste", "pasteboard", "history"])].compactMap { $0 }
     }
 }

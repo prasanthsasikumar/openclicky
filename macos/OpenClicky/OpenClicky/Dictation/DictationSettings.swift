@@ -275,7 +275,6 @@ final class DictationSettings: ObservableObject {
         hasCompletedDictationOnboarding = defaults.bool(forKey: Keys.hasCompletedDictationOnboarding)
         preferredMicrophoneUID = defaults.string(forKey: Keys.preferredMicrophoneUID)
         orbPosition = Self.decodePoint(defaults.string(forKey: Keys.orbPosition))
-        region = AppRegion(rawValue: defaults.string(forKey: Keys.region) ?? "") ?? AppRegion.detected()
     }
 
     private enum Keys {
@@ -312,7 +311,6 @@ final class DictationSettings: ObservableObject {
         static let answerSimpleRequestsOnThisMac = "openclicky.ask.onThisMac"
         static let hasCompletedDictationOnboarding = "dictation.onboarded"
         static let preferredMicrophoneUID = "dictation.preferredMicrophoneUID"
-        static let region = "openclicky.region"
     }
 
     // MARK: engine & language
@@ -392,9 +390,10 @@ final class DictationSettings: ObservableObject {
 
     // MARK: general
 
-    /// India or the rest of the world: which options the settings offer (AppRegion). Stored only
-    /// once picked; until then it follows the Mac.
-    @Published var region: AppRegion { didSet { defaults.set(region.rawValue, forKey: Keys.region) } }
+    /// Which options the settings offer (AppRegion). Always the world since 2026-10-30: OpenClicky
+    /// no longer offers India its own set, so the Region choice is gone. An option already in use
+    /// (Sarvam, an Indian language) stays offered. The old `openclicky.region` value is ignored.
+    var region: AppRegion { .world }
     @Published var appearance: DictationAppearance { didSet { defaults.set(appearance.rawValue, forKey: Keys.appearance) } }
     /// A take with this long of silence ends on its own. 0 = never.
     @Published var inactivityTimeoutMinutes: Int { didSet { defaults.set(inactivityTimeoutMinutes, forKey: Keys.inactivityTimeoutMinutes) } }

@@ -11,19 +11,19 @@ extension SettingsCatalog {
     func weatherSettingsItems() -> [SettingsItem] {
         [
             SettingsItem(
-                id: "weather.enabled", page: .widgets, section: "",
+                id: "weather.enabled",
                 title: "Weather", detail: "Today's weather on the island, from Open-Meteo.",
                 keywords: ["weather", "temperature", "forecast", "widget", "tile"],
                 view: AnyView(WeatherEnabledRow())),
             SettingsItem(
-                id: "weather.unit", page: .widgets, section: "Weather",
+                id: "weather.unit",
                 title: "Temperature", detail: "Clicking the tile switches it too.",
                 keywords: ["weather", "unit", "celsius", "fahrenheit", "degrees"],
                 view: AnyView(WeatherUnitRow())),
             // The place field lives in the same item as the location switch so it can appear the
             // moment the switch goes off; a separate item would only show after the window redraws.
             SettingsItem(
-                id: "weather.location", page: .widgets, section: "Weather",
+                id: "weather.location",
                 title: "Use my location", detail: "Or type the place you want the weather for.",
                 keywords: ["weather", "location", "city", "place", "town", "where"],
                 view: AnyView(WeatherLocationRows())),

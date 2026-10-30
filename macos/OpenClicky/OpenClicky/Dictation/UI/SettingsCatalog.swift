@@ -31,9 +31,11 @@ struct SettingsItem: Identifiable {
     }
 
     let id: String
-    let page: DictationSettingsPage
-    /// The label above the group ("Startup"); empty for a page's unlabelled first group.
-    let section: String
+    /// Where the row is drawn. Set by `SettingsLayout`, which places every row; a builder leaves it.
+    var page: DictationSettingsPage = .general
+    /// The label above the group ("Microphone"); empty for a page's unlabelled first group. Set by
+    /// `SettingsLayout`, except for rows whose builder names their own group (one per calendar account).
+    var section: String = ""
     let title: String
     var detail: String = ""
     /// Other words someone might search for ("startup" for open at login).
@@ -44,10 +46,15 @@ struct SettingsItem: Identifiable {
     /// Set for an item that only search shows: a way to one of your own pages (Your words, How it
     /// writes), which aren't drawn from the catalog. It names the page in the search results.
     var searchOnlyGroup: String?
+    /// True for rows in a page's folded group at the bottom ("More"): rarely changed, hidden until
+    /// the group is opened. Search ignores the fold.
+    var isAdvanced = false
+    /// False for a row only search finds (incognito, whose switch lives in the sidebar's foot).
+    var showsOnPage = true
     let view: AnyView
 
     /// The heading it is listed under in search results.
-    var searchGroupTitle: String { searchOnlyGroup ?? page.title }
+    var searchGroupTitle: String { searchOnlyGroup ?? page.searchTitle }
 
     func matches(_ query: String) -> Bool {
         let searchableText = ([title, detail, section, searchGroupTitle] + keywords).joined(separator: " ")
@@ -64,10 +71,39 @@ struct SettingsCatalog {
     let settings: DictationSettings
     let companionManager: CompanionManager
 
-    /// In page order; within a page, in the order the page shows them. Then the search-only ways
-    /// to your own pages.
+    /// Every row, placed and ordered by `SettingsLayout`, then the search-only ways to your own pages.
     var allItems: [SettingsItem] {
-        DictationSettingsPage.allCases.flatMap { items(for: $0) } + yourPagesSearchItems()
+        SettingsLayout.arrange(unplacedItems()) + yourPagesSearchItems()
+    }
+
+    /// Every row as its builder makes it, before the layout gives it a page and a place.
+    private func unplacedItems() -> [SettingsItem] {
+        dictationItems() + keyboardItems() + orbItems()
+            + clickyItems() + voiceItems()
+            + islandAppearanceItems() + islandPluginItems() + calendarSettingsItems() + weatherSettingsItems()
+            + clipboardSettingsItems() + notesSettingsItems() + timerSettingsItems()
+            + accountItems() + keysItems() + privacyItems() + generalItems() + aboutItems()
+            + navigationItems()
+    }
+
+    /// The rows that open a page of their own: Your words, How it writes and The orb from
+    /// Dictation, Calendars from Island.
+    func navigationItems() -> [SettingsItem] {
+        func item(_ id: String, title: String, detail: String, keywords: [String], destination: DictationDestination) -> SettingsItem {
+            SettingsItem(
+                id: id, title: title, detail: detail, keywords: keywords,
+                view: AnyView(SettingsNavigationRow(title: title, detail: detail, destination: destination)))
+        }
+        return [
+            item("dictation.openWords", title: "Your words", detail: "Every take, with search. Try dictation here.",
+                 keywords: ["history", "takes", "try"], destination: .section(.words)),
+            item("dictation.openWriting", title: "How it writes", detail: "Dictionary, snippets and per-app styles.",
+                 keywords: ["dictionary", "snippets", "styles"], destination: .section(.writing)),
+            item("dictation.openOrb", title: "The orb", detail: "Style, theme, size and when it appears.",
+                 keywords: ["orb", "pill", "look", "theme", "size"], destination: .settings(.orb)),
+            item("island.openCalendars", title: "Calendars", detail: "Which calendars the island shows.",
+                 keywords: ["calendar", "calendars", "hide", "show", "account"], destination: .settings(.calendars)),
+        ]
     }
 
     /// What lives on Your words and How it writes, findable by search: each a row that opens its page.
@@ -75,7 +111,7 @@ struct SettingsCatalog {
         func item(_ id: String, section: DictationSection, title: String, detail: String, keywords: [String]) -> SettingsItem {
             SettingsItem(
                 id: id, page: .dictation, section: section.sidebarTitle, title: title, detail: detail, keywords: keywords,
-                searchOnlyGroup: section.sidebarTitle,
+                searchOnlyGroup: section.sidebarTitle, showsOnPage: false,
                 view: AnyView(SettingsRow(title: title, detail: detail) {
                     Button("Open \(section.sidebarTitle)") { companionManager.showDictationWindow(section: section) }
                         .pointerCursor()
@@ -95,25 +131,6 @@ struct SettingsCatalog {
         ]
     }
 
-    func items(for page: DictationSettingsPage) -> [SettingsItem] {
-        switch page {
-        case .general: return generalItems()
-        case .dictation: return dictationItems()
-        case .clicky: return clickyItems()
-        case .voice: return voiceItems()
-        case .orb: return orbItems()
-        case .appearance: return appearanceItems()
-        case .music: return musicItems()
-        case .widgets: return widgetsItems()
-        case .calendar: return calendarItems()
-        case .tools: return toolsItems()
-        case .keyboard: return keyboardItems()
-        case .keys: return keysItems()
-        case .account: return accountItems()
-        case .privacy: return privacyItems()
-        case .about: return aboutItems()
-        }
-    }
 }
 
 /// One section of a page: its rows, and the notes under it.
@@ -122,10 +139,12 @@ struct SettingsSectionGroup: Identifiable {
     let title: String
     let items: [SettingsItem]
     var footers: [SettingsItem] = []
+    /// The page's folded group ("More"), drawn closed until opened.
+    var isAdvanced = false
 
     /// Consecutive items with the same section form one group; a footer item joins the group
-    /// before it.
-    static func groups(_ items: [SettingsItem], title: (SettingsItem) -> String = { $0.section }) -> [SettingsSectionGroup] {
+    /// before it. `foldsAdvanced` marks a page's folded group; search results never fold.
+    static func groups(_ items: [SettingsItem], foldsAdvanced: Bool = false, title: (SettingsItem) -> String = { $0.section }) -> [SettingsSectionGroup] {
         var groups: [SettingsSectionGroup] = []
         for item in items {
             let groupTitle = title(item)
@@ -134,13 +153,15 @@ struct SettingsSectionGroup: Identifiable {
                 if item.chrome == .footer {
                     merged.footers.append(item)
                 } else {
-                    merged = SettingsSectionGroup(id: last.id, title: last.title, items: last.items + [item], footers: last.footers)
+                    merged = SettingsSectionGroup(id: last.id, title: last.title, items: last.items + [item], footers: last.footers, isAdvanced: last.isAdvanced)
                 }
                 groups[groups.count - 1] = merged
             } else if item.chrome == .footer {
-                groups.append(SettingsSectionGroup(id: "\(groups.count)-\(groupTitle)", title: groupTitle, items: [], footers: [item]))
+                groups.append(SettingsSectionGroup(id: "\(groups.count)-\(groupTitle)", title: groupTitle, items: [], footers: [item],
+                                                   isAdvanced: foldsAdvanced && item.isAdvanced))
             } else {
-                groups.append(SettingsSectionGroup(id: "\(groups.count)-\(groupTitle)", title: groupTitle, items: [item]))
+                groups.append(SettingsSectionGroup(id: "\(groups.count)-\(groupTitle)", title: groupTitle, items: [item],
+                                                   isAdvanced: foldsAdvanced && item.isAdvanced))
             }
         }
         return groups

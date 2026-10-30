@@ -16,13 +16,13 @@ import sys
 import urllib.request
 
 LINES = {
-    "settings-tour-intro": "Here's a one-minute tour of settings. First, your region. Pick India or the rest of the world, and I'll only show what's useful to you.",
+    "settings-tour-intro": "Here's a one-minute tour of settings. Everything lives in these six pages, and the search box finds any setting.",
     "settings-tour-dictation": "On Dictation, this is the key you hold, anywhere, to type with your voice.",
     "settings-tour-language": "Here you choose the language you speak, and a little further down, whether AI tidies up your words.",
-    "settings-tour-voice": "On Voice, you choose how I sound. There's a free voice, so you don't need a key.",
-    "settings-tour-pointer": "On Clicky, you choose when I follow your mouse. If I'm hiding, shake the mouse and I'll come back.",
+    "settings-tour-voice": "On Clicky, you choose how I sound. There's a free voice, so you don't need a key.",
+    "settings-tour-pointer": "Here you choose when I follow your mouse. If I'm hiding, shake the mouse and I'll come back.",
     "settings-tour-words": "Your words keeps everything you've dictated, so you can always find it again.",
-    "settings-tour-shortcuts": "Shortcuts shows every key at a glance. Hold control and option to talk to me.",
+    "settings-tour-shortcuts": "Hold control and option to talk to me. The rarer shortcuts are under More, at the bottom of each page.",
     "settings-tour-keys": "If you have your own AI key, or a Claude or ChatGPT plan, add it here. You don't need one to start.",
     "settings-tour-done": "That's it! You can watch this tour again from here, any time.",
 }

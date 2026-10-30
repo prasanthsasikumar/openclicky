@@ -18,67 +18,67 @@ extension SettingsCatalog {
         func path(_ url: URL) -> String { url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~") }
         return [
             SettingsItem(
-                id: "privacy.microphone", page: .privacy, section: "Permissions",
+                id: "privacy.microphone",
                 title: "Microphone", detail: PrivacyPermission.microphone.detail,
                 keywords: ["permission", "mic", "audio", "grant"],
                 view: AnyView(PermissionRow(permission: .microphone))),
             SettingsItem(
-                id: "privacy.accessibility", page: .privacy, section: "Permissions",
+                id: "privacy.accessibility",
                 title: "Accessibility", detail: PrivacyPermission.accessibility.detail,
                 keywords: ["permission", "paste", "grant", "keys", "event tap", "terminal", "live typing"],
                 view: AnyView(PermissionRow(permission: .accessibility))),
             SettingsItem(
-                id: "privacy.speechRecognition", page: .privacy, section: "Permissions",
+                id: "privacy.speechRecognition",
                 title: "Speech recognition", detail: PrivacyPermission.speechRecognition.detail,
                 keywords: ["permission", "offline", "apple", "grant", "siri"],
                 view: AnyView(PermissionRow(permission: .speechRecognition))),
             SettingsItem(
-                id: "privacy.readNearbyText", page: .privacy, section: "Permissions",
+                id: "privacy.readNearbyText",
                 title: "Read nearby text", detail: "Helps spell names and terms on screen right.",
                 keywords: ["context", "screen", "spelling", "names", "accessibility"],
                 view: AnyView(SettingsRow(title: "Read nearby text", detail: "Helps spell names and terms on screen right.") {
                     SettingsToggle(settings: settings, keyPath: \.readNearbyText)
                 })),
             SettingsItem(
-                id: "privacy.pauseBeforeSendingScreen", page: .privacy, section: "Permissions",
+                id: "privacy.pauseBeforeSendingScreen",
                 title: "Pause before sending my screen", detail: "A moment to press esc before Clicky sends your screen.",
                 keywords: ["screenshot", "screen", "cancel", "esc", "send", "wait", "consent"],
                 view: AnyView(SettingsRow(title: "Pause before sending my screen", detail: "A moment to press esc before Clicky sends your screen.") {
                     SettingsToggle(settings: settings, keyPath: \.pauseBeforeSendingScreen)
                 })),
             SettingsItem(
-                id: "privacy.memoryOnThisMac", page: .privacy, section: "What it keeps",
+                id: "privacy.memoryOnThisMac",
                 title: "Keep my memory on this Mac only", detail: "History, dictionary and styles stay here. Questions to Clicky still go online.",
                 keywords: ["local", "memory", "cloud", "sync", "data"],
                 view: AnyView(SettingsRow(title: "Keep my memory on this Mac only", detail: "History, dictionary and styles stay here. Questions to Clicky still go online.") {
                     SettingsToggle(settings: settings, keyPath: \.keepMemoryOnThisMac)
                 })),
             SettingsItem(
-                id: "privacy.incognito", page: .privacy, section: "What it keeps",
+                id: "privacy.incognito",
                 title: "Incognito", detail: "Takes still paste, but nothing is saved to history.",
                 keywords: ["private", "history", "don't save"],
                 view: AnyView(SettingsRow(title: "Incognito", detail: "Takes still paste, but nothing is saved to history.") {
                     SettingsToggle(settings: settings, keyPath: \.incognito)
                 })),
             SettingsItem(
-                id: "privacy.clipboardHistory", page: .privacy, section: "What it keeps",
+                id: "privacy.clipboardHistory",
                 title: "Clipboard history", detail: "Capture what you copy, so it shows in history too.",
                 keywords: ["clipboard", "copy", "pasteboard"],
                 view: AnyView(SettingsRow(title: "Clipboard history", detail: "Capture what you copy, so it shows in history too.") {
                     SettingsToggle(settings: settings, keyPath: \.clipboardHistoryEnabled)
                 })),
             SettingsItem(
-                id: "privacy.retryFailedTakes", page: .privacy, section: "What it keeps",
+                id: "privacy.retryFailedTakes",
                 title: "Keep failed takes to retry", detail: "Up to 100 takes or 1 GB. Off removes them now.",
                 keywords: ["retry", "audio", "recording", "failed", "network"],
                 view: AnyView(RetryFailedTakesRow(settings: settings, companionManager: companionManager))),
             SettingsItem(
-                id: "privacy.deleteTakes", page: .privacy, section: "What it keeps",
+                id: "privacy.deleteTakes",
                 title: "Delete all takes", detail: "Your dictionary and snippets stay.",
                 keywords: ["delete", "wipe", "history", "erase", "data"],
                 view: AnyView(DeleteTakesRow(companionManager: companionManager))),
             SettingsItem(
-                id: "privacy.whereHistory", page: .privacy, section: "Where things live",
+                id: "privacy.whereHistory",
                 title: "History", detail: path(TakeStore.defaultFileURL),
                 keywords: ["sqlite", "database", "file", "folder", "takes"],
                 view: AnyView(SettingsRow(title: "History", detail: path(TakeStore.defaultFileURL)) {
@@ -86,7 +86,7 @@ extension SettingsCatalog {
                         .pointerCursor()
                 })),
             SettingsItem(
-                id: "privacy.whereSpace", page: .privacy, section: "Where things live",
+                id: "privacy.whereSpace",
                 title: "Styles, dictionary, snippets", detail: path(DictationSpaceStore.defaultDirectoryURL),
                 keywords: ["json", "file", "folder", "shortcuts"],
                 view: AnyView(SettingsRow(title: "Styles, dictionary, snippets", detail: path(DictationSpaceStore.defaultDirectoryURL)) {
@@ -94,7 +94,7 @@ extension SettingsCatalog {
                         .pointerCursor()
                 })),
             SettingsItem(
-                id: "privacy.whereKeys", page: .privacy, section: "Where things live",
+                id: "privacy.whereKeys",
                 title: "Keys and account", detail: "~/.openclicky/shell.json",
                 keywords: ["shell.json", "token", "file", "key"],
                 view: AnyView(SettingsRow(title: "Keys and account", detail: "~/.openclicky/shell.json") {
@@ -102,7 +102,7 @@ extension SettingsCatalog {
                         .pointerCursor()
                 })),
             SettingsItem(
-                id: "privacy.summary", page: .privacy, section: "Where things live",
+                id: "privacy.summary",
                 title: "Privacy summary", detail: PrivacySummaryNote.text,
                 keywords: ["policy", "privacy", "what leaves", "readme"],
                 chrome: .footer,

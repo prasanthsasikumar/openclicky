@@ -523,8 +523,8 @@ final class FirstRunTourController: ObservableObject {
             if accountCardAsksForEmail {
                 submitField()
             } else {
-                // "add my key": Settings → Keys & Plans has the key fields; the tour carries on.
-                companionManager.showSettings(.keys)
+                // "add my key": Settings → Keys & Account has the key fields; the tour carries on.
+                companionManager.showSettings(.account)
                 advance()
             }
         case .talk, .act:

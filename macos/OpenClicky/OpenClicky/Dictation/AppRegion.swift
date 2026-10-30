@@ -2,14 +2,11 @@
 //  AppRegion.swift
 //  OpenClicky
 //
-//  India or the rest of the world (Settings → General → Region). Much of OpenClicky is built for
-//  Indian users: Sarvam (engine, voice, key), ten Indian dictation languages, seven Indian Clicky
-//  languages, the native-or-roman script. Outside India those are clutter, so the region decides
-//  what the settings offer. It never changes what is set: an option already in use stays offered
-//  whatever the region says.
-//
-//  Until someone picks, the region follows the Mac: India when its region is India or its time
-//  zone is India's.
+//  India or the rest of the world: which options the settings offer. Sarvam (engine, voice, key),
+//  the ten Indian dictation languages, seven Indian Clicky languages and the native-or-roman
+//  script are India's. Since 2026-10-30 OpenClicky is for the world and the Region choice is gone:
+//  `DictationSettings.region` is always `.world`. It never changes what is set: an option already
+//  in use stays offered.
 //
 
 import Foundation
@@ -24,14 +21,6 @@ enum AppRegion: String, CaseIterable, Identifiable {
         case .india: return "India"
         case .world: return "Rest of the world"
         }
-    }
-
-    /// What this Mac looks like it is set up for.
-    static func detected(regionCode: String? = Locale.current.region?.identifier,
-                         timeZoneIdentifier: String = TimeZone.current.identifier) -> AppRegion {
-        if regionCode == "IN" { return .india }
-        if timeZoneIdentifier == "Asia/Kolkata" || timeZoneIdentifier == "Asia/Calcutta" { return .india }
-        return .world
     }
 
     /// Whether the settings offer what only Indian users need.

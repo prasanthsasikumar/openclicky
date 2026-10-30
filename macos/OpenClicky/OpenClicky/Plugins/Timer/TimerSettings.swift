@@ -9,22 +9,21 @@ import SwiftUI
 
 extension SettingsCatalog {
     func timerSettingsItems() -> [SettingsItem] {
-        let section = "Timer"
         let minuteRows: [SettingsItem] = [
-            minutesItem(id: "timer.focusMinutes", section: section, title: "Focus", detail: "How long each focus round lasts.",
+            minutesItem(id: "timer.focusMinutes", title: "Focus", detail: "How long each focus round lasts.",
                         key: TimerSettings.focusMinutesKey, fallback: TimerSettings.defaultFocusMinutes),
-            minutesItem(id: "timer.breakMinutes", section: section, title: "Break", detail: "The short break after each focus round.",
+            minutesItem(id: "timer.breakMinutes", title: "Break", detail: "The short break after each focus round.",
                         key: TimerSettings.breakMinutesKey, fallback: TimerSettings.defaultBreakMinutes),
-            minutesItem(id: "timer.longBreakMinutes", section: section, title: "Long break", detail: "The longer break after every fourth round.",
+            minutesItem(id: "timer.longBreakMinutes", title: "Long break", detail: "The longer break after every fourth round.",
                         key: TimerSettings.longBreakMinutesKey, fallback: TimerSettings.defaultLongBreakMinutes),
         ]
-        return [pluginItem(IslandPluginRegistry.timerID, page: .tools, section: section, keywords: ["focus", "break", "stopwatch", "countdown", "rounds"])].compactMap { $0 }
+        return [pluginItem(IslandPluginRegistry.timerID, keywords: ["focus", "break", "stopwatch", "countdown", "rounds"])].compactMap { $0 }
             + minuteRows
     }
 
-    private func minutesItem(id: String, section: String, title: String, detail: String, key: String, fallback: Int) -> SettingsItem {
+    private func minutesItem(id: String, title: String, detail: String, key: String, fallback: Int) -> SettingsItem {
         SettingsItem(
-            id: id, page: .tools, section: section, title: title, detail: detail,
+            id: id, title: title, detail: detail,
             keywords: ["timer", "minutes", "focus", "break"],
             view: AnyView(TimerMinutesRow(title: title, detail: detail, key: key, fallback: fallback)))
     }

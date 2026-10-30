@@ -2,10 +2,10 @@
 //  SettingsGeneralPage.swift
 //  OpenClicky
 //
-//  Settings → General: where you are, how OpenClicky looks and starts, and updates. The region
-//  (India or the rest of the world), appearance, where the island lives, the menu bar icon
-//  (always on while the island is hidden), open at login, the walkthrough, reduce motion, and
-//  software updates. Version and help are on About.
+//  Settings → General: how OpenClicky starts. The menu bar icon (always on while the island is
+//  hidden), open at login, the tours and reduce motion; appearance is the toolbar's button
+//  (AppearanceToolbarMenu, its row only for search); the version, updates and help rows come from
+//  SettingsAboutPage.swift. Where the island lives is built here and shown on Island.
 //
 
 import AppKit
@@ -17,32 +17,27 @@ extension SettingsCatalog {
         let dictationKeyName = settings.dictationKey.keycapLabel
         return [
             SettingsItem(
-                id: "general.region", page: .general, section: "",
-                title: "Region", detail: "India adds Sarvam and the Indian languages and scripts. Anything you already use stays.",
-                keywords: ["region", "country", "india", "world", "sarvam", "indian languages", "hindi", "location"],
-                view: AnyView(RegionPicker(settings: settings))),
-            SettingsItem(
-                id: "general.appearance", page: .general, section: "",
+                id: "general.appearance",
                 title: "Appearance", detail: "The orb and its transcript box follow this. The island stays dark.",
                 keywords: ["light", "dark", "auto", "match the mac", "theme", "mode", "colour", "color"],
                 view: AnyView(AppearancePicker(settings: settings))),
             SettingsItem(
-                id: "general.hudPlacement", page: .general, section: "",
-                title: "Where OpenClicky lives", detail: "The notch, a drawer on the left or right edge, or hidden until you use a shortcut.",
+                id: "general.hudPlacement",
+                title: "Where it lives", detail: "The notch, a drawer on the left or right edge, or hidden until you use a shortcut.",
                 keywords: ["notch", "island", "hud", "side", "edge", "drawer", "hide", "hidden", "position", "placement", "shortcuts only"],
                 view: AnyView(HUDPlacementRow(companionManager: companionManager))),
             SettingsItem(
-                id: "general.menuBarIcon", page: .general, section: "",
+                id: "general.menuBarIcon",
                 title: "Show in menu bar", detail: "Off is fine: the island is OpenClicky’s home.",
                 keywords: ["menu bar", "status item", "icon", "tray"],
                 view: AnyView(MenuBarIconRow(companionManager: companionManager))),
             SettingsItem(
-                id: "general.openAtLogin", page: .general, section: "Startup",
+                id: "general.openAtLogin",
                 title: "Open at login", detail: "So \(dictationKeyName) always works.",
                 keywords: ["startup", "launch", "restart", "login item", "boot"],
                 view: AnyView(SettingsRow(title: "Open at login", detail: "So \(dictationKeyName) always works.") { LoginItemToggle() })),
             SettingsItem(
-                id: "general.walkthrough", page: .general, section: "Startup",
+                id: "general.walkthrough",
                 title: "Welcome tour", detail: "Clicky shows you dictating, asking and handing over a task, from the island.",
                 keywords: ["onboarding", "setup", "replay", "tour", "first run"],
                 view: AnyView(SettingsRow(title: "Welcome tour", detail: "Clicky shows you dictating, asking and handing over a task, from the island.") {
@@ -50,7 +45,7 @@ extension SettingsCatalog {
                         .pointerCursor()
                 })),
             SettingsItem(
-                id: "general.settingsTour", page: .general, section: "Startup",
+                id: "general.settingsTour",
                 title: "Settings tour", detail: "A one-minute look around this window: Clicky points at what matters most.",
                 keywords: ["tour", "crash course", "show me around", "help", "guide", "replay", "walkthrough"],
                 view: AnyView(SettingsRow(title: "Settings tour", detail: "A one-minute look around this window: Clicky points at what matters most.") {
@@ -58,48 +53,61 @@ extension SettingsCatalog {
                         .pointerCursor()
                 })),
             SettingsItem(
-                id: "general.reduceMotion", page: .general, section: "Motion",
+                id: "general.reduceMotion",
                 title: "Reduce motion", detail: "The orb and the island appear and leave without animating.",
                 keywords: ["animation", "motion", "accessibility", "calm"],
                 view: AnyView(SettingsRow(title: "Reduce motion", detail: "The orb and the island appear and leave without animating.") {
                     SettingsToggle(settings: settings, keyPath: \.reduceAnimation)
                 })),
             SettingsItem(
-                id: "about.autoUpdate", page: .general, section: "Updates",
+                id: "about.autoUpdate",
                 title: "Check for updates daily", detail: "Updates come through Sparkle.",
                 keywords: ["update", "updates", "sparkle", "automatic"],
                 view: AnyView(AutomaticUpdatesRow())),
-            SettingsItem(
-                id: "about.checkNow", page: .general, section: "Updates",
-                title: "Check now", detail: "",
-                keywords: ["update", "updates", "sparkle", "check now"],
-                view: AnyView(CheckNowRow())),
         ]
     }
 }
 
-// MARK: - region
+// MARK: - appearance
 
-/// India or the rest of the world (AppRegion): what the other pages offer.
-private struct RegionPicker: View {
+/// Light, dark or auto, from a button at the window's top right: the window, the orb and its
+/// transcript box follow it (the island stays dark). The icon shows the current choice.
+struct AppearanceToolbarMenu: View {
     @ObservedObject var settings: DictationSettings
 
-    var body: some View {
-        SettingsRow(title: "Region", detail: "India adds Sarvam and the Indian languages and scripts. Anything you already use stays.") {
-            Picker("", selection: $settings.region) {
-                ForEach(AppRegion.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .tint(SettingsLook.accent)
-            .pointerCursor()
-            .accessibilityLabel("Region")
+    private func symbol(for appearance: DictationAppearance) -> String {
+        switch appearance {
+        case .light: return "sun.max"
+        case .dark: return "moon"
+        case .system: return "circle.lefthalf.filled"
         }
     }
-}
 
-// MARK: - appearance
+    private func title(for appearance: DictationAppearance) -> String {
+        switch appearance {
+        case .light: return "Light"
+        case .dark: return "Dark"
+        case .system: return "Auto"
+        }
+    }
+
+    var body: some View {
+        Menu {
+            Picker("Appearance", selection: $settings.appearance) {
+                ForEach(DictationAppearance.allCases) { appearance in
+                    Label(title(for: appearance), systemImage: symbol(for: appearance)).tag(appearance)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: symbol(for: settings.appearance))
+        }
+        .menuIndicator(.hidden)
+        .help("Appearance: \(title(for: settings.appearance)). The orb follows it; the island stays dark.")
+        .accessibilityLabel("Appearance")
+        .pointerCursor()
+    }
+}
 
 private struct AppearancePicker: View {
     @ObservedObject var settings: DictationSettings
@@ -202,7 +210,7 @@ private struct HUDPlacementRow: View {
     }
 
     var body: some View {
-        SettingsRow(title: "Where OpenClicky lives", detail: placement.settingsDetail) {
+        SettingsRow(title: "Where it lives", detail: placement.settingsDetail) {
             Picker("", selection: Binding(get: { placement }, set: { companionManager.setHUDPlacement($0) })) {
                 ForEach(HUDPlacement.allCases) { placement in Text(placement.settingsTitle).tag(placement) }
             }

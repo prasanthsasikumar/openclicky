@@ -49,10 +49,7 @@ final class SettingsTourTargets: ObservableObject {
     }
 
     nonisolated static func sidebarTargetID(for destination: DictationDestination) -> String {
-        switch destination {
-        case .settings(let page): return "sidebar.page.\(page.rawValue)"
-        case .section(let section): return "sidebar.section.\(section.rawValue)"
-        }
+        "sidebar.page.\(destination.sidebarPage.rawValue)"
     }
 }
 
@@ -82,31 +79,27 @@ struct SettingsTourStep {
     let bubble: String
     let line: RecordedVoice.Line
 
-    /// The page's name in the sidebar, for the bubble while the pointer goes to "click" it.
-    var destinationTitle: String {
-        switch destination {
-        case .settings(let page): return page.title
-        case .section(let section): return section.sidebarTitle
-        }
-    }
+    /// The page's name in the sidebar, for the bubble while the pointer goes to "click" it (Your
+    /// words is under Dictation).
+    var destinationTitle: String { destination.sidebarPage.title }
 
     /// About a minute in all: what someone needs to find their way, in sidebar order where it can be.
     static let all: [SettingsTourStep] = [
-        SettingsTourStep(destination: .settings(.general), targetID: "general.region",
-                         bubble: "your region (esc stops the tour)", line: .settingsTourIntro),
+        SettingsTourStep(destination: .settings(.dictation), targetID: nil,
+                         bubble: "six pages (esc stops the tour)", line: .settingsTourIntro),
         SettingsTourStep(destination: .settings(.dictation), targetID: "keyboard.dictationKey",
                          bubble: "the key you hold", line: .settingsTourDictation),
         SettingsTourStep(destination: .settings(.dictation), targetID: "dictation.language",
                          bubble: "your language", line: .settingsTourLanguage),
-        SettingsTourStep(destination: .settings(.voice), targetID: "clicky.speechVoice",
-                         bubble: "how i sound", line: .settingsTourVoice),
-        SettingsTourStep(destination: .settings(.clicky), targetID: "clicky.pointerPresence",
-                         bubble: "when i show up", line: .settingsTourPointer),
         SettingsTourStep(destination: .section(.words), targetID: nil,
                          bubble: "everything you said", line: .settingsTourWords),
-        SettingsTourStep(destination: .settings(.keyboard), targetID: "keyboard.talk",
+        SettingsTourStep(destination: .settings(.clicky), targetID: "clicky.speechVoice",
+                         bubble: "how i sound", line: .settingsTourVoice),
+        SettingsTourStep(destination: .settings(.clicky), targetID: "clicky.pointer",
+                         bubble: "when i show up", line: .settingsTourPointer),
+        SettingsTourStep(destination: .settings(.clicky), targetID: "keyboard.talk",
                          bubble: "every shortcut", line: .settingsTourShortcuts),
-        SettingsTourStep(destination: .settings(.keys), targetID: "account.keys",
+        SettingsTourStep(destination: .settings(.account), targetID: "account.keys",
                          bubble: "your own keys", line: .settingsTourKeys),
         SettingsTourStep(destination: .settings(.general), targetID: "general.settingsTour",
                          bubble: "watch it again here", line: .settingsTourDone),

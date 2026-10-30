@@ -14,21 +14,21 @@ extension SettingsCatalog {
         let store = CalendarStore.shared
         var items: [SettingsItem] = [
             SettingsItem(
-                id: "calendar.enabled", page: .calendar, section: "",
-                title: "Show calendar in the island", detail: "Your week and today's events on the open island.",
+                id: "calendar.enabled",
+                title: "Calendar", detail: "Your week and today's events on the open island.",
                 keywords: ["calendar", "events", "island", "week", "agenda", "schedule"],
                 view: AnyView(CalendarSwitchRow(
                     store: store, keyPath: \.isEnabled,
-                    title: "Show calendar in the island", detail: "Your week and today's events on the open island."))),
+                    title: "Calendar", detail: "Your week and today's events on the open island."))),
             SettingsItem(
-                id: "calendar.quickAdd", page: .calendar, section: "",
+                id: "calendar.quickAdd",
                 title: "Add events from the island", detail: "A + beside the week to add an event without opening Calendar.",
                 keywords: ["calendar", "add", "new event", "quick add", "create"],
                 view: AnyView(CalendarSwitchRow(
                     store: store, keyPath: \.isQuickAddEnabled,
                     title: "Add events from the island", detail: "A + beside the week to add an event without opening Calendar."))),
             SettingsItem(
-                id: "calendar.access", page: .calendar, section: "Access",
+                id: "calendar.access",
                 title: "Calendar access", detail: "OpenClicky reads your events only to show them on the island.",
                 keywords: ["calendar", "permission", "privacy", "allow", "access"],
                 view: AnyView(CalendarAccessRow(store: store))),
@@ -40,7 +40,7 @@ extension SettingsCatalog {
         let sourceGroups = CalendarSchedule.sourceGroups(store.currentCalendars())
         if sourceGroups.isEmpty {
             items.append(SettingsItem(
-                id: "calendar.calendars", page: .calendar, section: "Calendars",
+                id: "calendar.calendars",
                 title: "Calendars", detail: "Choose which calendars the island shows.",
                 keywords: ["calendar", "calendars", "hide", "show", "account"],
                 view: AnyView(CalendarAllCalendarsList(store: store))))
@@ -48,7 +48,7 @@ extension SettingsCatalog {
             for sourceGroup in sourceGroups {
                 for calendarInfo in sourceGroup.calendars {
                     items.append(SettingsItem(
-                        id: "calendar.calendar.\(calendarInfo.id)", page: .calendar, section: sourceGroup.title,
+                        id: "calendar.calendar.\(calendarInfo.id)", section: sourceGroup.title,
                         title: calendarInfo.title, detail: "",
                         keywords: ["calendar", "calendars", "hide", "show", "account", sourceGroup.title],
                         view: AnyView(CalendarVisibilityRow(store: store, calendarInfo: calendarInfo))))

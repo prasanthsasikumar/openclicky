@@ -2,11 +2,10 @@
 //  SettingsClickyPage.swift
 //  OpenClicky
 //
-//  Settings → Clicky and Settings → Voice. Clicky: who answers (the source and the Claude
-//  model), the pointer (shown or not, how visible), and agent mode with its
-//  workspace. Voice: the language Clicky speaks and listens in, who speaks the answers, and fast
-//  voice with hands-free. Voice has its own page because "where do I change the voice" is the
-//  question people come to Settings with.
+//  Settings → Clicky's rows: who answers (the source and the Claude model), when the pointer
+//  shows (one picker), agent mode with its workspace, and the voice: the language Clicky speaks
+//  and listens in, who speaks the answers, fast voice with hands-free, and which inbox email
+//  requests use. Voice was a page of its own; it is now Clicky's first group (SettingsLayout).
 //
 
 import AppKit
@@ -15,40 +14,31 @@ import AVFoundation
 import SwiftUI
 
 extension SettingsCatalog {
-    /// Settings → Clicky: who answers, the pointer, and agent mode. How Clicky sounds is on Voice.
+    /// Who answers, the pointer, and agent mode.
     func clickyItems() -> [SettingsItem] {
         [
             SettingsItem(
-                id: "clicky.answerSource", page: .clicky, section: "Answers",
+                id: "clicky.answerSource",
                 title: "Answers come from", detail: "Automatic uses your own keys first, then plans you switched on, then the free credits.",
                 keywords: ["provider", "model", "openai", "anthropic", "claude", "openrouter", "gemini", "groq", "mistral", "grok", "codex", "subscription", "plan", "answers"],
                 view: AnyView(AnswerSourceRow())),
             SettingsItem(
-                id: "clicky.model", page: .clicky, section: "Answers",
+                id: "clicky.model",
                 title: "Claude model", detail: "When Claude answers: Sonnet is quicker, Opus thinks harder.",
                 keywords: ["model", "claude", "sonnet", "opus", "smarter", "quicker"],
                 view: AnyView(ClaudeModelRow(companionManager: companionManager))),
             SettingsItem(
-                id: "clicky.onThisMac", page: .clicky, section: "Answers",
+                id: "clicky.onThisMac",
                 title: OnThisMacRow.title, detail: OnThisMacRow.detail,
                 keywords: ["apple intelligence", "on device", "local", "private", "offline", "this mac", "credits", "quick actions", "open app", "volume", "rewrite"],
                 view: AnyView(OnThisMacRow(settings: settings))),
             SettingsItem(
-                id: "clicky.showPointer", page: .clicky, section: "Pointer",
-                title: "Show the pointer", detail: "Off: it appears only while you talk.",
-                keywords: ["pointer", "cursor", "buddy", "orange", "visible", "hide"],
-                view: AnyView(CompanionSwitchRow(
-                    title: "Show the pointer", detail: "Off: it appears only while you talk.",
-                    publisher: companionManager.$isClickyCursorEnabled.eraseToAnyPublisher(),
-                    initialValue: companionManager.isClickyCursorEnabled,
-                    set: { [companionManager] in companionManager.setClickyCursorEnabled($0) }))),
+                id: "clicky.pointer",
+                title: "Show the pointer", detail: "It flies to what Clicky means.",
+                keywords: ["pointer", "cursor", "buddy", "orange", "visible", "hide", "always", "while the mouse moves", "after a shake", "shake", "while i talk"],
+                view: AnyView(PointerShowsRow(companionManager: companionManager))),
             SettingsItem(
-                id: "clicky.pointerPresence", page: .clicky, section: "Pointer",
-                title: "The pointer shows", detail: "Always, while the mouse moves, or after a shake.",
-                keywords: ["pointer", "cursor", "always", "while the mouse moves", "after a shake", "shake", "hide"],
-                view: AnyView(PointerPresenceOptions(companionManager: companionManager))),
-            SettingsItem(
-                id: "clicky.agentMode", page: .clicky, section: "Agent",
+                id: "clicky.agentMode",
                 title: "Agent mode", detail: "Clicky can hand work to Codex.",
                 keywords: ["agent", "codex", "tasks", "automation"],
                 view: AnyView(CompanionSwitchRow(
@@ -57,36 +47,36 @@ extension SettingsCatalog {
                     initialValue: companionManager.isAgentModeEnabled,
                     set: { [companionManager] in companionManager.setAgentModeEnabled($0) }))),
             SettingsItem(
-                id: "clicky.workspace", page: .clicky, section: "Agent",
+                id: "clicky.workspace",
                 title: "Workspace", detail: "Where agents keep their files.",
                 keywords: ["workspace", "folder", "codex", "files", "directory"],
                 view: AnyView(AgentWorkspaceRow())),
         ]
     }
 
-    /// Settings → Voice: the language Clicky speaks and listens in, who speaks the answers (Kokoro
+    /// The language Clicky speaks and listens in, who speaks the answers (Kokoro
     /// and the Mac voice with their own rows), and fast voice with hands-free.
     func voiceItems() -> [SettingsItem] {
         let usesRealtime = AccountCapabilities.current().usesRealtime
         var items: [SettingsItem] = [
             SettingsItem(
-                id: "clicky.language", page: .voice, section: "Language",
+                id: "clicky.language",
                 title: "Language", detail: "Clicky speaks and listens in this.",
                 keywords: ["language", "english", "hindi", "tamil", "spanish", "french", "speak", "reply", "listen"],
                 view: AnyView(ReplyLanguageRow(settings: settings))),
             SettingsItem(
-                id: "clicky.speechVoice", page: .voice, section: "Voice",
+                id: "clicky.speechVoice",
                 title: "Voice", detail: "Who speaks the answers: the cloud voice, or this Mac’s own voice, free and offline.",
                 keywords: ["voice", "speech", "tts", "text to speech", "elevenlabs", "eleven labs", "offline", "on device",
                            "mac voice", "premium voice", "siri", "credits", "allowance", "left"],
-                view: AnyView(SpeechVoiceRows(openKeysPage: { [companionManager] in companionManager.showSettings(.keys) }))),
+                view: AnyView(SpeechVoiceRows(openKeysPage: { [companionManager] in companionManager.showSettings(.account) }))),
         ]
         // Fast voice runs on OpenAI Realtime or Gemini Live, which need an own OpenAI or Gemini key;
         // without one its switch would do nothing, so the row shows the way to a key instead.
         if usesRealtime {
             items += [
                 SettingsItem(
-                    id: "clicky.fastVoice", page: .voice, section: "Fast voice",
+                    id: "clicky.fastVoice",
                     title: "Fast voice", detail: "Talks back instantly, over OpenAI Realtime or Gemini Live.",
                     keywords: ["realtime", "voice", "fast", "openai", "gemini", "live"],
                     view: AnyView(CompanionSwitchRow(
@@ -99,7 +89,7 @@ extension SettingsCatalog {
             let credentials = ProviderCredentials(settings: OpenClickyConfiguration.settings)
             if credentials.geminiKey != nil, credentials.openAIKey != nil || credentials.accountToken != nil {
                 items.append(SettingsItem(
-                    id: "clicky.realtimeProvider", page: .voice, section: "Fast voice",
+                    id: "clicky.realtimeProvider",
                     title: "Fast voice with", detail: "Who talks back in fast voice and hands-free.",
                     keywords: ["realtime", "gemini", "openai", "live", "provider", "fast voice", "hands-free"],
                     view: AnyView(RealtimeProviderRow(changed: { [companionManager] in companionManager.realtimeProviderChanged() }))))
@@ -112,7 +102,7 @@ extension SettingsCatalog {
                 ? "Hands-free: just talk, no keys. Instant with fast voice on."
                 : "Hands-free: just talk, no keys. Clicky answers once you stop talking."
             items.append(SettingsItem(
-                id: "clicky.alwaysListening", page: .voice, section: "Fast voice",
+                id: "clicky.alwaysListening",
                 title: "Always listening", detail: detail,
                 keywords: ["hands-free", "hands free", "always on", "listening"],
                 view: AnyView(CompanionSwitchRow(
@@ -123,23 +113,23 @@ extension SettingsCatalog {
         }
         if !usesRealtime {
             items.append(SettingsItem(
-                id: "clicky.fastVoiceNeedsKey", page: .voice, section: "Fast voice",
+                id: "clicky.fastVoiceNeedsKey",
                 title: "Fast voice", detail: "Instant replies need your own OpenAI or Gemini key. Without one, Clicky answers in the standard voice.",
                 keywords: ["realtime", "voice", "fast", "hands-free", "always listening", "openai", "gemini", "key"],
                 view: AnyView(SettingsRow(title: "Fast voice", detail: "Instant replies need your own OpenAI or Gemini key. Without one, Clicky answers in the standard voice.") {
-                    Button("Add Key…") { companionManager.showSettings(.keys) }
+                    Button("Add Key…") { companionManager.showSettings(.account) }
                         .pointerCursor()
                 })))
         }
         // "Check my email" and "draft an email": which inbox they go to.
         items += [
             SettingsItem(
-                id: "clicky.emailApp", page: .voice, section: "Doing things",
+                id: "clicky.emailApp",
                 title: "Email", detail: "Which inbox “check my email” and “draft an email” use.",
                 keywords: ["email", "mail", "gmail", "inbox", "draft", "apple mail"],
                 view: AnyView(EmailAppRow())),
             SettingsItem(
-                id: "clicky.emailNeverSent", page: .voice, section: "Doing things",
+                id: "clicky.emailNeverSent",
                 title: EmailAppRow.footerText, keywords: ["send", "email"],
                 chrome: .footer,
                 view: AnyView(Text(EmailAppRow.footerText).font(SettingsLook.caption).foregroundStyle(.secondary))),
@@ -244,12 +234,59 @@ private struct CompanionSwitchRow: View {
     }
 }
 
-/// Always / while the mouse moves / after a shake, as radio options under "Show the pointer".
-private struct PointerPresenceOptions: View {
+/// When the pointer shows, as one picker: only while you talk (the old switch off), or with the
+/// pointer on, always, while the mouse moves, or after a shake. Two settings underneath:
+/// `isClickyCursorEnabled` and `pointerPresence`.
+enum PointerShowsChoice: String, CaseIterable, Identifiable {
+    case whileTalking, always, whileMoving, onShake
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .whileTalking: return "While I talk"
+        case .always: return "Always"
+        case .whileMoving: return "While the mouse moves"
+        case .onShake: return "After a shake"
+        }
+    }
+
+    /// The pointer's line under the picker.
+    var detail: String {
+        switch self {
+        case .whileTalking: return "Appears when you ask and leaves once Clicky is done."
+        case .always: return "Follows the mouse everywhere."
+        case .whileMoving: return "Fades a few seconds after the mouse rests."
+        case .onShake: return "Hidden until you shake, or until Clicky needs it."
+        }
+    }
+
+    init(isPointerShown: Bool, presence: PointerPresence) {
+        guard isPointerShown else { self = .whileTalking; return }
+        switch presence {
+        case .always: self = .always
+        case .whileMoving: self = .whileMoving
+        case .onShake: self = .onShake
+        }
+    }
+
+    /// The presence this choice sets; nil for "while I talk", which only turns the pointer off
+    /// and leaves the presence as it was for when it comes back on.
+    var presence: PointerPresence? {
+        switch self {
+        case .whileTalking: return nil
+        case .always: return .always
+        case .whileMoving: return .whileMoving
+        case .onShake: return .onShake
+        }
+    }
+}
+
+/// Follows the two settings on its own instead of observing the whole companion manager, which
+/// republishes on every audio level.
+private struct PointerShowsRow: View {
     let companionManager: CompanionManager
     @State private var presence: PointerPresence
     @State private var isPointerShown: Bool
-    @Environment(\.settingsSearchQuery) private var searchQuery
 
     init(companionManager: CompanionManager) {
         self.companionManager = companionManager
@@ -257,47 +294,21 @@ private struct PointerPresenceOptions: View {
         _isPointerShown = State(initialValue: companionManager.isClickyCursorEnabled)
     }
 
-    private func title(for option: PointerPresence) -> String {
-        switch option {
-        case .always: return "Always"
-        case .whileMoving: return "While the mouse moves"
-        case .onShake: return "After a shake"
-        }
-    }
-
-    private func detail(for option: PointerPresence) -> String {
-        switch option {
-        case .always: return "Follows the mouse everywhere."
-        case .whileMoving: return "Fades a few seconds after the mouse rests."
-        case .onShake: return "Hidden until you shake, or until Clicky needs it."
-        }
-    }
+    private var choice: PointerShowsChoice { PointerShowsChoice(isPointerShown: isPointerShown, presence: presence) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(PointerPresence.allCases) { option in
-                Button(action: { companionManager.setPointerPresence(option) }) {
-                    HStack(alignment: .top, spacing: 10) {
-                        SettingsRadioDot(isSelected: presence == option).padding(.top, 1)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(settingsHighlighted(title(for: option), query: searchQuery)).font(SettingsLook.rowTitle)
-                            Text(settingsHighlighted(detail(for: option), query: searchQuery))
-                                .font(SettingsLook.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(title(for: option))
-                .accessibilityHint(detail(for: option))
-                .accessibilityAddTraits(presence == option ? .isSelected : [])
-                .pointerCursor()
+        SettingsRow(title: "Show the pointer", detail: choice.detail) {
+            Picker("", selection: Binding(get: { choice }, set: { newChoice in
+                companionManager.setClickyCursorEnabled(newChoice != .whileTalking)
+                if let newPresence = newChoice.presence { companionManager.setPointerPresence(newPresence) }
+            })) {
+                ForEach(PointerShowsChoice.allCases) { option in Text(option.title).tag(option) }
             }
+            .labelsHidden()
+            .fixedSize()
+            .pointerCursor()
+            .accessibilityLabel("Show the pointer")
         }
-        .padding(.vertical, 4)
-        .disabled(!isPointerShown)
-        .opacity(isPointerShown ? 1 : 0.45)
         .onReceive(companionManager.$pointerPresence) { presence = $0 }
         .onReceive(companionManager.$isClickyCursorEnabled) { isPointerShown = $0 }
     }
@@ -422,7 +433,7 @@ private struct SpeechVoiceRows: View {
         let vendors = dictationSettings.region.offersIndianOptions
             ? "OpenAI, ElevenLabs, Gemini, Google Cloud, Amazon Polly or Sarvam"
             : "OpenAI, ElevenLabs, Gemini, Google Cloud or Amazon Polly"
-        return "Add an \(vendors) key under Keys & Plans, and its voice shows up here."
+        return "Add an \(vendors) key under Keys & Account, and its voice shows up here."
     }
 
     /// Who speaks now and what it costs, for the picked choice.
@@ -431,7 +442,7 @@ private struct SpeechVoiceRows: View {
         if picked != .automatic && picked != speaking {
             switch picked {
             case .kokoro: return "this Mac’s voice until Kokoro is downloaded."
-            default: return "this Mac’s voice: \(picked.title) needs its key under Keys & Plans."
+            default: return "this Mac’s voice: \(picked.title) needs its key under Keys & Account."
             }
         }
         switch speaking {

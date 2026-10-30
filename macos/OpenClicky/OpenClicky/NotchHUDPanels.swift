@@ -292,7 +292,7 @@ enum NotchVoiceDestination {
     static func openSetup(for engine: DictationEngineChoice, companionManager: CompanionManager) {
         switch setupDestination(for: engine, unavailableReason: DictationEngineResolver.unavailableReason(for: engine)) {
         case .accountSettings: companionManager.showSettings(.account)
-        case .keySettings: companionManager.showSettings(.keys)
+        case .keySettings: companionManager.showSettings(.account)
         case .dictationSettings, .languageSettings: companionManager.showSettings(.dictation)
         }
     }

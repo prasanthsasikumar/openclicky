@@ -17,7 +17,7 @@ extension SettingsCatalog {
         let region = settings.region
         let engineItems = DictationEngineChoice.allCases.map { choice in
             SettingsItem(
-                id: "dictation.engine.\(choice.rawValue)", page: .dictation, section: "Who hears you",
+                id: "dictation.engine.\(choice.rawValue)",
                 title: choice.settingsTitle, detail: choice.settingsDetail,
                 keywords: choice.searchKeywords,
                 // Sarvam hears Indian languages: offered in India, and wherever it is already chosen.
@@ -26,12 +26,12 @@ extension SettingsCatalog {
         }
         return dictationKeyItems() + engineItems + [
             SettingsItem(
-                id: "dictation.language", page: .dictation, section: "Language",
+                id: "dictation.language",
                 title: "Language", detail: "Pins every engine to one language, or lets it detect.",
                 keywords: ["language", "english", "hindi", "tamil", "spanish", "french", "german", "pin", "auto-detect", "detect"],
                 view: AnyView(DictationLanguageRow(settings: settings))),
             SettingsItem(
-                id: "dictation.script", page: .dictation, section: "Language",
+                id: "dictation.script",
                 title: "Script for Indian languages", detail: "Same words, written two ways.",
                 keywords: ["script", "roman", "native", "devanagari", "hinglish", "transliteration"],
                 // Only India, and only while the words could be in an Indian language.
@@ -40,29 +40,29 @@ extension SettingsCatalog {
                 },
                 view: AnyView(DictationScriptRow(settings: settings))),
             SettingsItem(
-                id: "dictation.cleanUp", page: .dictation, section: "Clean-up",
+                id: "dictation.cleanUp",
                 title: "Clean up my words with AI", detail: "Adds punctuation and fixes numbers.",
                 keywords: ["polish", "clean up", "cleanup", "clean-up", "ai", "punctuation", "grammar", "apple intelligence", "model", "offline takes"],
                 view: AnyView(DictationCleanUpRow(settings: settings))),
             SettingsItem(
-                id: "dictation.input", page: .dictation, section: "Microphone",
+                id: "dictation.input",
                 title: "Input", detail: "Automatic follows the Mac’s default, but skips the headphone jack when nothing there can hear. Clicky listens through it too.",
                 keywords: ["microphone", "mic", "device", "input", "headset", "airpods"],
                 view: AnyView(MicrophoneInputRow(settings: settings))),
             SettingsItem(
-                id: "dictation.micTest", page: .dictation, section: "Microphone",
+                id: "dictation.micTest",
                 title: "Test your microphone", detail: "Hear whether the chosen input picks you up.",
                 keywords: ["microphone", "mic", "level", "test"],
                 view: AnyView(MicrophoneTestRow(settings: settings))),
             SettingsItem(
-                id: "dictation.inactivityTimeout", page: .dictation, section: "Takes",
+                id: "dictation.inactivityTimeout",
                 title: "End a quiet take after", detail: "A tapped take finishes on its own after this much silence.",
                 keywords: ["inactivity", "timeout", "silence", "minutes", "quiet"],
                 view: AnyView(SettingsRow(title: "End a quiet take after", detail: "A tapped take finishes on its own after this much silence.") {
                     InactivityTimeoutPicker(settings: settings)
                 })),
             SettingsItem(
-                id: "dictation.pasteLast", page: .dictation, section: "Takes",
+                id: "dictation.pasteLast",
                 title: "Paste last take", detail: "Put your last take at the cursor again.",
                 keywords: ["paste", "again", "re-insert", "last"],
                 view: AnyView(SettingsRow(title: "Paste last take", detail: "Put your last take at the cursor again.") {
@@ -70,14 +70,14 @@ extension SettingsCatalog {
                         .pointerCursor()
                 })),
             SettingsItem(
-                id: "dictation.sounds", page: .dictation, section: "Sounds",
+                id: "dictation.sounds",
                 title: "Sounds", detail: "Tones when a take starts, stops or finishes.",
                 keywords: ["sound", "tone", "earcon", "audio", "beep", "mute", "quiet"],
                 view: AnyView(SettingsRow(title: "Sounds", detail: "Tones when a take starts, stops or finishes.") {
                     SettingsToggle(settings: settings, keyPath: \.sounds)
                 })),
             SettingsItem(
-                id: "dictation.haptics", page: .dictation, section: "Sounds",
+                id: "dictation.haptics",
                 title: "Haptics", detail: "A trackpad tap on start, stop and result.",
                 keywords: ["trackpad", "vibration", "tap", "haptic"],
                 view: AnyView(SettingsRow(title: "Haptics", detail: "A trackpad tap on start, stop and result.") {
@@ -144,7 +144,7 @@ private struct VoiceProviderOption: View {
                 HStack(spacing: 8) {
                     Text(unavailableReason).font(SettingsLook.caption).foregroundStyle(SettingsLook.danger)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button(choice == .sarvam ? "Add Key…" : "Sign In…") { companionManager.showSettings(choice == .sarvam ? .keys : .account) }
+                    Button(choice == .sarvam ? "Add Key…" : "Sign In…") { companionManager.showSettings(.account) }
                         .controlSize(.small)
                 }
                 .padding(.leading, 24)
@@ -397,7 +397,7 @@ struct DictationCleanUpRow: View {
     var body: some View {
         let _ = shellSettingsRevision.revision
         let hasModel = DictationEngineResolver.makePolisher() != nil
-        let needsModelNote = hasModel ? "" : " Needs an AI key (Settings → Keys & Plans) or a free OpenClicky account."
+        let needsModelNote = hasModel ? "" : " Needs an AI key (Settings → Keys & Account) or a free OpenClicky account."
         let tidiedOnThisMac = AppleModelTakePolisherAvailability.isAvailable(languageCode: settings.languageCode)
         let whereWordsAreTidied = tidiedOnThisMac ? "Apple Intelligence tidies your words on this Mac" : "Your words are sent online to be tidied"
         let cleanUpIsOn = Binding<Bool>(

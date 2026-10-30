@@ -93,13 +93,13 @@ extension SettingsCatalog {
     func islandAppearanceItems() -> [SettingsItem] {
         [
             SettingsItem(
-                id: "appearance.peekDirection", page: .appearance, section: "",
+                id: "appearance.peekDirection",
                 title: "When you hover the notch",
                 detail: "Sideways grows inside the menu bar, so tabs and toolbars stay uncovered; downwards shows a line under the notch. Clicking still opens the island downwards.",
                 keywords: ["hover", "peek", "sideways", "horizontal", "down", "downwards", "expand", "grow", "tabs", "notch"],
                 view: AnyView(IslandPeekDirectionRow())),
             SettingsItem(
-                id: "appearance.style", page: .appearance, section: "",
+                id: "appearance.style",
                 title: "Style", detail: "",
                 keywords: ["island", "style", "glass", "liquid glass", "blend", "black", "look", "notch", "transparent"],
                 view: AnyView(IslandLookRow())),

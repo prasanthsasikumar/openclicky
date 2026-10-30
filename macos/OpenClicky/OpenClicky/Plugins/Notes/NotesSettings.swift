@@ -9,6 +9,6 @@ import SwiftUI
 
 extension SettingsCatalog {
     func notesSettingsItems() -> [SettingsItem] {
-        [pluginItem(IslandPluginRegistry.notesID, page: .tools, keywords: ["notepad", "scratch", "jot", "text"])].compactMap { $0 }
+        [pluginItem(IslandPluginRegistry.notesID, keywords: ["notepad", "scratch", "jot", "text"])].compactMap { $0 }
     }
 }
