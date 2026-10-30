@@ -80,7 +80,7 @@ struct AnswerVoiceSessionTests {
     /// Later pieces are fetched while earlier ones play, so they get the longer deadline.
     @Test func aLaterPieceHasMoreRoomThanTheFirst() async throws {
         let harness = Harness()
-        let session = harness.session(accountDelaySeconds: { text in text == "two" ? 2 : 0 }, firstDeadline: 1)
+        let session = harness.session(accountDelaySeconds: { text in text == "two" ? 10 : 0 }, firstDeadline: 8)
         _ = try await session.audio(for: "one")
         #expect(Self.spoken(try await session.audio(for: "two")) == "account:two")
         #expect(harness.troubles.isEmpty)
