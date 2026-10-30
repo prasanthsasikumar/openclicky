@@ -206,9 +206,12 @@ public sealed partial class DesktopActionExecutor
     /// One left click at a physical virtual-desktop pixel: an absolute move, then the button down and
     /// up, in one SendInput so nothing can come between them. WindowFromPoint is the hit test the click
     /// itself gets (the click-through overlay is not hit, the island and the panel are), so a spot on
-    /// OpenClicky's own window is refused, and so is one on an app that runs as administrator.
+    /// OpenClicky's own window is refused, and so is one on an app that runs as administrator or one
+    /// under the taskbar. A web link in the browser in front is followed in its own tab instead
+    /// (FollowLinkAsync, DesktopActionExecutor.Browser.cs); <paramref name="inNewTab"/> asks for a new
+    /// selected tab: Ctrl+Shift+click on a link, Ctrl+click on anything else (the Mac's ⌘-click).
     /// </summary>
-    public ScreenClickResult ClickAt(PixelPoint point)
+    public async Task<ScreenClickResult> ClickAsync(PixelPoint point, bool inNewTab = false)
     {
         var hit = WindowFromPoint(new POINT { X = point.X, Y = point.Y });
         var root = hit == 0 ? 0 : GetAncestor(hit, GA_ROOT);
@@ -216,8 +219,25 @@ public sealed partial class DesktopActionExecutor
         if (processId == Environment.ProcessId) return ScreenClickResult.OwnWindow;
         if (processId != 0 && IsProcessElevated(processId) == true && IsProcessElevated(Environment.ProcessId) != true) return ScreenClickResult.NotAllowed;
         if (IsUnderTaskbar(point, root)) return ScreenClickResult.UnderTaskbar;
-        var sent = Send(AbsoluteMoveInput(point.X, point.Y), MouseInput(MOUSEEVENTF_LEFTDOWN), MouseInput(MOUSEEVENTF_LEFTUP));
-        return sent == 3 ? ScreenClickResult.Clicked : ScreenClickResult.NotAllowed;
+        var isLink = false;
+        if (root != 0 && root == GetForegroundWindow() && BrowserProcesses.IsBrowser(ProcessDescriber.ImageName(processId))
+            && await WebLinkAtAsync(point).ConfigureAwait(false) is { } link)
+        {
+            isLink = true;
+            // The pointer goes there, the way a person's click would leave it (the buddy has just flown there too).
+            Send(AbsoluteMoveInput(point.X, point.Y));
+            if (!inNewTab && await LoadInSelectedTabAsync(link).ConfigureAwait(false)) return ScreenClickResult.FollowedLink;
+        }
+        // Ctrl+Shift+click opens a link in a new tab and selects it in Chrome, Edge, Brave and Firefox;
+        // Ctrl alone is the Mac's ⌘-click for the rest.
+        int[] modifiers = !inNewTab ? [] : isLink ? [VirtualKeys.LeftControl, VirtualKeys.LeftShift] : [VirtualKeys.LeftControl];
+        var inputs = new List<INPUT> { AbsoluteMoveInput(point.X, point.Y) };
+        inputs.AddRange(modifiers.Select(key => VirtualKeyInput(key, keyUp: false)));
+        inputs.Add(MouseInput(MOUSEEVENTF_LEFTDOWN));
+        inputs.Add(MouseInput(MOUSEEVENTF_LEFTUP));
+        inputs.AddRange(modifiers.Reverse().Select(key => VirtualKeyInput(key, keyUp: true)));
+        if (Send([.. inputs]) != inputs.Count) return ScreenClickResult.NotAllowed;
+        return inNewTab && isLink ? ScreenClickResult.OpenedLinkInNewTab : ScreenClickResult.Clicked;
     }
 
     /// <summary>

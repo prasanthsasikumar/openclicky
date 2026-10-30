@@ -119,11 +119,13 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         + "exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking "
         + "at. "
         + "Do simple local things yourself with the fast tools (open_app, open_url, web_search, create_folder, "
-        + "reveal_in_explorer, open_folder, find_files, find_on_page, scroll, set_volume, media_control, play_music, minimize_all, "
+        + "reveal_in_explorer, open_folder, find_files, find_on_page, scroll, switch_tab, set_volume, media_control, play_music, minimize_all, "
         + "restore_windows, check_email, draft_email) and then say what they give back in a few words. "
         + "When they tell you to click, open or press something on screen (\"click the first link\", \"open that video\"), call "
         + "click with the element's on-screen text; do not point at it or explain instead. \"Scroll down\", \"go back to the top\" "
         + "is the scroll tool. \"Look for\" a file is find_files; \"look for\" words on this page is find_on_page. "
+        + "A link opens in the same tab; pass new_tab only when they say \"in a new tab\" or \"in another tab\". \"Go to that tab\", "
+        + "\"next tab\", \"the YouTube tab\" is switch_tab. "
         + "You cannot know live facts (the weather, news, "
         + "scores, prices, opening hours): call web_search for them and answer from the results, never say you cannot check. "
         + Answers.AskLanePrompts.CommandOrQuestionInstruction + " "
@@ -279,8 +281,9 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public WritingTarget? LastWritingTarget { get; private set; }
     /// <summary>A `point_at` call resolved: screenshot pixels, the model's label, and the capture they refer to.</summary>
     public Action<ScreenPoint, string, CompanionScreenCapture>? OnPointAt { get; set; }
-    /// <summary>The `click` tool's left click at a physical virtual-desktop pixel (IDesktopActionExecutor.ClickAt); null → nothing is clicked.</summary>
-    public Func<PixelPoint, Actions.ScreenClickResult>? OnClick { get; set; }
+    /// <summary>The `click` tool's left click at a physical virtual-desktop pixel, and whether they asked for a new tab
+    /// (IDesktopActionExecutor.ClickAsync: a web link is followed in its own tab); null → nothing is clicked.</summary>
+    public Func<PixelPoint, bool, Task<Actions.ScreenClickResult>>? OnClick { get; set; }
     /// <summary>Builds the session instructions for the next turn: the base prompt plus the skills that
     /// apply right now. Read at connect and before every turn; only a change is sent as `session.update`.</summary>
     public Func<string>? InstructionsProvider { get; set; }
@@ -909,8 +912,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         {
             ["type"] = "function",
             ["name"] = ClickToolName,
-            ["description"] = "Click a link, button, tab or field on screen for the user, the way they would with the mouse. Use it when they tell you to click or open something they can see ('click the first link', 'open that video', 'press Sign in'); point_at is for teaching instead. Same arguments as point_at: always pass the element's visible text. It never presses anything that sends, buys, pays, deletes or confirms; those it points at for them to click.",
-            ["parameters"] = tools.OfType<JsonObject>().First(tool => SpeechJson.String(tool["name"]) == "point_at")["parameters"]!.DeepClone(),
+            ["description"] = "Click a link, button or field on screen for the user, the way they would with the mouse. Use it when they tell you to click or open something they can see ('click the first link', 'open that video', 'press Sign in'); point_at is for teaching instead. Same arguments as point_at: always pass the element's visible text. A link opens in the same tab unless new_tab is true. It never presses anything that sends, buys, pays, deletes or confirms; those it points at for them to click.",
+            ["parameters"] = ClickToolParameters((JsonObject)tools.OfType<JsonObject>().First(tool => SpeechJson.String(tool["name"]) == "point_at")["parameters"]!),
         });
         tools.Add(WriteInPlace.RealtimeToolDefinition());
         foreach (var tool in extraTools ?? []) tools.Add(tool.DeepClone());
@@ -932,6 +935,19 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
 
     public const string StopListeningToolName = "stop_listening";
     public const string ClickToolName = "click";
+
+    /// <summary>point_at's parameters (copied) plus `new_tab`, only for "open it in a new tab".</summary>
+    public static JsonObject ClickToolParameters(JsonObject pointParameters)
+    {
+        var parameters = (JsonObject)pointParameters.DeepClone();
+        if (parameters["properties"] is not JsonObject properties)
+        {
+            properties = new JsonObject();
+            parameters["properties"] = properties;
+        }
+        properties["new_tab"] = new JsonObject { ["type"] = "boolean", ["description"] = "True only when they asked to open it in a new or another tab. Otherwise leave it out." };
+        return parameters;
+    }
 
     /// <summary>
     /// The model decides what counts as a sign-off, since people end in many ways; fixed words would
@@ -1693,24 +1709,28 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
         var label = (SpeechJson.String(arguments["label"]) ?? "").Trim();
         if (label.Length == 0) label = "it";
         var elementText = (SpeechJson.String(arguments["text"]) ?? "").Trim();
+        // A boolean, or now and then the string "true".
+        var wantsNewTab = arguments["new_tab"] is JsonValue newTab
+            && (newTab.TryGetValue<bool>(out var flag) ? flag : string.Equals(SpeechJson.String(newTab), "true", StringComparison.OrdinalIgnoreCase));
         var previousPointing = pointingChain;
         var screenText = lastScreenText;
         var userRequest = lastUserTranscript;
         var frontAppBefore = FrontAppProvider?.Invoke();
         // Esc has something to stop while the element is being found (Claude can take 4 s).
         pendingToolCalls += 1;
-        pointingChain = ClickAsync(previousPointing, new ScreenPoint(x, y), label, elementText, userRequest, capture, screenText,
+        pointingChain = ClickAsync(previousPointing, new ScreenPoint(x, y), label, elementText, wantsNewTab, userRequest, capture, screenText,
                                    frontAppBefore, callId, serverEvent, generation, pointingCancellation.Token);
         return null;
     }
 
     /// <summary>
-    /// point_at's locator chain, the buddy flies there, a real left click, then act-then-look. Never
+    /// point_at's locator chain, the buddy flies there, a real left click (a web link in the browser in
+    /// front is loaded in its own tab instead, or a new selected tab for new_tab), then act-then-look. Never
     /// clicks a control whose words commit something (ScreenNavigation.ClickIsRisky), a target nothing
     /// located (the model's raw guess), OpenClicky's own window, or once the turn moved on (Esc, the
     /// person speaking) while the locator was still working: those are pointed at instead, or dropped.
     /// </summary>
-    private async Task ClickAsync(Task? previousPointing, ScreenPoint guess, string label, string elementText, string? userRequest,
+    private async Task ClickAsync(Task? previousPointing, ScreenPoint guess, string label, string elementText, bool wantsNewTab, string? userRequest,
                                   CompanionScreenCapture capture, Task<IReadOnlyList<ScreenTextLine>>? screenText, int? frontAppBefore,
                                   string callId, JsonObject serverEvent, int generation, CancellationToken cancellationToken)
     {
@@ -1751,8 +1771,22 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
             else
             {
                 OnPointAt?.Invoke(target.Point, label, capture);
-                switch (OnClick?.Invoke(location) ?? Actions.ScreenClickResult.NotAllowed)
+                var clickResult = OnClick is { } click ? await click(location, wantsNewTab) : Actions.ScreenClickResult.NotAllowed;
+                switch (clickResult)
                 {
+                    case Actions.ScreenClickResult.FollowedLink or Actions.ScreenClickResult.OpenedLinkInNewTab:
+                    {
+                        var inNewTab = clickResult == Actions.ScreenClickResult.OpenedLinkInNewTab;
+                        if (turnGeneration == generation)
+                        {
+                            await WaitForScreenToSettleAsync(frontAppBefore);
+                            if (cancellationToken.IsCancellationRequested) return;
+                            if (turnGeneration == generation) await AttachScreenContextAsync();
+                        }
+                        clickLog = inNewTab ? "opened the link in a new tab" : "followed the link in this tab";
+                        clickOutput = $"Opened {label}{(inNewTab ? " in a new tab, which is now the one in front" : "")}. The page is the latest screenshot; say in a few words what opened. Do not read the page out unless asked.";
+                        break;
+                    }
                     case Actions.ScreenClickResult.Clicked:
                         // Act, then look, as the fast actions do; not once the turn moved on.
                         if (turnGeneration == generation)

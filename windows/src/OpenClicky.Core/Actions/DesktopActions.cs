@@ -15,7 +15,8 @@
 // folders come from the shell (redirected folders included) through IDesktopActionExecutor. The
 // log prefix stays `mac action:` so macos/OpenClicky/scripts/measure-actions.sh reads Windows
 // logs unchanged. `scroll`, `open_folder`, `find_files` and `find_on_page` (2026-10-29) are the
-// moving-around set; their pure parts and Windows differences are in ScreenNavigation.cs.
+// moving-around set; their pure parts and Windows differences are in ScreenNavigation.cs, and
+// `switch_tab`'s in BrowserControl.cs.
 
 using System.Globalization;
 using System.Text.Json;
@@ -148,12 +149,15 @@ public abstract record DesktopActionOutcome
     public sealed record NoFilesFound(string Query) : DesktopActionOutcome;
     public sealed record SearchedPage(string Text) : DesktopActionOutcome;
     public sealed record NoFindBar : DesktopActionOutcome;
+    public sealed record SwitchedTab(string Title) : DesktopActionOutcome;
+    public sealed record NoBrowserOpen : DesktopActionOutcome;
+    public sealed record NoSuchTab : DesktopActionOutcome;
     public sealed record Failed(string Reason) : DesktopActionOutcome;
 
     /// <summary>True when the action did what was asked (the tour counts it as a task handed over).</summary>
     public bool DidSomething => this is OpenedApp or CreatedFolder or FolderAlreadyExists or Revealed or OpenedUrl or VolumeSet or MediaControlled
         or PlayerControlled or Searched or MinimizedWindows or RestoredWindows or OpenedInbox or DraftedEmail or PlayingTrack or OpenedTrack or OpenedSpotifySearch
-        or Scrolled or OpenedFolder or FoundFiles or SearchedPage;
+        or Scrolled or OpenedFolder or FoundFiles or SearchedPage or SwitchedTab;
 
     /// <summary>
     /// What the Realtime model is told in the tool's output. The same as the sentence unless an outcome
@@ -171,6 +175,8 @@ public abstract record DesktopActionOutcome
             + "\nSay how many and name the first one or two briefly; never read folder paths character by character.",
         SearchedPage searched => $"Searched the page for {searched.Text} with the app's find bar; the first match is highlighted and the find bar shows how many there are. Say so in a few words.",
         NoFindBar => SpokenSentence + " Do not try again; if they want, point at the text in the screenshot instead.",
+        SwitchedTab switched => $"Switched to the tab {switched.Title}. It is the latest screenshot; say in a few words what is on it.",
+        NoSuchTab => SpokenSentence + " Name the open tabs you can see in the screenshot, briefly, so they can pick one.",
         _ => SpokenSentence,
     };
 
@@ -181,6 +187,7 @@ public abstract record DesktopActionOutcome
         FoundFiles found => $"find_files: {found.Files.Count} found",
         NoFilesFound => "find_files: nothing found",
         SearchedPage searched => $"find_on_page: {searched.Text.Length}-character search typed",
+        SwitchedTab => "switch_tab: switched",
         _ => SpokenSentence,
     };
 
@@ -188,7 +195,7 @@ public abstract record DesktopActionOutcome
     /// Whether the model should see a fresh screenshot before it speaks: true for an action that
     /// changed what is on screen in a way worth describing (a page or a folder opened), false for the rest.
     /// </summary>
-    public bool ThenLooksAtScreen => this is OpenedUrl or Searched or OpenedInbox or DraftedEmail or OpenedFolder or FoundFiles;
+    public bool ThenLooksAtScreen => this is OpenedUrl or Searched or OpenedInbox or DraftedEmail or OpenedFolder or FoundFiles or SwitchedTab;
 
     public string SpokenSentence => this switch
     {
@@ -251,6 +258,9 @@ public abstract record DesktopActionOutcome
         NoFilesFound missing => $"I couldn't find a file called {missing.Query} on this PC.",
         SearchedPage searched => $"Looking for {searched.Text} on the page.",
         NoFindBar => "This app didn't open a find bar, so I didn't type anything.",
+        SwitchedTab switched => $"Here's {switched.Title}.",
+        NoBrowserOpen => "There's no browser open for me to switch tabs in.",
+        NoSuchTab => "I couldn't find that tab.",
         Failed failed => $"That didn't work: {failed.Reason}.",
         _ => "Done.",
     };
@@ -373,6 +383,8 @@ public abstract record DesktopAction
     public sealed record FindFiles(string Query) : DesktopAction;
     /// <summary>The front app's find bar (Ctrl+F) with these words.</summary>
     public sealed record FindOnPage(string Text) : DesktopAction;
+    /// <summary>Another tab of the browser in front.</summary>
+    public sealed record SwitchTab(BrowserTabTarget Target) : DesktopAction;
 
     public const string OpenAppToolName = "open_app";
     public const string OpenUrlToolName = "open_url";
@@ -392,6 +404,7 @@ public abstract record DesktopAction
     public const string OpenFolderToolName = "open_folder";
     public const string FindFilesToolName = "find_files";
     public const string FindOnPageToolName = "find_on_page";
+    public const string SwitchTabToolName = "switch_tab";
 
     public const string VolumeArgumentMessage = "I need a volume between 0 and 100";
     public const string ScrollArgumentMessage = "I need up, down, left or right";
@@ -540,6 +553,19 @@ public abstract record DesktopAction
                      "Find words on the page or document in front with its find bar (Ctrl+F) and jump to the first match: 'find price on this page', 'look for shipping here'. Not for files.",
                      new JsonObject { ["text"] = new JsonObject { ["type"] = "string", ["description"] = "The words to find, as said." } },
                      "text"),
+            Function(SwitchTabToolName,
+                     "Go to another tab of the browser: 'go to that tab', 'show me the new tab', 'next tab', 'go back to the YouTube tab'. Use newest for the tab that just opened.",
+                     new JsonObject
+                     {
+                         ["which"] = new JsonObject
+                         {
+                             ["type"] = "string",
+                             ["enum"] = new JsonArray("named", "next", "previous", "newest", "first"),
+                             ["description"] = "named when they said the tab's site or title.",
+                         },
+                         ["name"] = new JsonObject { ["type"] = "string", ["description"] = "For named: the site or title words they said, e.g. 'cars and bids'." },
+                     },
+                     "which"),
         ];
     }
 
@@ -562,6 +588,7 @@ public abstract record DesktopAction
         OpenAppToolName, OpenUrlToolName, CreateFolderToolName, RevealInExplorerToolName, RevealInFinderToolName,
         SetVolumeToolName, MediaControlToolName, WebSearchToolName, MinimizeAllToolName, CheckEmailToolName, DraftEmailToolName,
         PlayMusicToolName, RestoreWindowsToolName, ScrollToolName, OpenFolderToolName, FindFilesToolName, FindOnPageToolName,
+        SwitchTabToolName,
     };
 
     /// <summary>
@@ -694,6 +721,24 @@ public abstract record DesktopAction
                 return DesktopActionValidation.SearchQuery(StringArgument("text")) is { Length: <= FindOnPageMaximumLength } pageText
                     ? new DesktopActionParseResult.Action(new FindOnPage(pageText))
                     : new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidQuery());
+
+            case SwitchTabToolName:
+            {
+                var tabName = StringArgument("name");
+                BrowserTabTarget? target = StringArgument("which").ToLowerInvariant() switch
+                {
+                    "next" => new BrowserTabTarget.Next(),
+                    "previous" => new BrowserTabTarget.Previous(),
+                    "first" => new BrowserTabTarget.First(),
+                    // No `which` but a name means the name.
+                    "newest" or "" => tabName.Length == 0 ? new BrowserTabTarget.Newest() : new BrowserTabTarget.Named(tabName),
+                    "named" => DesktopActionValidation.SearchQuery(tabName) is { } validName ? new BrowserTabTarget.Named(validName) : null,
+                    _ => null,
+                };
+                return target is not null
+                    ? new DesktopActionParseResult.Action(new SwitchTab(target))
+                    : new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.NoSuchTab());
+            }
 
             default:
                 return new DesktopActionParseResult.NotAFastAction();
@@ -830,8 +875,18 @@ public sealed class DesktopActionRunner
         DesktopAction.MediaControl { Action: "pause" or "play" } mediaControl => ControlPlayerAsync(mediaControl.Action),
         DesktopAction.FindFiles findFiles => FindFilesAsync(findFiles.Query),
         DesktopAction.FindOnPage findOnPage => FindOnPageAsync(findOnPage.Text),
+        DesktopAction.SwitchTab switchTab => SwitchTabAsync(switchTab.Target),
         _ => Task.Run(() => Perform(action)),
     };
+
+    private async Task<DesktopActionOutcome> SwitchTabAsync(BrowserTabTarget target) =>
+        await executor.SwitchTabAsync(target).ConfigureAwait(false) switch
+        {
+            BrowserTabSwitchResult.Switched switched => new DesktopActionOutcome.SwitchedTab(switched.Title),
+            BrowserTabSwitchResult.NoSuchTab => new DesktopActionOutcome.NoSuchTab(),
+            BrowserTabSwitchResult.NotAllowed => new DesktopActionOutcome.InputBlocked(),
+            _ => new DesktopActionOutcome.NoBrowserOpen(),
+        };
 
     private async Task<DesktopActionOutcome> FindFilesAsync(string query)
     {

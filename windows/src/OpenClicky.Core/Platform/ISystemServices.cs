@@ -116,8 +116,16 @@ public interface IDesktopActionExecutor
     /// <summary>Ctrl+F in the app in front, then the words and Enter, typed only once the focus moved into a new text field.</summary>
     Task<Actions.FindOnPageResult> FindOnPageAsync(string text) => Task.FromResult(Actions.FindOnPageResult.NoApp);
 
-    /// <summary>One left click at a physical virtual-desktop pixel (the Realtime `click` tool), never on OpenClicky's own window.</summary>
-    Actions.ScreenClickResult ClickAt(PixelPoint point) => Actions.ScreenClickResult.NotAllowed;
+    /// <summary>
+    /// One left click at a physical virtual-desktop pixel (the Realtime `click` tool), never on
+    /// OpenClicky's own window or under the taskbar. A web link in the browser in front is loaded in
+    /// its own tab instead (a page may open it in a background tab, out of reach by voice);
+    /// <paramref name="inNewTab"/> opens it in a new selected tab (anything else gets Ctrl+click).
+    /// </summary>
+    Task<Actions.ScreenClickResult> ClickAsync(PixelPoint point, bool inNewTab = false) => Task.FromResult(Actions.ScreenClickResult.NotAllowed);
+
+    /// <summary>Selects the tab the target names in the browser in front, or the one on screen, which is brought to the front.</summary>
+    Task<Actions.BrowserTabSwitchResult> SwitchTabAsync(Actions.BrowserTabTarget target) => Task.FromResult<Actions.BrowserTabSwitchResult>(new Actions.BrowserTabSwitchResult.NoBrowser());
 }
 
 public enum PlayerCommand

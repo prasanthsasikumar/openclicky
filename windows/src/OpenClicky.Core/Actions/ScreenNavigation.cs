@@ -66,6 +66,10 @@ public enum FindOnPageResult
 public enum ScreenClickResult
 {
     Clicked,
+    /// <summary>A web link in the browser in front, loaded in its own tab (BrowserControl).</summary>
+    FollowedLink,
+    /// <summary>A web link opened in a new tab, which is now the selected one (the click tool's new_tab).</summary>
+    OpenedLinkInNewTab,
     /// <summary>The spot is on one of OpenClicky's own windows.</summary>
     OwnWindow,
     /// <summary>Under the taskbar (outside the monitor's work area): a click there lands on it, not on the page.</summary>

@@ -204,6 +204,15 @@ public sealed class DesktopActionRunnerTests : IDisposable
             PageSearches.Add(text);
             return Task.FromResult(FindOnPageResultToGive);
         }
+
+        public BrowserTabSwitchResult TabSwitchResultToGive { get; set; } = new BrowserTabSwitchResult.Switched("Cars & Bids");
+        public List<BrowserTabTarget> TabTargets { get; } = [];
+
+        public Task<BrowserTabSwitchResult> SwitchTabAsync(BrowserTabTarget target)
+        {
+            TabTargets.Add(target);
+            return Task.FromResult(TabSwitchResultToGive);
+        }
     }
 
     private readonly string root;
@@ -424,6 +433,25 @@ public sealed class DesktopActionRunnerTests : IDisposable
         Assert.StartsWith("This app didn't open a find bar, so I didn't type anything. Do not try again", new DesktopActionOutcome.NoFindBar().ToolOutput);
     }
 
+    /// <summary>"Show me that tab" was answered with how to click the tab strip (2026-10-29).</summary>
+    [Fact]
+    public async Task SwitchingTabsSaysWhichTabAndLooks()
+    {
+        var runner = MakeRunner();
+        var outcome = await runner.PerformAsync(new DesktopAction.SwitchTab(new BrowserTabTarget.Newest()));
+        Assert.Equal(new DesktopActionOutcome.SwitchedTab("Cars & Bids"), outcome);
+        Assert.True(outcome.ThenLooksAtScreen);
+        Assert.True(outcome.DidSomething);
+        Assert.DoesNotContain("Cars", outcome.LogDescription);
+        recorder.TabSwitchResultToGive = new BrowserTabSwitchResult.NoSuchTab();
+        Assert.Equal(new DesktopActionOutcome.NoSuchTab(), await runner.PerformAsync(new DesktopAction.SwitchTab(new BrowserTabTarget.Named("reddit"))));
+        recorder.TabSwitchResultToGive = new BrowserTabSwitchResult.NoBrowser();
+        Assert.Equal(new DesktopActionOutcome.NoBrowserOpen(), await runner.PerformAsync(new DesktopAction.SwitchTab(new BrowserTabTarget.Next())));
+        recorder.TabSwitchResultToGive = new BrowserTabSwitchResult.NotAllowed();
+        Assert.Equal(new DesktopActionOutcome.InputBlocked(), await runner.PerformAsync(new DesktopAction.SwitchTab(new BrowserTabTarget.First())));
+        Assert.Equal([new BrowserTabTarget.Newest(), new BrowserTabTarget.Named("reddit"), new BrowserTabTarget.Next(), new BrowserTabTarget.First()], recorder.TabTargets);
+    }
+
     [Fact]
     public async Task AToolCallIsParsedPerformedAndAnythingElseIsLeftAlone()
     {
@@ -470,6 +498,14 @@ public class DesktopActionParsingTests
         Assert.Equal(Action(new DesktopAction.FindOnPage(new string('a', 100))), Parse("find_on_page", new JsonObject { ["text"] = new string('a', 100) }));
         Assert.Equal(new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.InvalidQuery()), Parse("find_on_page", new JsonObject { ["text"] = "a\nb" }));
         Assert.Equal(new DesktopActionParseResult.NotAFastAction(), Parse("click", new JsonObject { ["x"] = 1, ["y"] = 2 }));
+        Assert.Equal(Action(new DesktopAction.SwitchTab(new BrowserTabTarget.Newest())), Parse("switch_tab", new JsonObject { ["which"] = "newest" }));
+        Assert.Equal(Action(new DesktopAction.SwitchTab(new BrowserTabTarget.Named("cars and bids"))),
+                     Parse("switch_tab", new JsonObject { ["which"] = "named", ["name"] = "cars and bids" }));
+        Assert.Equal(new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.NoSuchTab()), Parse("switch_tab", new JsonObject { ["which"] = "named" }));
+        Assert.Equal(Action(new DesktopAction.SwitchTab(new BrowserTabTarget.Next())), Parse("switch_tab", new JsonObject { ["which"] = "Next" }));
+        // No `which` but a name: the name.
+        Assert.Equal(Action(new DesktopAction.SwitchTab(new BrowserTabTarget.Named("youtube"))), Parse("switch_tab", new JsonObject { ["name"] = "youtube" }));
+        Assert.Equal(new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.NoSuchTab()), Parse("switch_tab", new JsonObject { ["which"] = "last-ish" }));
     }
 
     [Fact]
@@ -545,7 +581,7 @@ public class FastActionToolDefinitionTests
         var names = DesktopAction.RealtimeToolDefinitions().Select(definition => definition["name"]!.GetValue<string>());
         Assert.Equal(["open_app", "open_url", "create_folder", "reveal_in_explorer", "set_volume", "media_control",
                       "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows",
-                      "scroll", "open_folder", "find_files", "find_on_page"], names);
+                      "scroll", "open_folder", "find_files", "find_on_page", "switch_tab"], names);
     }
 
     [Fact]
@@ -583,7 +619,7 @@ public class FastActionToolDefinitionTests
         }
         // They fit the ask lane's hook.
         var tools = AskLanePrompts.AskTools(offersQuickActions: true, hasWritingTarget: false, anthropic);
-        Assert.Equal(16, tools.Count);
+        Assert.Equal(17, tools.Count);
     }
 
     /// <summary>
@@ -667,6 +703,10 @@ public class FastActionToolDefinitionTests
                 case DesktopAction.FindOnPage findOnPage:
                     Assert.Equal(arguments["text"]!.GetValue<string>(), findOnPage.Text);
                     break;
+                case DesktopAction.SwitchTab switchTab:
+                    Assert.Equal("named", arguments["which"]!.GetValue<string>());
+                    Assert.Equal(new BrowserTabTarget.Named(arguments["name"]!.GetValue<string>()), switchTab.Target);
+                    break;
                 default:
                     Assert.Fail($"{toolName} parsed into an unexpected action");
                     break;
@@ -687,7 +727,7 @@ public class DesktopActionPlanToolTests
     public void InstructionBlockNamesEveryRealToolWithItsDescriptionAndSchema()
     {
         var block = PlanToolProtocol.InstructionBlock(QuickActionTools);
-        Assert.Equal(16, QuickActionTools.Count);
+        Assert.Equal(17, QuickActionTools.Count);
         foreach (var tool in QuickActionTools)
         {
             Assert.Contains($"- {tool.Name}: {tool.Description}", block);

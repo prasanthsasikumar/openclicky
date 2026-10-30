@@ -175,13 +175,24 @@ public class RealtimeSessionUpdateTests
         var tools = RealtimeVoiceClient.BuildSessionUpdate(RealtimeTurnMode.PushToTalk, "x", null, "en")["session"]!["tools"]!.AsArray();
         var pointAt = tools.Single(tool => tool!["name"]!.GetValue<string>() == "point_at")!;
         var click = tools.Single(tool => tool!["name"]!.GetValue<string>() == RealtimeVoiceClient.ClickToolName)!;
-        Assert.Equal(pointAt["parameters"]!.ToJsonString(), click["parameters"]!.ToJsonString());
+        // point_at's arguments plus new_tab, which is never required (2026-10-29: tabs by voice).
+        var clickParameters = click["parameters"]!.AsObject();
+        Assert.Equal(pointAt["parameters"]!["required"]!.ToJsonString(), clickParameters["required"]!.ToJsonString());
+        foreach (var (key, schema) in pointAt["parameters"]!["properties"]!.AsObject())
+        {
+            Assert.Equal(schema!.ToJsonString(), clickParameters["properties"]![key]!.ToJsonString());
+        }
+        Assert.Equal("boolean", clickParameters["properties"]!["new_tab"]!["type"]!.GetValue<string>());
+        Assert.Null(pointAt["parameters"]!["properties"]!["new_tab"]);
+        Assert.Contains("A link opens in the same tab unless new_tab is true", click["description"]!.GetValue<string>());
         Assert.Contains("never presses anything that sends, buys, pays, deletes or confirms", click["description"]!.GetValue<string>());
         // Gemini Live gets it too: the dialect turns every session tool into a declaration.
         var declaration = GeminiLiveDialect.FunctionDeclaration(click.AsObject());
         Assert.Equal("click", declaration!["name"]!.GetValue<string>());
         Assert.Contains("call click with the element's on-screen text", RealtimeVoiceClient.DefaultInstructions);
         Assert.Contains("find_on_page", RealtimeVoiceClient.DefaultInstructions);
+        Assert.Contains("pass new_tab only when they say \"in a new tab\"", RealtimeVoiceClient.DefaultInstructions);
+        Assert.Contains("is switch_tab", RealtimeVoiceClient.DefaultInstructions);
     }
 
     /// <summary>Hands-free ends by voice ("that's all, thanks"): the model gets a tool for it, but only while

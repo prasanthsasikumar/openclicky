@@ -126,10 +126,10 @@ public sealed partial class CompanionManager
         client.OnPluginToolCall = (toolName, arguments, capture) =>
             Task.FromResult(TeacherPlugin.Perform(toolName, TeacherPlugin.StringArguments(arguments), capture));
         client.OnPointAt = (screenshotPoint, label, capture) => PointAt(screenshotPoint, label, capture);
-        client.OnClick = point =>
+        client.OnClick = async (point, inNewTab) =>
         {
-            var result = services.DesktopActions.ClickAt(point);
-            if (result == ScreenClickResult.Clicked) LastSuccessfulQuickActionAt = DateTimeOffset.Now;
+            var result = await services.DesktopActions.ClickAsync(point, inNewTab);
+            if (result is ScreenClickResult.Clicked or ScreenClickResult.FollowedLink or ScreenClickResult.OpenedLinkInNewTab) LastSuccessfulQuickActionAt = DateTimeOffset.Now;
             return result;
         };
         client.OnAgentTask = async task =>
