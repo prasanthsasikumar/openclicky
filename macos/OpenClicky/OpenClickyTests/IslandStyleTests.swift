@@ -13,8 +13,8 @@ import Testing
 struct IslandStyleTests {
     @Test func bottomRadiusFollowsTheState() {
         #expect(IslandCorners.bottomRadius(for: .collapsed, width: 190) == 11)
-        #expect(IslandCorners.bottomRadius(for: .peek, width: 230) == 18)
-        #expect(IslandCorners.bottomRadius(for: .compact, width: 380) == 18)
+        #expect(IslandCorners.bottomRadius(for: .peek, width: 230) == 12)
+        #expect(IslandCorners.bottomRadius(for: .compact, width: 380) == 12)
         #expect(IslandCorners.bottomRadius(for: .full, width: 512) == 25.6)
         #expect(IslandCorners.bottomRadius(for: .full, width: 360) == 20)   // clamped low
         #expect(IslandCorners.bottomRadius(for: .connect, width: 1000) == 30) // clamped high

@@ -68,9 +68,36 @@ enum IslandLook: String, CaseIterable, Identifiable {
     }
 }
 
+/// Which way the island grows when hovered (and while it is busy): out to the sides inside the
+/// menu bar, so nothing below is covered, or a line down under the notch.
+enum IslandPeekDirection: String, CaseIterable, Identifiable {
+    case sideways
+    case down
+
+    static let defaultsKey = "openclicky.island.peekDirection"
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .sideways: return "Sideways"
+        case .down: return "Downwards"
+        }
+    }
+
+    static func current(in defaults: UserDefaults = .standard) -> IslandPeekDirection {
+        defaults.string(forKey: defaultsKey).flatMap(IslandPeekDirection.init(rawValue:)) ?? .sideways
+    }
+}
+
 extension SettingsCatalog {
     func islandAppearanceItems() -> [SettingsItem] {
         [
+            SettingsItem(
+                id: "appearance.peekDirection", page: .appearance, section: "",
+                title: "When you hover the notch",
+                detail: "Sideways grows inside the menu bar, so tabs and toolbars stay uncovered; downwards shows a line under the notch. Clicking still opens the island downwards.",
+                keywords: ["hover", "peek", "sideways", "horizontal", "down", "downwards", "expand", "grow", "tabs", "notch"],
+                view: AnyView(IslandPeekDirectionRow())),
             SettingsItem(
                 id: "appearance.style", page: .appearance, section: "",
                 title: "Style", detail: "",
@@ -103,5 +130,24 @@ private struct IslandLookRow: View {
             Text(look.footnote).font(SettingsLook.caption).foregroundStyle(.secondary)
         }
         .padding(.vertical, SettingsLook.Metric.rowVertical)
+    }
+}
+
+private struct IslandPeekDirectionRow: View {
+    @State private var direction = IslandPeekDirection.current()
+
+    var body: some View {
+        SettingsRow(title: "When you hover the notch", detail: "Sideways grows inside the menu bar, so tabs and toolbars stay uncovered; downwards shows a line under the notch. Clicking still opens the island downwards.") {
+            Picker("", selection: Binding(get: { direction }, set: { newValue in
+                direction = newValue
+                UserDefaults.standard.set(newValue.rawValue, forKey: IslandPeekDirection.defaultsKey)
+            })) {
+                ForEach(IslandPeekDirection.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .pointerCursor()
+        }
     }
 }

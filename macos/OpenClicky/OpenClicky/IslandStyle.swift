@@ -11,12 +11,14 @@ import SwiftUI
 
 /// The island outline's two parameters, by state.
 enum IslandCorners {
-    /// 11 pt is the hardware notch's own corner; the peek and the busy strip round a little more;
+    /// 11 pt is the hardware notch's own corner; the peek and the busy strip round a touch more;
     /// cards and the open panel scale with their width (5 %, between 20 and 30 pt).
     static func bottomRadius(for expansion: NotchHUDExpansion, width: CGFloat) -> CGFloat {
         switch expansion {
         case .collapsed: return 11
-        case .peek, .compact: return 18
+        // In the band beside the camera the peek and the busy strip are the notch's own height:
+        // they keep a corner close to the notch's.
+        case .peek, .compact: return 12
         case .connect, .permission, .composer, .tour, .full: return min(max(width * 0.05, 20), 30)
         }
     }

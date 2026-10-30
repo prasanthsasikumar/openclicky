@@ -141,6 +141,8 @@ struct NotchPeekLine: View {
     @ObservedObject var companionManager: CompanionManager
     @ObservedObject var agentSessions: AgentSessionWatcher
     @ObservedObject var media: MediaStore
+    /// The camera's width when the line is split around it in the band; 0 for one line under it.
+    var cameraGap: CGFloat = 0
 
     /// A live coding session, then the playing track (each when its plugin is on), outrank the
     /// pointer's status.
@@ -166,12 +168,31 @@ struct NotchPeekLine: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            NotchPointerMark(isDimmed: false)
-            Text(text)
-                .foregroundColor(DS.HUD.text2)
-            Text("· click to open")
-                .foregroundColor(DS.HUD.text3)
+        Group {
+            if cameraGap > 0 {
+                // In the band: the status runs up to the camera, "click to open" starts after it.
+                HStack(spacing: 0) {
+                    HStack(spacing: 6) {
+                        NotchPointerMark(isDimmed: false)
+                        Text(text).foregroundColor(DS.HUD.text2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 10)
+                    Color.clear.frame(width: cameraGap)
+                    Text("click to open")
+                        .foregroundColor(DS.HUD.text3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 10)
+                }
+            } else {
+                HStack(spacing: 6) {
+                    NotchPointerMark(isDimmed: false)
+                    Text(text)
+                        .foregroundColor(DS.HUD.text2)
+                    Text("· click to open")
+                        .foregroundColor(DS.HUD.text3)
+                }
+            }
         }
         .font(.system(size: 11))
         .lineLimit(1)

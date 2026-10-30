@@ -188,16 +188,32 @@ final class NotchHUDModel: ObservableObject {
         case .hidden: return 0
         }
     }
-    /// The busy strip sits in the band beside the camera with an 8 pt lip under it; the caption
+    /// The busy strip sits in the band beside the camera, growing sideways, never down over the
+    /// windows below (under a hardware notch); without a notch it keeps an 8 pt lip. The caption
     /// strip keeps its own taller content. A detail line hangs under either.
-    let compactStripLip: CGFloat = 8
+    var compactStripLip: CGFloat { growsSideways ? 0 : 8 }
+
+    /// Under a hardware notch the peek and the busy strip grow out to the sides inside the menu
+    /// bar's band, so they never cover the tabs and toolbars just below it.
+    var growsSideways: Bool { peekDirection == .sideways && geometry.hasHardwareNotch && placement == .notch }
+    /// Settings → Appearance: sideways in the band, or down under the notch.
+    @Published var peekDirection: IslandPeekDirection = .sideways
+    /// Each side of the camera in the sideways peek.
+    static let peekSideWidth: CGFloat = 170
     var compactHeight: CGFloat {
         if isShowingCaption { return geometry.notchHeight + compactContentHeight }
         return topBandHeight + compactStripLip + (hasCompactDetailLine ? compactDetailLineHeight : 0)
     }
-    /// Hovered: the island grows 20 pt on each side and one line under the band, and shows a hint.
-    var peekWidth: CGFloat { placement.isSideDrawer ? collapsedWidth : geometry.notchWidth + 40 }
-    var peekHeight: CGFloat { placement.isSideDrawer ? collapsedHeight : topBandHeight + 24 }
+    /// Hovered: under a hardware notch the island grows sideways in the band (the status left of the
+    /// camera, "click to open" right of it); elsewhere 20 pt each side and one line under the band.
+    var peekWidth: CGFloat {
+        if placement.isSideDrawer { return collapsedWidth }
+        return growsSideways ? geometry.notchWidth + Self.peekSideWidth * 2 : geometry.notchWidth + 40
+    }
+    var peekHeight: CGFloat {
+        if placement.isSideDrawer { return collapsedHeight }
+        return growsSideways ? topBandHeight : topBandHeight + 24
+    }
     /// Where a card's content starts: under the notch band on a notch screen; elsewhere the island
     /// covers the menu bar and the content uses that height too.
     var cardTopInset: CGFloat { geometry.hasHardwareNotch ? geometry.notchHeight : 8 }
@@ -1055,6 +1071,7 @@ final class NotchHUDManager {
             let model = NotchHUDModel(geometry: geometry)
             model.placement = placement
             model.look = IslandLook.current()
+            model.peekDirection = IslandPeekDirection.current()
             model.reduceMotionProvider = { [settings = companionManager.dictationSettings] in settings.reduceAnimation }
             model.setBusy(isBusy)
             model.setSpeaking(isSpeaking)
@@ -1188,6 +1205,11 @@ final class NotchHUDManager {
                 let look = IslandLook.current()
                 for instance in self.instances {
                     if instance.model.look != look { instance.model.look = look }
+                    let direction = IslandPeekDirection.current()
+                    if instance.model.peekDirection != direction {
+                        instance.model.peekDirection = direction
+                        instance.model.onLayoutChanged?()
+                    }
                     instance.model.refreshComponentSettings()
                 }
                 self.syncOptionalComponents()
@@ -1444,9 +1466,16 @@ struct NotchHUDView: View {
             switch expansion {
             case .peek:
                 // One line under the band: what the pointer is doing, and that a click opens the panel.
-                NotchPeekLine(model: model, companionManager: companionManager, agentSessions: companionManager.notchHUDManager.agentSessions, media: companionManager.notchHUDManager.media)
-                    .frame(width: model.peekWidth, height: model.peekHeight - model.topBandHeight)
-                    .padding(.top, model.topBandHeight)
+                Group {
+                    if model.growsSideways {
+                        NotchPeekLine(model: model, companionManager: companionManager, agentSessions: companionManager.notchHUDManager.agentSessions, media: companionManager.notchHUDManager.media, cameraGap: model.geometry.notchWidth)
+                            .frame(width: model.peekWidth, height: model.peekHeight)
+                    } else {
+                        NotchPeekLine(model: model, companionManager: companionManager, agentSessions: companionManager.notchHUDManager.agentSessions, media: companionManager.notchHUDManager.media)
+                            .frame(width: model.peekWidth, height: model.peekHeight - model.topBandHeight)
+                            .padding(.top, model.topBandHeight)
+                    }
+                }
                     .allowsHitTesting(false)
                     .transition(.opacity)
             case .collapsed:

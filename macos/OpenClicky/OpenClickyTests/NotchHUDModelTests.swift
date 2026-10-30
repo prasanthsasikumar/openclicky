@@ -27,6 +27,10 @@ struct NotchHUDModelTests {
         let model = notchModel()
         model.setHovering(true)
         #expect(model.expansion == .peek)
+        // Sideways (the default): the band's own height, 170 pt either side of the camera.
+        #expect(model.width == 530)
+        #expect(model.height == 33)
+        model.peekDirection = .down
         #expect(model.width == 230)   // 190 notch + 20 a side
         #expect(model.height == 57)   // 33 notch + 24 line
     }
