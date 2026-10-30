@@ -307,7 +307,7 @@ public sealed partial class DesktopActionExecutor
         inputs.AddRange(modifiers.Select(key => VirtualKeyInput(key, keyUp: false)));
         inputs.Add(MouseInput(MOUSEEVENTF_LEFTDOWN));
         inputs.Add(MouseInput(MOUSEEVENTF_LEFTUP));
-        inputs.AddRange(modifiers.Reverse().Select(key => VirtualKeyInput(key, keyUp: true)));
+        inputs.AddRange(Enumerable.Reverse(modifiers).Select(key => VirtualKeyInput(key, keyUp: true)));
         if (Send([.. inputs]) != inputs.Count) return ScreenClickResult.NotAllowed;
         return inNewTab && isLink ? ScreenClickResult.OpenedLinkInNewTab : ScreenClickResult.Clicked;
     }

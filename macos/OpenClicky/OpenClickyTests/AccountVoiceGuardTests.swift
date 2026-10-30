@@ -18,7 +18,10 @@ struct AnswerVoiceSessionTests {
     private static func audio(_ voice: String, _ text: String) -> Data { Data("\(voice):\(text)".utf8) }
     private static func spoken(_ data: Data) -> String { String(decoding: data, as: UTF8.self) }
 
-    /// Records what the session reports, and makes the session with short deadlines.
+    /// Records what the session reports, and makes the session. The deadlines are generous: on a
+    /// busy CI runner the main actor can stall for seconds, and a piece that answers at once then
+    /// missed a half-second deadline (every on-time test failed there, 2026-10-29). A late piece
+    /// sleeps far past them instead.
     @MainActor
     private final class Harness {
         var troubles: [AnswerVoiceSession.AccountTrouble] = []
@@ -28,7 +31,8 @@ struct AnswerVoiceSessionTests {
 
         func session(accountDelaySeconds: @escaping (String) -> TimeInterval = { _ in 0 },
                      accountFails: @escaping (String) -> Bool = { _ in false },
-                     speaksWithAccountVoice: Bool = true) -> AnswerVoiceSession {
+                     speaksWithAccountVoice: Bool = true,
+                     firstDeadline: TimeInterval = 10, laterDeadline: TimeInterval = 20) -> AnswerVoiceSession {
             AnswerVoiceSession(
                 speaksWithAccountVoice: speaksWithAccountVoice,
                 fetchAccountAudio: { text in
@@ -37,7 +41,7 @@ struct AnswerVoiceSessionTests {
                     return AnswerVoiceSessionTests.audio("account", text)
                 },
                 fetchFallbackAudio: { text in AnswerVoiceSessionTests.audio("local", text) },
-                deadlineSeconds: { pieceNumber in pieceNumber == 0 ? 0.5 : 1.5 },
+                deadlineSeconds: { pieceNumber in pieceNumber == 0 ? firstDeadline : laterDeadline },
                 onFirstAccountAudio: { [weak self] _ in self?.firstSoundCount += 1 },
                 onAccountTrouble: { [weak self] trouble in self?.troubles.append(trouble) },
                 onAnswerOnTime: { [weak self] in self?.answersOnTime += 1 },
@@ -59,10 +63,10 @@ struct AnswerVoiceSessionTests {
     /// The first piece is the silence after "thinking…": past its deadline the local voice speaks it.
     @Test func aLateFirstPieceIsSpokenByTheLocalVoiceAndSoIsTheRest() async throws {
         let harness = Harness()
-        let session = harness.session(accountDelaySeconds: { text in text == "one" ? 5 : 0 })
+        let session = harness.session(accountDelaySeconds: { text in text == "one" ? 120 : 0 }, firstDeadline: 1)
         let startedAt = Date()
         #expect(Self.spoken(try await session.audio(for: "one")) == "local:one")
-        #expect(Date().timeIntervalSince(startedAt) < 3)
+        #expect(Date().timeIntervalSince(startedAt) < 60)
         // The account would answer the second piece at once; the answer stays in one voice.
         #expect(Self.spoken(try await session.audio(for: "two")) == "local:two")
         #expect(harness.troubledAnswers == 1)
@@ -76,7 +80,7 @@ struct AnswerVoiceSessionTests {
     /// Later pieces are fetched while earlier ones play, so they get the longer deadline.
     @Test func aLaterPieceHasMoreRoomThanTheFirst() async throws {
         let harness = Harness()
-        let session = harness.session(accountDelaySeconds: { text in text == "two" ? 0.8 : 0 })
+        let session = harness.session(accountDelaySeconds: { text in text == "two" ? 2 : 0 }, firstDeadline: 1)
         _ = try await session.audio(for: "one")
         #expect(Self.spoken(try await session.audio(for: "two")) == "account:two")
         #expect(harness.troubles.isEmpty)
@@ -99,7 +103,7 @@ struct AnswerVoiceSessionTests {
     /// back is said by the local voice too, without waiting out its own deadline.
     @Test func aPieceInFlightWhenAnotherFallsBackFollowsIt() async throws {
         let harness = Harness()
-        let session = harness.session(accountDelaySeconds: { text in text == "one" ? 5 : 1.0 })
+        let session = harness.session(accountDelaySeconds: { text in text == "one" ? 120 : 60 }, firstDeadline: 1)
         async let first = session.audio(for: "one")
         async let second = session.audio(for: "two")
         let (firstAudio, secondAudio) = try await (first, second)

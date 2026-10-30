@@ -382,7 +382,7 @@ struct DictationTakeControllerTests {
         h.controller.handle(.dictationPressed)
         await h.waitUntil(1) { h.controller.state == .listening || h.controller.state == .idle }
         h.controller.handle(.dictationReleased(wasTap: false))
-        await h.waitUntil(3) { h.controller.state == .idle }
+        await h.waitUntil(15) { h.controller.state == .idle && h.orb.phase == .failed("couldn't open the microphone") }
         #expect(h.controller.state == .idle)
         #expect(h.orb.phase == .failed("couldn't open the microphone"))
         #expect(h.pasted.texts.isEmpty)
@@ -398,7 +398,7 @@ struct DictationTakeControllerTests {
         let h = try Harness()
         h.capture.nextStartFailsWith = "microphone permission is required for push to talk."
         h.controller.handle(.dictationPressed)
-        await h.waitUntil(3) { h.controller.state == .idle }
+        await h.waitUntil(15) { h.orb.phase == .failed("microphone permission is required for push to talk.") }
         #expect(h.controller.state == .idle)
         #expect(h.orb.phase == .failed("microphone permission is required for push to talk."))
     }
@@ -930,7 +930,7 @@ struct DictationTakeControllerTests {
         let h = try Harness(polisher: CountingPolisher())
         h.settings.polishWithModel = false
         h.controller.handle(.dictationEditPressed)
-        await h.settle(0.6)
+        await h.waitUntil(15) { h.orb.phase == .failed(DictationTakeController.heyClickyNeedsCleanUpMessage) }
         #expect(h.capture.starts == 0)
         #expect(h.controller.state == .idle)
         #expect(h.orb.phase == .failed(DictationTakeController.heyClickyNeedsCleanUpMessage))
