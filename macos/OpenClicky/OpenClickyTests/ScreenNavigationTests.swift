@@ -42,6 +42,19 @@ struct ScreenNavigationTests {
         #expect(!ScreenNavigation.clickIsRisky(label: "Accept All button", text: "Accept All"))
     }
 
+    /// "Scroll up" on a page that could not move was answered "Scrolled up." twice (2026-10-29).
+    @Test func aScrollIsLookedAtAtOnceAndAMissingPlayerPointsAtTheVideo() {
+        let scrolled = MacActionOutcome.scrolled(.up, .page)
+        #expect(scrolled.thenLooksAtScreen)
+        #expect(scrolled.looksWithoutWaitingForAPage)
+        #expect(scrolled.toolOutput.contains("didn't move"))
+        #expect(!MacActionOutcome.searched(query: "x", site: .web).looksWithoutWaitingForAPage)
+        // "Stop the video" went to the music players and stopped there.
+        let nothingPlaying = MacActionOutcome.failed("nothing is playing")
+        #expect(nothingPlaying.toolOutput.contains("call click on that video"))
+        #expect(nothingPlaying.spokenSentence == "That didn't work: nothing is playing.")
+    }
+
     @Test func videosAndPicturesAreAimedAtTheImageNotTheCaption() {
         #expect(ScreenNavigation.namesAPicture("first video"))
         #expect(ScreenNavigation.namesAPicture("video thumbnail"))

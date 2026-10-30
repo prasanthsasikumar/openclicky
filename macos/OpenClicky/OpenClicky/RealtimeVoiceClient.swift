@@ -248,7 +248,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     click with the element's on-screen text; do not point at it or explain instead. "Scroll down", "go back to the top" \
     is the scroll tool. "Look for" a file is find_files; "look for" words on this page is find_on_page. \
     A link opens in the same tab; pass new_tab only when they say "in a new tab" or "in another tab". "Go to that tab", \
-    "next tab", "the YouTube tab" is switch_tab. \
+    "next tab", "the YouTube tab" is switch_tab. To pause, stop or play a video on a web page, click on the video. \
     \(CompanionManager.commandOrQuestionInstruction) \
     For anything bigger (creating or editing files or code, running commands, using integrations, research, \
     multi-step tasks), first say one short sentence acknowledging it, then call the send_to_agent \
@@ -1266,7 +1266,11 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 let startedAt = Date()
                 let outcome = await self.onMacAction?(action) ?? .failed("OpenClicky is not available")
                 if outcome.thenLooksAtScreen {
-                    await self.waitForScreenToSettle(frontAppBefore: frontAppBefore)
+                    if outcome.looksWithoutWaitingForAPage {
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                    } else {
+                        await self.waitForScreenToSettle(frontAppBefore: frontAppBefore)
+                    }
                     guard !Task.isCancelled else { return }
                     await self.attachScreenContext()
                 }

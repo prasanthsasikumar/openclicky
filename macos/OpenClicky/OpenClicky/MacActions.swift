@@ -132,7 +132,9 @@ enum MacActionOutcome: Equatable {
         case .windowAppNotRunning:
             return spokenSentence + " Call open_app if they want it opened."
         case .scrolled:
-            return spokenSentence + " Say only a word or two; the next screenshot shows where the page is now."
+            return spokenSentence + " The latest screenshot shows the page now. If it looks the same as the one before, say the page didn't move (it may already be at the top or bottom, or a pop-up may be in the way) instead of saying it scrolled. Otherwise say only a word or two."
+        case .failed("nothing is playing"):
+            return "Nothing is playing in Spotify or Music, so nothing was paused. If they meant a video on a web page, call click on that video now (it pauses or plays the way a mouse click does); otherwise tell them nothing is playing."
         case .foundFiles(let query, let files):
             let lines = files.map { "\($0.lastPathComponent) — in \($0.deletingLastPathComponent().lastPathComponent)" }.joined(separator: "\n")
             return "Files whose names match \(query), best first (the first is selected in Finder, which is in the latest screenshot):\n\(lines)\nSay how many and name the first one or two briefly; never read folder paths character by character."
@@ -178,9 +180,16 @@ enum MacActionOutcome: Equatable {
 
     /// Whether the model should see a fresh screenshot before it speaks: true for an action that
     /// changed what is on screen in a way worth describing (a page opened), false for the rest.
+    /// Whether that look can come at once: a scroll changes the window in front within a frame
+    /// or two, unlike a page that has to load.
+    var looksWithoutWaitingForAPage: Bool {
+        if case .scrolled = self { return true }
+        return false
+    }
+
     var thenLooksAtScreen: Bool {
         switch self {
-        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable, .openedFolder, .foundFiles, .switchedTab: return true
+        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable, .openedFolder, .foundFiles, .switchedTab, .scrolled: return true
         case .draftedEmail(let app, _, _): return app == .gmail
         default: return false
         }
@@ -887,7 +896,7 @@ extension MacAction {
             [
                 "type": "function",
                 "name": "media_control",
-                "description": "Pause, resume, or skip whatever is playing. Use pause for 'stop', 'pause', 'be quiet'; play to resume; playpause only when they say play/pause without saying which.",
+                "description": "Pause, resume, or skip music in Spotify or Music. Use pause for 'stop', 'pause', 'be quiet'; play to resume; playpause only when they say play/pause without saying which. A video on a web page is not this tool: click on the video to pause or play it.",
                 "parameters": ["type": "object", "properties": ["action": ["type": "string", "enum": ["playpause", "next", "previous", "pause", "play"]]], "required": ["action"]],
             ],
             [
