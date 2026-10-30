@@ -175,10 +175,10 @@ struct IslandHomeCalendarColumn: View {
 }
 
 struct IslandHomeWeatherTile: View {
-    var body: some View { IslandTile { Color.clear } }
+    var body: some View { WeatherTile() }
 }
 
 struct IslandHomeSystemTile: View {
     @ObservedObject var store: SystemStatsStore
-    var body: some View { IslandTile { Color.clear } }
+    var body: some View { SystemRingsTile(store: store) }
 }

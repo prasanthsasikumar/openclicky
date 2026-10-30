@@ -6,6 +6,12 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>OpenClicky shows what Music or Spotify is playing on the island and lets you pause or skip.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>OpenClicky shows your upcoming events on the island and lets you add new ones.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>OpenClicky uses your location to show the weather where you are on the island.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>OpenClicky uses your location to show the weather where you are on the island.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>OpenClicky uses your microphone so you can talk to it</string>
 	<key>NSScreenCaptureUsageDescription</key>
