@@ -17,9 +17,19 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ## 0.10.1
 
+### All platforms
+
+- **Fast voice and hands-free with a Gemini key.** A Gemini key now runs the fast voice lane and hands-free, not only an OpenAI key. With both, Settings → Voice picks which; Automatic stays on OpenAI.
+
 ### Mac
 
 - **Move around by voice.** "Click the first link" clicks it in the tab you're looking at ("open it in a new tab" for another); cookie banners' "Accept all" and videos work too ("stop the video" clicks it), while anything that sends, buys, deletes or confirms is only pointed at. "Switch to the YouTube tab", "next tab"; "scroll down", "scroll a little", "scroll to the top"; "scroll down slowly" glides a page so you can follow it, and "keep scrolling" moves at reading pace until you say stop or press esc. "Open my Downloads folder"; "look for my tax return" finds the file and selects it in Finder; "find price on this page" searches the page with its find bar.
+- **Hands-free without a key.** With fast voice off, hands-free still listens on your Mac and Clicky answers once you stop talking. "That's all, thanks", "stop listening" or "ok bye" ends it.
+- **The free voice speaks first.** Answers use your account's voice before Kokoro, and if it's slow or fails, the rest of that answer switches to the voice on your Mac instead of going quiet. Kokoro no longer downloads by itself.
+- **Live facts are looked up.** "What's the weather outside?" is searched and read from the results instead of "I can't check".
+- **"Show just the Terminal" brings back only the Terminal** after "minimize everything", and only windows Clicky minimized come back.
+- **Fix: "play the first song in my favourites" no longer resumes a paused YouTube video.** Playback that names an app, song or list goes to Clicky, and play and pause go to the music player instead of the media key.
+- **Dictated questions stay questions.** The clean-up no longer answers a question you dictated; it keeps your words.
 
 ### Windows
 
