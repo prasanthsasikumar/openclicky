@@ -17,9 +17,16 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ## 0.10.2
 
+### Mac
+
+- **A brighter icon, in the colour you pick.** The icon is now a white mark on a bright red tile. Settings → General → App icon switches the Dock to Ultraviolet, Sunset, Paper or Aqua; Finder and Launchpad keep the red one.
+- **Settings in six pages.** Dictation, Clicky, Island, Keys & Account, Privacy and General, each with a header card and a search box above them. What you rarely change folds into "More" at the bottom of each page.
+- **The island's home.** The open island shows now playing, your calendar, the weather and CPU and memory side by side, in liquid glass, blend or black. Timer, Notes and Clipboard join the Shelf as buttons in the island's band. Hovering the island grows it sideways along the menu bar, with downwards kept as a choice.
+- **OpenClicky has its own address: [openclicky.org](https://openclicky.org).** The old address still works.
+
 ### Windows
 
-- **Settings in six pages.** Dictation, Clicky, Island, Keys & Account, Privacy and General. What you rarely change folds into "More" at the bottom of each page, The orb, Your words, How it writes and Calendars open from a row with a back button, and the light/dark choice sits at the window's top right. The Region choice is gone: Sarvam and the Indian languages show when you already use them.
+- **Settings in six pages.** Dictation, Clicky, Island, Keys & Account, Privacy and General. What you rarely change folds into "More" at the bottom of each page. The orb, Your words, How it writes and Calendars open from a row with a back button, and the light/dark choice sits at the window's top right. The Region choice is gone: Sarvam and the Indian languages show when you already use them.
 - **Pick the app icon's colour.** Settings → General → App icon: Signal, Ultraviolet, Sunset, Paper or Aqua, on the window, the taskbar and the tray.
 - **The island's home.** The open island shows now playing, your calendar, the weather and CPU and memory side by side, in liquid glass, blend or black. Timer, Notes and Clipboard join the Shelf as round buttons in the island's band. Hovering the island grows it sideways along the top edge, with downwards kept as a choice.
 

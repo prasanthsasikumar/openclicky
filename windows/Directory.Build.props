@@ -3,7 +3,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>0.10.1</Version>
+    <Version>0.10.2</Version>
     <Company>OpenClicky</Company>
     <Product>OpenClicky</Product>
   </PropertyGroup>
