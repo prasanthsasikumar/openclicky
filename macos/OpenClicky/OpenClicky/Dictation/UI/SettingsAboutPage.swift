@@ -44,10 +44,12 @@ extension SettingsCatalog {
 /// The app's icon, name and version, and Check Now beside them.
 private struct AboutAppRow: View {
     @ObservedObject private var updater = AppUpdater.shared
+    /// The icon follows the colour picked above it.
+    @ObservedObject private var settings = DictationSettings.shared
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(nsImage: NSApp.applicationIconImage)
+            Image(nsImage: NSImage(named: settings.appIconColor.imageName) ?? NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 44, height: 44)
                 .accessibilityHidden(true)

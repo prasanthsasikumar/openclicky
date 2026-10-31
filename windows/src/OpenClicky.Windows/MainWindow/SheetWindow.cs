@@ -143,11 +143,13 @@ public static class OpenClickyMarkDrawing
         return geometry;
     }
 
-    /// <summary>The app icon: the white mark on an orange rounded square (scripts/make-app-icon.py's look).</summary>
+    /// <summary>The app icon: the white mark on a pointer-red rounded square, hotter at the top-left
+    /// (macos/OpenClicky/scripts/make-app-icon.py's look).</summary>
     public static DrawingImage AppIconImage()
     {
         var group = new DrawingGroup();
-        group.Children.Add(new GeometryDrawing(new SolidColorBrush(SettingsLook.AccentLight), null, new RectangleGeometry(new Rect(0, 0, 64, 64), 14, 14)));
+        var tile = new LinearGradientBrush(Color.FromRgb(0xFF, 0x6A, 0x3F), Color.FromRgb(0xD4, 0x16, 0x3A), new Point(0, 0), new Point(1, 1));
+        group.Children.Add(new GeometryDrawing(tile, null, new RectangleGeometry(new Rect(0, 0, 64, 64), 14, 14)));
         group.Children.Add(new GeometryDrawing(Brushes.White, null, Geometry(14, 14, 36)));
         var image = new DrawingImage(group);
         image.Freeze();

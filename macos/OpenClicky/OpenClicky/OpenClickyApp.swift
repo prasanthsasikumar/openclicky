@@ -623,6 +623,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         ClickyAnalytics.configure()
         ClickyAnalytics.trackAppOpened()
 
+        // The icon colour picked in Settings → General (the Dock and OpenClicky's windows).
+        companionManager.dictationSettings.appIconColor.apply()
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
         #if DEBUG
