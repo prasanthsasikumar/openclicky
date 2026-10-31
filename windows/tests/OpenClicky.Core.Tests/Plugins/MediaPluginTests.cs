@@ -50,10 +50,11 @@ public class MediaPluginTests
     }
 
     [Fact]
-    public void PlayingMusicIsTheMomentThatPicksNowPlaying()
+    public void PlayingMusicIsTheMomentThatPicksHome()
     {
         var context = IslandContext.Idle with { IsMediaPlaying = true };
-        Assert.Equal(IslandPluginRegistry.MediaId, context.ContextualKey);
+        // The track is on home, so home is the moment.
+        Assert.Equal(IslandComponentRegistry.HomeId, context.ContextualKey);
         Assert.Contains(IslandPluginRegistry.All, plugin => plugin.Id == IslandPluginRegistry.MediaId);
     }
 

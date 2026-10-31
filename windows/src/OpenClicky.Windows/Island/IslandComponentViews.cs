@@ -3,8 +3,9 @@
 //  OpenClicky (Windows port of the component half of IslandComponentViews.swift)
 //
 //  What fills the island's slot for a component the selector picked, and the capsule in the band
-//  that flips between the components available now. The shortcuts row is the panel's own body
-//  (FullPanelView); every other component's view is made here by its id.
+//  that flips between the components available now, and the tools' round buttons beside Settings.
+//  The shortcuts row is the panel's own body (FullPanelView); every other component's view is made
+//  here by its id.
 //
 
 using System.Windows;
@@ -12,8 +13,12 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Plugins;
+using OpenClicky.Core.Pointing;
+using OpenClicky.Windows.Plugins.ClipboardList;
 using OpenClicky.Windows.Plugins.CodingAgents;
+using OpenClicky.Windows.Plugins.FocusTimer;
 using OpenClicky.Windows.Plugins.Media;
+using OpenClicky.Windows.Plugins.Notes;
 using OpenClicky.Windows.Plugins.Shelf;
 using OpenClicky.Windows.Plugins.SystemStats;
 using OpenClicky.Windows.Plugins.Teacher;
@@ -24,9 +29,11 @@ namespace OpenClicky.Windows.Island;
 
 internal static class IslandComponentViews
 {
-    /// <summary>The view for a component other than the shortcuts; null for the shortcuts (the panel's own row).</summary>
+    /// <summary>The view for a component other than the shortcuts; null for the shortcuts (the panel's own row), and for
+    /// home when it shows them (no column on, or a side drawer).</summary>
     public static FrameworkElement? Make(IslandComponent component, IslandCompanionModel hub, IslandModel model) => component.Id switch
     {
+        IslandComponentRegistry.HomeId => model.HomeLayout.IsEmpty || model.Placement.IsSideDrawer() ? null : new IslandHomeView(model.HomeLayout),
         IslandComponentRegistry.TranscriptId => new TranscriptIslandView(hub),
         IslandComponentRegistry.AgentId => new AgentIslandView(hub, model),
         IslandPluginRegistry.SystemId => new SystemIslandView(),
@@ -34,15 +41,18 @@ internal static class IslandComponentViews
         IslandPluginRegistry.AgentsId => new AgentsIslandView(),
         IslandPluginRegistry.MediaId => new MediaIslandView(),
         IslandPluginRegistry.TeacherId => new TeacherIslandView(),
+        IslandPluginRegistry.TimerId => new TimerIslandView(),
+        IslandPluginRegistry.NotesId => new NotesIslandView(),
+        IslandPluginRegistry.ClipboardId => new ClipboardIslandView(),
         _ => null,
     };
 
-    /// <summary>One round button per component the slot can show now, the active one on a lighter disc. A click
-    /// shows that component until the moment changes.</summary>
+    /// <summary>One round button per component the capsule flips between (not the tools, which have their own buttons, nor
+    /// what home already shows), the active one on a lighter disc. A click shows that component until the moment changes.</summary>
     public static FrameworkElement Capsule(IslandModel model)
     {
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        foreach (var id in model.Selection.Available)
+        foreach (var id in model.CapsuleIds)
         {
             var component = model.Registry.FirstOrDefault(candidate => candidate.Id == id);
             if (component is null) continue;
@@ -68,6 +78,22 @@ internal static class IslandComponentViews
             Padding = new Thickness(3, 0, 3, 0),
             VerticalAlignment = VerticalAlignment.Center,
         };
+    }
+
+    /// <summary>One round button per tool that is on, in the band beside Settings: it shows that tool, and a second click
+    /// goes back to where the island was.</summary>
+    public static FrameworkElement ToolButtons(IslandModel model)
+    {
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var id in model.ToolIds)
+        {
+            if (model.Registry.FirstOrDefault(candidate => candidate.Id == id) is not { } tool) continue;
+            var isActive = model.Selection.Active == id;
+            var button = new IslandIconButton(tool.Glyph, 11, tool.Title, () => model.SelectComponent(isActive ? null : id), isActive: isActive);
+            button.Margin = new Thickness(6, 0, 0, 0);
+            buttons.Children.Add(button);
+        }
+        return buttons;
     }
 }
 

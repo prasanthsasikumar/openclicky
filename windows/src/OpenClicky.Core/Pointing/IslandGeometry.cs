@@ -80,7 +80,11 @@ public sealed record IslandContentState(
     bool TourHasStatus = false,
     bool TourHasMicrophoneName = false,
     bool TourHasField = false,
-    double? SlotHeight = null);
+    double? SlotHeight = null,
+    /// <summary>The open island's width when the active component wants more than the standard (home's dashboard).</summary>
+    double? SlotWidth = null,
+    /// <summary>The hovered island grows sideways along the top edge rather than a line down (Settings → Island).</summary>
+    bool PeekGrowsSideways = false);
 
 /// <summary>The island's sizes and frames for one monitor, placement and state. Sizes from the refinement sheet: every
 /// card and the open panel are 512 wide (360 in a side drawer); heights include the band the island hangs from.</summary>
@@ -117,8 +121,9 @@ public sealed class IslandLayout
     public double CompactWidth => State.IsShowingCaption ? 400 : StripWidth;
     public double CompactContentHeight =>
         State.IsShowingCaption ? 70 : StripHeight + (State.HasCompactDetailLine ? CompactDetailLineHeight : 0);
-    /// <summary>A side drawer is a narrow column with its content stacked, not the top panel moved.</summary>
-    public double FullWidth => Placement.IsSideDrawer() ? 360 : 512;
+    /// <summary>A side drawer is a narrow column with its content stacked, not the top panel moved. At the top the
+    /// panel is 512 wide, or wider when the active component asks for it (home's dashboard), never narrower.</summary>
+    public double FullWidth => Placement.IsSideDrawer() ? 360 : Math.Max(State.SlotWidth ?? 512, 512);
 
     /// <summary>The open panel's band row: the band plus a little air above the controls.</summary>
     public double BandRowHeight => TopBandHeight + 6;
@@ -151,11 +156,33 @@ public sealed class IslandLayout
         _ => 0,
     };
 
-    /// <summary>Hovered: the island grows a little on each side and one line under the band (a side drawer's handle is
-    /// too small to peek: hovering it opens the drawer).</summary>
-    public double PeekWidth => Placement.IsSideDrawer() ? CollapsedWidth : Geometry.NotchWidth + 90;
-    public double PeekHeight => Placement.IsSideDrawer() ? CollapsedHeight : Geometry.NotchHeight + PeekLineHeight;
+    /// <summary>Hovered: the island grows a little on each side and one line under the band; or, growing sideways, a
+    /// wide thin strip along the top edge, the status left of the middle and "click to open" right of it, so less of
+    /// the windows under it (their tabs and toolbars) is covered. A side drawer's handle is too small to peek: hovering
+    /// it opens the drawer.</summary>
+    public double PeekWidth
+    {
+        get
+        {
+            if (Placement.IsSideDrawer()) return CollapsedWidth;
+            return State.PeekGrowsSideways ? Geometry.NotchWidth + PeekSideWidth * 2 : Geometry.NotchWidth + 90;
+        }
+    }
+
+    public double PeekHeight
+    {
+        get
+        {
+            if (Placement.IsSideDrawer()) return CollapsedHeight;
+            return Geometry.NotchHeight + (State.PeekGrowsSideways ? SidewaysPeekLineHeight : PeekLineHeight);
+        }
+    }
+
     public const double PeekLineHeight = 30;
+    /// <summary>The sideways peek's strip: as thin as the line's text allows.</summary>
+    public const double SidewaysPeekLineHeight = 22;
+    /// <summary>Each side of the middle in the sideways peek (the Mac's peekSideWidth).</summary>
+    public const double PeekSideWidth = 170;
 
     public double CompactHeight => Geometry.NotchHeight + CompactContentHeight;
     /// <summary>Where a card's content starts: the island covers the band and the content uses that height too.</summary>

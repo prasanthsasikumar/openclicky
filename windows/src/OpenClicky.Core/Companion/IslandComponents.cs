@@ -8,8 +8,9 @@
 //  OpenClicky.Windows/Island (the built-ins) and OpenClicky.Windows/Plugins (the plugins), looked up
 //  by the component's id.
 //
-//  Ported: the built-ins (shortcuts, transcript, agent) and every Mac plugin (System, Shelf, Coding
-//  agents, Now playing, Teacher).
+//  Ported: the built-ins (home, shortcuts, transcript, agent) and every Mac plugin (System, Shelf,
+//  Coding agents, Now playing, Teacher, Timer, Notes, Clipboard). Home is the default: the
+//  dashboard row of IslandHome.cs, or the shortcuts row when none of its columns is on.
 //
 
 using OpenClicky.Core.Configuration;
@@ -51,7 +52,7 @@ public sealed record IslandContext
 
     /// <summary>The component the moment asks for: the shelf while a drag hovers (an explicit act that
     /// outranks everything), the transcript while a take is live or just landed, the agent while one
-    /// works or its result card is up, the track while music plays, else nothing.</summary>
+    /// works or its result card is up, home (where the track is) while music plays, else nothing.</summary>
     public string? ContextualKey
     {
         get
@@ -60,7 +61,7 @@ public sealed record IslandContext
             if (IsTakeLive) return IslandComponentRegistry.TranscriptId;
             if (TakeLandedAt is { } landedAt && Now - landedAt < LandedTranscriptWindow) return IslandComponentRegistry.TranscriptId;
             if (AgentActivityText is not null || IsResultCardUp) return IslandComponentRegistry.AgentId;
-            if (IsMediaPlaying) return IslandPluginRegistry.MediaId;
+            if (IsMediaPlaying) return IslandComponentRegistry.HomeId;
             return null;
         }
     }
@@ -93,7 +94,7 @@ public static class IslandComponentSelector
     /// <summary>
     /// Disabled components are dropped first: never available, never the default, never pulled in by
     /// the moment. Then the override wins while it is available; else the moment's component; else the
-    /// user's default (the shortcuts when the stored one is disabled); else the first available in the
+    /// user's default (home when the stored one is disabled); else the first available in the
     /// user's order. <c>Available</c> is the registry filtered by availability, in the user's order
     /// (unknown ids ignored, missing ids appended in registration order).
     /// </summary>
@@ -104,7 +105,7 @@ public static class IslandComponentSelector
         var availableIds = registry.Where(component => (enabled?.Contains(component.Id) ?? true) && component.IsAvailable(context))
             .Select(component => component.Id).ToList();
         var ordered = order.Where(availableIds.Contains).Distinct().Concat(availableIds.Where(id => !order.Contains(id))).ToList();
-        var fallbackDefault = enabled is null || enabled.Contains(defaultId) ? defaultId : IslandComponentRegistry.ShortcutsId;
+        var fallbackDefault = enabled is null || enabled.Contains(defaultId) ? defaultId : IslandComponentRegistry.HomeId;
         var candidates = new[] { overrideId, context.ContextualKey, fallbackDefault };
         var active = candidates.FirstOrDefault(id => id is not null && ordered.Contains(id)) ?? ordered.FirstOrDefault() ?? registry[0].Id;
         return new IslandComponentSelection(active, ordered);
@@ -122,7 +123,7 @@ public sealed class IslandComponentSettings(Preferences preferences)
 
     public string DefaultId
     {
-        get => preferences.GetString(DefaultKey) ?? IslandComponentRegistry.ShortcutsId;
+        get => preferences.GetString(DefaultKey) ?? IslandComponentRegistry.HomeId;
         set => preferences.Set(DefaultKey, value);
     }
 
@@ -155,9 +156,12 @@ public sealed class IslandComponentSettings(Preferences preferences)
         return !component.IsPlugin || EnabledPlugins.Contains(id);
     }
 
-    /// <summary>The stored default when it is on; the shortcuts when it has been switched off since.</summary>
+    /// <summary>The stored default when it is on; home when it has been switched off since.</summary>
     public string ResolvedDefaultId(IReadOnlyList<IslandComponent> registry) =>
-        IsEnabled(DefaultId, registry) ? DefaultId : IslandComponentRegistry.ShortcutsId;
+        IsEnabled(DefaultId, registry) ? DefaultId : IslandComponentRegistry.HomeId;
+
+    /// <summary>Home's columns as the switches stand now.</summary>
+    public IslandHomeLayout HomeLayout => IslandHomeLayout.Current(preferences);
 
     /// <summary>The stored order with unknown ids dropped and missing ones appended in registration order.</summary>
     public IReadOnlyList<string> ResolvedOrder(IReadOnlyList<IslandComponent> registry)
@@ -175,9 +179,14 @@ public sealed class IslandComponentSettings(Preferences preferences)
 /// <summary>The built-in components, in registration order, then the plugins (<see cref="IslandPluginRegistry"/>).</summary>
 public static class IslandComponentRegistry
 {
+    public const string HomeId = "home";
     public const string ShortcutsId = "shortcuts";
     public const string TranscriptId = "transcript";
     public const string AgentId = "agent";
+
+    /// <summary>The dashboard (IslandHome.cs): its height and width follow the columns that are on, so the island
+    /// model asks <see cref="IslandHomeLayout"/> rather than this record's fixed height.</summary>
+    public static IslandComponent Home { get; } = new(HomeId, "Home", "", IslandHomeLayout.ShortcutsHeight);
 
     /// <summary>Today's body row: dock or release the pointer, (i), and the shortcuts (or the engine warning).
     /// 45 under the band; a side drawer stacks the dock button over the grid (IslandLayout.FullHeight).</summary>
@@ -195,7 +204,7 @@ public static class IslandComponentRegistry
         IsAvailable = context => context.AgentActivityText is not null || context.IsResultCardUp,
     };
 
-    public static IReadOnlyList<IslandComponent> BuiltIns { get; } = [Shortcuts, Transcript, Agent];
+    public static IReadOnlyList<IslandComponent> BuiltIns { get; } = [Home, Shortcuts, Transcript, Agent];
 
     /// <summary>The built-ins first, then the plugins (off until turned on in Settings).</summary>
     public static IReadOnlyList<IslandComponent> All { get; } = [.. BuiltIns, .. IslandPluginRegistry.All];
