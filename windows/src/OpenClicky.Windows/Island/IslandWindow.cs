@@ -7,8 +7,10 @@
 //  window let clicks through). HeyClicky's look: solid black, the top corners flaring out into the
 //  edge it hangs from, rounded bottom corners, no border, no shadow. The black springs between
 //  sizes (SwiftUI's spring(0.42, 0.84); the tour's settle 1.3 / 0.92) and the content cross-fades,
-//  growing from 0.92 at the top. The composer and the tour's field take the keyboard; everything
-//  else leaves it with the app in front.
+//  growing from 0.92 at the top. The open panel takes the island's style (Settings → Island):
+//  black, or the black fading away over a see-through tint (liquid glass, blend). The composer, the
+//  tour's field and a component's editor (Notes) take the keyboard; everything else leaves it with
+//  the app in front.
 //
 
 using System.ComponentModel;
@@ -40,6 +42,9 @@ public sealed class IslandWindow : Window
     private readonly Rectangle dropCatcher = new();
     private static readonly Brush DropCatcherFill = MakeDropCatcherFill();
     private readonly Path islandShape = new() { Fill = DS.HUD.IslandBrush };
+    /// <summary>Under the black: the open panel's see-through tint in the glass styles, shown as the black fades.</summary>
+    private readonly Path glassShape = new() { Opacity = 0 };
+    private readonly Tween blackOpacity = new(1);
     private readonly Grid contentHost = new();
     private FrameworkElement? currentContentElement;
     private IIslandContent? currentContent;
@@ -73,6 +78,7 @@ public sealed class IslandWindow : Window
         FloatingWindowSupport.Configure(this, clickThrough: false);
         Content = root;
         root.Children.Add(dropCatcher);
+        root.Children.Add(glassShape);
         root.Children.Add(islandShape);
         AllowDrop = true;
         DragEnter += OnDragOverIsland;
@@ -83,6 +89,7 @@ public sealed class IslandWindow : Window
         contentHost.RenderTransform = contentScale;
         root.Children.Add(contentHost);
         islandShape.MouseLeftButtonUp += OnIslandClicked;
+        glassShape.MouseLeftButtonUp += OnIslandClicked;
         contentHost.MouseLeftButtonUp += OnIslandClicked;
 
         var layout = model.Layout;
@@ -153,8 +160,10 @@ public sealed class IslandWindow : Window
             IslandExpansion.Connect => "connect:" + model.ConnectPrompt?.GetHashCode() + model.ConnectPrompt?.Stage,
             IslandExpansion.Permission => "permission:" + model.PermissionPrompt?.Stage + model.PermissionPrompt?.Status,
             IslandExpansion.Tour => "tour:" + model.TourCard?.GetHashCode() + model.TourCard?.Status + model.TourCard?.Field + model.TourCard?.PrimaryTitle,
-            // The slot's component and the capsule's buttons are part of the panel.
-            IslandExpansion.Full => "full:" + model.Placement + ":" + model.Selection.Active + ":" + string.Join(",", model.Selection.Available),
+            // The slot's component, the capsule's and the tools' buttons and home's columns are part of the panel.
+            IslandExpansion.Full => "full:" + model.Placement + ":" + model.Selection.Active + ":" + string.Join(",", model.Selection.Available)
+                + ":" + model.HomeLayout,
+            IslandExpansion.Peek => "peek:" + model.Placement + ":" + model.PeekDirection,
             _ => model.Expansion + ":" + model.Placement,
         };
     }
@@ -175,7 +184,7 @@ public sealed class IslandWindow : Window
             IslandExpansion.Permission when model.PermissionPrompt is { } permissionPrompt => new PermissionCardView(hub, permissionPrompt, topInset),
             IslandExpansion.Tour when model.TourCard is { } tourCard => new TourCardView(hub, tourCard, topInset),
             IslandExpansion.Full => new FullPanelView(hub, model),
-            IslandExpansion.Peek => new PeekLineView(hub, model.Geometry.NotchHeight),
+            IslandExpansion.Peek => new PeekLineView(hub, model.Geometry.NotchHeight, isSideways: model.Layout.State.PeekGrowsSideways),
             _ => new CollapsedHandleView(model.Placement),
         };
         // The compact strip and the composer sit under the band (on Windows the band is 0 unless a taskbar is at the top).
@@ -271,10 +280,15 @@ public sealed class IslandWindow : Window
         var targetRadius = model.Expansion switch
         {
             IslandExpansion.Collapsed => 11,
-            IslandExpansion.Peek or IslandExpansion.Compact => 18,
+            // The Mac rounds its in-band strips a touch less since the dashboard (IslandCorners: 12).
+            IslandExpansion.Peek or IslandExpansion.Compact => 12,
             _ => DS.HUD.IslandRadius,
         };
         bottomRadius.AnimateTo(targetRadius, 0.3, Easing.EaseInOut);
+        // The open panel in a see-through style: the black fades away over the tint (IslandAppearance.cs).
+        var showsGlass = model.Expansion == IslandExpansion.Full && model.Look.HasGlass();
+        if (glassShape.Fill != GlassBrush(model.Look)) glassShape.Fill = GlassBrush(model.Look);
+        blackOpacity.AnimateTo(showsGlass ? 0 : 1, 0.25, Easing.EaseInOut);
 
         // Where the island hangs in the window: centred at the top, or against the drawer's screen edge.
         var island = layout.Island;
@@ -299,14 +313,18 @@ public sealed class IslandWindow : Window
         }
 
         // The black: only while open on a display without a notch (collapsed, only the handle marks the spot).
-        islandShape.Opacity = shapeOpacity.Value;
-        if (islandShape.Opacity > 0.001)
+        islandShape.Opacity = shapeOpacity.Value * blackOpacity.Value;
+        glassShape.Opacity = shapeOpacity.Value * (1 - blackOpacity.Value);
+        if (shapeOpacity.Value > 0.001)
         {
             var shapeRect = new Rect(islandLeft - flare, islandTop, animatedWidth + flare * 2, animatedHeight);
-            islandShape.Data = isSideDrawer
+            var outline = isSideDrawer
                 ? Shapes.Drawer(new Rect(islandLeft, islandTop, animatedWidth, animatedHeight), bottomRadius.Value, model.Placement == HUDPlacement.Left)
                 : Shapes.Island(shapeRect, bottomRadius.Value, flare);
+            islandShape.Data = outline;
+            glassShape.Data = outline;
             islandShape.IsHitTestVisible = !isCollapsed;
+            glassShape.IsHitTestVisible = !isCollapsed;
         }
 
         // The content: the state's own size, at the top of the island.
@@ -328,6 +346,51 @@ public sealed class IslandWindow : Window
         contentScale.ScaleY = contentScaleSpring.Value;
         contentHost.Opacity = contentOpacity.Value;
         currentContent?.Tick();
+    }
+
+    // MARK: - Style (IslandAppearance.swift)
+
+    /// <summary>Liquid glass: an even dark tint; blend: solid black for the top third, thinning towards the bottom. A layered
+    /// window cannot blur what is behind it, so both are darker than the Mac's (whose glass is frosted) to keep the text
+    /// readable on a bright wallpaper.</summary>
+    private static readonly Brush LiquidGlassBrush = MakeGlassBrush(blend: false);
+    private static readonly Brush BlendBrush = MakeGlassBrush(blend: true);
+
+    private static Brush GlassBrush(IslandLook look) => look == IslandLook.Blend ? BlendBrush : LiquidGlassBrush;
+
+    private static Brush MakeGlassBrush(bool blend)
+    {
+        Brush brush = blend
+            ? new LinearGradientBrush(new GradientStopCollection
+            {
+                new(Color.FromArgb(255, 0, 0, 0), 0),
+                new(Color.FromArgb(255, 0, 0, 0), 0.35),
+                new(Color.FromArgb(217, 0, 0, 0), 0.7),
+                new(Color.FromArgb(184, 0, 0, 0), 1),
+            }, 90)
+            : new SolidColorBrush(Color.FromArgb(199, 0, 0, 0));
+        brush.Freeze();
+        return brush;
+    }
+
+    // MARK: - Typing in a component (the Notes plugin's pad)
+
+    /// <summary>Gives the keyboard to an editor inside the open island when it is clicked (like the composer): the window
+    /// becomes active, and remembers the window that had the keyboard.</summary>
+    public void BeginComponentTyping() => TakeKeyboard();
+
+    /// <summary>The editor is done (esc, or it left the island): the window that had the keyboard gets it back, unless a
+    /// click elsewhere already gave it to another window.</summary>
+    public void EndComponentTyping()
+    {
+        if (windowBeforeKeyboard == 0) return;
+        if (IsActive)
+        {
+            ReturnKeyboard();
+            return;
+        }
+        windowBeforeKeyboard = 0;
+        FloatingWindowSupport.ReturnKeyboardFocus(this, 0);
     }
 
     // MARK: - Drops (the Shelf plugin; IslandDrop.swift)

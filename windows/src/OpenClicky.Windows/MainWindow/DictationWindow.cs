@@ -1,7 +1,8 @@
 // Ports the window half of Dictation/UI/DictationWindow.swift: OpenClicky's one window. A Fluent
-// NavigationView lists the pages in the Mac's order — General, Dictation, Clicky, Voice, Your
-// words, How it writes, The Orb, Shortcuts, Keys & Plans, Account, Privacy & Security, About — with
-// a search over every setting at the top and incognito and the account at the foot. Every way in
+// NavigationView lists six pages — Dictation, Clicky, Island, Keys & Account, Privacy, General — with
+// a search over every setting at the top and incognito and the account at the foot. Rows on a page
+// open the pages under it (Your words, How it writes and The orb under Dictation; Calendars under
+// Island); the back button above the page returns, and the button opposite it picks the appearance. Every way in
 // (Ctrl+, the tray, the island, the orb's menu) goes through Open(section, settingsPage), which
 // lands on the page it asks for. The window is reopened rather than recreated, and remembers where
 // it was. Closing it stops the Settings tour.
@@ -36,6 +37,11 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
     private readonly Dictionary<DictationDestination, WpfUi.NavigationViewItem> sidebarItems = [];
     private readonly ContentControl footerAccount = new() { Focusable = false, HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly ContentControl contentHost = new() { Focusable = false, HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
+    /// <summary>The page with its toolbar above it: back on the left, appearance on the right.</summary>
+    private readonly Grid pageArea = new();
+    private readonly WpfUi.Button backButton;
+    private readonly WpfUi.Button appearanceButton;
+    private readonly WpfUi.ImageIcon titleBarIcon = new() { Width = 16, Height = 16 };
     private IReadOnlyList<string> shownItemIds = [];
     private string shownKey = "";
 
@@ -55,7 +61,6 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         Tour = new SettingsTourController(services.Preferences, services.TourPointer, services.TourNarrator);
 
         Title = "OpenClicky";
-        Icon = OpenClickyMarkDrawing.AppIconBitmap(64);
         ExtendsContentIntoTitleBar = true;
         WindowBackdropType = WpfUi.WindowBackdropType.Mica;
         WindowCornerPreference = WpfUi.WindowCornerPreference.Round;
@@ -63,13 +68,24 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         MinHeight = MinimumSize.Height;
         theme = MainWindowTheme.Install(this, services.Settings);
         // The page sits in NavigationView's Frame, which does not inherit the window's resources.
-        theme.AddScope(contentHost);
+        theme.AddScope(pageArea);
         RestoreFrame();
 
         var titleBar = new WpfUi.TitleBar
         {
             Title = "OpenClicky",
-            Icon = new WpfUi.ImageIcon { Source = OpenClickyMarkDrawing.AppIconImage(), Width = 16, Height = 16 },
+            Icon = titleBarIcon,
+        };
+        // The icon follows the colour picked in General (the taskbar shows the window's icon).
+        void ShowAppIcon()
+        {
+            Icon = OpenClickyMarkDrawing.AppIconBitmap(64, services.Settings.AppIconColor);
+            titleBarIcon.Source = OpenClickyMarkDrawing.AppIconImage(services.Settings.AppIconColor);
+        }
+        ShowAppIcon();
+        services.Settings.PropertyChanged += (_, arguments) =>
+        {
+            if (arguments.PropertyName == nameof(DictationSettings.AppIconColor)) Dispatcher.BeginInvoke(ShowAppIcon);
         };
         searchBox = new WpfUi.TextBox
         {
@@ -99,9 +115,28 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
             sidebarItems[destination] = item;
             navigation.MenuItems.Add(item);
         }
+
+        backButton = ToolbarButton("", "Back", () => Model.GoBack());
+        backButton.HorizontalAlignment = HorizontalAlignment.Left;
+        appearanceButton = ToolbarButton(AppearanceGlyph(services.Settings.Appearance), "Appearance", ShowAppearanceMenu);
+        appearanceButton.HorizontalAlignment = HorizontalAlignment.Right;
+        var toolbar = new Grid { Margin = new Thickness(28, 2, 28, 0) };
+        toolbar.Children.Add(backButton);
+        toolbar.Children.Add(appearanceButton);
+        pageArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        pageArea.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        pageArea.Children.Add(toolbar);
+        Grid.SetRow(contentHost, 1);
+        pageArea.Children.Add(contentHost);
+        UpdateToolbar();
+        services.Settings.PropertyChanged += (_, arguments) =>
+        {
+            if (arguments.PropertyName == nameof(DictationSettings.Appearance)) Dispatcher.BeginInvoke(UpdateToolbar);
+        };
+
         navigation.Loaded += (_, _) =>
         {
-            navigation.ReplaceContent(contentHost, null);
+            navigation.ReplaceContent(pageArea, null);
             UpdateSidebarSelection();
         };
 
@@ -119,7 +154,6 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         OpenClickyConfiguration.SettingsChanged += OnShellChanged;
         ShellSettingsRevision.Changed += OnShellChanged;
         services.Auth.PropertyChanged += (_, _) => Dispatcher.BeginInvoke(RenderFooterAccount);
-        services.History.HistoryChanged += () => Dispatcher.BeginInvoke(UpdateTakeCount);
         Closed += (_, _) =>
         {
             OpenClickyConfiguration.SettingsChanged -= OnShellChanged;
@@ -129,7 +163,6 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         PreviewKeyDown += OnPreviewKeyDown;
         Closing += OnClosing;
         RenderFooterAccount();
-        UpdateTakeCount();
         Render();
     }
 
@@ -150,6 +183,8 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
     public void ShowSettings(DictationSettingsPage page) => Open(settingsPage: page);
 
     public void ShowSection(DictationSection section) => Open(section: section);
+
+    public void Navigate(DictationDestination destination) => Model.Push(destination);
 
     public void StartSettingsTour()
     {
@@ -172,6 +207,69 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
             }
             Render();
         }
+        if (arguments.PropertyName is nameof(DictationWindowModel.CanGoBack) or nameof(DictationWindowModel.SearchText)) UpdateToolbar();
+    }
+
+    // MARK: - toolbar
+
+    private static WpfUi.Button ToolbarButton(string glyph, string label, Action onClick)
+    {
+        var button = new WpfUi.Button
+        {
+            Content = new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 14 },
+            Appearance = WpfUi.ControlAppearance.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(9, 6, 9, 6),
+            Cursor = Cursors.Hand,
+            ToolTip = label,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Ui.AutomationProperties(button, label);
+        button.Click += (_, _) => onClick();
+        return button;
+    }
+
+    private static string AppearanceGlyph(DictationAppearance appearance) => appearance switch
+    {
+        DictationAppearance.Light => "",
+        DictationAppearance.Dark => "",
+        _ => "",
+    };
+
+    /// <summary>Back shows only when a row opened this page; the appearance button shows the current choice.</summary>
+    private void UpdateToolbar()
+    {
+        var canGoBack = Model.CanGoBack && !Model.IsSearching;
+        backButton.Visibility = canGoBack ? Visibility.Visible : Visibility.Hidden;
+        ((TextBlock)appearanceButton.Content).Text = AppearanceGlyph(services.Settings.Appearance);
+        appearanceButton.ToolTip = $"Appearance: {AppearanceTitle(services.Settings.Appearance)}";
+    }
+
+    private static string AppearanceTitle(DictationAppearance appearance) => appearance switch
+    {
+        DictationAppearance.Light => "Light",
+        DictationAppearance.Dark => "Dark",
+        _ => "Auto",
+    };
+
+    /// <summary>Light, dark or auto (the Mac's AppearanceToolbarMenu): this window, the orb and its transcript box follow it; the island stays black.</summary>
+    private void ShowAppearanceMenu()
+    {
+        var menu = new ContextMenu { PlacementTarget = appearanceButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        foreach (var appearance in new[] { DictationAppearance.Light, DictationAppearance.Dark, DictationAppearance.System })
+        {
+            var item = new MenuItem
+            {
+                Header = AppearanceTitle(appearance),
+                IsCheckable = true,
+                IsChecked = services.Settings.Appearance == appearance,
+                Icon = new TextBlock { Text = AppearanceGlyph(appearance), FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets") },
+            };
+            var chosen = appearance;
+            item.Click += (_, _) => services.Settings.Appearance = chosen;
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
     }
 
     /// <summary>The ids of the rows the current view would show, to tell whether a settings change added or removed one.</summary>
@@ -209,7 +307,8 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         }
         else if (Model.Destination.Page is { } page)
         {
-            contentHost.Content = new SettingsFormView(page.Title(), SettingsSectionGroup.Groups(catalog.PageItems(page)), item => rowFactory.Build(item, ""));
+            contentHost.Content = new SettingsFormView(page.Title(), SettingsSectionGroup.Groups(catalog.PageItems(page), foldsAdvanced: true),
+                item => rowFactory.Build(item, ""), page: page);
         }
         else if (Model.Destination.Section == DictationSection.Words)
         {
@@ -227,13 +326,12 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         var matches = Model.IsSearching ? catalog.SearchMatches(Model.TrimmedSearchText) : [];
         foreach (var (destination, item) in sidebarItems)
         {
-            var isCurrent = !Model.IsSearching && destination == Model.Destination;
+            // A page opened from a row keeps its parent selected (The orb keeps Dictation).
+            var isCurrent = !Model.IsSearching && destination.SidebarPage == Model.Destination.SidebarPage;
             if (isCurrent) item.Activate(navigation);
             else item.Deactivate(navigation);
-            // While searching, the pages with no match fade back.
-            var hasMatch = destination.Page is { } page
-                ? matches.Any(match => match.Page == page && match.SearchOnlyGroup is null)
-                : matches.Any(match => match.SearchOnlyGroup == destination.Section!.Value.SidebarTitle());
+            // While searching, the pages with no match on them or the pages under them fade back.
+            var hasMatch = matches.Any(match => match.Page.SidebarPage() == destination.SidebarPage);
             item.Opacity = Model.IsSearching && !hasMatch ? 0.35 : 1;
         }
     }
@@ -242,11 +340,11 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
 
     private WpfUi.NavigationViewItem SidebarItem(DictationDestination destination)
     {
-        var (glyph, tint) = destination.Page is { } page ? (page.Glyph(), page.TintHex()) : (destination.Section!.Value.Glyph(), destination.Section!.Value.TintHex());
+        var page = destination.SidebarPage;
         var item = new WpfUi.NavigationViewItem
         {
             Content = destination.Title,
-            Icon = new WpfUi.ImageIcon { Source = SidebarIcon(glyph, tint), Width = 20, Height = 20 },
+            Icon = new WpfUi.ImageIcon { Source = SidebarIcon(page.Glyph(), page.TintHex()), Width = 20, Height = 20 },
             Cursor = Cursors.Hand,
         };
         Ui.AutomationProperties(item, destination.Title);
@@ -282,15 +380,6 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         var image = new DrawingImage(group);
         image.Freeze();
         return image;
-    }
-
-    private void UpdateTakeCount()
-    {
-        if (!sidebarItems.TryGetValue(DictationDestination.Of(DictationSection.Words), out var item)) return;
-        var count = 0;
-        try { count = services.TakeStore?.Stats().AllTimeTakes ?? 0; }
-        catch (TakeStoreException) { }
-        item.InfoBadge = count > 0 ? new WpfUi.InfoBadge { Value = count.ToString("N0", CultureInfo.CurrentCulture), Severity = WpfUi.InfoBadgeSeverity.Informational } : null;
     }
 
     /// <summary>The sidebar's foot: incognito, and who is signed in (a click opens Account).</summary>

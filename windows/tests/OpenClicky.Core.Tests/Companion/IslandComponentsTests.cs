@@ -55,37 +55,55 @@ public class IslandComponentsTests
     }
 
     [Fact]
-    public void PluginsAreOffUntilTurnedOnAndADefaultSwitchedOffReadsAsTheShortcuts()
+    public void PluginsAreOffUntilTurnedOnAndADefaultSwitchedOffReadsAsHome()
     {
         var settings = new IslandComponentSettings(Preferences.InMemory());
         var registry = IslandComponentRegistry.All;
+        Assert.Equal("home", settings.DefaultId);
         Assert.Empty(settings.EnabledPlugins);
         Assert.True(settings.IsEnabled("shortcuts", registry));
         Assert.False(settings.IsEnabled(IslandPluginRegistry.SystemId, registry));
         settings.DefaultId = IslandPluginRegistry.SystemId;
-        Assert.Equal("shortcuts", settings.ResolvedDefaultId(registry));
+        Assert.Equal("home", settings.ResolvedDefaultId(registry));
         settings.SetPluginEnabled(IslandPluginRegistry.SystemId, true);
         Assert.True(settings.IsEnabled(IslandPluginRegistry.SystemId, registry));
         Assert.Equal(IslandPluginRegistry.SystemId, settings.ResolvedDefaultId(registry));
-        Assert.Equal(new HashSet<string> { "shortcuts", "transcript", "agent", "system" }, settings.EnabledIds(registry));
+        Assert.Equal(new HashSet<string> { "home", "shortcuts", "transcript", "agent", "system" }, settings.EnabledIds(registry));
         settings.SetPluginEnabled(IslandPluginRegistry.SystemId, false);
         Assert.Empty(settings.EnabledPlugins);
+    }
+
+    [Fact]
+    public void ADisabledDefaultFallsBackToHomeInTheSelector()
+    {
+        var home = new IslandComponent("home", "Home", "", 45);
+        var system = new IslandComponent("system", "System", "", 84, IsPlugin: true);
+        IReadOnlyList<IslandComponent> registry = [home, Shortcuts, system];
+        var selection = IslandComponentSelector.Select(registry, [], "system", null, IslandContext.Idle, new HashSet<string> { "home", "shortcuts" });
+        Assert.Equal(new IslandComponentSelection("home", ["home", "shortcuts"]), selection);
     }
 
     [Fact]
     public void TheOrderDropsUnknownIdsAndAppendsMissingOnes()
     {
         var settings = new IslandComponentSettings(Preferences.InMemory()) { Order = ["system", "gone"] };
-        Assert.Equal(["system", "shortcuts", "transcript", "agent", "shelf", "agents", "media", "teacher"], settings.ResolvedOrder(IslandComponentRegistry.All));
+        Assert.Equal(["system", "home", "shortcuts", "transcript", "agent", "shelf", "agents", "media", "teacher", "timer", "notes", "clipboard"],
+            settings.ResolvedOrder(IslandComponentRegistry.All));
     }
 
     [Fact]
     public void TheRealRegistryListsTheBuiltInsThenThePlugins()
     {
-        Assert.Equal("shortcuts", IslandComponentRegistry.All[0].Id);
-        Assert.All(IslandPluginRegistry.All, plugin => Assert.True(plugin.IsPlugin));
-        Assert.Contains(IslandComponentRegistry.All, component => component.Id == IslandPluginRegistry.SystemId);
-        Assert.Contains(IslandComponentRegistry.All, component => component.Id == IslandPluginRegistry.TeacherId);
+        Assert.Equal(["home", "shortcuts", "transcript", "agent", "system", "shelf", "agents", "media", "teacher", "timer", "notes", "clipboard"],
+            IslandComponentRegistry.All.Select(component => component.Id));
+        // Home's height follows what is on (IslandHomeLayoutTests).
+        Assert.Equal([45, 52, 52, 84, 84, 76, 84, 64, 110, 120, 130], IslandComponentRegistry.All.Skip(1).Select(component => component.PreferredHeight));
+        Assert.Equal([false, false, false, false, true, true, true, true, true, true, true, true], IslandComponentRegistry.All.Select(component => component.IsPlugin));
+        Assert.Equal(["system", "shelf", "agents", "media", "teacher", "timer", "notes", "clipboard"], IslandPluginRegistry.All.Select(plugin => plugin.Id));
+        Assert.Equal([false, false, false, false, true, true, true, true, true, true, true, true],
+            IslandComponentRegistry.All.Select(component => component.SettingsDetail is not null));
+        Assert.All(IslandComponentRegistry.All, component => Assert.NotEqual("", component.Glyph));
+        Assert.Equal(["shelf", "clipboard", "notes", "timer"], IslandPluginRegistry.ToolIds);
     }
 
     [Fact]
@@ -94,7 +112,8 @@ public class IslandComponentsTests
         var context = IslandContext.Idle with { IsTakeLive = true, IsDragHovering = true };
         Assert.Equal("shelf", context.ContextualKey);
         context = IslandContext.Idle with { IsMediaPlaying = true };
-        Assert.Equal("media", context.ContextualKey);
+        // The track is on home, so home is the moment.
+        Assert.Equal("home", context.ContextualKey);
         context = context with { AgentActivityText = "working" };
         Assert.Equal("agent", context.ContextualKey);
     }
@@ -109,18 +128,40 @@ public class IslandComponentsTests
     }
 
     /// <summary>A live take puts the transcript in the slot, an agent at work puts the agent there; both leave
-    /// the capsule a way back to the shortcuts.</summary>
+    /// the capsule a way back to home and the shortcuts.</summary>
     [Fact]
     public void TheRealBuiltInsFollowTheMoment()
     {
         var geometry = IslandGeometry.VirtualNotch(new ScreenRect(0, 0, 1920, 1080), new ScreenRect(0, 0, 1920, 1040));
         var model = new IslandModel(geometry);
         model.SetContext(IslandContext.Idle with { Now = Now, IsTakeLive = true, LiveTranscript = "hello" });
-        Assert.Equal(new IslandComponentSelection("transcript", ["shortcuts", "transcript"]), model.Selection);
+        Assert.Equal(new IslandComponentSelection("transcript", ["home", "shortcuts", "transcript"]), model.Selection);
         model.SetContext(IslandContext.Idle with { Now = Now, AgentActivityText = "ran: dir" });
-        Assert.Equal(new IslandComponentSelection("agent", ["shortcuts", "agent"]), model.Selection);
+        Assert.Equal(new IslandComponentSelection("agent", ["home", "shortcuts", "agent"]), model.Selection);
         model.SetContext(IslandContext.Idle with { Now = Now });
-        Assert.Equal(new IslandComponentSelection("shortcuts", ["shortcuts"]), model.Selection);
+        Assert.Equal(new IslandComponentSelection("home", ["home", "shortcuts"]), model.Selection);
+    }
+
+    /// <summary>The tools get buttons of their own in the band, and Now playing and System are on home, so the capsule
+    /// leaves them out.</summary>
+    [Fact]
+    public void TheCapsuleLeavesOutTheToolsAndWhatHomeShows()
+    {
+        var preferences = Preferences.InMemory();
+        var settings = new IslandComponentSettings(preferences)
+        {
+            EnabledPlugins = ["timer", "shelf", "media", "system", "notes", "teacher", "clipboard"],
+        };
+        var geometry = IslandGeometry.VirtualNotch(new ScreenRect(0, 0, 1920, 1080), new ScreenRect(0, 0, 1920, 1040));
+        var model = new IslandModel(geometry, componentSettings: settings);
+        Assert.Equal(["home", "shortcuts", "teacher"], model.CapsuleIds);
+        Assert.Equal(["shelf", "clipboard", "notes", "timer"], model.ToolIds);
+        Assert.True(model.ShowsCapsule);
+        // A tool's button shows it; a second click goes back to where the island was.
+        model.SelectComponent("notes");
+        Assert.Equal("notes", model.Selection.Active);
+        model.SelectComponent(null);
+        Assert.Equal("home", model.Selection.Active);
     }
 
     [Fact]
@@ -140,17 +181,20 @@ public class IslandComponentsTests
         Assert.Single(followUps);
     }
 
-    /// <summary>The System plugin on and the default: the open panel is the band plus its 84 rows, and the capsule
-    /// flips back to the shortcuts (45) until the moment changes.</summary>
+    /// <summary>With home's columns all off, home is the shortcuts row (45); the System plugin on and the default makes
+    /// the open panel the band plus its 84 rows, and the capsule flips back to the shortcuts until the moment changes.</summary>
     [Fact]
     public void ThePanelTakesTheActiveComponentsHeightAndTheCapsuleFlipsIt()
     {
         var preferences = Preferences.InMemory();
+        preferences.Set(IslandHomeLayout.CalendarEnabledKey, false);
         var settings = new IslandComponentSettings(preferences);
         var geometry = IslandGeometry.VirtualNotch(new ScreenRect(0, 0, 1920, 1080), new ScreenRect(0, 0, 1920, 1040));
         var model = new IslandModel(geometry, componentSettings: settings);
-        Assert.False(model.ShowsCapsule);
+        Assert.Equal("home", model.Selection.Active);
         var shortcutsHeight = model.Layout.FullHeight;
+        Assert.Equal(model.Layout.BandRowHeight + 45, shortcutsHeight);
+        Assert.Equal(512, model.Layout.FullWidth);
 
         settings.SetPluginEnabled(IslandPluginRegistry.SystemId, true);
         settings.DefaultId = IslandPluginRegistry.SystemId;
@@ -162,5 +206,33 @@ public class IslandComponentsTests
         model.SelectComponent("shortcuts");
         Assert.Equal("shortcuts", model.Selection.Active);
         Assert.Equal(shortcutsHeight, model.Layout.FullHeight);
+    }
+
+    /// <summary>Home grows the open island to fit its columns, follows its switches while open, and in a side drawer is
+    /// the shortcuts row in the drawer's own width.</summary>
+    [Fact]
+    public void HomeSizesTheOpenIslandToItsColumns()
+    {
+        var preferences = Preferences.InMemory();
+        var settings = new IslandComponentSettings(preferences);
+        var geometry = IslandGeometry.VirtualNotch(new ScreenRect(0, 0, 1920, 1080), new ScreenRect(0, 0, 1920, 1040));
+        var model = new IslandModel(geometry, componentSettings: settings);
+        var layoutChanges = 0;
+        model.LayoutChanged += () => layoutChanges++;
+        model.OpenPinned();
+        // The calendar is on by default: 308 wide is under the standard 512, so the island keeps 512.
+        Assert.Equal(512, model.Layout.FullWidth);
+        Assert.Equal(model.Layout.BandRowHeight + 134, model.Layout.FullHeight);
+
+        settings.EnabledPlugins = ["media", "system"];
+        preferences.Set(IslandHomeLayout.WeatherEnabledKey, true);
+        layoutChanges = 0;
+        model.RefreshComponentSettings();
+        Assert.Equal(918, model.Layout.FullWidth);
+        Assert.True(layoutChanges > 0);
+
+        model.Placement = HUDPlacement.Right;
+        Assert.Equal(360, model.Layout.FullWidth);
+        Assert.Equal(model.Layout.BandRowHeight + 92, model.Layout.FullHeight);
     }
 }

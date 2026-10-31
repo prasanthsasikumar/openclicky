@@ -2,7 +2,7 @@
 // everything about typing with your voice, in the order someone sets it up. The key you hold (with
 // a sketch of where it is), who hears you, in which language, whether AI tidies the words, through
 // which microphone, when a quiet take ends, and the tones. Each engine says where the audio goes;
-// its key lives under Keys & Plans. (No fn rows and no haptics on Windows.)
+// its key lives under Keys & Account. (No fn rows and no haptics on Windows.)
 
 using System.Windows;
 using System.Windows.Controls;
@@ -118,7 +118,7 @@ internal sealed partial class SettingsRowFactory
             {
                 var reason = Ui.Text(WordsPageSentences.SentenceCased(unavailableReason) + ".", SettingsLook.CaptionSize, SettingsLook.Danger);
                 var fix = choice == DictationEngineChoice.Sarvam
-                    ? Ui.Button("Add Key…", () => actions.ShowSettings(DictationSettingsPage.Keys))
+                    ? Ui.Button("Add Key…", () => actions.ShowSettings(DictationSettingsPage.Account))
                     : Ui.Button("Sign In…", () => actions.ShowSettings(DictationSettingsPage.Account));
                 var fixRow = new DockPanel { Margin = new Thickness(30, 10, 0, 0), LastChildFill = true };
                 DockPanel.SetDock(fix, Dock.Right);

@@ -173,7 +173,7 @@ public sealed record VoicePickerState
     public bool ShowsKokoroRows { get; init; }
     /// <summary>This PC's voice row shows (speaking now, or picked).</summary>
     public bool ShowsSystemVoiceRow { get; init; }
-    /// <summary>Fewer voices are offered than exist: "More voices" points at Keys & Plans.</summary>
+    /// <summary>Fewer voices are offered than exist: "More voices" points at Keys & Account.</summary>
     public bool HasMoreVoices { get; init; }
 }
 
@@ -412,7 +412,7 @@ public sealed class DetachedSettingsServices(IProcessRunner? processes = null) :
         if (picked != "automatic" && picked != speaking)
         {
             var standIn = speaking == "account" ? "the free voice" : "this PC’s voice";
-            sentence = picked == "kokoro" ? $"{standIn} until Kokoro is downloaded." : $"{standIn}: {VoiceTitle(picked)} needs its key under Keys & Plans.";
+            sentence = picked == "kokoro" ? $"{standIn} until Kokoro is downloaded." : $"{standIn}: {VoiceTitle(picked)} needs its key under Keys & Account.";
         }
         else
         {

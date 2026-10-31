@@ -241,7 +241,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         Island.SettingsRequested += destination => ShowSettings(destination switch
         {
             IslandSettingsDestination.Dictation => DictationSettingsPage.Dictation,
-            IslandSettingsDestination.Keys => DictationSettingsPage.Keys,
+            IslandSettingsDestination.Keys => DictationSettingsPage.Account,
             IslandSettingsDestination.Account => DictationSettingsPage.Account,
             _ => DictationSettingsPage.General,
         });

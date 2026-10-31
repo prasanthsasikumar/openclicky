@@ -53,8 +53,10 @@ public sealed class SettingsTourTests
     [Fact]
     public void SidebarTargetsAreNamedByPage()
     {
-        Assert.Equal("sidebar.page.voice", SettingsTourTargets.SidebarTargetId(DictationDestination.Of(DictationSettingsPage.Voice)));
-        Assert.Equal("sidebar.section.words", SettingsTourTargets.SidebarTargetId(DictationDestination.Of(DictationSection.Words)));
+        Assert.Equal("sidebar.page.clicky", SettingsTourTargets.SidebarTargetId(DictationDestination.Of(DictationSettingsPage.Clicky)));
+        // A page under another names its sidebar page: Your words is reached through Dictation.
+        Assert.Equal("sidebar.page.dictation", SettingsTourTargets.SidebarTargetId(DictationDestination.Of(DictationSection.Words)));
+        Assert.Equal("sidebar.page.dictation", SettingsTourTargets.SidebarTargetId(DictationDestination.Of(DictationSettingsPage.Orb)));
     }
 
     [Fact]
@@ -130,8 +132,8 @@ public sealed class SettingsTourTests
         Assert.Equal("end", pointer.Events[^1]);
         Assert.Contains("fly Dictation", pointer.Events);
         Assert.Contains("fly the key you hold", pointer.Events);
-        // Dictation, Voice, Clicky, Your words, Shortcuts, Keys & Plans, then back to General.
-        Assert.Equal(7, pointer.Events.Count(eventName => eventName == "click"));
+        // Dictation, Your words (through Dictation), Clicky, Keys & Account, then back to General.
+        Assert.Equal(5, pointer.Events.Count(eventName => eventName == "click"));
         Assert.Equal(DictationDestination.Of(DictationSettingsPage.General), visited[^1]);
     }
 

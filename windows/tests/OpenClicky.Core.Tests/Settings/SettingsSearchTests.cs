@@ -41,12 +41,12 @@ public sealed class SettingsSearchTests
     {
         var items = new[]
         {
-            Item("a", DictationSettingsPage.Keyboard, "Dictation", "Dictation key"),
-            Item("b", DictationSettingsPage.Keyboard, "Dictation", "Cancel a take"),
+            Item("a", DictationSettingsPage.Orb, "Look", "Style"),
+            Item("b", DictationSettingsPage.Orb, "Look", "Theme"),
             Item("c", DictationSettingsPage.Clicky, "Pointer", "Show the pointer"),
         };
         var groups = SettingsSectionGroup.Groups(items, item => item.Page.Title());
-        Assert.Equal(["Shortcuts", "Clicky"], groups.Select(group => group.Title));
+        Assert.Equal(["The orb", "Clicky"], groups.Select(group => group.Title));
         Assert.Equal(2, groups[0].Items.Count);
     }
 
@@ -69,8 +69,8 @@ public sealed class SettingsSearchTests
             Item("p", DictationSettingsPage.Privacy, "What it keeps", "Delete all takes", "Your dictionary stays."),
             dictionary,
         };
-        Assert.Equal(["How it writes", "Privacy & Security"], SettingsSectionGroup.SearchResultGroups(matches, "dictionary").Select(group => group.Title));
-        Assert.Equal(["Privacy & Security", "How it writes"], SettingsSectionGroup.SearchResultGroups(matches, "stays").Select(group => group.Title));
+        Assert.Equal(["How it writes", "Privacy"], SettingsSectionGroup.SearchResultGroups(matches, "dictionary").Select(group => group.Title));
+        Assert.Equal(["Privacy", "How it writes"], SettingsSectionGroup.SearchResultGroups(matches, "stays").Select(group => group.Title));
     }
 
     [Fact]
@@ -115,31 +115,34 @@ public sealed class SettingsSearchTests
     }
 
     [Fact]
-    public void TheDictationKeyLivesOnDictationAndTheShortcutsLinkToIt()
+    public void TheDictationKeyLivesOnDictationAndTheRarerShortcutsFoldUnderMore()
     {
         var catalog = Catalog(new DictationSettings(Preferences.InMemory()));
         Assert.Equal(DictationSettingsPage.Dictation, catalog.AllItems.Single(item => item.Id == "keyboard.dictationKey").Page);
-        Assert.Contains(catalog.PageItems(DictationSettingsPage.Keyboard), item => item.Id == "keyboard.dictate");
+        var talk = catalog.AllItems.Single(item => item.Id == "keyboard.talk");
+        Assert.Equal(DictationSettingsPage.Clicky, talk.Page);
+        Assert.False(talk.IsAdvanced);
+        Assert.True(catalog.AllItems.Single(item => item.Id == "keyboard.cancel").IsAdvanced);
+        Assert.DoesNotContain(catalog.AllItems, item => item.Id is "keyboard.dictate" or "keyboard.where" or "general.region" or "about.checkNow" or "account.usage.offline");
         Assert.DoesNotContain(catalog.AllItems, item => item.Id.Contains("fn", StringComparison.Ordinal) || item.Id.Contains("haptics", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void SarvamAndTheScriptRowAreOfferedOnlyInIndiaUnlessInUse()
+    public void SarvamAndTheScriptRowShowOnlyWhenInUse()
     {
-        var settings = new DictationSettings(Preferences.InMemory()) { Region = AppRegion.World };
+        var settings = new DictationSettings(Preferences.InMemory());
         var catalog = Catalog(settings);
+        Assert.Equal(AppRegion.World, settings.Region);
         Assert.DoesNotContain(catalog.PageItems(DictationSettingsPage.Dictation), item => item.Id == "dictation.engine.sarvam");
-        Assert.DoesNotContain(catalog.PageItems(DictationSettingsPage.Dictation), item => item.Id == "dictation.script");
+        Assert.DoesNotContain(catalog.AllItems.Where(item => item.IsRelevant()), item => item.Id == "dictation.script");
 
         settings.Engine = DictationEngineChoice.Sarvam;
         Assert.Contains(catalog.PageItems(DictationSettingsPage.Dictation), item => item.Id == "dictation.engine.sarvam");
 
-        settings.Region = AppRegion.India;
+        settings.LanguageCode = "hi-IN";
         Assert.Contains(catalog.PageItems(DictationSettingsPage.Dictation), item => item.Id == "dictation.script");
         settings.LanguageCode = "en-US";
         Assert.DoesNotContain(catalog.PageItems(DictationSettingsPage.Dictation), item => item.Id == "dictation.script");
-        settings.LanguageCode = "hi-IN";
-        Assert.Contains(catalog.PageItems(DictationSettingsPage.Dictation), item => item.Id == "dictation.script");
     }
 
     [Fact]
@@ -147,13 +150,13 @@ public sealed class SettingsSearchTests
     {
         var settings = new DictationSettings(Preferences.InMemory());
         var signedOut = Catalog(settings, kind: AccountKind.Account);
-        Assert.DoesNotContain(signedOut.PageItems(DictationSettingsPage.Keyboard), item => item.Id == "keyboard.handsFree");
-        Assert.Contains(signedOut.PageItems(DictationSettingsPage.Voice), item => item.Id == "clicky.fastVoiceNeedsKey");
+        Assert.DoesNotContain(signedOut.PageItems(DictationSettingsPage.Clicky), item => item.Id == "keyboard.handsFree");
+        Assert.Contains(signedOut.PageItems(DictationSettingsPage.Clicky), item => item.Id == "clicky.fastVoiceNeedsKey");
 
         var ownKeys = Catalog(settings, kind: AccountKind.OwnKeys);
-        Assert.Contains(ownKeys.PageItems(DictationSettingsPage.Keyboard), item => item.Id == "keyboard.handsFree");
-        Assert.Contains(ownKeys.PageItems(DictationSettingsPage.Voice), item => item.Id == "clicky.fastVoice");
-        Assert.DoesNotContain(ownKeys.PageItems(DictationSettingsPage.Voice), item => item.Id == "clicky.fastVoiceNeedsKey");
+        Assert.Contains(ownKeys.PageItems(DictationSettingsPage.Clicky), item => item.Id == "keyboard.handsFree");
+        Assert.Contains(ownKeys.PageItems(DictationSettingsPage.Clicky), item => item.Id == "clicky.fastVoice");
+        Assert.DoesNotContain(ownKeys.PageItems(DictationSettingsPage.Clicky), item => item.Id == "clicky.fastVoiceNeedsKey");
     }
 
     [Fact]

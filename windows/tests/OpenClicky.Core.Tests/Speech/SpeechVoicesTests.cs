@@ -197,6 +197,6 @@ public class SpeechVoicesTests
     {
         var error = await Assert.ThrowsAsync<CloudVoiceException>(() =>
             CloudVoiceSpeaker.AudioAsync("hi", SpeechVoiceChoice.ElevenLabs, Settings(), "en"));
-        Assert.Equal("ElevenLabs needs a key under Settings → Keys & Plans.", error.Message);
+        Assert.Equal("ElevenLabs needs a key under Settings → Keys & Account.", error.Message);
     }
 }

@@ -299,7 +299,7 @@ internal sealed class AccountProfileRow : ContentControl
                 text.Children.Add(expiredText);
             }
             action = Ui.Button(isGuest ? "Add Email…" : "Sign In…", () =>
-                AccountSheet.Show(actions.OwnerWindow, services.Settings, auth, onUseOwnKey: () => actions.ShowSettings(DictationSettingsPage.Keys)),
+                AccountSheet.Show(actions.OwnerWindow, services.Settings, auth, onUseOwnKey: () => actions.ShowSettings(DictationSettingsPage.Account)),
                 WpfUi.ControlAppearance.Primary);
         }
         var grid = new Grid();

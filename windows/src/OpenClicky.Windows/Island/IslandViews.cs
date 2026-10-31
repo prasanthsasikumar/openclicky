@@ -5,8 +5,9 @@
 //
 //  What the island shows in each state, drawn with the HUD tokens: the collapsed handle, the busy
 //  strip and the caption strip, the composer, the connect / permission / tour cards and the open
-//  panel (the band with the pointer's status, the voice pill, Settings and quit; the body with
-//  (i) and the 2 × 2 shortcut grid or the engine warning). Each view refreshes its words from
+//  panel (the band with the pointer's status, the voice pill, the tools, Settings and quit; the
+//  body with (i) and the 2 × 2 shortcut grid or the engine warning, or the component the island
+//  picked, home's dashboard by default). Each view refreshes its words from
 //  the models (Refresh) and animates its indicators every frame (Tick).
 //
 
@@ -73,36 +74,59 @@ internal sealed class CollapsedHandleView : Grid, IIslandContent
 // MARK: - Peek
 
 /// <summary>The hover tease (NotchPeekLine): the pointer's mark and status (or the playing track, with Now playing on),
-/// then "· click to open", on one line under the band.</summary>
+/// then "· click to open", on one line under the band. Growing sideways (the default), the line is split at the island's
+/// middle: the status runs up to it from the left, "click to open" starts after it.</summary>
 internal sealed class PeekLineView : Grid, IIslandContent
 {
     private readonly IslandCompanionModel hub;
     private readonly PointerTriangleView mark = new(10, DS.HUD.Pointer, 3);
     private readonly TextBlock statusText;
 
-    public PeekLineView(IslandCompanionModel hub, double topInset)
+    public PeekLineView(IslandCompanionModel hub, double topInset, bool isSideways = false)
     {
         this.hub = hub;
         // The whole line is the island's click target: a click opens the panel.
         IsHitTestVisible = false;
         Loaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed += OnPluginLineChanged;
         Unloaded += (_, _) => Plugins.Media.MediaIslandView.Store.Changed -= OnPluginLineChanged;
-        var row = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(10, topInset, 10, 0),
-        };
         var markHolder = new Grid { Width = 12, Height = 12, Margin = new Thickness(0, 0, 6, 0) };
         markHolder.Children.Add(mark);
-        row.Children.Add(markHolder);
         // A long track name is cut, so "click to open" always fits.
         statusText = Text("", 11, DS.HUD.Text2Brush, trimming: TextTrimming.CharacterEllipsis);
         statusText.MaxWidth = 170;
-        row.Children.Add(statusText);
-        row.Children.Add(Text(" · click to open", 11, DS.HUD.Text3Brush));
-        Children.Add(row);
+        if (isSideways)
+        {
+            ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Margin = new Thickness(0, topInset, 0, 0);
+            var status = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0) };
+            status.Children.Add(markHolder);
+            status.Children.Add(statusText);
+            Children.Add(status);
+            var dot = Text("·", 11, DS.HUD.Text3Brush);
+            SetColumn(dot, 1);
+            Children.Add(dot);
+            var open = Text("click to open", 11, DS.HUD.Text3Brush);
+            open.HorizontalAlignment = HorizontalAlignment.Left;
+            open.Margin = new Thickness(8, 0, 12, 0);
+            SetColumn(open, 2);
+            Children.Add(open);
+        }
+        else
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(10, topInset, 10, 0),
+            };
+            row.Children.Add(markHolder);
+            row.Children.Add(statusText);
+            row.Children.Add(Text(" · click to open", 11, DS.HUD.Text3Brush));
+            Children.Add(row);
+        }
         // A coding session starting or stopping changes the line while it shows.
         Loaded += (_, _) => Plugins.CodingAgents.AgentsIslandView.Sessions.Changed += OnPluginLineChanged;
         Unloaded += (_, _) => Plugins.CodingAgents.AgentsIslandView.Sessions.Changed -= OnPluginLineChanged;
@@ -784,14 +808,17 @@ internal sealed class FullPanelView : Grid, IIslandContent
         var band = new DockPanel { LastChildFill = true, Margin = new Thickness(16, 6, 16, 0), VerticalAlignment = VerticalAlignment.Center };
         var controls = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         controls.Children.Add(voicePillHost);
-        var gear = BandIconButton(Icons.Settings, IslandTexts.SettingsToolTip, () =>
+        // One round button per tool that is on (shelf, clipboard, notes, timer).
+        controls.Children.Add(IslandComponentViews.ToolButtons(model));
+        // Settings and quit are round buttons that light up under the pointer, like the tools (IslandIconButtonStyle).
+        var gear = new IslandIconButton(Icons.Settings, 12, IslandTexts.SettingsToolTip, () =>
         {
             model.Dismiss();
             hub.OpenSettingsCommand.Execute(IslandSettingsDestination.General);
         });
         gear.Margin = new Thickness(6, 0, 0, 0);
         controls.Children.Add(gear);
-        var power = BandIconButton(Icons.Power, IslandTexts.QuitToolTip, () => hub.QuitCommand.Execute(null));
+        var power = new IslandIconButton(Icons.Power, 11, IslandTexts.QuitToolTip, () => hub.QuitCommand.Execute(null));
         power.Margin = new Thickness(6, 0, 0, 0);
         controls.Children.Add(power);
         DockPanel.SetDock(controls, Dock.Right);
@@ -845,7 +872,10 @@ internal sealed class FullPanelView : Grid, IIslandContent
         {
             slotContent = componentView as IIslandContent;
             body = componentView;
-            body.Margin = new Thickness(DS.HUD.BodySidePadding, 0, DS.HUD.BodySidePadding, 6);
+            // Home's row sits a little further in, with a breath of air above its tiles.
+            body.Margin = componentView is IslandHomeView
+                ? new Thickness(IslandDash.SidePadding, IslandHomeLayout.RowTopPadding, IslandDash.SidePadding, 0)
+                : new Thickness(DS.HUD.BodySidePadding, 0, DS.HUD.BodySidePadding, 6);
         }
         SetRow(body, 1);
         Children.Add(body);

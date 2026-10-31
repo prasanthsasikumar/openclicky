@@ -18,6 +18,9 @@ internal interface IMainWindowActions
     /// <summary>CompanionManager.showDictationWindow(section:).</summary>
     void ShowSection(DictationSection section);
 
+    /// <summary>A row opening a page under this one (settingsNavigate): the back button returns.</summary>
+    void Navigate(DictationDestination destination);
+
     /// <summary>CompanionManager.startSettingsTour().</summary>
     void StartSettingsTour();
 
@@ -38,20 +41,46 @@ internal sealed partial class SettingsRowFactory(MainWindowServices services, IM
             return Ui.Card(Ui.Row(item.Title, item.Detail, query,
                 Ui.Button($"Open {section.SidebarTitle()}", () => actions.ShowSection(section))));
         }
-        return item.Page switch
+        if (item.OpensDestination is { } destination) return NavigationRow(item, query, destination);
+        // The rows are placed by SettingsLayout, not by the page that builds them: each page's
+        // builder answers for its own ids and passes on the rest.
+        return GeneralRow(item, query)
+            ?? DictationRow(item, query)
+            ?? ClickyRow(item, query)
+            ?? VoiceRow(item, query)
+            ?? OrbRow(item, query)
+            ?? PluginsRow(item, query)
+            ?? KeyboardRow(item, query)
+            ?? KeysRow(item, query)
+            ?? AccountRow(item, query)
+            ?? PrivacyRow(item, query)
+            ?? AboutRow(item, query)
+            ?? IslandRow(item, query)
+            ?? Ui.Card(Ui.Row(item.Title, item.Detail, query, null));
+    }
+
+    /// <summary>A row that opens another page (The orb from Dictation): its name, a line on what is there, and a chevron. The whole row is the button.</summary>
+    private UIElement NavigationRow(SettingsItem item, string query, DictationDestination destination)
+    {
+        var chevron = new TextBlock
         {
-            DictationSettingsPage.General => GeneralRow(item, query),
-            DictationSettingsPage.Dictation => DictationRow(item, query),
-            DictationSettingsPage.Clicky => ClickyRow(item, query),
-            DictationSettingsPage.Voice => VoiceRow(item, query),
-            DictationSettingsPage.Orb => OrbRow(item, query),
-            DictationSettingsPage.Plugins => PluginsRow(item, query),
-            DictationSettingsPage.Keyboard => KeyboardRow(item, query),
-            DictationSettingsPage.Keys => KeysRow(item, query),
-            DictationSettingsPage.Account => AccountRow(item, query),
-            DictationSettingsPage.Privacy => PrivacyRow(item, query),
-            _ => AboutRow(item, query),
-        } ?? Ui.Card(Ui.Row(item.Title, item.Detail, query, null));
+            Text = "",
+            FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        chevron.SetResourceReference(TextBlock.ForegroundProperty, SettingsLook.TextSecondary);
+        var button = new Button
+        {
+            Content = Ui.Card(Ui.Row(item.Title, item.Detail, query, chevron)),
+            Template = Ui.TransparentButtonTemplate(),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+        Ui.AutomationProperties(button, item.Title);
+        button.Click += (_, _) => actions.Navigate(destination);
+        return button;
     }
 
     private UIElement BuildFooter(SettingsItem item, string query)

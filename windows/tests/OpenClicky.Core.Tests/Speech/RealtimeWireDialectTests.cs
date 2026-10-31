@@ -85,14 +85,14 @@ public class RealtimeWireDialectTests
         static SettingsCatalog Catalog(OpenClickyShellSettings shell) =>
             new(new DictationSettings(Preferences.InMemory()), () => shell, () => AccountCapabilities.Current(shell, Preferences.InMemory()));
         static bool ShowsPicker(OpenClickyShellSettings shell) =>
-            Catalog(shell).PageItems(DictationSettingsPage.Voice).Any(item => item.Id == "clicky.realtimeProvider");
+            Catalog(shell).PageItems(DictationSettingsPage.Clicky).Any(item => item.Id == "clicky.realtimeProvider");
 
         Assert.False(ShowsPicker(new OpenClickyShellSettings { GeminiApiKey = "g" }));
         Assert.False(ShowsPicker(new OpenClickyShellSettings { OpenaiApiKey = "sk" }));
         Assert.True(ShowsPicker(new OpenClickyShellSettings { GeminiApiKey = "g", OpenaiApiKey = "sk" }));
         Assert.True(ShowsPicker(new OpenClickyShellSettings { GeminiApiKey = "g", Token = "t" }));
         // A Gemini key alone gets the fast voice switches instead of the way to a key.
-        var geminiOnly = Catalog(new OpenClickyShellSettings { GeminiApiKey = "g" }).PageItems(DictationSettingsPage.Voice);
+        var geminiOnly = Catalog(new OpenClickyShellSettings { GeminiApiKey = "g" }).PageItems(DictationSettingsPage.Clicky);
         Assert.Contains(geminiOnly, item => item.Id == "clicky.fastVoice");
         Assert.DoesNotContain(geminiOnly, item => item.Id == "clicky.fastVoiceNeedsKey");
     }

@@ -26,16 +26,23 @@ public sealed class SettingsCatalog
         this.capabilities = capabilities ?? (() => AccountCapabilities.Current());
     }
 
-    /// <summary>In page order; within a page, in the order the page shows them. Then the search-only ways to your own pages.</summary>
+    /// <summary>Every row, placed and ordered by <see cref="SettingsLayout"/>, then the search-only ways to your own pages.</summary>
     public IReadOnlyList<SettingsItem> AllItems =>
-        [.. DictationSettingsPages.AllCases.SelectMany(Items), .. YourPagesSearchItems()];
+        [.. SettingsLayout.Arrange(UnplacedItems()), .. YourPagesSearchItems()];
+
+    /// <summary>Every row as its builder makes it, before the layout gives it a page and a place.</summary>
+    private IReadOnlyList<SettingsItem> UnplacedItems() =>
+    [
+        .. DictationItems(), .. KeyboardItems(), .. OrbItems(), .. ClickyItems(), .. VoiceItems(), .. PluginsItems(), .. IslandItems(),
+        .. AccountItems(), .. KeysItems(), .. PrivacyItems(), .. GeneralItems(), .. AboutItems(), .. NavigationItems(),
+    ];
 
     /// <summary>The items that apply now.</summary>
     public IReadOnlyList<SettingsItem> RelevantItems => AllItems.Where(item => item.IsRelevant()).ToList();
 
-    /// <summary>What a settings page shows: its relevant items, without the search-only ones.</summary>
+    /// <summary>What a settings page shows: its relevant items, without the ones only search finds.</summary>
     public IReadOnlyList<SettingsItem> PageItems(DictationSettingsPage page) =>
-        Items(page).Where(item => item.IsRelevant() && item.SearchOnlyGroup is null).ToList();
+        AllItems.Where(item => item.Page == page && item.ShowsOnPage && item.SearchOnlyGroup is null && item.IsRelevant()).ToList();
 
     /// <summary>The relevant items a (trimmed) query matches; none for an empty query.</summary>
     public IReadOnlyList<SettingsItem> SearchMatches(string query)
@@ -44,20 +51,28 @@ public sealed class SettingsCatalog
         return trimmed.Length == 0 ? [] : RelevantItems.Where(item => item.Matches(trimmed)).ToList();
     }
 
-    public IReadOnlyList<SettingsItem> Items(DictationSettingsPage page) => page switch
+    /// <summary>
+    /// The rows that open a page of their own: Your words, How it writes and The orb from Dictation,
+    /// Calendars from Island.
+    /// </summary>
+    public IReadOnlyList<SettingsItem> NavigationItems()
     {
-        DictationSettingsPage.General => GeneralItems(),
-        DictationSettingsPage.Dictation => DictationItems(),
-        DictationSettingsPage.Clicky => ClickyItems(),
-        DictationSettingsPage.Voice => VoiceItems(),
-        DictationSettingsPage.Orb => OrbItems(),
-        DictationSettingsPage.Plugins => PluginsItems(),
-        DictationSettingsPage.Keyboard => KeyboardItems(),
-        DictationSettingsPage.Keys => KeysItems(),
-        DictationSettingsPage.Account => AccountItems(),
-        DictationSettingsPage.Privacy => PrivacyItems(),
-        _ => AboutItems(),
-    };
+        SettingsItem Item(string id, string title, string detail, string[] keywords, DictationDestination destination) => new()
+        {
+            Id = id, Title = title, Detail = detail, Keywords = keywords, OpensDestination = destination,
+        };
+        return
+        [
+            Item("dictation.openWords", "Your words", "Every take, with search. Try dictation here.",
+                ["history", "takes", "try"], DictationDestination.Of(DictationSection.Words)),
+            Item("dictation.openWriting", "How it writes", "Dictionary, snippets and per-app styles.",
+                ["dictionary", "snippets", "styles"], DictationDestination.Of(DictationSection.Writing)),
+            Item("dictation.openOrb", "The orb", "Style, theme, size and when it appears.",
+                ["orb", "pill", "look", "theme", "size"], DictationDestination.Of(DictationSettingsPage.Orb)),
+            Item("island.openCalendars", "Calendars", "Which calendars the island shows.",
+                ["calendar", "calendars", "hide", "show", "account"], DictationDestination.Of(DictationSettingsPage.Calendars)),
+        ];
+    }
 
     /// <summary>What lives on Your words and How it writes, findable by search: each a row that opens its page.</summary>
     public IReadOnlyList<SettingsItem> YourPagesSearchItems()
@@ -65,7 +80,7 @@ public sealed class SettingsCatalog
         SettingsItem Item(string id, DictationSection section, string title, string detail, string[] keywords) => new()
         {
             Id = id, Page = DictationSettingsPage.Dictation, Section = section.SidebarTitle(), Title = title, Detail = detail,
-            Keywords = keywords, SearchOnlyGroup = section.SidebarTitle(), OpensSection = section,
+            Keywords = keywords, SearchOnlyGroup = section.SidebarTitle(), OpensSection = section, ShowsOnPage = false,
         };
         return
         [
@@ -87,32 +102,30 @@ public sealed class SettingsCatalog
     public IReadOnlyList<SettingsItem> GeneralItems()
     {
         var dictationKeyName = settings.DictationKey.KeycapLabel();
-        SettingsItem Item(string id, string section, string title, string detail, string[] keywords) => new()
+        SettingsItem Item(string id, string title, string detail, string[] keywords) => new()
         {
-            Id = id, Page = DictationSettingsPage.General, Section = section, Title = title, Detail = detail, Keywords = keywords,
+            Id = id, Title = title, Detail = detail, Keywords = keywords,
         };
         return
         [
-            Item("general.region", "", "Region", "India adds Sarvam and the Indian languages and scripts. Anything you already use stays.",
-                ["region", "country", "india", "world", "sarvam", "indian languages", "hindi", "location"]),
-            Item("general.appearance", "", "Appearance", "This window, the orb and its transcript box follow this. The island stays black.",
+            Item("general.appearance", "Appearance", "This window, the orb and its transcript box follow this. The island stays black.",
                 ["light", "dark", "auto", "match windows", "theme", "mode", "colour", "color"]),
-            Item("general.hudPlacement", "", "Where OpenClicky lives", "The top of the screen, a drawer on the left or right edge, or hidden until you use a shortcut.",
+            Item("general.hudPlacement", "Where it lives", "The top of the screen, a drawer on the left or right edge, or hidden until you use a shortcut.",
                 ["top", "notch", "island", "hud", "side", "edge", "drawer", "hide", "hidden", "position", "placement", "shortcuts only"]),
-            Item("general.trayIcon", "", "Show in the tray", "Off is fine: the island is OpenClicky’s home.",
+            Item("general.trayIcon", "Show in the tray", "Off is fine: the island is OpenClicky’s home.",
                 ["tray", "notification area", "system tray", "icon", "taskbar", "menu bar"]),
-            Item("general.openAtLogin", "Startup", "Open at sign-in", $"So {dictationKeyName} always works.",
+            Item("general.appIcon", "App icon", "Its colour on this window, the taskbar and the tray. The Start menu keeps the red one.",
+                ["icon", "colour", "color", "taskbar", "tray", "app icon", "signal", "ultraviolet", "sunset", "paper", "aqua", "purple", "blue", "pink", "red"]),
+            Item("general.openAtLogin", "Open at sign-in", $"So {dictationKeyName} always works.",
                 ["startup", "launch", "restart", "login", "log in", "sign in", "boot"]),
-            Item("general.walkthrough", "Startup", "Welcome tour", "Clicky shows you dictating, asking and handing over a task, from the island.",
+            Item("general.walkthrough", "Welcome tour", "Clicky shows you dictating, asking and handing over a task, from the island.",
                 ["onboarding", "setup", "replay", "tour", "first run"]),
-            Item("general.settingsTour", "Startup", "Settings tour", "A one-minute look around this window: Clicky points at what matters most.",
+            Item("general.settingsTour", "Settings tour", "A one-minute look around this window: Clicky points at what matters most.",
                 ["tour", "crash course", "show me around", "help", "guide", "replay", "walkthrough"]),
-            Item("general.reduceMotion", "Motion", "Reduce motion", "The orb and the island appear and leave without animating.",
+            Item("general.reduceMotion", "Reduce motion", "The orb and the island appear and leave without animating.",
                 ["animation", "motion", "accessibility", "calm"]),
-            Item("about.autoUpdate", "Updates", "Check for updates daily", "Updates come from OpenClicky’s GitHub releases.",
+            Item("about.autoUpdate", "Check for updates daily", "Updates come from OpenClicky’s GitHub releases.",
                 ["update", "updates", "automatic", "velopack", "version"]),
-            Item("about.checkNow", "Updates", "Check now", "",
-                ["update", "updates", "check now", "velopack"]),
         ];
     }
 
@@ -139,19 +152,13 @@ public sealed class SettingsCatalog
     [
         new()
         {
-            Id = "keyboard.dictationKey", Page = DictationSettingsPage.Dictation, Section = "Key",
+            Id = "keyboard.dictationKey",
             Title = "Dictation key", Detail = DictationKeyDetail(settings.DictationKey),
             Keywords = ["hotkey", "push to talk", "right control", "right ctrl", "right alt", "altgr", "right shift", "caps lock", "dictate", "shortcut"],
         },
         new()
         {
-            Id = "keyboard.where", Page = DictationSettingsPage.Dictation, Section = "Key",
-            Title = "Where the key is", Detail = "A sketch of a keyboard with the dictation key held.",
-            Keywords = ["where", "keyboard", "right control", "right alt", "right shift", "caps lock", "left", "laptop"],
-        },
-        new()
-        {
-            Id = "keyboard.tapKeepsListening", Page = DictationSettingsPage.Dictation, Section = "Key",
+            Id = "keyboard.tapKeepsListening",
             Title = "Tap to keep listening",
             Detail = "Off: hold the key while you talk, as on the Mac. On: a quick tap starts a take and the next tap finishes it.",
             Keywords = ["tap", "toggle", "hold", "push to talk", "latch", "keep listening"],
@@ -160,40 +167,39 @@ public sealed class SettingsCatalog
 
     public IReadOnlyList<SettingsItem> DictationItems()
     {
-        var region = settings.Region;
         var engineItems = DictationEngineChoices.AllCases.Select(choice => new SettingsItem
         {
-            Id = $"dictation.engine.{choice.Id()}", Page = DictationSettingsPage.Dictation, Section = "Who hears you",
+            Id = $"dictation.engine.{choice.Id()}",
             Title = choice.SettingsTitle(), Detail = choice.SettingsDetail(), Keywords = choice.SearchKeywords(),
-            // Sarvam hears Indian languages: offered in India, and wherever it is already chosen.
-            IsRelevant = () => choice != DictationEngineChoice.Sarvam || region.OffersIndianOptions() || settings.Engine == DictationEngineChoice.Sarvam,
+            // Sarvam hears Indian languages: offered only where it is already chosen (AppRegion).
+            IsRelevant = () => choice != DictationEngineChoice.Sarvam || settings.Region.OffersIndianOptions() || settings.Engine == DictationEngineChoice.Sarvam,
         });
-        SettingsItem Item(string id, string section, string title, string detail, string[] keywords, Func<bool>? isRelevant = null) => new()
+        SettingsItem Item(string id, string title, string detail, string[] keywords, Func<bool>? isRelevant = null) => new()
         {
-            Id = id, Page = DictationSettingsPage.Dictation, Section = section, Title = title, Detail = detail, Keywords = keywords,
+            Id = id, Title = title, Detail = detail, Keywords = keywords,
             IsRelevant = isRelevant ?? (() => true),
         };
         return
         [
             .. DictationKeyItems(),
             .. engineItems,
-            Item("dictation.language", "Language", "Language", "Pins every engine to one language, or lets it detect.",
+            Item("dictation.language", "Language", "Pins every engine to one language, or lets it detect.",
                 ["language", "english", "hindi", "tamil", "spanish", "french", "german", "pin", "auto-detect", "detect"]),
-            // Only India, and only while the words could be in an Indian language.
-            Item("dictation.script", "Language", "Script for Indian languages", "Same words, written two ways.",
+            // Only while the words are pinned to an Indian language (or, in India, could be one).
+            Item("dictation.script", "Script for Indian languages", "Same words, written two ways.",
                 ["script", "roman", "native", "devanagari", "hinglish", "transliteration"],
-                () => settings.Region.OffersIndianOptions() && (settings.Language == DictationLanguage.Auto || settings.Language.IsIndian)),
-            Item("dictation.cleanUp", "Clean-up", "Clean up my words with AI", "Adds punctuation and fixes numbers.",
+                () => settings.Language.IsIndian || (settings.Region.OffersIndianOptions() && settings.Language == DictationLanguage.Auto)),
+            Item("dictation.cleanUp", "Clean up my words with AI", "Adds punctuation and fixes numbers.",
                 ["polish", "clean up", "cleanup", "clean-up", "ai", "punctuation", "grammar", "model", "offline takes"]),
-            Item("dictation.input", "Microphone", "Input", "Automatic follows Windows’ default microphone. Clicky listens through it too.",
+            Item("dictation.input", "Input", "Automatic follows Windows’ default microphone. Clicky listens through it too.",
                 ["microphone", "mic", "device", "input", "headset", "headphones"]),
-            Item("dictation.micTest", "Microphone", "Test your microphone", "Hear whether the chosen input picks you up.",
+            Item("dictation.micTest", "Test your microphone", "Hear whether the chosen input picks you up.",
                 ["microphone", "mic", "level", "test"]),
-            Item("dictation.inactivityTimeout", "Takes", "End a quiet take after", "A tapped take finishes on its own after this much silence.",
+            Item("dictation.inactivityTimeout", "End a quiet take after", "A tapped take finishes on its own after this much silence.",
                 ["inactivity", "timeout", "silence", "minutes", "quiet"]),
-            Item("dictation.pasteLast", "Takes", "Paste last take", "Put your last take at the cursor again.",
+            Item("dictation.pasteLast", "Paste last take", "Put your last take at the cursor again.",
                 ["paste", "again", "re-insert", "last"]),
-            Item("dictation.sounds", "Sounds", "Sounds", "Tones when a take starts, stops or finishes.",
+            Item("dictation.sounds", "Sounds", "Tones when a take starts, stops or finishes.",
                 ["sound", "tone", "earcon", "audio", "beep", "mute", "quiet"]),
         ];
     }
@@ -202,24 +208,21 @@ public sealed class SettingsCatalog
 
     public IReadOnlyList<SettingsItem> ClickyItems()
     {
-        SettingsItem Item(string id, string section, string title, string detail, string[] keywords) => new()
+        SettingsItem Item(string id, string title, string detail, string[] keywords) => new()
         {
-            Id = id, Page = DictationSettingsPage.Clicky, Section = section, Title = title, Detail = detail, Keywords = keywords,
+            Id = id, Title = title, Detail = detail, Keywords = keywords,
         };
         return
         [
-            Item("clicky.answerSource", "Answers", "Answers come from", "Automatic uses your own keys first, then plans you switched on, then the free credits.",
+            Item("clicky.answerSource", "Answers come from", "Automatic uses your own keys first, then plans you switched on, then the free credits.",
                 ["provider", "model", "openai", "anthropic", "claude", "openrouter", "gemini", "groq", "mistral", "grok", "codex", "subscription", "plan", "answers"]),
-            Item("clicky.model", "Answers", "Claude model", "When Claude answers: Sonnet is quicker, Opus thinks harder.",
+            Item("clicky.model", "Claude model", "When Claude answers: Sonnet is quicker, Opus thinks harder.",
                 ["model", "claude", "sonnet", "opus", "smarter", "quicker"]),
-            Item("clicky.showPointer", "Pointer", "Show the pointer", "Off: it appears only while you talk.",
-                ["pointer", "cursor", "buddy", "orange", "visible", "hide"]),
-            Item("clicky.pointerPresence", "Pointer", "The pointer shows", "Always, while the mouse moves, or after a shake.",
-                ["pointer", "cursor", "always", "while the mouse moves", "after a shake", "shake", "hide"]),
-
-            Item("clicky.agentMode", "Agent", "Agent mode", "Clicky can hand work to Codex.",
+            Item("clicky.pointer", "Show the pointer", "It flies to what Clicky means.",
+                ["pointer", "cursor", "buddy", "orange", "visible", "hide", "always", "while the mouse moves", "after a shake", "shake", "while i talk"]),
+            Item("clicky.agentMode", "Agent mode", "Clicky can hand work to Codex.",
                 ["agent", "codex", "tasks", "automation"]),
-            Item("clicky.workspace", "Agent", "Workspace", "Where agents keep their files.",
+            Item("clicky.workspace", "Workspace", "Where agents keep their files.",
                 ["workspace", "folder", "codex", "files", "directory"]),
         ];
     }
@@ -236,7 +239,7 @@ public sealed class SettingsCatalog
         var usesRealtime = capabilities().UsesRealtime;
         SettingsItem Item(string id, string section, string title, string detail, string[] keywords) => new()
         {
-            Id = id, Page = DictationSettingsPage.Voice, Section = section, Title = title, Detail = detail, Keywords = keywords,
+            Id = id, Section = section, Title = title, Detail = detail, Keywords = keywords,
         };
         List<SettingsItem> items =
         [
@@ -280,7 +283,7 @@ public sealed class SettingsCatalog
             ["email", "mail", "gmail", "outlook", "inbox", "draft"]));
         items.Add(new SettingsItem
         {
-            Id = "clicky.emailNeverSent", Page = DictationSettingsPage.Voice, Section = "Doing things", Chrome = SettingsItemChrome.Footer,
+            Id = "clicky.emailNeverSent", Section = "Doing things", Chrome = SettingsItemChrome.Footer,
             Title = EmailNeverSentText, Detail = EmailNeverSentText, Keywords = ["send", "email"],
         });
         return items;
@@ -296,7 +299,7 @@ public sealed class SettingsCatalog
     {
         var pluginRows = IslandPluginRegistry.All.Select(plugin => new SettingsItem
         {
-            Id = $"plugins.{plugin.Id}", Page = DictationSettingsPage.Plugins, Section = "",
+            Id = $"plugins.{plugin.Id}", Section = "",
             Title = plugin.Title, Detail = plugin.SettingsDetail ?? "",
             Keywords = ["plugin", "plugins", "island", "extra", plugin.Title.ToLowerInvariant(), plugin.Id],
         });
@@ -305,16 +308,48 @@ public sealed class SettingsCatalog
             .. pluginRows,
             new SettingsItem
             {
-                Id = "plugins.islandDefault", Page = DictationSettingsPage.Plugins, Section = "On the island",
+                Id = "plugins.islandDefault", Section = "On the island",
                 Title = "Default component", Detail = "What the open island shows when nothing else is going on.",
                 Keywords = ["island", "component", "panel", "shortcuts", "default", "slot"],
             },
             new SettingsItem
             {
-                Id = "plugins.islandOrder", Page = DictationSettingsPage.Plugins, Section = "On the island",
+                Id = "plugins.islandOrder", Section = "On the island",
                 Title = "Component order", Detail = "The order of the island's buttons when there is more than one to flip to.",
                 Keywords = ["island", "component", "order", "capsule", "arrange", "reorder"],
             },
+        ];
+    }
+
+    // MARK: - Island (SettingsIslandPages.swift and the plugin folders' settings)
+
+    /// <summary>The island's own rows: how it looks and opens, its home tiles, the timer's lengths, and its calendars.</summary>
+    public IReadOnlyList<SettingsItem> IslandItems()
+    {
+        SettingsItem Item(string id, string title, string detail, string[] keywords) => new()
+        {
+            Id = id, Title = title, Detail = detail, Keywords = keywords,
+        };
+        return
+        [
+            Item("appearance.peekDirection", "When you hover it", "Sideways keeps a thin strip along the top edge; downwards drops it open a little.",
+                ["hover", "peek", "sideways", "downwards", "grow", "direction", "island"]),
+            Item("appearance.style", "Style", "Liquid glass, blend or black.",
+                ["style", "glass", "liquid", "blend", "black", "look", "island", "transparent"]),
+            Item("calendar.enabled", "Calendar", "Today and the week on the island's home.",
+                ["calendar", "events", "meetings", "agenda", "outlook", "week", "today"]),
+            Item("weather.enabled", "Weather", "Now and the next hours, from Open-Meteo.",
+                ["weather", "temperature", "forecast", "rain", "open-meteo"]),
+            Item("weather.unit", "Temperature", "Celsius or Fahrenheit.", ["celsius", "fahrenheit", "unit", "temperature", "weather"]),
+            Item("weather.location", "Weather location", "Where Windows says you are, or a place you type.",
+                ["location", "city", "place", "town", "weather", "gps"]),
+            Item("timer.focusMinutes", "Focus", "How long a focus round lasts.", ["timer", "focus", "pomodoro", "minutes"]),
+            Item("timer.breakMinutes", "Break", "The short break between rounds.", ["timer", "break", "pomodoro", "minutes"]),
+            Item("timer.longBreakMinutes", "Long break", "After every fourth round.", ["timer", "long break", "pomodoro", "minutes"]),
+            Item("calendar.access", "Calendar", "Lets the island read your calendars. Nothing is changed or sent.",
+                ["calendar", "permission", "privacy", "access", "allow"]),
+            Item("calendar.calendars", "Calendars", "Switch off a calendar to keep it off the island.",
+                ["calendar", "calendars", "hide", "show", "account", "outlook"]),
         ];
     }
 
@@ -335,7 +370,7 @@ public sealed class SettingsCatalog
         var dictationKeyName = settings.DictationKey.KeycapLabel();
         SettingsItem Item(string id, string section, string title, string detail, string[] keywords) => new()
         {
-            Id = id, Page = DictationSettingsPage.Orb, Section = section, Title = title, Detail = detail, Keywords = keywords,
+            Id = id, Section = section, Title = title, Detail = detail, Keywords = keywords,
         };
         return
         [
@@ -382,13 +417,11 @@ public sealed class SettingsCatalog
         var usesRealtime = capabilities().UsesRealtime;
         SettingsItem Item(string id, string section, string title, string detail, string[] keywords, Func<bool>? isRelevant = null) => new()
         {
-            Id = id, Page = DictationSettingsPage.Keyboard, Section = section, Title = title, Detail = detail, Keywords = keywords,
+            Id = id, Section = section, Title = title, Detail = detail, Keywords = keywords,
             IsRelevant = isRelevant ?? (() => true),
         };
         return
         [
-            Item("keyboard.dictate", "Dictation", "Dictate", "Hold, or tap to start and tap to finish. Change the key on the Dictation page.",
-                ["hotkey", "push to talk", "dictate", "change key", "right ctrl"]),
             Item("keyboard.edit", "Dictation", "Edit selected text", "Hold and say the change, like “make it formal”.",
                 ["hey clicky", "edit", "rewrite", "control", "ctrl", "selection"]),
             Item("keyboard.cancel", "Dictation", "Cancel a take", "Nothing is pasted.",
@@ -404,13 +437,13 @@ public sealed class SettingsCatalog
         ];
     }
 
-    // MARK: - Keys & Plans, Account (SettingsAccountPage.swift)
+    // MARK: - Keys & Account, Account (SettingsAccountPage.swift)
 
     public IReadOnlyList<SettingsItem> KeysItems() =>
     [
         new()
         {
-            Id = "account.keys", Page = DictationSettingsPage.Keys, Section = "Your keys",
+            Id = "account.keys", Section = "Your keys",
             Title = "Your keys", Detail = "Keys from AI providers (they answer, clean up and speak) and voice services.",
             Keywords = ["api key", "byok", "own key", "provider", "add key", "openai", "openaiApiKey", "anthropic", "claude",
                         "anthropicApiKey", "openrouter", "llama", "deepseek", "gemini", "google", "ai studio", "groq",
@@ -418,24 +451,24 @@ public sealed class SettingsCatalog
         },
         new()
         {
-            Id = "account.keysNote", Page = DictationSettingsPage.Keys, Section = "Your keys", Chrome = SettingsItemChrome.Footer,
+            Id = "account.keysNote", Section = "Your keys", Chrome = SettingsItemChrome.Footer,
             Title = "Where keys go", Detail = KeysNoteText, Keywords = ["shell.json", "byok"],
         },
         new()
         {
-            Id = "account.claudeCodePlan", Page = DictationSettingsPage.Keys, Section = "Subscriptions",
+            Id = "account.claudeCodePlan", Section = "Subscriptions",
             Title = "Claude Code (your Claude plan)", Detail = "Answer questions through Claude Code, signed in to your Claude plan.",
             Keywords = ["claude code", "claude plan", "pro", "max", "subscription", "anthropic"],
         },
         new()
         {
-            Id = "account.codexPlan", Page = DictationSettingsPage.Keys, Section = "Subscriptions",
+            Id = "account.codexPlan", Section = "Subscriptions",
             Title = "Codex (your ChatGPT plan)", Detail = "Answer questions through Codex, signed in with ChatGPT.",
             Keywords = ["codex", "chatgpt", "plus", "pro", "subscription", "openai"],
         },
         new()
         {
-            Id = "account.plansNote", Page = DictationSettingsPage.Keys, Section = "Subscriptions", Chrome = SettingsItemChrome.Footer,
+            Id = "account.plansNote", Section = "Subscriptions", Chrome = SettingsItemChrome.Footer,
             Title = "What a plan can do", Detail = PlansNoteText, Keywords = ["subscription", "plan"],
         },
     ];
@@ -448,7 +481,7 @@ public sealed class SettingsCatalog
     {
         SettingsItem Item(string id, string section, string title, string detail, string[] keywords, Func<bool>? isRelevant = null) => new()
         {
-            Id = id, Page = DictationSettingsPage.Account, Section = section, Title = title, Detail = detail, Keywords = keywords,
+            Id = id, Section = section, Title = title, Detail = detail, Keywords = keywords,
             IsRelevant = isRelevant ?? (() => true),
         };
         return
@@ -457,7 +490,6 @@ public sealed class SettingsCatalog
                 ["account", "sign in", "sign up", "sign out", "log in", "log out", "create", "email", "code", "free"]),
             Item("account.plan", "Plan & usage", "Free allowance", "How much of this month’s free allowance is used.",
                 ["billing", "allowance", "usage", "plan", "cost", "price", "limit"]),
-            Item("account.usage.offline", "Plan & usage", "This PC", "Unlimited, no account.", ["offline", "free", "engine"]),
             Item("account.usage.sarvam", "Plan & usage", "Sarvam", "Billed by Sarvam to your key.", ["sarvam", "billing", "engine", "dashboard"],
                 () => !string.IsNullOrWhiteSpace(shellSettings().SarvamKey)),
             Item("account.usage.backend", "Plan & usage", "OpenAI and AssemblyAI", "Through OpenClicky.",
@@ -488,7 +520,7 @@ public sealed class SettingsCatalog
     {
         SettingsItem Item(string id, string section, string title, string detail, string[] keywords) => new()
         {
-            Id = id, Page = DictationSettingsPage.Privacy, Section = section, Title = title, Detail = detail, Keywords = keywords,
+            Id = id, Section = section, Title = title, Detail = detail, Keywords = keywords,
         };
         return
         [
@@ -513,7 +545,7 @@ public sealed class SettingsCatalog
                 ["shell.json", "token", "file", "key"]),
             new()
             {
-                Id = "privacy.summary", Page = DictationSettingsPage.Privacy, Section = "Where things live", Chrome = SettingsItemChrome.Footer,
+                Id = "privacy.summary", Section = "Where things live", Chrome = SettingsItemChrome.Footer,
                 Title = "Privacy summary", Detail = PrivacySummaryText, Keywords = ["policy", "privacy", "what leaves", "readme"],
             },
         ];
@@ -529,11 +561,12 @@ public sealed class SettingsCatalog
     {
         SettingsItem Item(string id, string section, string title, string detail, string[] keywords) => new()
         {
-            Id = id, Page = DictationSettingsPage.About, Section = section, Title = title, Detail = detail, Keywords = keywords,
+            Id = id, Section = section, Title = title, Detail = detail, Keywords = keywords,
         };
         return
         [
-            Item("about.app", "", "OpenClicky", VersionLine(AppVersion.ShortVersion, AppVersion.BuildNumber), ["version", "about", "build", "mit", "license"]),
+            Item("about.app", "", "OpenClicky", VersionLine(AppVersion.ShortVersion, AppVersion.BuildNumber),
+                ["version", "about", "build", "mit", "license", "update", "updates", "velopack", "check now"]),
             Item("about.source", "Help", "Source code", "Issues and pull requests welcome.", ["github", "source", "license", "mit", "code"]),
             Item("about.reportBug", "Help", "Report a bug", "Attach the log. It lists what each take did, not what you said.",
                 ["bug", "log", "issue", "problem", "feedback", "app.log"]),

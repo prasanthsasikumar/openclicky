@@ -90,17 +90,14 @@ internal sealed partial class SettingsRowFactory
 
     // MARK: - Shortcuts
 
+    /// <summary>The shortcut rows (keyboard.edit … keyboard.handsFree): the keycaps to press. The dictation key's own rows are Dictation's.</summary>
     private UIElement? KeyboardRow(SettingsItem item, string query)
     {
+        if (SettingsCatalog.KeysFor(item.Id, Settings.DictationKey).Keys.Count == 0) return null;
         return LiveSettingsCard(() =>
         {
             var keys = SettingsCatalog.KeysFor(item.Id, Settings.DictationKey);
-            UIElement trailing = Ui.Keys(keys.Keys, keys.Gesture);
-            if (item.Id == "keyboard.dictate")
-            {
-                trailing = Ui.HStack(12, trailing, Ui.Button("Change…", () => actions.ShowSettings(DictationSettingsPage.Dictation)));
-            }
-            return Ui.Row(item.Title, item.Detail, query, trailing);
+            return Ui.Row(item.Title, item.Detail, query, Ui.Keys(keys.Keys, keys.Gesture));
         });
     }
 }

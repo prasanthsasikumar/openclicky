@@ -1,8 +1,10 @@
 // AppUpdater.swift's job (Sparkle on the Mac) through Velopack, against the GitHub Releases of the
 // OpenClicky repository. A development build (not installed by Setup.exe) has no feed: IsConfigured
 // is false and the row says so. Automatic checks run at launch and once a day: an update found then
-// downloads in the background and is applied when OpenClicky quits. "Check now" downloads and
-// restarts into the new version at once.
+// downloads in the background and is applied when OpenClicky quits, unless the person skipped that
+// version. "Check now" asks first, as Sparkle does (Install Update / Skip This Version / Remind Me
+// Later); only Install downloads it and restarts into the new version. It also says when OpenClicky
+// is up to date or the check failed.
 
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -18,15 +20,20 @@ public sealed class VelopackAppUpdater : ObservableObject, IAppUpdater, IDisposa
     public const string RepositoryUrl = "https://github.com/prasanthsasikumar/openclicky";
     public const string AutomaticallyChecksKey = "openclicky.updates.automaticallyChecks";
     public const string LastCheckKey = "openclicky.updates.lastCheck";
+    /// <summary>The version "Skip This Version" was pressed for (Sparkle's SUSkippedVersion).</summary>
+    public const string SkippedVersionKey = "openclicky.updates.skippedVersion";
 
     private readonly Preferences preferences;
+    private readonly UpdatePromptSheets? prompts;
     private readonly UpdateManager? updateManager;
     private Timer? dailyTimer;
     private bool isChecking;
 
-    public VelopackAppUpdater(Preferences preferences)
+    /// <param name="prompts">The sheets "Check Now" asks with; null → it installs without asking (tests, no UI).</param>
+    public VelopackAppUpdater(Preferences preferences, UpdatePromptSheets? prompts = null)
     {
         this.preferences = preferences;
+        this.prompts = prompts;
         try
         {
             var manager = new UpdateManager(new GithubSource(RepositoryUrl, null, false));
@@ -78,6 +85,7 @@ public sealed class VelopackAppUpdater : ObservableObject, IAppUpdater, IDisposa
     {
         if (updateManager is null || isChecking) return;
         isChecking = true;
+        (Action<int> Report, Action Close)? downloading = null;
         try
         {
             var update = await updateManager.CheckForUpdatesAsync().ConfigureAwait(false);
@@ -86,16 +94,38 @@ public sealed class VelopackAppUpdater : ObservableObject, IAppUpdater, IDisposa
             if (update is null)
             {
                 AppLog.Write("updates: up to date");
+                if (applyNow && prompts is not null)
+                {
+                    await prompts.TellAsync("You're up to date!", $"OpenClicky {updateManager.CurrentVersion} is the newest version available.").ConfigureAwait(false);
+                }
                 return;
             }
-            AppLog.Write($"updates: {update.TargetFullRelease.Version} available; downloading");
-            await updateManager.DownloadUpdatesAsync(update).ConfigureAwait(false);
+            var version = update.TargetFullRelease.Version.ToString();
             if (applyNow)
             {
+                // Asked even about a skipped version: they pressed Check Now (Sparkle's rule).
+                if (prompts is not null)
+                {
+                    var choice = await prompts.AskToInstallAsync(new UpdateOffer(version, updateManager.CurrentVersion?.ToString() ?? "an older version",
+                                                                                 update.TargetFullRelease.NotesMarkdown ?? "")).ConfigureAwait(false);
+                    AppLog.Write($"updates: {version} available; {choice.ToString().ToLowerInvariant()}");
+                    if (choice == UpdateChoice.Skip) preferences.Set(SkippedVersionKey, version);
+                    if (choice != UpdateChoice.Install) return;
+                    downloading = await prompts.ShowDownloadingAsync(version).ConfigureAwait(false);
+                }
+                await updateManager.DownloadUpdatesAsync(update, downloading?.Report).ConfigureAwait(false);
+                downloading?.Report(100);
                 updateManager.ApplyUpdatesAndRestart(update.TargetFullRelease);
             }
             else
             {
+                if (preferences.GetString(SkippedVersionKey) == version)
+                {
+                    AppLog.Write($"updates: {version} available but skipped");
+                    return;
+                }
+                AppLog.Write($"updates: {version} available; downloading");
+                await updateManager.DownloadUpdatesAsync(update).ConfigureAwait(false);
                 // Installed when OpenClicky quits, without a window in the way.
                 updateManager.WaitExitThenApplyUpdates(update.TargetFullRelease, silent: true, restart: false);
             }
@@ -103,6 +133,11 @@ public sealed class VelopackAppUpdater : ObservableObject, IAppUpdater, IDisposa
         catch (Exception error)
         {
             AppLog.Write($"updates: check failed ({error.GetType().Name}: {error.Message})");
+            downloading?.Close();
+            if (applyNow && prompts is not null)
+            {
+                await prompts.TellAsync("Update failed", "OpenClicky couldn't check for or download the update. Check your connection and try again.").ConfigureAwait(false);
+            }
         }
         finally
         {

@@ -85,9 +85,8 @@ public sealed class SettingsTourTargets
 
     public void RequestScroll(string targetId) => ScrollRequested?.Invoke(targetId);
 
-    /// <summary>"sidebar.page.voice", "sidebar.section.words".</summary>
-    public static string SidebarTargetId(DictationDestination destination) =>
-        destination.Page is { } page ? $"sidebar.page.{page.RawValue()}" : $"sidebar.section.{destination.Section!.Value.RawValue()}";
+    /// <summary>"sidebar.page.clicky"; a page opened from a row names its sidebar page (Your words: "sidebar.page.dictation").</summary>
+    public static string SidebarTargetId(DictationDestination destination) => $"sidebar.page.{destination.SidebarPage.RawValue()}";
 
     /// <summary>Where on a row the pointer rests: a little in from its left edge (30 %, at most 120), at mid height.</summary>
     public static ScreenPoint PointerSpot(ScreenRect target) =>
@@ -103,20 +102,20 @@ public sealed class SettingsTourTargets
 
 public sealed record SettingsTourStep(DictationDestination Destination, string? TargetId, string Bubble, string Line)
 {
-    /// <summary>The page's name in the sidebar, for the bubble while the pointer goes to "click" it.</summary>
-    public string DestinationTitle => Destination.Title;
+    /// <summary>The page's name in the sidebar, for the bubble while the pointer goes to "click" it (Your words is under Dictation).</summary>
+    public string DestinationTitle => Destination.SidebarPage.Title();
 
     /// <summary>About a minute in all: what someone needs to find their way, in sidebar order where it can be.</summary>
     public static IReadOnlyList<SettingsTourStep> All { get; } =
     [
-        new(DictationDestination.Of(DictationSettingsPage.General), "general.region", "your region (esc stops the tour)", "settings-tour-intro"),
+        new(DictationDestination.Of(DictationSettingsPage.Dictation), null, "six pages (esc stops the tour)", "settings-tour-intro"),
         new(DictationDestination.Of(DictationSettingsPage.Dictation), "keyboard.dictationKey", "the key you hold", "settings-tour-dictation"),
         new(DictationDestination.Of(DictationSettingsPage.Dictation), "dictation.language", "your language", "settings-tour-language"),
-        new(DictationDestination.Of(DictationSettingsPage.Voice), "clicky.speechVoice", "how i sound", "settings-tour-voice"),
-        new(DictationDestination.Of(DictationSettingsPage.Clicky), "clicky.pointerPresence", "when i show up", "settings-tour-pointer"),
         new(DictationDestination.Of(DictationSection.Words), null, "everything you said", "settings-tour-words"),
-        new(DictationDestination.Of(DictationSettingsPage.Keyboard), "keyboard.talk", "every shortcut", "settings-tour-shortcuts"),
-        new(DictationDestination.Of(DictationSettingsPage.Keys), "account.keys", "your own keys", "settings-tour-keys"),
+        new(DictationDestination.Of(DictationSettingsPage.Clicky), "clicky.speechVoice", "how i sound", "settings-tour-voice"),
+        new(DictationDestination.Of(DictationSettingsPage.Clicky), "clicky.pointer", "when i show up", "settings-tour-pointer"),
+        new(DictationDestination.Of(DictationSettingsPage.Clicky), "keyboard.talk", "every shortcut", "settings-tour-shortcuts"),
+        new(DictationDestination.Of(DictationSettingsPage.Account), "account.keys", "your own keys", "settings-tour-keys"),
         new(DictationDestination.Of(DictationSettingsPage.General), "general.settingsTour", "watch it again here", "settings-tour-done"),
     ];
 }

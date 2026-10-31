@@ -17,6 +17,7 @@ using OpenClicky.Core.Platform;
 using OpenClicky.Core.Plugins;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Windows.Overlay;
+using OpenClicky.Windows.Plugins.ClipboardList;
 using OpenClicky.Windows.Plugins.CodingAgents;
 using OpenClicky.Windows.Plugins.Media;
 
@@ -35,6 +36,8 @@ public sealed class IslandWindowManager : IDisposable
     /// <summary>The island's default component, order and plugins (none without preferences: every plugin off).</summary>
     private readonly IslandComponentSettings? componentSettings;
     private readonly List<IDisposable> componentSettingsObservations = [];
+    /// <summary>The island's style and hover direction (none without preferences: the defaults).</summary>
+    private readonly IslandAppearanceSettings? appearance;
     private readonly DispatcherTimer hoverPollTimer;
     private bool isShown;
     private bool wasMouseButtonDown;
@@ -60,11 +63,12 @@ public sealed class IslandWindowManager : IDisposable
         hub.FocusTourFieldRequested += FocusTourField;
         hub.PlacementChangeRequested += SetPlacement;
         screens.DisplaysChanged += OnDisplaysChanged;
-        // A plugin switched on, or the default or order changed in Settings: every island picks again.
+        // A plugin switched on, the default or order changed, or one of home's columns turned on or off in Settings: every
+        // island picks again (and home resizes).
         if (preferences is not null)
         {
             componentSettings = new IslandComponentSettings(preferences);
-            foreach (var key in IslandComponentSettings.Keys)
+            foreach (var key in IslandComponentSettings.Keys.Union(IslandHomeLayout.Keys))
             {
                 componentSettingsObservations.Add(preferences.Observe(key, () => dispatcher.BeginInvoke(() =>
                 {
@@ -72,6 +76,9 @@ public sealed class IslandWindowManager : IDisposable
                     SyncPluginStores();
                 })));
             }
+            // The style and the hover's direction (Settings → Island).
+            appearance = new IslandAppearanceSettings(preferences);
+            componentSettingsObservations.Add(appearance.Observe(() => dispatcher.BeginInvoke(ApplyAppearance)));
         }
         // The playing track is a moment of its own (Now playing on and something plays).
         MediaIslandView.Store.Changed += OnMediaChanged;
@@ -218,6 +225,11 @@ public sealed class IslandWindowManager : IDisposable
                 continue;
             }
             var model = new IslandModel(geometry, placement, componentSettings: componentSettings);
+            if (appearance is not null)
+            {
+                model.Look = appearance.Look;
+                model.PeekDirection = appearance.PeekDirection;
+            }
             model.SetBusy(hub.IsBusy);
             model.SetSpeaking(hub.IsSpeaking);
             model.SetCompactDetailLine(hub.HasCompactDetailLine);
@@ -340,6 +352,19 @@ public sealed class IslandWindowManager : IDisposable
         var enabled = componentSettings?.EnabledPlugins ?? [];
         AgentsIslandView.SetEnabled(enabled.Contains(IslandPluginRegistry.AgentsId));
         MediaIslandView.Store.SetEnabled(enabled.Contains(IslandPluginRegistry.MediaId));
+        // The clipboard list catches copies from the moment it is on, not only while it shows.
+        ClipboardIslandView.Store.SetEnabled(enabled.Contains(IslandPluginRegistry.ClipboardId));
+    }
+
+    /// <summary>The style or the hover's direction changed in Settings: every island follows.</summary>
+    private void ApplyAppearance()
+    {
+        if (appearance is null) return;
+        foreach (var instance in instances)
+        {
+            instance.Model.Look = appearance.Look;
+            instance.Model.PeekDirection = appearance.PeekDirection;
+        }
     }
 
     // MARK: - The slot's moment
@@ -383,6 +408,7 @@ public sealed class IslandWindowManager : IDisposable
         landedTranscriptTimer?.Stop();
         MediaIslandView.Store.Changed -= OnMediaChanged;
         MediaIslandView.Store.SetEnabled(false);
+        ClipboardIslandView.Store.SetEnabled(false);
         foreach (var observation in componentSettingsObservations) observation.Dispose();
         componentSettingsObservations.Clear();
         hub.PropertyChanged -= OnHubPropertyChanged;

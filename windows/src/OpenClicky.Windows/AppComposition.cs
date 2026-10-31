@@ -109,7 +109,7 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         Companion = new CompanionManager(services,
             new CompanionModels(companionUi.Overlay, companionUi.Island, companionUi.Orb, companionUi.AgentCard), this);
 
-        updater = new VelopackAppUpdater(preferences);
+        updater = new VelopackAppUpdater(preferences, new UpdatePromptSheets(dispatcher, dictationSettings));
         trayIcon = new TrayIcon(ReadTrayState);
         WireTray();
 
@@ -164,6 +164,18 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         trayIcon.SettingsRequested += () => Companion.ShowSettings();
         trayIcon.ReplayWelcomeRequested += Companion.ReplayWelcomeTour;
         trayIcon.QuitRequested += Companion.QuitWithFarewell;
+        // The app icon's colour (Settings › General): the tray and every window drawn from now on; the
+        // Settings window follows it itself.
+        void ApplyAppIconColor()
+        {
+            OpenClickyMarkDrawing.CurrentColor = dictationSettings.AppIconColor;
+            trayIcon.SetColor(dictationSettings.AppIconColor);
+        }
+        ApplyAppIconColor();
+        dictationSettings.PropertyChanged += (_, eventArgs) =>
+        {
+            if (eventArgs.PropertyName == nameof(DictationSettings.AppIconColor)) dispatcher.BeginInvoke(ApplyAppIconColor);
+        };
         Companion.PropertyChanged += (_, eventArgs) =>
         {
             if (eventArgs.PropertyName is nameof(CompanionManager.IsTrayIconVisible) or nameof(CompanionManager.HudPlacement))
