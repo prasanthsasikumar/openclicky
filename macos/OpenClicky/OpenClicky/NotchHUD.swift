@@ -118,7 +118,11 @@ final class NotchHUDModel: ObservableObject {
     let composerWidth: CGFloat = 460
     let composerContentHeight: CGFloat = 52
     /// A side drawer is a narrow column with its content stacked, not the notch panel moved.
-    var fullWidth: CGFloat { placement.isSideDrawer ? 360 : 512 }
+    var fullWidth: CGFloat {
+        if placement.isSideDrawer { return 360 }
+        let component = registry.first { $0.id == selection.active } ?? registry[0]
+        return max(component.preferredWidth ?? 512, 512)
+    }
 
     /// The open panel's band row: the band plus a little air above the controls, so the pill and
     /// the round buttons never touch the top edge of the screen.
@@ -184,16 +188,32 @@ final class NotchHUDModel: ObservableObject {
         case .hidden: return 0
         }
     }
-    /// The busy strip sits in the band beside the camera with an 8 pt lip under it; the caption
+    /// The busy strip sits in the band beside the camera, growing sideways, never down over the
+    /// windows below (under a hardware notch); without a notch it keeps an 8 pt lip. The caption
     /// strip keeps its own taller content. A detail line hangs under either.
-    let compactStripLip: CGFloat = 8
+    var compactStripLip: CGFloat { growsSideways ? 0 : 8 }
+
+    /// Under a hardware notch the peek and the busy strip grow out to the sides inside the menu
+    /// bar's band, so they never cover the tabs and toolbars just below it.
+    var growsSideways: Bool { peekDirection == .sideways && geometry.hasHardwareNotch && placement == .notch }
+    /// Settings → Appearance: sideways in the band, or down under the notch.
+    @Published var peekDirection: IslandPeekDirection = .sideways
+    /// Each side of the camera in the sideways peek.
+    static let peekSideWidth: CGFloat = 170
     var compactHeight: CGFloat {
         if isShowingCaption { return geometry.notchHeight + compactContentHeight }
         return topBandHeight + compactStripLip + (hasCompactDetailLine ? compactDetailLineHeight : 0)
     }
-    /// Hovered: the island grows 20 pt on each side and one line under the band, and shows a hint.
-    var peekWidth: CGFloat { placement.isSideDrawer ? collapsedWidth : geometry.notchWidth + 40 }
-    var peekHeight: CGFloat { placement.isSideDrawer ? collapsedHeight : topBandHeight + 24 }
+    /// Hovered: under a hardware notch the island grows sideways in the band (the status left of the
+    /// camera, "click to open" right of it); elsewhere 20 pt each side and one line under the band.
+    var peekWidth: CGFloat {
+        if placement.isSideDrawer { return collapsedWidth }
+        return growsSideways ? geometry.notchWidth + Self.peekSideWidth * 2 : geometry.notchWidth + 40
+    }
+    var peekHeight: CGFloat {
+        if placement.isSideDrawer { return collapsedHeight }
+        return growsSideways ? topBandHeight : topBandHeight + 24
+    }
     /// Where a card's content starts: under the notch band on a notch screen; elsewhere the island
     /// covers the menu bar and the content uses that height too.
     var cardTopInset: CGFloat { geometry.hasHardwareNotch ? geometry.notchHeight : 8 }
@@ -245,7 +265,8 @@ final class NotchHUDModel: ObservableObject {
     }
 
     /// The capsule: show this component until the moment changes.
-    func selectComponent(_ id: String) {
+    /// Nil goes back to what the moment or the default asks for.
+    func selectComponent(_ id: String?) {
         componentOverride = id
         recomputeSelection()
     }
@@ -253,24 +274,42 @@ final class NotchHUDModel: ObservableObject {
     /// The default or the order changed in Settings: pick again.
     func refreshComponentSettings() {
         recomputeSelection()
+        // Home's size follows its switches (a column on or off), which no selection change
+        // reports: let the window follow while the island is open.
+        if expansion == .full {
+            objectWillChange.send()
+            onLayoutChanged?()
+        }
     }
 
     private func recomputeSelection() {
         let selection = IslandComponentSelector.select(registry: registry, order: componentSettings.order, defaultID: componentSettings.defaultID, override: componentOverride, context: context, enabled: enabledComponentIDs)
         guard selection != self.selection else { return }
-        let heightBefore = fullHeight
+        let sizeBefore = (fullWidth, fullHeight)
         self.selection = selection
-        if expansion == .full && fullHeight != heightBefore { onLayoutChanged?() }
+        if expansion == .full && (fullWidth, fullHeight) != sizeBefore { onLayoutChanged?() }
+    }
+
+    /// What the capsule flips between: everything available but the tools (they have buttons of
+    /// their own) and the parts home already shows (Now playing, System).
+    var capsuleIDs: [String] {
+        let shownElsewhere = Set(IslandPluginRegistry.toolIDs + [IslandPluginRegistry.mediaID, IslandPluginRegistry.systemID])
+        return selection.available.filter { !shownElsewhere.contains($0) }
+    }
+
+    /// The tools switched on, in toolbar order.
+    var toolIDs: [String] {
+        IslandPluginRegistry.toolIDs.filter { selection.available.contains($0) }
     }
 
     /// The capsule shows in the band only when there is something to flip to.
-    var showsCapsule: Bool { selection.available.count > 1 }
+    var showsCapsule: Bool { capsuleIDs.count > 1 }
 
     /// The active component's height: 45 pt for the shortcuts row under a notch, 92 in a side
     /// drawer (the (i) stacks over the shortcut grid), else what the component asks for.
     var slotHeight: CGFloat {
         let component = registry.first { $0.id == selection.active } ?? registry[0]
-        if placement.isSideDrawer && component.id == IslandComponentRegistry.shortcutsID { return 92 }
+        if placement.isSideDrawer && (component.id == IslandComponentRegistry.shortcutsID || component.id == IslandComponentRegistry.homeID) { return 92 }
         return component.preferredHeight
     }
 
@@ -517,8 +556,8 @@ final class NotchHUDModel: ObservableObject {
     /// True from mouse-down to mouse-up on the island, so the view can scale it a touch.
     @Published private(set) var isPressed = false
 
-    /// Where the open panel's black melts into glass (Settings → General); 0 is all black.
-    @Published var glassLevel: Double = IslandGlass.defaultLevel
+    /// The open island's style (Settings → Appearance).
+    @Published var look: IslandLook = IslandLook.defaultLook
     /// The "Reduce motion" setting, read when the view animates; set by the HUD manager.
     var reduceMotionProvider: () -> Bool = { false }
     var reduceMotion: Bool { reduceMotionProvider() }
@@ -866,6 +905,42 @@ final class NotchHUDManager {
         composerThreadId = nil
     }
 
+    // MARK: Typing in a component (the Notes plugin's editor)
+
+    /// The app that had the keyboard before a component's editor took it.
+    private var applicationActiveBeforeComponentTyping: NSRunningApplication?
+
+    /// Gives the keyboard to an editor inside the open island, when it is clicked. Like the
+    /// composer: the panel is non-activating, so OpenClicky activates itself and makes the
+    /// island's window key and the editor first responder; macOS 14's cooperative activation can
+    /// land late and hand key status elsewhere, so the window is made key again a moment later.
+    func beginComponentTyping(in view: NSView) {
+        guard let window = view.window else { return }
+        let frontApplication = NSWorkspace.shared.frontmostApplication
+        if frontApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            applicationActiveBeforeComponentTyping = frontApplication
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(view)
+        for delay in [0.05, 0.25] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
+                guard let view, let window = view.window, window.firstResponder === view, !window.isKeyWindow else { return }
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
+    /// The editor is done (esc, or it left the island): it lets go of the keyboard, and the app
+    /// that had it gets it back, unless a click elsewhere already gave it to another app.
+    func endComponentTyping(in view: NSView) {
+        if let window = view.window, window.firstResponder === view { window.makeFirstResponder(nil) }
+        let previousApplication = applicationActiveBeforeComponentTyping
+        applicationActiveBeforeComponentTyping = nil
+        guard NSApp.isActive, let previousApplication, !previousApplication.isTerminated else { return }
+        previousApplication.activate()
+    }
+
     // MARK: Caption (the goodbye on quit)
 
     private var captionTypingTimer: Timer?
@@ -995,7 +1070,8 @@ final class NotchHUDManager {
             }
             let model = NotchHUDModel(geometry: geometry)
             model.placement = placement
-            model.glassLevel = UserDefaults.standard.object(forKey: IslandGlass.defaultsKey) as? Double ?? IslandGlass.defaultLevel
+            model.look = IslandLook.current()
+            model.peekDirection = IslandPeekDirection.current()
             model.reduceMotionProvider = { [settings = companionManager.dictationSettings] in settings.reduceAnimation }
             model.setBusy(isBusy)
             model.setSpeaking(isSpeaking)
@@ -1126,9 +1202,14 @@ final class NotchHUDManager {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                let glassLevel = UserDefaults.standard.object(forKey: IslandGlass.defaultsKey) as? Double ?? IslandGlass.defaultLevel
+                let look = IslandLook.current()
                 for instance in self.instances {
-                    if instance.model.glassLevel != glassLevel { instance.model.glassLevel = glassLevel }
+                    if instance.model.look != look { instance.model.look = look }
+                    let direction = IslandPeekDirection.current()
+                    if instance.model.peekDirection != direction {
+                        instance.model.peekDirection = direction
+                        instance.model.onLayoutChanged?()
+                    }
                     instance.model.refreshComponentSettings()
                 }
                 self.syncOptionalComponents()
@@ -1302,16 +1383,6 @@ struct NotchHUDView: View {
     /// How far the top corners curve outward into the menu bar, continuing the notch housing.
     private var topCornerFlare: CGFloat { IslandCorners.topFlare(for: expansion, isSideDrawer: model.placement.isSideDrawer) }
 
-    /// Where the black band ends and the melt into glass may begin: under the band row of the open
-    /// panel, under the notch band on a card.
-    private var bandBottom: CGFloat {
-        switch expansion {
-        case .full: return model.bandRowHeight
-        case .connect, .permission, .tour, .composer: return model.cardTopInset
-        case .collapsed, .peek, .compact: return model.topBandHeight
-        }
-    }
-
     /// The island's width (its flares included) and height for the state it is in. The open
     /// panel's capsule row hangs below the surface, outside the outline.
     private var surfaceWidth: CGFloat { model.width + topCornerFlare * 2 }
@@ -1353,8 +1424,7 @@ struct NotchHUDView: View {
             expansion: expansion,
             width: model.width,
             height: surfaceHeight,
-            bandBottom: bandBottom,
-            glassLevel: model.glassLevel,
+            look: model.look,
             isSideDrawer: model.placement.isSideDrawer,
             drawerSide: model.placement
         )
@@ -1396,9 +1466,16 @@ struct NotchHUDView: View {
             switch expansion {
             case .peek:
                 // One line under the band: what the pointer is doing, and that a click opens the panel.
-                NotchPeekLine(model: model, companionManager: companionManager, agentSessions: companionManager.notchHUDManager.agentSessions, media: companionManager.notchHUDManager.media)
-                    .frame(width: model.peekWidth, height: model.peekHeight - model.topBandHeight)
-                    .padding(.top, model.topBandHeight)
+                Group {
+                    if model.growsSideways {
+                        NotchPeekLine(model: model, companionManager: companionManager, agentSessions: companionManager.notchHUDManager.agentSessions, media: companionManager.notchHUDManager.media, cameraGap: model.geometry.notchWidth)
+                            .frame(width: model.peekWidth, height: model.peekHeight)
+                    } else {
+                        NotchPeekLine(model: model, companionManager: companionManager, agentSessions: companionManager.notchHUDManager.agentSessions, media: companionManager.notchHUDManager.media)
+                            .frame(width: model.peekWidth, height: model.peekHeight - model.topBandHeight)
+                            .padding(.top, model.topBandHeight)
+                    }
+                }
                     .allowsHitTesting(false)
                     .transition(.opacity)
             case .collapsed:

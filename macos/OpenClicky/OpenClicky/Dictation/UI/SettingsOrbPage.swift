@@ -11,49 +11,49 @@ import SwiftUI
 extension SettingsCatalog {
     func orbItems() -> [SettingsItem] {
         let dictationKeyName = settings.dictationKey.keycapLabel
-        func toggleItem(_ id: String, section: String, title: String, detail: String, keywords: [String], keyPath: ReferenceWritableKeyPath<DictationSettings, Bool>) -> SettingsItem {
+        func toggleItem(_ id: String, title: String, detail: String, keywords: [String], keyPath: ReferenceWritableKeyPath<DictationSettings, Bool>) -> SettingsItem {
             SettingsItem(
-                id: id, page: .orb, section: section, title: title, detail: detail, keywords: keywords,
+                id: id, title: title, detail: detail, keywords: keywords,
                 view: AnyView(SettingsRow(title: title, detail: detail) { SettingsToggle(settings: settings, keyPath: keyPath) }))
         }
         return [
-            toggleItem("orb.visible", section: "", title: "Show the orb",
+            toggleItem("orb.visible", title: "Show the orb",
                        detail: "Off: \(dictationKeyName) still works everywhere, just without narration.",
                        keywords: ["orb", "pill", "hide", "visible"], keyPath: \.orbVisible),
             SettingsItem(
-                id: "orb.look", page: .orb, section: "Look",
+                id: "orb.look",
                 title: "Style", detail: "Pill, classic or pixel.",
                 keywords: ["pill", "classic", "pixel", "style", "shape", "look"],
                 view: AnyView(OrbLookPicker(settings: settings))),
             SettingsItem(
-                id: "orb.theme", page: .orb, section: "Look",
+                id: "orb.theme",
                 title: "Theme", detail: "Black, coral or mist.",
                 keywords: ["colour", "color", "black", "coral", "mist"],
                 view: AnyView(OrbDependentRow(settings: settings) {
                     SettingsRow(title: "Theme", detail: nil) { OrbThemePicker(settings: settings) }
                 })),
             SettingsItem(
-                id: "orb.size", page: .orb, section: "Look",
+                id: "orb.size",
                 title: "Size", detail: "Full or mini.",
                 keywords: ["full", "mini", "small", "big"],
                 view: AnyView(OrbDependentRow(settings: settings) {
                     SettingsRow(title: "Size", detail: nil) { OrbSizePicker(settings: settings) }
                 })),
-            toggleItem("orb.hidesWhenIdle", section: "When it appears", title: "Hide when idle",
+            toggleItem("orb.hidesWhenIdle", title: "Hide when idle",
                        detail: "Appears when a take starts, leaves when it’s done.",
                        keywords: ["hide", "idle", "not in use"], keyPath: \.orbHidesWhenIdle),
-            toggleItem("orb.restsExpanded", section: "When it appears", title: "Rest with the box open",
+            toggleItem("orb.restsExpanded", title: "Rest with the box open",
                        detail: "Keeps the transcript box showing between takes.",
                        keywords: ["box", "transcript", "expanded"], keyPath: \.orbRestsExpanded),
-            toggleItem("orb.opensBoxWhenPasteUnverified", section: "When it appears", title: "Open the box if a paste can’t be confirmed",
+            toggleItem("orb.opensBoxWhenPasteUnverified", title: "Open the box if a paste can’t be confirmed",
                        detail: "So words never vanish when an app ignores the paste.",
                        keywords: ["paste", "visibility", "box", "unverified", "confirm"], keyPath: \.orbOpensBoxWhenPasteUnverified),
             SettingsItem(
-                id: "orb.isDraggable", page: .orb, section: "When it appears",
+                id: "orb.isDraggable",
                 title: "Free to drag", detail: "Off pins the orb at the bottom centre.",
                 keywords: ["drag", "move", "pin", "position", "center", "centre", "bottom"],
                 view: AnyView(OrbDragRow(settings: settings))),
-            toggleItem("orb.tooltips", section: "When it appears", title: "Tooltips",
+            toggleItem("orb.tooltips", title: "Tooltips",
                        detail: "A short hint under the orb.",
                        keywords: ["hint", "help"], keyPath: \.tooltips),
         ]

@@ -264,6 +264,7 @@ final class DictationSettings: ObservableObject {
         haptics = defaults.object(forKey: Keys.haptics) == nil ? true : defaults.bool(forKey: Keys.haptics)
         reduceAnimation = defaults.bool(forKey: Keys.reduceAnimation)
         appearance = DictationAppearance(rawValue: defaults.string(forKey: Keys.appearance) ?? "") ?? .system
+        appIconColor = AppIconColor(rawValue: defaults.string(forKey: Keys.appIconColor) ?? "") ?? .signal
         inactivityTimeoutMinutes = defaults.object(forKey: Keys.inactivityTimeoutMinutes) == nil ? 3 : defaults.integer(forKey: Keys.inactivityTimeoutMinutes)
         clipboardHistoryEnabled = defaults.bool(forKey: Keys.clipboardHistoryEnabled)
         incognito = defaults.bool(forKey: Keys.incognito)
@@ -275,7 +276,6 @@ final class DictationSettings: ObservableObject {
         hasCompletedDictationOnboarding = defaults.bool(forKey: Keys.hasCompletedDictationOnboarding)
         preferredMicrophoneUID = defaults.string(forKey: Keys.preferredMicrophoneUID)
         orbPosition = Self.decodePoint(defaults.string(forKey: Keys.orbPosition))
-        region = AppRegion(rawValue: defaults.string(forKey: Keys.region) ?? "") ?? AppRegion.detected()
     }
 
     private enum Keys {
@@ -302,6 +302,7 @@ final class DictationSettings: ObservableObject {
         static let haptics = "dictation.haptics"
         static let reduceAnimation = "dictation.reduceAnimation"
         static let appearance = "dictation.appearance"
+        static let appIconColor = "general.appIconColor"
         static let inactivityTimeoutMinutes = "dictation.inactivityTimeoutMinutes"
         static let clipboardHistoryEnabled = "dictation.clipboardHistoryEnabled"
         static let incognito = "dictation.incognito"
@@ -312,7 +313,6 @@ final class DictationSettings: ObservableObject {
         static let answerSimpleRequestsOnThisMac = "openclicky.ask.onThisMac"
         static let hasCompletedDictationOnboarding = "dictation.onboarded"
         static let preferredMicrophoneUID = "dictation.preferredMicrophoneUID"
-        static let region = "openclicky.region"
     }
 
     // MARK: engine & language
@@ -392,10 +392,18 @@ final class DictationSettings: ObservableObject {
 
     // MARK: general
 
-    /// India or the rest of the world: which options the settings offer (AppRegion). Stored only
-    /// once picked; until then it follows the Mac.
-    @Published var region: AppRegion { didSet { defaults.set(region.rawValue, forKey: Keys.region) } }
+    /// Which options the settings offer (AppRegion). Always the world since 2026-10-30: OpenClicky
+    /// no longer offers India its own set, so the Region choice is gone. An option already in use
+    /// (Sarvam, an Indian language) stays offered. The old `openclicky.region` value is ignored.
+    var region: AppRegion { .world }
     @Published var appearance: DictationAppearance { didSet { defaults.set(appearance.rawValue, forKey: Keys.appearance) } }
+    /// The app icon's colour in the Dock and OpenClicky's windows (AppIconColor.apply, at launch and on change).
+    @Published var appIconColor: AppIconColor {
+        didSet {
+            defaults.set(appIconColor.rawValue, forKey: Keys.appIconColor)
+            if appIconColor != oldValue { appIconColor.apply() }
+        }
+    }
     /// A take with this long of silence ends on its own. 0 = never.
     @Published var inactivityTimeoutMinutes: Int { didSet { defaults.set(inactivityTimeoutMinutes, forKey: Keys.inactivityTimeoutMinutes) } }
     @Published var preferredMicrophoneUID: String? {
@@ -435,7 +443,7 @@ final class DictationSettings: ObservableObject {
     }
 
     func resetGeneralToDefaults() {
-        appearance = .system; inactivityTimeoutMinutes = 3; reduceAnimation = false
+        appearance = .system; appIconColor = .signal; inactivityTimeoutMinutes = 3; reduceAnimation = false
     }
 
     func resetShortcutsToDefaults() {

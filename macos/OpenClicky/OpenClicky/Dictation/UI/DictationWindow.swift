@@ -2,12 +2,11 @@
 //  DictationWindow.swift
 //  OpenClicky
 //
-//  OpenClicky's one window. A native sidebar lists the pages, with no heading, in this order: General,
-//  Dictation, Clicky, Voice, Your words (what you dictated: try it, this week, every take), How it
-//  writes (dictionary, snippets, styles), The Orb, Shortcuts, Keys & Plans, Account, Privacy &
-//  Security, About. Every
-//  page is drawn the same native way, a search field filters every setting, and incognito and the
-//  account sit at the sidebar's foot. Every way in (⌘,, the menu
+//  OpenClicky's one window. A native sidebar lists six pages, with no heading: Dictation, Clicky,
+//  Island, Keys & Account, Privacy, General. Rows on a page open the pages under it (Your words,
+//  How it writes and The orb under Dictation; Calendars under Island), and the toolbar's back
+//  button returns. Every page is drawn the same native way, a search field filters every setting,
+//  and incognito and the account sit at the sidebar's foot. Every way in (⌘,, the menu
 //  bar, the island, the orb's menu, the Dock) opens this window at the page it asks for. It is
 //  reopened rather than recreated, and remembers its frame.
 //
@@ -16,7 +15,7 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// The window's own pages, listed first under Settings and drawn like the settings pages.
+/// The window's own pages, opened from Dictation and drawn like the settings pages.
 enum DictationSection: String, CaseIterable, Identifiable {
     /// What you dictated: try it here, this week, and every take (record and history, merged).
     case words
@@ -31,30 +30,28 @@ enum DictationSection: String, CaseIterable, Identifiable {
         }
     }
 
-    var symbol: String {
-        switch self {
-        case .words: return "text.quote"
-        case .writing: return "character.book.closed.fill"
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .words: return Color(red: 0.824, green: 0.306, blue: 0.165)
-        case .writing: return Color(red: 0.686, green: 0.322, blue: 0.871)
-        }
-    }
 }
 
 /// What the window shows: one of your pages or one settings page.
 enum DictationDestination: Hashable {
     case section(DictationSection)
     case settings(DictationSettingsPage)
+
+    /// The sidebar page that stays selected while this one shows: Dictation for your pages.
+    var sidebarPage: DictationSettingsPage {
+        switch self {
+        case .section: return .dictation
+        case .settings(let page): return page.sidebarPage
+        }
+    }
 }
 
 @MainActor
 final class DictationWindowModel: ObservableObject {
-    @Published var destination: DictationDestination = .section(.words)
+    @Published var destination: DictationDestination = .settings(.dictation)
+    /// The pages left by opening a row (Dictation, then The orb): the toolbar's back button
+    /// returns through them. A sidebar click or a way in from outside starts it again.
+    @Published private(set) var backStack: [DictationDestination] = []
     @Published var pendingHistorySearch: String?
     /// While this holds words the window shows matching settings from every page.
     @Published var searchText = ""
@@ -65,7 +62,24 @@ final class DictationWindowModel: ObservableObject {
     /// A click in the sidebar. Clears any search so the chosen page is what shows.
     func select(_ chosenDestination: DictationDestination) {
         searchText = ""
+        backStack = []
         destination = chosenDestination
+    }
+
+    /// A row that opens another page (The orb from Dictation): back returns to this one.
+    func push(_ chosenDestination: DictationDestination) {
+        guard chosenDestination != destination else { return }
+        backStack.append(destination)
+        searchText = ""
+        destination = chosenDestination
+    }
+
+    var canGoBack: Bool { !backStack.isEmpty }
+
+    func goBack() {
+        guard let previousDestination = backStack.popLast() else { return }
+        searchText = ""
+        destination = previousDestination
     }
 
     func select(_ section: DictationSection) { select(.section(section)) }
@@ -117,7 +131,7 @@ final class DictationWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { nil }
 
     /// The sidebar (240 pt) plus 540 pt for a page. Every page is a grouped form that reflows, so
-    /// the widest fixed row decides: Keys & Plans' "Add a key" (provider menu, 130 pt key field, Add)
+    /// the widest fixed row decides: Keys & Account's "Add a key" (provider menu, 130 pt key field, Add)
     /// still leaves its title a readable column at 540 pt and squeezes it to one letter a line by
     /// 480 pt. Narrower windows also let the split view push the sidebar off its edge.
     static let minimumSize = NSSize(width: 780, height: 560)
@@ -177,7 +191,6 @@ struct DictationRootView: View {
     @ObservedObject private var fnKeyState = FnKeyState.shared
     @ObservedObject private var authSession = OpenClickyAuthSession.shared
     @ObservedObject private var shellSettingsRevision = ShellSettingsRevision.shared
-    @State private var historyCount = 0
 
     init(model: DictationWindowModel, companionManager: CompanionManager) {
         self.model = model
@@ -194,15 +207,12 @@ struct DictationRootView: View {
         let matches = query.isEmpty ? [] : relevantItems.filter { $0.matches(query) }
         NavigationSplitView {
             VStack(spacing: 0) {
+            // A page opened from a row keeps its parent selected (The orb keeps Dictation).
             List(selection: Binding(
-                get: { model.isSearching ? nil : model.destination },
+                get: { model.isSearching ? nil : DictationDestination.settings(model.destination.sidebarPage) },
                 set: { chosen in if let chosen { model.select(chosen) } }
             )) {
-                // General, Dictation, Clicky, Voice, then your two pages, then the rest.
-                ForEach(DictationSettingsPage.pagesBeforeYourPages) { page in pageRow(page, matches: matches) }
-                sectionRow(.words, count: historyCount, matches: matches)
-                sectionRow(.writing, matches: matches)
-                ForEach(DictationSettingsPage.pagesAfterYourPages) { page in pageRow(page, matches: matches) }
+                ForEach(DictationSettingsPage.sidebarPages) { page in pageRow(page, matches: matches) }
             }
             .listStyle(.sidebar)
             .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search settings")
@@ -211,13 +221,19 @@ struct DictationRootView: View {
             .navigationSplitViewColumnWidth(240)
         } detail: {
             detail(query: query, matches: matches, relevantItems: relevantItems)
+                .environment(\.settingsNavigate) { chosenDestination in model.push(chosenDestination) }
+                .toolbar {
+                    ToolbarItem(placement: .navigation) {
+                        Button(action: { model.goBack() }) { Image(systemName: "chevron.left") }
+                            .disabled(!model.canGoBack || model.isSearching)
+                            .help("Back")
+                            .pointerCursor(isEnabled: model.canGoBack && !model.isSearching)
+                    }
+                    ToolbarItem(placement: .primaryAction) { AppearanceToolbarMenu(settings: settings) }
+                }
         }
         .frame(minWidth: DictationWindowController.minimumSize.width, minHeight: DictationWindowController.minimumSize.height)
-        .onAppear {
-            fnKeyState.refresh()
-            reloadHistoryCount()
-        }
-        .onReceive(companionManager.dictationTakeController.$historyVersion) { _ in reloadHistoryCount() }
+        .onAppear { fnKeyState.refresh() }
         // ⌘, opens General. It sits on the root so it works wherever the focus is; AppKit offers a
         // key equivalent to the key window before the menu bar, whose Settings item would open the
         // app's empty settings scene.
@@ -246,7 +262,7 @@ struct DictationRootView: View {
         } else {
             switch model.destination {
             case .settings(let page):
-                SettingsFormView(groups: SettingsSectionGroup.groups(relevantItems.filter { $0.page == page && $0.searchOnlyGroup == nil }))
+                SettingsFormView(groups: SettingsSectionGroup.groups(relevantItems.filter { $0.page == page && $0.showsOnPage }, foldsAdvanced: true), page: page)
                     .id(page)
                     .navigationTitle(page.title)
             case .section(let section):
@@ -265,23 +281,12 @@ struct DictationRootView: View {
         }
     }
 
+    /// A sidebar page, dimmed while a search finds nothing on it or the pages under it.
     private func pageRow(_ page: DictationSettingsPage, matches: [SettingsItem]) -> some View {
         SidebarIconLabel(title: page.title, symbol: page.symbol, tint: page.tint)
             .settingsTourTarget(SettingsTourTargets.sidebarTargetID(for: .settings(page)))
-            .opacity(model.isSearching && !matches.contains { $0.page == page && $0.searchOnlyGroup == nil } ? 0.35 : 1)
+            .opacity(model.isSearching && !matches.contains { $0.page.sidebarPage == page } ? 0.35 : 1)
             .tag(DictationDestination.settings(page))
-    }
-
-    private func sectionRow(_ section: DictationSection, count: Int? = nil, matches: [SettingsItem]) -> some View {
-        SidebarIconLabel(title: section.sidebarTitle, symbol: section.symbol, tint: section.tint)
-            .settingsTourTarget(SettingsTourTargets.sidebarTargetID(for: .section(section)))
-            .badge(count ?? 0)
-            .opacity(model.isSearching && !matches.contains { $0.searchOnlyGroup == section.sidebarTitle } ? 0.35 : 1)
-            .tag(DictationDestination.section(section))
-    }
-
-    private func reloadHistoryCount() {
-        historyCount = (try? companionManager.dictationTakeStore?.stats().allTimeTakes) ?? 0
     }
 }
 

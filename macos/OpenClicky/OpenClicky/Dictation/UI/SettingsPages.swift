@@ -3,112 +3,156 @@
 //  OpenClicky
 //
 //  The settings pages of OpenClicky's one window (DictationWindow.swift), drawn from the Claude
-//  Design "OpenClicky Settings Proposal": pages with coloured sidebar icons, each a grouped
-//  form, and the native look they share. Every row comes from `SettingsCatalog`, so a page and a
-//  search result draw the same control.
+//  Design "OpenClicky settings — redesign mockups": six pages with coloured sidebar icons, each a
+//  grouped form with its rarely changed rows folded into "More", and the native look they share.
+//  Every row comes from `SettingsCatalog`, placed by `SettingsLayout`, so a page and a search
+//  result draw the same control.
 //
 
 import AppKit
 import Combine
 import SwiftUI
 
-/// The settings pages, in sidebar order. Your two pages (Your words, How it writes) sit among them,
-/// after the pages that say `showsBeforeYourPages`. The order follows how someone thinks about
-/// OpenClicky: what it is (General), the two things it does (Dictation, Clicky) and how Clicky
-/// sounds (Voice), what you said and how it is written (your pages), then how it looks, the keys
-/// you press, the AI keys you pay with, your account, privacy and about.
-/// docs/superpowers/specs/2026-10-12-settings-revamp.md has the reasoning.
+/// The settings pages. Six are in the sidebar (`sidebarPages`, in its order); The orb and Calendars
+/// are opened from a row on their parent page and keep the parent selected in the sidebar. The
+/// order follows the Claude Design "OpenClicky settings — redesign mockups": the two things
+/// OpenClicky does (Dictation, Clicky), where it lives (Island), what pays for it (Keys & Account),
+/// what it may see (Privacy), then General. `SettingsLayout` says which rows each page holds.
 enum DictationSettingsPage: String, CaseIterable, Identifiable {
-    case general, dictation, clicky, voice, orb, plugins, keyboard, keys, account, privacy, about
+    case dictation, clicky, island, account, privacy, general, orb, calendars
     var id: String { rawValue }
 
-    /// True for the pages the sidebar lists above your two pages: what you set up first (General,
-    /// Dictation, Clicky, Voice) comes before what you dictated; the rest follows it.
-    var showsBeforeYourPages: Bool {
+    /// The pages the sidebar lists, in order.
+    static let sidebarPages: [DictationSettingsPage] = [.dictation, .clicky, .island, .account, .privacy, .general]
+
+    /// The sidebar page a page opened from a row belongs to; a sidebar page is its own.
+    var sidebarPage: DictationSettingsPage {
         switch self {
-        case .general, .dictation, .clicky, .voice: return true
-        case .orb, .plugins, .keyboard, .keys, .account, .privacy, .about: return false
+        case .orb: return .dictation
+        case .calendars: return .island
+        case .dictation, .clicky, .island, .account, .privacy, .general: return self
         }
     }
 
-    /// The settings pages above your two pages in the sidebar, in order.
-    static var pagesBeforeYourPages: [DictationSettingsPage] { allCases.filter(\.showsBeforeYourPages) }
-
-    /// The settings pages below your two pages in the sidebar, in order.
-    static var pagesAfterYourPages: [DictationSettingsPage] { allCases.filter { !$0.showsBeforeYourPages } }
-
     var title: String {
         switch self {
-        case .general: return "General"
         case .dictation: return "Dictation"
         case .clicky: return "Clicky"
-        case .voice: return "Voice"
-        case .orb: return "The Orb"
-        case .plugins: return "Plugins"
-        case .keyboard: return "Shortcuts"
-        case .keys: return "Keys & Plans"
-        case .account: return "Account"
-        case .privacy: return "Privacy & Security"
-        case .about: return "About"
+        case .island: return "Island"
+        case .account: return "Keys & Account"
+        case .privacy: return "Privacy"
+        case .general: return "General"
+        case .orb: return "The orb"
+        case .calendars: return "Calendars"
+        }
+    }
+
+    /// The heading search results are listed under: "Dictation › The orb" for a page opened from a row.
+    var searchTitle: String {
+        sidebarPage == self ? title : "\(sidebarPage.title) › \(title)"
+    }
+
+    /// The page's header card: one line on what lives here.
+    var subtitle: String {
+        switch self {
+        case .dictation: return "Hold fn, speak, and the words land at your cursor."
+        case .clicky: return "Hold ⌃⌥ and ask about what’s on screen."
+        case .island: return "What lives around the notch."
+        case .account: return "Your own keys come first. An account is optional."
+        case .privacy: return "What OpenClicky can see, and what it keeps."
+        case .general: return "Startup, appearance and updates."
+        case .orb: return "The small narrator that shows while you dictate."
+        case .calendars: return "Which calendars the island shows."
         }
     }
 
     /// The sidebar icon, white on `tint`.
     var symbol: String {
         switch self {
-        case .general: return "gearshape.fill"
-        case .dictation: return "waveform"
-        case .clicky: return "cursorarrow"
-        case .voice: return "speaker.wave.2.fill"
-        case .orb: return "capsule.fill"
-        case .plugins: return "puzzlepiece.extension.fill"
-        case .keyboard: return "command"
-        case .keys: return "key.fill"
-        case .account: return "person.crop.circle.fill"
+        case .dictation: return "mic.fill"
+        case .clicky: return "sparkle"
+        case .island: return "rectangle.topthird.inset.filled"
+        case .account: return "key.fill"
         case .privacy: return "hand.raised.fill"
-        case .about: return "info"
+        case .general: return "gearshape.fill"
+        case .orb: return "capsule.fill"
+        case .calendars: return "calendar"
         }
     }
 
     var tint: Color {
         switch self {
-        case .general: return Color(red: 0.557, green: 0.557, blue: 0.576)
-        case .dictation: return Color(red: 1.0, green: 0.231, blue: 0.188)
-        case .clicky: return Color(red: 1.0, green: 0.584, blue: 0.0)
-        case .voice: return Color(red: 0.996, green: 0.176, blue: 0.333)
-        case .orb: return Color(red: 0.11, green: 0.11, blue: 0.118)
-        case .plugins: return Color(red: 0.69, green: 0.32, blue: 0.87)
-        case .keyboard: return Color(red: 0.388, green: 0.388, blue: 0.4)
-        case .keys: return Color(red: 0.545, green: 0.42, blue: 0.0)
+        case .dictation, .orb: return Color(red: 0.039, green: 0.518, blue: 1.0)
+        case .clicky: return Color(red: 0.686, green: 0.322, blue: 0.871)
+        case .island, .calendars: return Color(red: 0.11, green: 0.11, blue: 0.118)
         case .account: return Color(red: 0.204, green: 0.78, blue: 0.349)
-        case .privacy: return Color(red: 0.0, green: 0.478, blue: 1.0)
-        case .about: return Color(red: 0.682, green: 0.682, blue: 0.698)
+        case .privacy: return Color(red: 0.369, green: 0.361, blue: 0.902)
+        case .general: return Color(red: 0.557, green: 0.557, blue: 0.576)
         }
     }
 }
 
 /// One page (or the search results) as a grouped form: a section per group, its footer under it.
+/// A page's folded group ("More") is a disclosure row that opens in place.
 struct SettingsFormView: View {
     let groups: [SettingsSectionGroup]
+    /// The page's header card above its first group; none for search results.
+    var page: DictationSettingsPage?
     /// The Settings tour asks for a row to be scrolled into view before it points at it.
     @ObservedObject private var tourTargets = SettingsTourTargets.shared
+    /// The folded groups opened on this page; they close again when the page is left.
+    @State private var openAdvancedGroupIDs: Set<String> = []
 
     var body: some View {
         ScrollViewReader { scrollProxy in
         Form {
+            if let page {
+                Section { SettingsPageHeader(page: page) }
+            }
             ForEach(groups) { group in
-                Section {
-                    ForEach(group.items) { item in
-                        item.view
-                            .settingsTourTarget(item.id)
-                            .id(item.id)
-                    }
-                } header: {
-                    if !group.title.isEmpty { Text(group.title) }
-                } footer: {
-                    if !group.footers.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
+                if group.isAdvanced {
+                    let isOpen = openAdvancedGroupIDs.contains(group.id)
+                    Section {
+                        // The whole row opens the group: a DisclosureGroup only answers on its
+                        // small arrow, which people missed.
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if isOpen { openAdvancedGroupIDs.remove(group.id) } else { openAdvancedGroupIDs.insert(group.id) }
+                            }
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .rotationEffect(.degrees(isOpen ? 90 : 0))
+                                Text(group.title).font(SettingsLook.rowTitle)
+                                Spacer()
+                                if !isOpen {
+                                    Text("\(group.items.count) settings").font(SettingsLook.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, SettingsLook.Metric.rowVertical)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .pointerCursor()
+                        .accessibilityLabel(group.title)
+                        .accessibilityValue(isOpen ? "Open" : "Closed")
+                        if isOpen {
+                            rows(of: group)
                             ForEach(group.footers) { footer in footer.view }
+                        }
+                    }
+                } else {
+                    Section {
+                        rows(of: group)
+                    } header: {
+                        if !group.title.isEmpty { Text(group.title) }
+                    } footer: {
+                        if !group.footers.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(group.footers) { footer in footer.view }
+                            }
                         }
                     }
                 }
@@ -121,6 +165,50 @@ struct SettingsFormView: View {
             tourTargets.scrollRequest = nil
         }
         }
+    }
+
+    private func rows(of group: SettingsSectionGroup) -> some View {
+        ForEach(group.items) { item in
+            item.view
+                .settingsTourTarget(item.id)
+                .id(item.id)
+        }
+    }
+}
+
+private struct SettingsNavigateKey: EnvironmentKey {
+    static let defaultValue: (DictationDestination) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+    /// Opens a page from a row on another (The orb from Dictation), so the toolbar's back button
+    /// returns. Set by the window's root view.
+    var settingsNavigate: (DictationDestination) -> Void {
+        get { self[SettingsNavigateKey.self] }
+        set { self[SettingsNavigateKey.self] = newValue }
+    }
+}
+
+/// A row that opens another page: its name, a line on what is there, and a chevron. The whole
+/// row is the button, like System Settings' own.
+struct SettingsNavigationRow: View {
+    let title: String
+    let detail: String
+    let destination: DictationDestination
+    @Environment(\.settingsNavigate) private var navigate
+
+    var body: some View {
+        Button(action: { navigate(destination) }) {
+            SettingsRow(title: title, detail: detail) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -167,7 +255,7 @@ struct SettingsSwitch: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .labelsHidden()
-            .tint(SettingsLook.accent)
+            .tint(Color(nsColor: .controlAccentColor))
             .pointerCursor()
     }
 }
@@ -192,5 +280,44 @@ struct SettingsKeys: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The card at the top of a page, like System Settings': the page's icon large in its coloured
+/// tile, its name, and a line on what it holds.
+struct SettingsPageHeader: View {
+    let page: DictationSettingsPage
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: page.symbol)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(page.tint.gradient))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(page.title).font(.system(size: 15, weight: .semibold))
+                Text(page.subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A feature's icon beside its row: a small coloured tile with a white symbol.
+struct SettingsFeatureTile: View {
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
+            .background(RoundedRectangle(cornerRadius: 5.5, style: .continuous).fill(tint.gradient))
+            .accessibilityHidden(true)
     }
 }

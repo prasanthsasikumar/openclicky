@@ -350,7 +350,7 @@ enum CloudVoiceError: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case let .noKey(vendor): return "\(vendor) needs a key under Settings → Keys & Plans."
+        case let .noKey(vendor): return "\(vendor) needs a key under Settings → Keys & Account."
         case let .refused(vendor, status, message): return "\(vendor) refused (\(status)): \(message)"
         case let .unreadable(vendor): return "\(vendor)'s answer had no audio in it."
         }

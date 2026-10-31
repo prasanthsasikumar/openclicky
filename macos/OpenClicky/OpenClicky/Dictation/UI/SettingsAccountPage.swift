@@ -17,22 +17,17 @@ extension SettingsCatalog {
     func accountItems() -> [SettingsItem] {
         [
             SettingsItem(
-                id: "account.profile", page: .account, section: "",
+                id: "account.profile",
                 title: "Account", detail: "Sign in or out. A free account adds AI polish and spoken answers; dictation on this Mac works without one.",
                 keywords: ["account", "sign in", "sign up", "sign out", "log in", "log out", "create", "email", "code", "free"],
                 view: AnyView(AccountProfileRow())),
             SettingsItem(
-                id: "account.plan", page: .account, section: "Plan & usage",
+                id: "account.plan",
                 title: "Free allowance", detail: "How much of this month’s free allowance is used.",
                 keywords: ["billing", "allowance", "usage", "plan", "cost", "price", "limit"],
                 view: AnyView(PlanSummary())),
             SettingsItem(
-                id: "account.usage.offline", page: .account, section: "Plan & usage",
-                title: "This Mac", detail: "Unlimited, no account.",
-                keywords: ["offline", "free", "engine"],
-                view: AnyView(SettingsRow(title: "This Mac", detail: "Unlimited, no account.") { SettingsTag(text: "Free", isPositive: true) })),
-            SettingsItem(
-                id: "account.usage.sarvam", page: .account, section: "Plan & usage",
+                id: "account.usage.sarvam",
                 title: "Sarvam", detail: "Billed by Sarvam to your key.",
                 keywords: ["sarvam", "billing", "engine", "dashboard"],
                 isRelevant: { OpenClickyConfiguration.settings.sarvamKey?.isEmpty == false },
@@ -41,17 +36,17 @@ extension SettingsCatalog {
                         .pointerCursor()
                 })),
             SettingsItem(
-                id: "account.usage.backend", page: .account, section: "Plan & usage",
+                id: "account.usage.backend",
                 title: "OpenAI and AssemblyAI", detail: "Through OpenClicky.",
                 keywords: ["openai", "assemblyai", "allowance", "metered", "engine"],
                 view: AnyView(BackendEngineUsageRow())),
             SettingsItem(
-                id: "account.backendHost", page: .account, section: "Backend",
+                id: "account.backendHost",
                 title: "Host", detail: "Where OpenClicky’s model calls go. Change it in shell.json.",
                 keywords: ["backend", "server", "url", "host", "shell.json"],
                 view: AnyView(BackendDetailsRow(kind: .host))),
             SettingsItem(
-                id: "account.backendToken", page: .account, section: "Backend",
+                id: "account.backendToken",
                 title: "Session token", detail: "Written when you sign in.",
                 keywords: ["token", "bearer", "shell.json", "session"],
                 view: AnyView(BackendDetailsRow(kind: .token))),
@@ -61,30 +56,30 @@ extension SettingsCatalog {
     func keysItems() -> [SettingsItem] {
         [
             SettingsItem(
-                id: "account.keys", page: .keys, section: "Your keys",
+                id: "account.keys",
                 title: "Your keys", detail: "Keys from AI providers (they answer, clean up and speak) and voice services.",
                 keywords: ["api key", "byok", "own key", "provider", "add key", "openai", "openaiApiKey", "anthropic", "claude",
                            "anthropicApiKey", "openrouter", "llama", "deepseek", "gemini", "google", "ai studio", "groq",
                            "mistral", "xai", "grok", "sarvam", "saaras", "elevenlabs", "polly", "google cloud", "voice", "test"],
                 view: AnyView(ProviderKeysList())),
             SettingsItem(
-                id: "account.keysNote", page: .keys, section: "Your keys",
+                id: "account.keysNote",
                 title: "Where keys go", detail: "Your keys go straight to that provider, never through OpenClicky, and are used instead of the free credits. Stored in ~/.openclicky/shell.json.",
                 keywords: ["shell.json", "byok"],
                 chrome: .footer,
                 view: AnyView(SettingsFootnote(text: "Your keys go straight to that provider, never through OpenClicky, and are used instead of the free credits. Stored in ~/.openclicky/shell.json."))),
             SettingsItem(
-                id: "account.claudeCodePlan", page: .keys, section: "Subscriptions",
+                id: "account.claudeCodePlan",
                 title: "Claude Code (your Claude plan)", detail: "Answer questions through Claude Code, signed in to your Claude plan.",
                 keywords: ["claude code", "claude plan", "pro", "max", "subscription", "anthropic"],
                 view: AnyView(PlanSubscriptionRow(plan: .claudeCodePlan))),
             SettingsItem(
-                id: "account.codexPlan", page: .keys, section: "Subscriptions",
+                id: "account.codexPlan",
                 title: "Codex (your ChatGPT plan)", detail: "Answer questions through Codex, signed in with ChatGPT.",
                 keywords: ["codex", "chatgpt", "plus", "pro", "subscription", "openai"],
                 view: AnyView(PlanSubscriptionRow(plan: .codexPlan))),
             SettingsItem(
-                id: "account.plansNote", page: .keys, section: "Subscriptions",
+                id: "account.plansNote",
                 title: "What a plan can do", detail: "A plan answers, points and does quick actions like opening apps; bigger tasks need the agent.",
                 keywords: ["subscription", "plan"],
                 chrome: .footer,

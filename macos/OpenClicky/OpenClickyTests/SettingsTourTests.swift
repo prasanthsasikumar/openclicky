@@ -26,14 +26,26 @@ struct SettingsTourTests {
         #expect(totalSeconds > 40 && totalSeconds < 75)
     }
 
+    @Test func everyStepPointsAtARowTheLayoutPlaces() {
+        for step in SettingsTourStep.all {
+            guard let targetID = step.targetID else { continue }
+            let group = SettingsLayout.groups.first { $0.itemIDs.contains(targetID) }
+            #expect(group != nil, "\(targetID) has no place")
+            #expect(group?.isAdvanced == false, "\(targetID) is folded away")
+            if case .settings(let page) = step.destination { #expect(group?.page == page, "\(targetID) is not on \(page)") }
+        }
+    }
+
     @Test func theTourEndsWhereItCanBeReplayed() {
         #expect(SettingsTourStep.all.last?.targetID == "general.settingsTour")
         #expect(SettingsTourStep.all.last?.destination == .settings(.general))
     }
 
     @Test func sidebarTargetsAreNamedByPage() {
-        #expect(SettingsTourTargets.sidebarTargetID(for: .settings(.voice)) == "sidebar.page.voice")
-        #expect(SettingsTourTargets.sidebarTargetID(for: .section(.words)) == "sidebar.section.words")
+        #expect(SettingsTourTargets.sidebarTargetID(for: .settings(.clicky)) == "sidebar.page.clicky")
+        // Your words has no sidebar row of its own: the tour clicks Dictation.
+        #expect(SettingsTourTargets.sidebarTargetID(for: .section(.words)) == "sidebar.page.dictation")
+        #expect(SettingsTourTargets.sidebarTargetID(for: .settings(.orb)) == "sidebar.page.dictation")
     }
 }
 

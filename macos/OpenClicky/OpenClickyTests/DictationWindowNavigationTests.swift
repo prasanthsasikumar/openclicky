@@ -55,22 +55,39 @@ struct DictationWindowNavigationTests {
         #expect(model.trimmedSearchText == "key")
     }
 
-    @Test func yourPagesAreTwoAndOpenOnYourWords() {
-        // Record and history are one page; dictionary, snippets and styles are another.
+    @Test func theWindowOpensOnDictation() {
+        #expect(DictationWindowModel().destination == .settings(.dictation))
         #expect(DictationSection.allCases.map(\.sidebarTitle) == ["Your words", "How it writes"])
-        #expect(DictationWindowModel().destination == .section(.words))
     }
 
-    @Test func theSidebarListsYourPagesAfterVoiceAndBeforeTheOrb() {
-        let sidebarTitles = DictationSettingsPage.pagesBeforeYourPages.map(\.title)
-            + DictationSection.allCases.map(\.sidebarTitle)
-            + DictationSettingsPage.pagesAfterYourPages.map(\.title)
-        #expect(sidebarTitles == ["General", "Dictation", "Clicky", "Voice", "Your words", "How it writes", "The Orb", "Plugins", "Shortcuts",
-                                  "Keys & Plans", "Account", "Privacy & Security", "About"])
+    @Test func theSidebarListsSixPages() {
+        #expect(DictationSettingsPage.sidebarPages.map(\.title) == ["Dictation", "Clicky", "Island", "Keys & Account", "Privacy", "General"])
     }
 
-    @Test func thereAreElevenSettingsPages() {
-        #expect(DictationSettingsPage.allCases.map(\.title) == ["General", "Dictation", "Clicky", "Voice", "The Orb", "Plugins", "Shortcuts",
-                                                                "Keys & Plans", "Account", "Privacy & Security", "About"])
+    @Test func pagesOpenedFromARowKeepTheirParentSelected() {
+        #expect(DictationDestination.settings(.orb).sidebarPage == .dictation)
+        #expect(DictationDestination.section(.words).sidebarPage == .dictation)
+        #expect(DictationDestination.section(.writing).sidebarPage == .dictation)
+        #expect(DictationDestination.settings(.calendars).sidebarPage == .island)
+        #expect(DictationDestination.settings(.privacy).sidebarPage == .privacy)
+    }
+
+    @Test func backReturnsThroughTheRowsOpened() {
+        let model = DictationWindowModel()
+        model.select(.settings(.dictation))
+        #expect(!model.canGoBack)
+        model.push(.settings(.orb))
+        #expect(model.destination == .settings(.orb))
+        #expect(model.canGoBack)
+        model.goBack()
+        #expect(model.destination == .settings(.dictation))
+        #expect(!model.canGoBack)
+    }
+
+    @Test func aSidebarClickForgetsTheWayBack() {
+        let model = DictationWindowModel()
+        model.push(.section(.words))
+        model.select(.settings(.clicky))
+        #expect(!model.canGoBack)
     }
 }

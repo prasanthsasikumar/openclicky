@@ -27,6 +27,10 @@ struct NotchHUDModelTests {
         let model = notchModel()
         model.setHovering(true)
         #expect(model.expansion == .peek)
+        // Sideways (the default): the band's own height, 170 pt either side of the camera.
+        #expect(model.width == 530)
+        #expect(model.height == 33)
+        model.peekDirection = .down
         #expect(model.width == 230)   // 190 notch + 20 a side
         #expect(model.height == 57)   // 33 notch + 24 line
     }
@@ -137,14 +141,17 @@ struct NotchHUDModelTests {
     @Test func aPluginJoinsTheSlotOnlyWhenTurnedOn() {
         let defaults = UserDefaults(suiteName: "island-model-switchboard")!
         defaults.removePersistentDomain(forName: "island-model-switchboard")
-        let registry = IslandComponentSelectorTests().registry + [IslandComponentSelectorTests.Stub(id: "system", isPlugin: true) { _ in true }]
+        let registry = IslandComponentSelectorTests().registry + [IslandComponentSelectorTests.Stub(id: "agents", isPlugin: true) { _ in true }]
         let model = NotchHUDModel(geometry: notchModel().geometry, registry: registry, componentSettings: IslandComponentSettings(defaults: defaults))
         #expect(model.selection.available == ["shortcuts"])
         var settings = IslandComponentSettings(defaults: defaults)
-        settings.enabledPlugins = ["system"]
+        settings.enabledPlugins = ["agents"]
         model.componentSettings = settings
-        #expect(model.selection.available == ["shortcuts", "system"])
+        #expect(model.selection.available == ["shortcuts", "agents"])
         #expect(model.showsCapsule)
+        // System and Now playing are drawn on home, and tools have toolbar buttons: none of
+        // them is a stop in the capsule.
+        #expect(model.capsuleIDs == ["shortcuts", "agents"])
     }
 
     @Test func aDragOverTheIslandUnfoldsItOnlyWhenTheShelfIsOn() async throws {

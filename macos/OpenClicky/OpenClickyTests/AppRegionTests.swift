@@ -2,21 +2,14 @@
 //  AppRegionTests.swift
 //  OpenClickyTests
 //
-//  India or the rest of the world: what the Mac looks like, and which languages each offers,
-//  never dropping the one in use.
+//  India or the rest of the world: which languages each offers, never dropping the one in use.
+//  The settings always use the world now; India's set is kept for what is already in use.
 //
 
 import Testing
 @testable import OpenClicky
 
 struct AppRegionTests {
-    @Test func anIndianMacIsIndiaByItsRegionOrItsTimeZone() {
-        #expect(AppRegion.detected(regionCode: "IN", timeZoneIdentifier: "Europe/London") == .india)
-        #expect(AppRegion.detected(regionCode: "US", timeZoneIdentifier: "Asia/Kolkata") == .india)
-        #expect(AppRegion.detected(regionCode: "NZ", timeZoneIdentifier: "Pacific/Auckland") == .world)
-        #expect(AppRegion.detected(regionCode: nil, timeZoneIdentifier: "America/New_York") == .world)
-    }
-
     @Test func theWorldIsOfferedNoIndianDictationLanguages() {
         let world = DictationLanguage.pinnableChoices(region: .world, current: .auto)
         #expect(!world.isEmpty)

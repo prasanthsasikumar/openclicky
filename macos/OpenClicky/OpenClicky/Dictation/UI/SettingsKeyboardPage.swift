@@ -30,25 +30,20 @@ extension SettingsCatalog {
         let dictationKeyDetail = "Hold to talk anywhere. Tap to start a take, tap again to finish." + rightHandKeyNote
         return [
             SettingsItem(
-                id: "keyboard.dictationKey", page: .dictation, section: "Key",
+                id: "keyboard.dictationKey",
                 title: "Dictation key", detail: dictationKeyDetail,
                 keywords: ["fn", "hotkey", "push to talk", "right option", "right command", "right control", "dictate", "shortcut"],
                 view: AnyView(SettingsRow(title: "Dictation key", detail: dictationKeyDetail) {
                     DictationKeyPicker(settings: settings)
                 })),
             SettingsItem(
-                id: "keyboard.where", page: .dictation, section: "Key",
-                title: "Where the key is", detail: "A sketch of a MacBook keyboard with the dictation key held.",
-                keywords: ["where", "keyboard", "right option", "right command", "right control", "left", "macbook"],
-                view: AnyView(KeyboardSketchRow(settings: settings))),
-            SettingsItem(
-                id: "keyboard.fnWarning", page: .dictation, section: "Key",
+                id: "keyboard.fnWarning",
                 title: "fn also opens \(fnKeyState.usageNoun)", detail: "macOS uses the same key. You can switch it back in the system’s Keyboard settings.",
                 keywords: ["fn", "emoji", "globe", "free the fn key", "keyboard settings"],
                 isRelevant: { dictationKeyIsFn && !FnKeyState.shared.isFree },
                 view: AnyView(FnKeyWarningRow(fnKeyState: fnKeyState))),
             SettingsItem(
-                id: "keyboard.fnFree", page: .dictation, section: "Key",
+                id: "keyboard.fnFree",
                 title: "fn is free for dictation", detail: "macOS’s own fn action is off (Keyboard settings → Press 🌐 key to: Do Nothing).",
                 keywords: ["fn", "emoji", "globe", "give fn back"],
                 isRelevant: { dictationKeyIsFn && FnKeyState.shared.isFree },
@@ -65,39 +60,28 @@ extension SettingsCatalog {
         let usesRealtime = AccountCapabilities.current().usesRealtime
         return [
             SettingsItem(
-                id: "keyboard.dictate", page: .keyboard, section: "Dictation",
-                title: "Dictate", detail: "Hold, or tap to start and tap to finish. Change the key on the Dictation page.",
-                keywords: ["fn", "hotkey", "push to talk", "dictate", "change key"],
-                view: AnyView(SettingsRow(title: "Dictate", detail: "Hold, or tap to start and tap to finish. Change the key on the Dictation page.") {
-                    HStack(spacing: 8) {
-                        SettingsKeys(keys: [key], gesture: "hold")
-                        Button("Change…") { companionManager.showSettings(.dictation) }
-                            .pointerCursor()
-                    }
-                })),
-            SettingsItem(
-                id: "keyboard.edit", page: .keyboard, section: "Dictation",
+                id: "keyboard.edit",
                 title: "Edit selected text", detail: "Hold and say the change, like “make it formal”.",
                 keywords: ["hey clicky", "edit", "rewrite", "control", "⌃", "selection"],
                 view: AnyView(SettingsRow(title: "Edit selected text", detail: "Hold and say the change, like “make it formal”.") {
                     SettingsKeys(keys: [key, "⌃"], gesture: "hold")
                 })),
             SettingsItem(
-                id: "keyboard.cancel", page: .keyboard, section: "Dictation",
+                id: "keyboard.cancel",
                 title: "Cancel a take", detail: "Nothing is pasted.",
                 keywords: ["esc", "escape", "discard", "stop", "double-tap"],
                 view: AnyView(SettingsRow(title: "Cancel a take", detail: "Nothing is pasted.") {
                     SettingsKeys(keys: ["esc"], gesture: "or \(key) twice")
                 })),
             SettingsItem(
-                id: "keyboard.talk", page: .keyboard, section: "Clicky",
+                id: "keyboard.talk",
                 title: "Talk to Clicky", detail: "Ask about anything on screen. It answers out loud and points.",
                 keywords: ["⌃", "⌥", "control option", "voice", "ask", "companion"],
                 view: AnyView(SettingsRow(title: "Talk to Clicky", detail: "Ask about anything on screen. It answers out loud and points.") {
                     SettingsKeys(keys: ["⌃", "⌥"], gesture: "hold")
                 })),
             SettingsItem(
-                id: "keyboard.type", page: .keyboard, section: "Clicky",
+                id: "keyboard.type",
                 title: "Type to Clicky", detail: "A one-line composer opens in the island.",
                 keywords: ["⌃", "composer", "notch", "island", "text", "control twice"],
                 view: AnyView(SettingsRow(title: "Type to Clicky", detail: "A one-line composer opens in the island.") {
@@ -106,7 +90,7 @@ extension SettingsCatalog {
             // Hands-free runs on fast voice or, without a realtime key, on the standard lane; with
             // nothing that can answer the keys would do nothing, so it isn't listed.
             SettingsItem(
-                id: "keyboard.handsFree", page: .keyboard, section: "Clicky",
+                id: "keyboard.handsFree",
                 title: "Hands-free", detail: "Always-on listening. Same keys to stop.",
                 keywords: ["always on", "realtime", "listening", "hands free"],
                 isRelevant: { usesRealtime || OpenClickyConfiguration.isConfigured },
@@ -171,16 +155,6 @@ private struct FnKeyWarningRow: View {
         }
         .padding(.vertical, 4)
         .onAppear { fnKeyState.refresh() }
-    }
-}
-
-private struct KeyboardSketchRow: View {
-    @ObservedObject var settings: DictationSettings
-
-    var body: some View {
-        KeyboardSketch(key: settings.dictationKey)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.vertical, 8)
     }
 }
 

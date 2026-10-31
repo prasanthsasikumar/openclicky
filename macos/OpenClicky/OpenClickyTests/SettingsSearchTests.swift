@@ -26,19 +26,19 @@ struct SettingsSearchTests {
     }
 
     @Test func everyWordOfTheQueryMustMatch() {
-        let sounds = item("sounds", page: .orb, section: "Feedback", title: "Sounds", detail: "Tones when a take starts.")
+        let sounds = item("sounds", page: .dictation, section: "More", title: "Sounds", detail: "Tones when a take starts.")
         #expect(sounds.matches("take tones"))
         #expect(!sounds.matches("take haptics"))
     }
 
     @Test func resultsGroupByPageInOrder() {
         let items = [
-            item("a", page: .keyboard, section: "Dictation", title: "Dictation key"),
-            item("b", page: .keyboard, section: "Dictation", title: "Cancel a take"),
+            item("a", page: .dictation, section: "", title: "Dictation key"),
+            item("b", page: .dictation, section: "More", title: "Cancel a take"),
             item("c", page: .clicky, section: "Pointer", title: "Show the pointer"),
         ]
         let groups = SettingsSectionGroup.groups(items) { $0.page.title }
-        #expect(groups.map(\.title) == ["Shortcuts", "Clicky"])
+        #expect(groups.map(\.title) == ["Dictation", "Clicky"])
         #expect(groups.first?.items.count == 2)
     }
 
@@ -58,8 +58,8 @@ struct SettingsSearchTests {
             item("p", page: .privacy, section: "What it keeps", title: "Delete all takes", detail: "Your dictionary stays."),
             dictionary,
         ]
-        #expect(SettingsSectionGroup.searchResultGroups(matches, query: "dictionary").map(\.title) == ["How it writes", "Privacy & Security"])
-        #expect(SettingsSectionGroup.searchResultGroups(matches, query: "stays").map(\.title) == ["Privacy & Security", "How it writes"])
+        #expect(SettingsSectionGroup.searchResultGroups(matches, query: "dictionary").map(\.title) == ["How it writes", "Privacy"])
+        #expect(SettingsSectionGroup.searchResultGroups(matches, query: "stays").map(\.title) == ["Privacy", "How it writes"])
     }
 
     @Test func aFooterJoinsTheSectionBeforeIt() {
@@ -70,6 +70,21 @@ struct SettingsSearchTests {
         #expect(groups.count == 1)
         #expect(groups.first?.items.map(\.id) == ["a"])
         #expect(groups.first?.footers.map(\.id) == ["f"])
+    }
+
+    @Test func aPageOpenedFromARowIsListedUnderItsParent() {
+        let theme = item("t", page: .orb, section: "Look", title: "Theme")
+        #expect(theme.searchGroupTitle == "Dictation › The orb")
+        #expect(theme.matches("orb theme"))
+    }
+
+    @Test func onlyAPageFoldsItsAdvancedGroup() {
+        var sounds = item("s", page: .dictation, section: "More", title: "Sounds")
+        sounds.isAdvanced = true
+        let input = item("i", page: .dictation, section: "Microphone", title: "Input")
+        #expect(SettingsSectionGroup.groups([input, sounds], foldsAdvanced: true).map(\.isAdvanced) == [false, true])
+        // Search ignores the fold.
+        #expect(SettingsSectionGroup.groups([input, sounds]).map(\.isAdvanced) == [false, false])
     }
 
     @Test func highlightMarksEveryOccurrence() {

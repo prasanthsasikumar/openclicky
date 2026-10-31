@@ -75,11 +75,12 @@ struct IslandComponentSelectorTests {
     @MainActor
     @Test func theRealRegistryListsTheBuiltInsThenThePlugins() {
         let ids = IslandComponentRegistry.all.map(\.id)
-        #expect(ids == ["shortcuts", "transcript", "agent", "system", "shelf", "agents", "media", "teacher"])
-        #expect(IslandComponentRegistry.all.map(\.preferredHeight) == [45, 52, 52, 84, 84, 76, 84, 64])
-        #expect(IslandComponentRegistry.all.map(\.isPlugin) == [false, false, false, true, true, true, true, true])
-        #expect(IslandPluginRegistry.all.map(\.id) == ["system", "shelf", "agents", "media", "teacher"])
-        #expect(IslandComponentRegistry.all.map { $0.settingsDetail != nil } == [false, false, false, true, true, true, true, true])
+        #expect(ids == ["home", "shortcuts", "transcript", "agent", "system", "shelf", "agents", "media", "teacher", "timer", "notes", "clipboard"])
+        // Home's height follows what is on (IslandHomeLayoutTests).
+        #expect(IslandComponentRegistry.all.dropFirst().map(\.preferredHeight) == [45, 52, 52, 84, 84, 76, 84, 64, 110, 120, 130])
+        #expect(IslandComponentRegistry.all.map(\.isPlugin) == [false, false, false, false, true, true, true, true, true, true, true, true])
+        #expect(IslandPluginRegistry.all.map(\.id) == ["system", "shelf", "agents", "media", "teacher", "timer", "notes", "clipboard"])
+        #expect(IslandComponentRegistry.all.map { $0.settingsDetail != nil } == [false, false, false, false, true, true, true, true, true, true, true, true])
     }
 
     @Test func theContextIsBuiltFromWhatTheAppAlreadyPublishes() {
@@ -121,7 +122,7 @@ struct IslandComponentSelectorTests {
         let defaults = UserDefaults(suiteName: "IslandComponentSelectorTests")!
         defaults.removePersistentDomain(forName: "IslandComponentSelectorTests")
         var settings = IslandComponentSettings(defaults: defaults)
-        #expect(settings.defaultID == "shortcuts")
+        #expect(settings.defaultID == "home")
         #expect(settings.order == [])
         settings.defaultID = "agent"
         settings.order = ["agent", "shortcuts"]
@@ -157,13 +158,13 @@ struct IslandComponentSelectorTests {
         #expect(IslandComponentSettings.enabledIDs(in: registry, settings: settings) == ["shortcuts", "system"])
     }
 
-    @Test func aStoredDefaultThatIsSwitchedOffReadsAsTheShortcutsInSettings() {
+    @Test func aStoredDefaultThatIsSwitchedOffReadsAsHomeInSettings() {
         let defaults = UserDefaults(suiteName: "island-settings-default-fallback")!
         defaults.removePersistentDomain(forName: "island-settings-default-fallback")
         var settings = IslandComponentSettings(defaults: defaults)
         let registry: [any IslandComponent] = [Stub(id: "shortcuts") { _ in true }, Stub(id: "system", isPlugin: true) { _ in true }]
         settings.defaultID = "system"
-        #expect(settings.resolvedDefaultID(in: registry) == "shortcuts")
+        #expect(settings.resolvedDefaultID(in: registry) == "home")
         settings.enabledPlugins = ["system"]
         #expect(settings.resolvedDefaultID(in: registry) == "system")
     }
@@ -180,7 +181,8 @@ struct IslandComponentSelectorTests {
     @Test func playingMusicIsTheMomentAfterTheAgent() {
         var context = IslandContext.idle
         context.isMediaPlaying = true
-        #expect(context.contextualKey == "media")
+        // The track is on home, so home is the moment.
+        #expect(context.contextualKey == "home")
         context.agentActivityText = "working"
         #expect(context.contextualKey == "agent")
     }

@@ -2,8 +2,8 @@
 //  SettingsAboutPage.swift
 //  OpenClicky
 //
-//  Settings → About: the version, the source and reporting a bug. Software updates are on
-//  General, where macOS keeps its own; their rows are drawn here.
+//  The rows that were Settings → About, now on General: the version with Check Now (one row), the
+//  daily update check, the source and reporting a bug.
 //
 
 import AppKit
@@ -13,12 +13,12 @@ extension SettingsCatalog {
     func aboutItems() -> [SettingsItem] {
         [
             SettingsItem(
-                id: "about.app", page: .about, section: "",
+                id: "about.app",
                 title: "OpenClicky", detail: "Version \(AppVersion.shortVersion) (\(AppVersion.buildNumber)) · Open source, MIT",
-                keywords: ["version", "about", "build", "mit", "license"],
+                keywords: ["version", "about", "build", "mit", "license", "update", "updates", "sparkle", "check now"],
                 view: AnyView(AboutAppRow())),
             SettingsItem(
-                id: "about.source", page: .about, section: "Help",
+                id: "about.source",
                 title: "Source code", detail: "Issues and pull requests welcome.",
                 keywords: ["github", "source", "license", "mit", "code"],
                 view: AnyView(SettingsRow(title: "Source code", detail: "Issues and pull requests welcome.") {
@@ -26,7 +26,7 @@ extension SettingsCatalog {
                         .pointerCursor()
                 })),
             SettingsItem(
-                id: "about.reportBug", page: .about, section: "Help",
+                id: "about.reportBug",
                 title: "Report a bug", detail: "Attach the log. It lists what each take did, not what you said.",
                 keywords: ["bug", "log", "issue", "problem", "feedback", "app.log"],
                 view: AnyView(SettingsRow(title: "Report a bug", detail: "Attach the log. It lists what each take did, not what you said.") {
@@ -41,11 +41,15 @@ extension SettingsCatalog {
     }
 }
 
-/// The app's icon, name and version.
+/// The app's icon, name and version, and Check Now beside them.
 private struct AboutAppRow: View {
+    @ObservedObject private var updater = AppUpdater.shared
+    /// The icon follows the colour picked above it.
+    @ObservedObject private var settings = DictationSettings.shared
+
     var body: some View {
         HStack(spacing: 12) {
-            Image(nsImage: NSApp.applicationIconImage)
+            Image(nsImage: NSImage(named: settings.appIconColor.imageName) ?? NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 44, height: 44)
                 .accessibilityHidden(true)
@@ -56,6 +60,9 @@ private struct AboutAppRow: View {
                     .textSelection(.enabled)
             }
             Spacer()
+            Button("Check Now") { updater.checkNow() }
+                .disabled(!updater.isConfigured)
+                .pointerCursor(isEnabled: updater.isConfigured)
         }
         .padding(.vertical, 6)
     }
@@ -75,17 +82,5 @@ struct AutomaticUpdatesRow: View {
             .disabled(!updater.isConfigured)
         }
         .onAppear { checksDaily = updater.automaticallyChecks }
-    }
-}
-
-struct CheckNowRow: View {
-    @ObservedObject private var updater = AppUpdater.shared
-
-    var body: some View {
-        SettingsRow(title: "Check now", detail: nil) {
-            Button("Check Now") { updater.checkNow() }
-                .disabled(!updater.isConfigured)
-                .pointerCursor(isEnabled: updater.isConfigured)
-        }
     }
 }

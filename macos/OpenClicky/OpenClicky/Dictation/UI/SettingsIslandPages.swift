@@ -1,10 +1,10 @@
 //
-//  SettingsPluginsPage.swift
+//  SettingsIslandPages.swift
 //  OpenClicky
 //
-//  Settings → Plugins: the island's optional extras, built for the Mac, one row with a switch
-//  each (what it reads, what macOS may ask), and under them how the island picks between the
-//  components it has: the default and the capsule's order.
+//  The island's rows on Settings → Island: each plugin's switch, and how the island picks
+//  between the components it has: what it shows first and the capsule's order. Each plugin
+//  folder adds its own rows; `SettingsLayout` places them all.
 //
 
 import AppKit
@@ -12,22 +12,34 @@ import Combine
 import SwiftUI
 
 extension SettingsCatalog {
-    func pluginsItems() -> [SettingsItem] {
-        let pluginRows = IslandPluginRegistry.all.map { plugin in
+    /// One plugin's switch row; `SettingsLayout` puts it on Island (or Teacher on Clicky).
+    func pluginItem(_ id: String, keywords: [String] = []) -> SettingsItem? {
+        guard let plugin = IslandPluginRegistry.all.first(where: { $0.id == id }) else { return nil }
+        return SettingsItem(
+            id: "plugins.\(plugin.id)",
+            title: plugin.title, detail: plugin.settingsDetail ?? "",
+            keywords: ["plugin", "island", plugin.title.lowercased(), plugin.id] + keywords,
+            view: AnyView(IslandPluginRow(plugin: plugin)))
+    }
+
+    /// The plugins without a folder of settings of their own, and how the island picks between
+    /// its components: the default and the capsule's order. Clipboard, Notes, Timer, Weather and
+    /// Calendar add their own rows from their folders.
+    func islandPluginItems() -> [SettingsItem] {
+        [
+            pluginItem(IslandPluginRegistry.mediaID, keywords: ["music", "spotify", "now playing", "song"]),
+            pluginItem(IslandPluginRegistry.systemID, keywords: ["cpu", "memory", "widget"]),
+            pluginItem(IslandPluginRegistry.shelfID, keywords: ["file tray", "files", "drop"]),
+            pluginItem(IslandPluginRegistry.agentsID),
+            pluginItem(IslandPluginRegistry.teacherID),
+        ].compactMap { $0 } + [
             SettingsItem(
-                id: "plugins.\(plugin.id)", page: .plugins, section: "",
-                title: plugin.title, detail: plugin.settingsDetail ?? "",
-                keywords: ["plugin", "plugins", "island", "extra", plugin.title.lowercased(), plugin.id],
-                view: AnyView(IslandPluginRow(plugin: plugin)))
-        }
-        return pluginRows + [
-            SettingsItem(
-                id: "plugins.islandDefault", page: .plugins, section: "On the island",
-                title: "Default component", detail: "What the open island shows when nothing else is going on.",
-                keywords: ["island", "component", "panel", "shortcuts", "transcript", "agent", "default", "slot"],
+                id: "plugins.islandDefault",
+                title: "Shows first", detail: "What the open island shows when nothing else is going on.",
+                keywords: ["island", "component", "panel", "shortcuts", "transcript", "agent", "default", "slot", "dashboard"],
                 view: AnyView(IslandDefaultComponentRow())),
             SettingsItem(
-                id: "plugins.islandOrder", page: .plugins, section: "On the island",
+                id: "plugins.islandOrder",
                 title: "Component order", detail: "The order of the island's capsule when there is more than one to flip to.",
                 keywords: ["island", "component", "order", "capsule", "arrange", "reorder"],
                 view: AnyView(IslandComponentOrderRow())),
@@ -38,12 +50,25 @@ extension SettingsCatalog {
 // MARK: - one plugin
 
 /// A plugin's switch, with its name and what it does on the left like every other row.
-private struct IslandPluginRow: View {
+struct IslandPluginRow: View {
     let plugin: any IslandComponent
     @State private var isOn = false
 
+    /// Each plugin's tile colour on its settings row.
+    static func tint(for id: String) -> Color {
+        switch id {
+        case IslandPluginRegistry.mediaID: return Color(red: 0.98, green: 0.18, blue: 0.33)
+        case IslandPluginRegistry.systemID, IslandPluginRegistry.shelfID: return Color(red: 0.0, green: 0.478, blue: 1.0)
+        case "notes": return Color(red: 1.0, green: 0.8, blue: 0.0)
+        case "timer": return Color(red: 1.0, green: 0.584, blue: 0.0)
+        case IslandPluginRegistry.teacherID: return Color(red: 0.204, green: 0.78, blue: 0.349)
+        case IslandPluginRegistry.agentsID: return Color(red: 0.11, green: 0.11, blue: 0.118)
+        default: return Color(red: 0.557, green: 0.557, blue: 0.576)
+        }
+    }
+
     var body: some View {
-        SettingsRow(title: plugin.title, detail: plugin.settingsDetail ?? "") {
+        SettingsRow(title: plugin.title, detail: plugin.settingsDetail ?? "", icon: SettingsFeatureTile(symbol: plugin.symbolName, tint: Self.tint(for: plugin.id))) {
             SettingsSwitch(isOn: Binding(
                 get: { isOn },
                 set: { newValue in
@@ -77,7 +102,7 @@ struct IslandDefaultComponentRow: View {
     }
 
     var body: some View {
-        SettingsRow(title: "Default component", detail: "What the open island shows when nothing else is going on.") {
+        SettingsRow(title: "Shows first", detail: "What the open island shows when nothing else is going on.") {
             Picker("", selection: Binding(get: { defaultID }, set: { newValue in
                 defaultID = newValue
                 var settings = IslandComponentSettings(defaults: .standard)
