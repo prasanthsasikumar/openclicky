@@ -33,7 +33,7 @@ public sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon notifyIcon;
     private readonly Func<TrayMenuState> readState;
-    private readonly Icon icon;
+    private Icon icon;
 
     public event Action? AgentModeToggled;
     public event Action? OpenWindowRequested;
@@ -100,6 +100,37 @@ public sealed class TrayIcon : IDisposable
         if (isOn is { } checkedState) item.Checked = checkedState;
         item.Click += (_, _) => onClick();
         return item;
+    }
+
+    /// <summary>
+    /// The icon in the picked colour (Settings › General › App icon): Signal is the shipped .ico, the
+    /// others the app icon drawn at the tray's size.
+    /// </summary>
+    public void SetColor(OpenClicky.Core.Dictation.AppIconColor color)
+    {
+        var newIcon = color == OpenClicky.Core.Dictation.AppIconColor.Signal ? LoadIcon() : DrawnAppIcon(color);
+        var oldIcon = notifyIcon.Icon;
+        notifyIcon.Icon = newIcon;
+        icon = newIcon;
+        oldIcon?.Dispose();
+    }
+
+    /// <summary>The window's app icon (OpenClickyMarkDrawing) in <paramref name="color"/>, as a GDI icon at the tray's size.</summary>
+    private static Icon DrawnAppIcon(OpenClicky.Core.Dictation.AppIconColor color)
+    {
+        var side = Math.Max(16, SystemInformation.SmallIconSize.Width);
+        var source = OpenClicky.Windows.AppWindow.OpenClickyMarkDrawing.AppIconBitmap(side, color);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(source));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        stream.Position = 0;
+        using var bitmap = new Bitmap(stream);
+        var handle = bitmap.GetHicon();
+        using var borrowed = Icon.FromHandle(handle);
+        var owned = (Icon)borrowed.Clone();
+        DestroyIcon(handle);
+        return owned;
     }
 
     private static Icon LoadIcon()

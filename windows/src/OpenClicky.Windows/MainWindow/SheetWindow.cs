@@ -143,26 +143,33 @@ public static class OpenClickyMarkDrawing
         return geometry;
     }
 
-    /// <summary>The app icon: the white mark on a pointer-red rounded square, hotter at the top-left
-    /// (macos/OpenClicky/scripts/make-app-icon.py's look).</summary>
-    public static DrawingImage AppIconImage()
+    /// <summary>The colour picked in Settings → General (AppIconColor); the app sets it at launch and on every change.</summary>
+    public static AppIconColor CurrentColor { get; set; } = AppIconColor.Signal;
+
+    /// <summary>The app icon: the mark on a rounded square in the picked colour's gradient, from the top-left
+    /// (macos/OpenClicky/scripts/make-app-icon.py's look). Signal is the white mark on pointer red.</summary>
+    public static DrawingImage AppIconImage(AppIconColor? color = null)
     {
+        var palette = (color ?? CurrentColor).Palette();
+        Color Hex(string hex) => (Color)ColorConverter.ConvertFromString(hex);
         var group = new DrawingGroup();
-        var tile = new LinearGradientBrush(Color.FromRgb(0xFF, 0x6A, 0x3F), Color.FromRgb(0xD4, 0x16, 0x3A), new Point(0, 0), new Point(1, 1));
+        var tile = new LinearGradientBrush(Hex(palette.TopLeftHex), Hex(palette.BottomRightHex), new Point(0, 0), new Point(1, 1));
         group.Children.Add(new GeometryDrawing(tile, null, new RectangleGeometry(new Rect(0, 0, 64, 64), 14, 14)));
-        group.Children.Add(new GeometryDrawing(Brushes.White, null, Geometry(14, 14, 36)));
+        var mark = new SolidColorBrush(Hex(palette.MarkHex));
+        mark.Freeze();
+        group.Children.Add(new GeometryDrawing(mark, null, Geometry(14, 14, 36)));
         var image = new DrawingImage(group);
         image.Freeze();
         return image;
     }
 
     /// <summary>The app icon rendered to a bitmap of <paramref name="pixels"/> square.</summary>
-    public static BitmapSource AppIconBitmap(int pixels)
+    public static BitmapSource AppIconBitmap(int pixels, AppIconColor? color = null)
     {
         var visual = new DrawingVisual();
         using (var context = visual.RenderOpen())
         {
-            context.DrawImage(AppIconImage(), new Rect(0, 0, pixels, pixels));
+            context.DrawImage(AppIconImage(color), new Rect(0, 0, pixels, pixels));
         }
         var bitmap = new RenderTargetBitmap(pixels, pixels, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(visual);

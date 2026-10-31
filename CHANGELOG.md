@@ -15,6 +15,14 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
+## 0.10.2
+
+### Windows
+
+- **Settings in six pages.** Dictation, Clicky, Island, Keys & Account, Privacy and General. What you rarely change folds into "More" at the bottom of each page, The orb, Your words, How it writes and Calendars open from a row with a back button, and the light/dark choice sits at the window's top right. The Region choice is gone: Sarvam and the Indian languages show when you already use them.
+- **Pick the app icon's colour.** Settings → General → App icon: Signal, Ultraviolet, Sunset, Paper or Aqua, on the window, the taskbar and the tray.
+- **The island's home.** The open island shows now playing, your calendar, the weather and CPU and memory side by side, in liquid glass, blend or black. Timer, Notes and Clipboard join the Shelf as round buttons in the island's band. Hovering the island grows it sideways along the top edge, with downwards kept as a choice.
+
 ## 0.10.1
 
 ### All platforms

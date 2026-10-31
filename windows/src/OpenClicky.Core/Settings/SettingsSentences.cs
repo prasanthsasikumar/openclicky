@@ -1,6 +1,6 @@
 // The rules and sentences the Settings rows read, kept out of the views so they can be tested:
 // the clean-up switch (DictationCleanUpRow), the Your words page's engine sentence
-// (WordsPageView.engineSentenceInSentenceCase, sentenceCased), the provider keys of Keys & Plans
+// (WordsPageView.engineSentenceInSentenceCase, sentenceCased), the provider keys of Keys & Account
 // (KeyProvider), the plan rows (PlanSubscriptionRow.detail), the account rows
 // (BackendEngineUsageRow, PlanSummary, the sidebar foot), "Answers come from"'s "Now:" line, the
 // account form's rules (EmailAccountForm.canSubmitEmail / canSubmitCode, AccountWorkSlot), and the
@@ -33,7 +33,7 @@ public static class DictationCleanUp
     /// <summary>The row's copy. There is no on-device model on Windows, so the words are always tidied online.</summary>
     public static string Detail(bool hasModel)
     {
-        var needsModelNote = hasModel ? "" : " Needs an AI key (Settings → Keys & Plans) or a free OpenClicky account.";
+        var needsModelNote = hasModel ? "" : " Needs an AI key (Settings → Keys & Account) or a free OpenClicky account.";
         return "Adds punctuation and fixes numbers. Your words are sent online to be tidied, so they appear when you let go. Off: words type straight in as you speak." + needsModelNote;
     }
 }
@@ -138,7 +138,7 @@ public static class WordsPageSentences
     }
 }
 
-/// <summary>A provider a key can be saved for (Keys & Plans): where it lives in shell.json and how its row reads.</summary>
+/// <summary>A provider a key can be saved for (Keys & Account): where it lives in shell.json and how its row reads.</summary>
 public enum ProviderKey
 {
     OpenAI, Anthropic, OpenRouter, Gemini, Groq, Mistral, Xai, Sarvam, ElevenLabs, GoogleCloud, AmazonPolly, Spotify,

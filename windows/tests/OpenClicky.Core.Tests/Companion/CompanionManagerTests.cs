@@ -112,7 +112,7 @@ public class CompanionManagerTests
     {
         Assert.Null(IslandVoiceDestination.BlockedPillLabel(DictationEngineChoice.Offline, null));
         Assert.Equal("add sarvam key ›", IslandVoiceDestination.BlockedPillLabel(DictationEngineChoice.Sarvam, "needs a sarvam key"));
-        Assert.Equal(DictationSettingsPage.Keys, IslandVoiceDestination.SetupPage(DictationEngineChoice.Sarvam, "needs a sarvam key"));
+        Assert.Equal(DictationSettingsPage.Account, IslandVoiceDestination.SetupPage(DictationEngineChoice.Sarvam, "needs a sarvam key"));
         Assert.Equal("download parakeet ›", IslandVoiceDestination.BlockedPillLabel(DictationEngineChoice.Parakeet, "not downloaded"));
         Assert.Equal("pick a language parakeet hears ›",
             IslandVoiceDestination.BlockedPillLabel(DictationEngineChoice.Parakeet, DictationEngineResolver.ParakeetLanguageNotHeardReason));
@@ -120,7 +120,7 @@ public class CompanionManagerTests
             IslandVoiceDestination.ButtonTitle(DictationEngineChoice.Parakeet, DictationEngineResolver.ParakeetLanguageNotHeardReason));
         Assert.Equal("set up backend ›", IslandVoiceDestination.BlockedPillLabel(DictationEngineChoice.OpenClicky, "needs an account"));
         Assert.Equal(DictationSettingsPage.Account, IslandVoiceDestination.SetupPage(DictationEngineChoice.OpenClicky, "needs an account"));
-        Assert.Equal(DictationSettingsPage.Keys, IslandVoiceDestination.SetupPage(DictationEngineChoice.OpenClicky, "needs your own key"));
+        Assert.Equal(DictationSettingsPage.Account, IslandVoiceDestination.SetupPage(DictationEngineChoice.OpenClicky, "needs your own key"));
         Assert.Equal(DictationSettingsPage.Dictation, IslandVoiceDestination.SetupPage(DictationEngineChoice.Parakeet, "not downloaded"));
         Assert.Equal("pick english or auto-detect ›",
             IslandVoiceDestination.BlockedPillLabel(DictationEngineChoice.Moonshine, DictationEngineResolver.MoonshineLanguageNotHeardReason));

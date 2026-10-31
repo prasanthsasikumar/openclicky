@@ -20,9 +20,13 @@ public enum SettingsItemChrome
 public sealed record SettingsItem
 {
     public required string Id { get; init; }
-    public required DictationSettingsPage Page { get; init; }
-    /// <summary>The label above the group ("Startup"); empty for a page's unlabelled first group.</summary>
-    public required string Section { get; init; }
+    /// <summary>Where the row is drawn. Set by <see cref="SettingsLayout"/>, which places every row; a builder leaves it.</summary>
+    public DictationSettingsPage Page { get; init; } = DictationSettingsPage.General;
+    /// <summary>
+    /// The label above the group ("Microphone"); empty for a page's unlabelled first group. Set by
+    /// <see cref="SettingsLayout"/>, except for rows whose builder names their own group (one per calendar account).
+    /// </summary>
+    public string Section { get; init; } = "";
     public required string Title { get; init; }
     public string Detail { get; init; } = "";
     /// <summary>Other words someone might search for ("startup" for open at sign-in).</summary>
@@ -37,9 +41,18 @@ public sealed record SettingsItem
     public string? SearchOnlyGroup { get; init; }
     /// <summary>For a search-only item: the page its button opens.</summary>
     public DictationSection? OpensSection { get; init; }
+    /// <summary>For a row that opens a page of its own (The orb from Dictation): where it goes.</summary>
+    public DictationDestination? OpensDestination { get; init; }
+    /// <summary>
+    /// True for rows in a page's folded group at the bottom ("More"): rarely changed, hidden until
+    /// the group is opened. Search ignores the fold.
+    /// </summary>
+    public bool IsAdvanced { get; init; }
+    /// <summary>False for a row only search finds (incognito, whose switch lives in the sidebar's foot).</summary>
+    public bool ShowsOnPage { get; init; } = true;
 
     /// <summary>The heading it is listed under in search results.</summary>
-    public string SearchGroupTitle => SearchOnlyGroup ?? Page.Title();
+    public string SearchGroupTitle => SearchOnlyGroup ?? Page.SearchTitle();
 
     /// <summary>Every word of the query (split on spaces) is somewhere in the title, copy, section, page or keywords, ignoring case.</summary>
     public bool Matches(string query)
@@ -56,11 +69,14 @@ public sealed record SettingsItem
 /// <summary>One section of a page: its rows, and the notes under it.</summary>
 public sealed record SettingsSectionGroup(string Id, string Title, IReadOnlyList<SettingsItem> Items, IReadOnlyList<SettingsItem> Footers)
 {
+    /// <summary>The page's folded group ("More"), drawn closed until opened.</summary>
+    public bool IsAdvanced { get; init; }
+
     /// <summary>
     /// Consecutive items with the same section form one group; a footer item joins the group
-    /// before it.
+    /// before it. <paramref name="foldsAdvanced"/> marks a page's folded group; search results never fold.
     /// </summary>
-    public static IReadOnlyList<SettingsSectionGroup> Groups(IEnumerable<SettingsItem> items, Func<SettingsItem, string>? title = null)
+    public static IReadOnlyList<SettingsSectionGroup> Groups(IEnumerable<SettingsItem> items, Func<SettingsItem, string>? title = null, bool foldsAdvanced = false)
     {
         title ??= item => item.Section;
         var groups = new List<SettingsSectionGroup>();
@@ -76,11 +92,11 @@ public sealed record SettingsSectionGroup(string Id, string Title, IReadOnlyList
             }
             else if (item.Chrome == SettingsItemChrome.Footer)
             {
-                groups.Add(new SettingsSectionGroup($"{groups.Count}-{groupTitle}", groupTitle, [], [item]));
+                groups.Add(new SettingsSectionGroup($"{groups.Count}-{groupTitle}", groupTitle, [], [item]) { IsAdvanced = foldsAdvanced && item.IsAdvanced });
             }
             else
             {
-                groups.Add(new SettingsSectionGroup($"{groups.Count}-{groupTitle}", groupTitle, [item], []));
+                groups.Add(new SettingsSectionGroup($"{groups.Count}-{groupTitle}", groupTitle, [item], []) { IsAdvanced = foldsAdvanced && item.IsAdvanced });
             }
         }
         return groups;

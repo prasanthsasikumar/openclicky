@@ -419,7 +419,7 @@ public sealed class CloudVoiceException : Exception
         Status = status;
     }
 
-    public static CloudVoiceException NoKey(string vendor) => new(CloudVoiceFailure.NoKey, vendor, $"{vendor} needs a key under Settings → Keys & Plans.");
+    public static CloudVoiceException NoKey(string vendor) => new(CloudVoiceFailure.NoKey, vendor, $"{vendor} needs a key under Settings → Keys & Account.");
 
     public static CloudVoiceException Refused(string vendor, int status, string message) =>
         new(CloudVoiceFailure.Refused, vendor, $"{vendor} refused ({status}): {message}", status);

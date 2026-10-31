@@ -115,7 +115,7 @@ public sealed class RecordedVoice
         Line.TourDictate => $"hold {dictationKeyName}, say a sentence, then let go. your words land wherever your cursor is.",
         Line.TourTalk => $"your turn. hold {talkKeysName}, and ask me about anything on your screen.",
         Line.TourAct => $"now give me a task. hold {talkKeysName}, and tell me what to do.",
-        Line.SettingsTourShortcuts => $"shortcuts shows every key at a glance. hold {talkKeysName} to talk to me.",
+        Line.SettingsTourShortcuts => $"hold {talkKeysName} to talk to me. the rarer shortcuts are under more, at the bottom of each page.",
         _ => null,
     };
 

@@ -1,16 +1,17 @@
 // Ports the model half of Dictation/UI/DictationWindow.swift and the page enum of
-// Dictation/UI/SettingsPages.swift: OpenClicky's one window lists, in this order, General,
-// Dictation, Clicky, Voice (the pages whose ShowsBeforeYourPages is true), "Your words", "How it
-// writes", The Orb, Shortcuts, Keys & Plans, Account, Privacy & Security, About. Every way into the
-// window (Ctrl+, the tray, the island, the orb's menu) goes through DictationWindowModel.Open, which
-// lands on the page it asks for; a settings page wins over a section, and a leftover search is
-// cleared. docs/superpowers/specs/2026-10-12-settings-revamp.md has the reasoning for the order.
+// Dictation/UI/SettingsPages.swift: OpenClicky's one window lists six pages in its sidebar
+// (Dictation, Clicky, Island, Keys & Account, Privacy, General). Rows on a page open the pages under
+// it (Your words, How it writes and The orb under Dictation; Calendars under Island), which keep
+// their parent selected in the sidebar, and the back button returns. Every way into the window
+// (Ctrl+, the tray, the island, the orb's menu) goes through DictationWindowModel.Open, which lands on
+// the page it asks for; a settings page wins over a section, and a leftover search is cleared.
+// SettingsLayout says which rows each page holds.
 
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace OpenClicky.Core.Settings;
 
-/// <summary>The window's own pages, listed among the settings pages and drawn like them.</summary>
+/// <summary>The window's own pages, opened from Dictation and drawn like the settings pages.</summary>
 public enum DictationSection
 {
     /// <summary>What you dictated: try it here, this week, and every take (record and history, merged).</summary>
@@ -23,7 +24,7 @@ public static class DictationSections
 {
     public static IReadOnlyList<DictationSection> AllCases { get; } = [DictationSection.Words, DictationSection.Writing];
 
-    /// <summary>The Swift raw value ("words", "writing"), used in the tour's target ids.</summary>
+    /// <summary>The Swift raw value ("words", "writing").</summary>
     public static string RawValue(this DictationSection section) => section switch
     {
         DictationSection.Words => "words",
@@ -35,120 +36,112 @@ public static class DictationSections
         DictationSection.Words => "Your words",
         _ => "How it writes",
     };
-
-    /// <summary>The sidebar icon: a Segoe Fluent Icons glyph, white on <see cref="TintHex"/>.</summary>
-    public static string Glyph(this DictationSection section) => section switch
-    {
-        DictationSection.Words => "",
-        _ => "",
-    };
-
-    public static string TintHex(this DictationSection section) => section switch
-    {
-        DictationSection.Words => "#D24E2A",
-        _ => "#AF52DE",
-    };
 }
 
 /// <summary>
-/// The settings pages, in sidebar order. Your two pages sit among them, after the pages that say
-/// <see cref="DictationSettingsPages.ShowsBeforeYourPages"/>.
+/// The settings pages. Six are in the sidebar (<see cref="DictationSettingsPages.SidebarPages"/>, in
+/// its order); The orb and Calendars are opened from a row on their parent page and keep the parent
+/// selected in the sidebar.
 /// </summary>
 public enum DictationSettingsPage
 {
-    General,
     Dictation,
     Clicky,
-    Voice,
-    Orb,
-    /// <summary>The island's optional extras (System, â€¦), its default component and order.</summary>
-    Plugins,
-    /// <summary>"Shortcuts" (the Mac's `keyboard` case).</summary>
-    Keyboard,
-    /// <summary>"Keys & Plans".</summary>
-    Keys,
+    /// <summary>The island: where it lives, its tiles and tools, its look.</summary>
+    Island,
+    /// <summary>"Keys & Account".</summary>
     Account,
     Privacy,
-    About,
+    General,
+    /// <summary>Opened from Dictation.</summary>
+    Orb,
+    /// <summary>Opened from Island.</summary>
+    Calendars,
 }
 
 public static class DictationSettingsPages
 {
     public static IReadOnlyList<DictationSettingsPage> AllCases { get; } = Enum.GetValues<DictationSettingsPage>();
 
-    /// <summary>The Swift raw value ("general" … "about"), used in the tour's target ids.</summary>
+    /// <summary>The pages the sidebar lists, in order.</summary>
+    public static IReadOnlyList<DictationSettingsPage> SidebarPages { get; } =
+    [
+        DictationSettingsPage.Dictation, DictationSettingsPage.Clicky, DictationSettingsPage.Island,
+        DictationSettingsPage.Account, DictationSettingsPage.Privacy, DictationSettingsPage.General,
+    ];
+
+    /// <summary>The Swift raw value ("dictation" … "calendars"), used in the tour's target ids.</summary>
     public static string RawValue(this DictationSettingsPage page) => page switch
     {
-        DictationSettingsPage.General => "general",
         DictationSettingsPage.Dictation => "dictation",
         DictationSettingsPage.Clicky => "clicky",
-        DictationSettingsPage.Voice => "voice",
-        DictationSettingsPage.Orb => "orb",
-        DictationSettingsPage.Plugins => "plugins",
-        DictationSettingsPage.Keyboard => "keyboard",
-        DictationSettingsPage.Keys => "keys",
+        DictationSettingsPage.Island => "island",
         DictationSettingsPage.Account => "account",
         DictationSettingsPage.Privacy => "privacy",
-        _ => "about",
+        DictationSettingsPage.General => "general",
+        DictationSettingsPage.Orb => "orb",
+        _ => "calendars",
     };
 
-    /// <summary>
-    /// True for the pages the sidebar lists above your two pages: what you set up first (General,
-    /// Dictation, Clicky, Voice) comes before what you dictated; the rest follows it.
-    /// </summary>
-    public static bool ShowsBeforeYourPages(this DictationSettingsPage page) =>
-        page is DictationSettingsPage.General or DictationSettingsPage.Dictation or DictationSettingsPage.Clicky or DictationSettingsPage.Voice;
-
-    public static IReadOnlyList<DictationSettingsPage> PagesBeforeYourPages { get; } = AllCases.Where(page => page.ShowsBeforeYourPages()).ToList();
-
-    public static IReadOnlyList<DictationSettingsPage> PagesAfterYourPages { get; } = AllCases.Where(page => !page.ShowsBeforeYourPages()).ToList();
+    /// <summary>The sidebar page a page opened from a row belongs to; a sidebar page is its own.</summary>
+    public static DictationSettingsPage SidebarPage(this DictationSettingsPage page) => page switch
+    {
+        DictationSettingsPage.Orb => DictationSettingsPage.Dictation,
+        DictationSettingsPage.Calendars => DictationSettingsPage.Island,
+        _ => page,
+    };
 
     public static string Title(this DictationSettingsPage page) => page switch
     {
-        DictationSettingsPage.General => "General",
         DictationSettingsPage.Dictation => "Dictation",
         DictationSettingsPage.Clicky => "Clicky",
-        DictationSettingsPage.Voice => "Voice",
-        DictationSettingsPage.Orb => "The Orb",
-        DictationSettingsPage.Plugins => "Plugins",
-        DictationSettingsPage.Keyboard => "Shortcuts",
-        DictationSettingsPage.Keys => "Keys & Plans",
-        DictationSettingsPage.Account => "Account",
-        DictationSettingsPage.Privacy => "Privacy & Security",
-        _ => "About",
+        DictationSettingsPage.Island => "Island",
+        DictationSettingsPage.Account => "Keys & Account",
+        DictationSettingsPage.Privacy => "Privacy",
+        DictationSettingsPage.General => "General",
+        DictationSettingsPage.Orb => "The orb",
+        _ => "Calendars",
+    };
+
+    /// <summary>The heading search results are listed under: "Dictation › The orb" for a page opened from a row.</summary>
+    public static string SearchTitle(this DictationSettingsPage page) =>
+        page.SidebarPage() == page ? page.Title() : $"{page.SidebarPage().Title()} › {page.Title()}";
+
+    /// <summary>The page's header card: one line on what lives here.</summary>
+    public static string Subtitle(this DictationSettingsPage page) => page switch
+    {
+        DictationSettingsPage.Dictation => "Hold your dictation key, speak, and the words land at your cursor.",
+        DictationSettingsPage.Clicky => "Hold Ctrl and Win and ask about what’s on screen.",
+        DictationSettingsPage.Island => "What lives at the top of your screen.",
+        DictationSettingsPage.Account => "Your own keys come first. An account is optional.",
+        DictationSettingsPage.Privacy => "What OpenClicky can see, and what it keeps.",
+        DictationSettingsPage.General => "Startup, the tray and updates.",
+        DictationSettingsPage.Orb => "The small narrator that shows while you dictate.",
+        _ => "Which calendars the island shows.",
     };
 
     /// <summary>The sidebar icon: a Segoe Fluent Icons glyph (empty: the window draws the orb's capsule), white on <see cref="TintHex"/>.</summary>
     public static string Glyph(this DictationSettingsPage page) => page switch
     {
-        DictationSettingsPage.General => "",
         DictationSettingsPage.Dictation => "",
         DictationSettingsPage.Clicky => "",
-        DictationSettingsPage.Voice => "",
-        DictationSettingsPage.Orb => "",
-        // A puzzle piece, as the Mac's puzzlepiece.extension.
-        DictationSettingsPage.Plugins => "",
-        DictationSettingsPage.Keyboard => "",
-        DictationSettingsPage.Keys => "",
-        DictationSettingsPage.Account => "",
+        DictationSettingsPage.Island => "",
+        DictationSettingsPage.Account => "",
         DictationSettingsPage.Privacy => "",
-        _ => "",
+        DictationSettingsPage.General => "",
+        DictationSettingsPage.Orb => "",
+        _ => "",
     };
 
     /// <summary>The Mac's sidebar tints, as hex.</summary>
     public static string TintHex(this DictationSettingsPage page) => page switch
     {
-        DictationSettingsPage.General => "#8E8E93",
-        DictationSettingsPage.Dictation => "#FF3B30",
-        DictationSettingsPage.Clicky => "#FF9500",
-        DictationSettingsPage.Voice => "#FE2D55",
-        DictationSettingsPage.Orb => "#1C1C1E",
-        DictationSettingsPage.Plugins => "#B052DE",
-        DictationSettingsPage.Keyboard => "#636366",
-        DictationSettingsPage.Keys => "#8B6B00",
+        DictationSettingsPage.Dictation or DictationSettingsPage.Orb => "#0A84FF",
+        DictationSettingsPage.Clicky => "#AF52DE",
+        DictationSettingsPage.Island or DictationSettingsPage.Calendars => "#1C1C1E",
         DictationSettingsPage.Account => "#34C759",
-        DictationSettingsPage.Privacy => "#007AFF",
-        _ => "#AEAEB2",
+        DictationSettingsPage.Privacy => "#5E5CE6",
+        _ => "#8E8E93",
     };
 
     public static DictationSettingsPage? FromRawValue(string? raw) =>
@@ -171,23 +164,22 @@ public sealed record DictationDestination
 
     public static DictationDestination Of(DictationSettingsPage page) => new(null, page);
 
-    /// <summary>The name it has in the sidebar.</summary>
+    /// <summary>Its own name, as its page's title shows it.</summary>
     public string Title => Page is { } page ? page.Title() : Section!.Value.SidebarTitle();
 
-    /// <summary>Every destination in sidebar order.</summary>
-    public static IReadOnlyList<DictationDestination> SidebarOrder { get; } =
-    [
-        .. DictationSettingsPages.PagesBeforeYourPages.Select(Of),
-        .. DictationSections.AllCases.Select(Of),
-        .. DictationSettingsPages.PagesAfterYourPages.Select(Of),
-    ];
+    /// <summary>The sidebar page that stays selected while this one shows: Dictation for your pages.</summary>
+    public DictationSettingsPage SidebarPage => Page is { } page ? page.SidebarPage() : DictationSettingsPage.Dictation;
+
+    /// <summary>The sidebar's destinations, in order.</summary>
+    public static IReadOnlyList<DictationDestination> SidebarOrder { get; } = DictationSettingsPages.SidebarPages.Select(Of).ToList();
 
     public override string ToString() => Page is { } page ? $"settings({page.RawValue()})" : $"section({Section!.Value.RawValue()})";
 }
 
 public sealed class DictationWindowModel : ObservableObject
 {
-    private DictationDestination destination = DictationDestination.Of(DictationSection.Words);
+    private DictationDestination destination = DictationDestination.Of(DictationSettingsPage.Dictation);
+    private readonly List<DictationDestination> backStack = [];
     private string? pendingHistorySearch;
     private string searchText = "";
 
@@ -196,6 +188,14 @@ public sealed class DictationWindowModel : ObservableObject
         get => destination;
         set => SetProperty(ref destination, value);
     }
+
+    /// <summary>
+    /// The pages left by opening a row (Dictation, then The orb): the back button returns through
+    /// them. A sidebar click or a way in from outside starts it again.
+    /// </summary>
+    public IReadOnlyList<DictationDestination> BackStack => backStack;
+
+    public bool CanGoBack => backStack.Count > 0;
 
     /// <summary>A search the Your words page picks up when it next appears (the orb's "find in history").</summary>
     public string? PendingHistorySearch
@@ -222,16 +222,43 @@ public sealed class DictationWindowModel : ObservableObject
 
     public bool IsSearching => TrimmedSearchText.Length > 0;
 
-    /// <summary>A click in the sidebar. Clears any search so the chosen page is what shows.</summary>
+    /// <summary>A click in the sidebar. Clears any search and the way back, so the chosen page is what shows.</summary>
     public void Select(DictationDestination chosenDestination)
     {
         SearchText = "";
+        SetBackStack(() => backStack.Clear());
         Destination = chosenDestination;
     }
 
     public void Select(DictationSection section) => Select(DictationDestination.Of(section));
 
     public void Select(DictationSettingsPage page) => Select(DictationDestination.Of(page));
+
+    /// <summary>A row that opens another page (The orb from Dictation): back returns to this one.</summary>
+    public void Push(DictationDestination chosenDestination)
+    {
+        if (chosenDestination == Destination) return;
+        SetBackStack(() => backStack.Add(Destination));
+        SearchText = "";
+        Destination = chosenDestination;
+    }
+
+    public void GoBack()
+    {
+        if (backStack.Count == 0) return;
+        var previousDestination = backStack[^1];
+        SetBackStack(() => backStack.RemoveAt(backStack.Count - 1));
+        SearchText = "";
+        Destination = previousDestination;
+    }
+
+    private void SetBackStack(Action change)
+    {
+        var couldGoBack = CanGoBack;
+        change();
+        OnPropertyChanged(nameof(BackStack));
+        if (couldGoBack != CanGoBack) OnPropertyChanged(nameof(CanGoBack));
+    }
 
     /// <summary>
     /// Every way into the window comes through here. A settings page wins over a section; with

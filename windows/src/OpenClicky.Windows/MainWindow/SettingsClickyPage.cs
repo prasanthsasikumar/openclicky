@@ -1,7 +1,8 @@
-// Ports Dictation/UI/SettingsClickyPage.swift: Settings → Clicky (who answers and the Claude model,
-// the pointer, agent mode and its workspace) and Settings → Voice (the language Clicky speaks and
-// listens in, who speaks the answers with Kokoro's and this PC's own rows, fast voice, hands-free
-// and who runs them). The voice picker's rules come from ISettingsServices (SpeechVoiceChoice); this PC's
+// Ports Dictation/UI/SettingsClickyPage.swift: Settings → Clicky's rows. Who answers and the Claude
+// model, when the pointer shows (one picker over two settings, PointerShowsChoice), agent mode and its
+// workspace, and the voice: the language Clicky speaks and listens in, who speaks the answers with
+// Kokoro's and this PC's own rows, fast voice, hands-free and who runs them (Voice was a page of its
+// own; SettingsLayout now puts it on Clicky). The voice picker's rules come from ISettingsServices (SpeechVoiceChoice); this PC's
 // voice is Windows' own (ISystemVoice), the Mac voice's twin.
 
 using System.IO;
@@ -27,11 +28,18 @@ internal sealed partial class SettingsRowFactory
                 return new LiveContent(() => Ui.Card(Ui.Row(item.Title, item.Detail, query,
                     Ui.Picker(new[] { ("claude-sonnet-4-6", "Sonnet"), ("claude-opus-4-6", "Opus") }, companion.SelectedModel, companion.SetSelectedModel, 130))),
                     Changes.Of(companion, nameof(ICompanionSettings.SelectedModel)));
-            case "clicky.showPointer":
-                return CompanionToggle(item, query, () => companion.IsClickyCursorEnabled, companion.SetClickyCursorEnabled, nameof(ICompanionSettings.IsClickyCursorEnabled));
-            case "clicky.pointerPresence":
-                return new LiveContent(() => Ui.Card(PointerPresenceOptions(query)),
-                    Changes.Of(companion, nameof(ICompanionSettings.PointerPresence), nameof(ICompanionSettings.IsClickyCursorEnabled)));
+            case "clicky.pointer":
+                // One picker over two settings: off is "while I talk"; on, the presence picks the rest.
+                return new LiveContent(() =>
+                {
+                    var choice = PointerShowsChoices.From(companion.IsClickyCursorEnabled, companion.PointerPresence);
+                    return Ui.Card(Ui.Row(item.Title, choice.Detail(), query,
+                        Ui.Picker(PointerShowsChoices.AllCases.Select(option => (option, option.Title())), choice, newChoice =>
+                        {
+                            companion.SetClickyCursorEnabled(newChoice != PointerShowsChoice.WhileTalking);
+                            if (newChoice.Presence() is { } presence) companion.SetPointerPresence(presence);
+                        }, 200)));
+                }, Changes.Of(companion, nameof(ICompanionSettings.PointerPresence), nameof(ICompanionSettings.IsClickyCursorEnabled)));
 
             case "clicky.agentMode":
                 return CompanionToggle(item, query, () => companion.IsAgentModeEnabled, companion.SetAgentModeEnabled, nameof(ICompanionSettings.IsAgentModeEnabled));
@@ -66,34 +74,6 @@ internal sealed partial class SettingsRowFactory
             ShellSettingsRevision.NoteChanged();
         }, 220);
         return Ui.Row(item.Title, $"Now: {AccountRows.NowAnswering(credentials)}", query, picker);
-    }
-
-    private static string PresenceTitle(PointerPresence presence) => presence switch
-    {
-        PointerPresence.Always => "Always",
-        PointerPresence.WhileMoving => "While the mouse moves",
-        _ => "After a shake",
-    };
-
-    private static string PresenceDetail(PointerPresence presence) => presence switch
-    {
-        PointerPresence.Always => "Follows the mouse everywhere.",
-        PointerPresence.WhileMoving => "Fades a few seconds after the mouse rests.",
-        _ => "Hidden until you shake the mouse.",
-    };
-
-    /// <summary>Always / while the mouse moves / after a shake, as radio options; dimmed while the pointer is off.</summary>
-    private StackPanel PointerPresenceOptions(string query)
-    {
-        var companion = services.Companion;
-        var stack = new StackPanel { IsEnabled = companion.IsClickyCursorEnabled, Opacity = companion.IsClickyCursorEnabled ? 1 : 0.45 };
-        foreach (var option in PointerPresenceExtensions.AllCases)
-        {
-            var radio = Ui.RadioOption(companion.PointerPresence == option, PresenceTitle(option), PresenceDetail(option), query, () => companion.SetPointerPresence(option));
-            radio.Margin = new Thickness(0, stack.Children.Count == 0 ? 0 : 10, 0, 0);
-            stack.Children.Add(radio);
-        }
-        return stack;
     }
 
     private void ChooseWorkspaceFolder()
@@ -154,7 +134,7 @@ internal sealed partial class SettingsRowFactory
                         companion.RealtimeProviderChanged();
                     }, 170))), Changes.Shell);
             case "clicky.fastVoiceNeedsKey":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Add Key…", () => actions.ShowSettings(DictationSettingsPage.Keys))));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Add Key…", () => actions.ShowSettings(DictationSettingsPage.Account))));
             default:
                 return null;
         }
@@ -163,7 +143,7 @@ internal sealed partial class SettingsRowFactory
     /// <summary>
     /// Who speaks the answers: Automatic, every voice there is a key or an account for, Kokoro and
     /// this PC; the line under it names who speaks now. Kokoro and this PC's voice each get their own
-    /// rows under it, and "More voices" points at Keys & Plans.
+    /// rows under it, and "More voices" points at Keys & Account.
     /// </summary>
     private StackPanel SpeechVoiceRows(SettingsItem item, string query)
     {
@@ -183,8 +163,8 @@ internal sealed partial class SettingsRowFactory
             var vendors = Settings.Region.OffersIndianOptions()
                 ? "OpenAI, ElevenLabs, Gemini, Google Cloud, Amazon Polly or Sarvam"
                 : "OpenAI, ElevenLabs, Gemini, Google Cloud or Amazon Polly";
-            stack.Children.Add(Ui.Card(Ui.Row("More voices", $"Add an {vendors} key under Keys & Plans, and its voice shows up here.", query,
-                Ui.Button("Add a Key…", () => actions.ShowSettings(DictationSettingsPage.Keys)))));
+            stack.Children.Add(Ui.Card(Ui.Row("More voices", $"Add an {vendors} key under Keys & Account, and its voice shows up here.", query,
+                Ui.Button("Add a Key…", () => actions.ShowSettings(DictationSettingsPage.Account)))));
         }
         return stack;
     }

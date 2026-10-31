@@ -379,6 +379,7 @@ public sealed class DictationSettings : ObservableObject
         public const string Haptics = "dictation.haptics";
         public const string ReduceAnimation = "dictation.reduceAnimation";
         public const string Appearance = "dictation.appearance";
+        public const string AppIconColor = "general.appIconColor";
         public const string InactivityTimeoutMinutes = "dictation.inactivityTimeoutMinutes";
         public const string ClipboardHistoryEnabled = "dictation.clipboardHistoryEnabled";
         public const string Incognito = "dictation.incognito";
@@ -387,9 +388,7 @@ public sealed class DictationSettings : ObservableObject
         public const string ReadNearbyText = "dictation.readNearbyText";
         public const string PauseBeforeSendingScreen = "openclicky.ask.pauseBeforeSendingScreen";
         public const string HasCompletedDictationOnboarding = "dictation.onboarded";
-        public const string PreferredMicrophoneUID = "dictation.preferredMicrophoneUID";
-        public const string Region = "openclicky.region";
-    }
+        public const string PreferredMicrophoneUID = "dictation.preferredMicrophoneUID";    }
 
     /// <summary>A fresh install's engine: the built-in Moonshine when this build carries it (no Windows
     /// online-speech prompt), else Windows speech. A stored choice ("offline" included) is kept.</summary>
@@ -432,6 +431,7 @@ public sealed class DictationSettings : ObservableObject
         haptics = defaults.GetBool(Keys.Haptics, defaultValue: true);
         reduceAnimation = defaults.GetBool(Keys.ReduceAnimation);
         appearance = defaults.GetEnum(Keys.Appearance, DictationAppearance.System);
+        appIconColor = defaults.GetEnum(Keys.AppIconColor, AppIconColor.Signal);
         inactivityTimeoutMinutes = defaults.Contains(Keys.InactivityTimeoutMinutes) ? defaults.GetInt(Keys.InactivityTimeoutMinutes) : 3;
         clipboardHistoryEnabled = defaults.GetBool(Keys.ClipboardHistoryEnabled);
         incognito = defaults.GetBool(Keys.Incognito);
@@ -441,9 +441,7 @@ public sealed class DictationSettings : ObservableObject
         pauseBeforeSendingScreen = defaults.GetBool(Keys.PauseBeforeSendingScreen, defaultValue: true);
         hasCompletedDictationOnboarding = defaults.GetBool(Keys.HasCompletedDictationOnboarding);
         preferredMicrophoneUID = defaults.GetString(Keys.PreferredMicrophoneUID);
-        orbPosition = DecodePoint(defaults.GetString(Keys.OrbPosition));
-        region = RawValues.FromRawValue<AppRegion>(defaults.GetString(Keys.Region)) ?? AppRegions.Detected();
-    }
+        orbPosition = DecodePoint(defaults.GetString(Keys.OrbPosition));    }
 
     /// <summary>Sets a property, raises PropertyChanged, and stores it (Swift's didSet stores every assignment).</summary>
     private void Store<T>(ref T field, T value, Action persist, string propertyName)
@@ -660,22 +658,26 @@ public sealed class DictationSettings : ObservableObject
 
     // MARK: general
 
-    private AppRegion region;
     /// <summary>
-    /// India or the rest of the world: which options the settings offer (AppRegion). Stored only
-    /// once picked; until then it follows the PC.
+    /// Which options the settings offer (AppRegion). Always the world since 2026-10-30: OpenClicky
+    /// no longer offers India its own set, so the Region choice is gone. An option already in use
+    /// (Sarvam, an Indian language) stays offered. The old `openclicky.region` value is ignored.
     /// </summary>
-    public AppRegion Region
-    {
-        get => region;
-        set => Store(ref region, value, () => defaults.SetEnum(Keys.Region, value), nameof(Region));
-    }
+    public AppRegion Region => AppRegion.World;
 
     private DictationAppearance appearance;
     public DictationAppearance Appearance
     {
         get => appearance;
         set => Store(ref appearance, value, () => defaults.SetEnum(Keys.Appearance, value), nameof(Appearance));
+    }
+
+    private AppIconColor appIconColor;
+    /// <summary>The app icon's colour on the window, the taskbar and the tray (AppIconColor).</summary>
+    public AppIconColor AppIconColor
+    {
+        get => appIconColor;
+        set => Store(ref appIconColor, value, () => defaults.SetEnum(Keys.AppIconColor, value), nameof(AppIconColor));
     }
 
     private int inactivityTimeoutMinutes;
@@ -767,7 +769,7 @@ public sealed class DictationSettings : ObservableObject
 
     public void ResetGeneralToDefaults()
     {
-        Appearance = DictationAppearance.System; InactivityTimeoutMinutes = 3; ReduceAnimation = false;
+        Appearance = DictationAppearance.System; AppIconColor = AppIconColor.Signal; InactivityTimeoutMinutes = 3; ReduceAnimation = false;
     }
 
     public void ResetShortcutsToDefaults()

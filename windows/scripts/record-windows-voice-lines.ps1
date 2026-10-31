@@ -30,9 +30,9 @@ $lines = [ordered]@{
     "tour-act-windows"                 = "Now, give me a task: hold $talkRight, and tell me what to do."
     "tour-act-windows-left-control"    = "Now, give me a task: hold $talkLeft, and tell me what to do."
     "tour-act-windows-control"         = "Now, give me a task: hold $talkAny, and tell me what to do."
-    "settings-tour-shortcuts-windows"                = "Shortcuts shows every key at a glance. Hold $talkRight to talk to me."
-    "settings-tour-shortcuts-windows-left-control"   = "Shortcuts shows every key at a glance. Hold $talkLeft to talk to me."
-    "settings-tour-shortcuts-windows-control"        = "Shortcuts shows every key at a glance. Hold $talkAny to talk to me."
+    "settings-tour-shortcuts-windows"                = "Hold $talkRight to talk to me. The rarer shortcuts are under More, at the bottom of each page."
+    "settings-tour-shortcuts-windows-left-control"   = "Hold $talkLeft to talk to me. The rarer shortcuts are under More, at the bottom of each page."
+    "settings-tour-shortcuts-windows-control"        = "Hold $talkAny to talk to me. The rarer shortcuts are under More, at the bottom of each page."
 }
 
 $instructions = "Warm, friendly and unhurried, like showing a parent around a new app. Clear and calm."

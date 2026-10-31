@@ -61,7 +61,6 @@ public sealed class DictationSettingsTests
             OrbTheme = OrbTheme.Coral,
             OrbPosition = new OrbPoint(100, 250.5),
             InactivityTimeoutMinutes = 0,
-            Region = AppRegion.World,
             DictationKey = DictationHotkey.RightAlt,
             KeepMemoryOnThisPC = true,
         };
@@ -71,7 +70,7 @@ public sealed class DictationSettingsTests
         Assert.Equal("coral", preferences.GetString("dictation.orb.theme"));
         Assert.Equal("100,250.5", preferences.GetString("dictation.orb.position"));
         Assert.Equal(0, preferences.GetInt("dictation.inactivityTimeoutMinutes", -1));
-        Assert.Equal("world", preferences.GetString("openclicky.region"));
+        Assert.Null(preferences.GetString("openclicky.region"));
         Assert.Equal("rightAlt", preferences.GetString("dictation.key"));
         Assert.True(preferences.GetBool("dictation.keepMemoryOnThisMac"));
 

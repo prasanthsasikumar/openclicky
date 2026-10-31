@@ -1,6 +1,6 @@
 // Ports Dictation/UI/SettingsAccountPage.swift: Settings → Account (sign in or out, with a free
 // account set up in AccountSheet; the allowance and what each engine costs; the backend host and
-// token from shell.json) and Settings → Keys & Plans (your own provider keys in shell.json, masked,
+// token from shell.json) and Settings → Keys & Account (your own provider keys in shell.json, masked,
 // each testable; and the Claude Code / Codex plans with their CLI status).
 
 using System.Windows;
@@ -15,7 +15,7 @@ namespace OpenClicky.Windows.AppWindow;
 
 internal sealed partial class SettingsRowFactory
 {
-    // MARK: - Keys & Plans
+    // MARK: - Keys & Account
 
     /// <summary>What the keys list remembers between redraws: the provider being added, and what the last Test or Save said.</summary>
     private sealed class ProviderKeysState

@@ -65,27 +65,51 @@ public sealed class DictationWindowNavigationTests
     }
 
     [Fact]
-    public void YourPagesAreTwoAndOpenOnYourWords()
+    public void TheWindowOpensOnDictation()
     {
-        // Record and history are one page; dictionary, snippets and styles are another.
+        Assert.Equal(DictationDestination.Of(DictationSettingsPage.Dictation), new DictationWindowModel().Destination);
         Assert.Equal(["Your words", "How it writes"], DictationSections.AllCases.Select(section => section.SidebarTitle()));
-        Assert.Equal(DictationDestination.Of(DictationSection.Words), new DictationWindowModel().Destination);
     }
 
     [Fact]
-    public void TheSidebarListsYourPagesAfterVoiceAndBeforeTheOrb()
+    public void TheSidebarListsSixPages()
     {
-        Assert.Equal(
-            ["General", "Dictation", "Clicky", "Voice", "Your words", "How it writes", "The Orb", "Plugins", "Shortcuts", "Keys & Plans", "Account", "Privacy & Security", "About"],
+        Assert.Equal(["Dictation", "Clicky", "Island", "Keys & Account", "Privacy", "General"],
             DictationDestination.SidebarOrder.Select(destination => destination.Title));
     }
 
     [Fact]
-    public void ThereAreElevenSettingsPages()
+    public void PagesOpenedFromARowKeepTheirParentSelected()
     {
-        Assert.Equal(
-            ["General", "Dictation", "Clicky", "Voice", "The Orb", "Plugins", "Shortcuts", "Keys & Plans", "Account", "Privacy & Security", "About"],
-            DictationSettingsPages.AllCases.Select(page => page.Title()));
+        Assert.Equal(DictationSettingsPage.Dictation, DictationDestination.Of(DictationSettingsPage.Orb).SidebarPage);
+        Assert.Equal(DictationSettingsPage.Dictation, DictationDestination.Of(DictationSection.Words).SidebarPage);
+        Assert.Equal(DictationSettingsPage.Dictation, DictationDestination.Of(DictationSection.Writing).SidebarPage);
+        Assert.Equal(DictationSettingsPage.Island, DictationDestination.Of(DictationSettingsPage.Calendars).SidebarPage);
+        Assert.Equal(DictationSettingsPage.Privacy, DictationDestination.Of(DictationSettingsPage.Privacy).SidebarPage);
+        Assert.Equal("Dictation › The orb", DictationSettingsPage.Orb.SearchTitle());
+    }
+
+    [Fact]
+    public void BackReturnsThroughTheRowsOpened()
+    {
+        var model = new DictationWindowModel();
+        model.Select(DictationSettingsPage.Dictation);
+        Assert.False(model.CanGoBack);
+        model.Push(DictationDestination.Of(DictationSettingsPage.Orb));
+        Assert.Equal(DictationDestination.Of(DictationSettingsPage.Orb), model.Destination);
+        Assert.True(model.CanGoBack);
+        model.GoBack();
+        Assert.Equal(DictationDestination.Of(DictationSettingsPage.Dictation), model.Destination);
+        Assert.False(model.CanGoBack);
+    }
+
+    [Fact]
+    public void ASidebarClickForgetsTheWayBack()
+    {
+        var model = new DictationWindowModel();
+        model.Push(DictationDestination.Of(DictationSection.Words));
+        model.Select(DictationSettingsPage.Clicky);
+        Assert.False(model.CanGoBack);
     }
 
     [Fact]

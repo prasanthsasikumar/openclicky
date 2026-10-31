@@ -504,8 +504,8 @@ public sealed class FirstRunTourController
                 }
                 else
                 {
-                    // "add my key": Settings → Keys & Plans has the key fields; the tour carries on.
-                    companion.ShowSettings(DictationSettingsPage.Keys);
+                    // "add my key": Settings → Keys & Account has the key fields; the tour carries on.
+                    companion.ShowSettings(DictationSettingsPage.Account);
                     Advance();
                 }
                 break;

@@ -113,26 +113,9 @@ internal sealed partial class SettingsRowFactory
         switch (item.Id)
         {
             case "about.app":
-                var icon = new Image { Source = OpenClickyMarkDrawing.AppIconImage(), Width = 44, Height = 44 };
-                var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-                text.Children.Add(Ui.Text("OpenClicky", 15, SettingsLook.TextPrimary, FontWeights.SemiBold));
-                var version = new TextBox
-                {
-                    Text = item.Detail,
-                    IsReadOnly = true,
-                    BorderThickness = new Thickness(0),
-                    Background = Brushes.Transparent,
-                    Padding = new Thickness(0),
-                    // A TextBox insets its text 2 px on its own; pulled back so it lines up under the name.
-                    Margin = new Thickness(-2, 0, 0, 0),
-                    FontSize = SettingsLook.CaptionSize,
-                    Style = null,
-                    Template = PlainTextBoxTemplate(),
-                };
-                version.SetResourceReference(Control.ForegroundProperty, SettingsLook.TextSecondary);
-                text.Children.Add(version);
-                // HStack sets each later child's left margin to its spacing: the gap is given here.
-                return Ui.Card(Ui.HStack(14, icon, text), new Thickness(16, 14, 16, 14));
+                // The version carries Check Now beside it; the icon follows the colour picked above it.
+                return new LiveContent(() => Ui.Card(AboutAppRow(item), new Thickness(16, 14, 16, 14)),
+                    Changes.Of(services.Updater), Changes.Of(Settings, nameof(DictationSettings.AppIconColor)));
             case "about.source":
                 return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("GitHub ↗", () => Ui.OpenExternal(AppVersion.SourceUrl))));
             case "about.reportBug":
@@ -142,6 +125,37 @@ internal sealed partial class SettingsRowFactory
             default:
                 return null;
         }
+    }
+
+    /// <summary>The app's icon, name and version, and Check Now beside them.</summary>
+    private DockPanel AboutAppRow(SettingsItem item)
+    {
+        var icon = new Image { Source = OpenClickyMarkDrawing.AppIconImage(Settings.AppIconColor), Width = 44, Height = 44 };
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(Ui.Text("OpenClicky", 15, SettingsLook.TextPrimary, FontWeights.SemiBold));
+        var version = new TextBox
+        {
+            Text = item.Detail,
+            IsReadOnly = true,
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(0),
+            // A TextBox insets its text 2 px on its own; pulled back so it lines up under the name.
+            Margin = new Thickness(-2, 0, 0, 0),
+            FontSize = SettingsLook.CaptionSize,
+            Style = null,
+            Template = PlainTextBoxTemplate(),
+        };
+        version.SetResourceReference(Control.ForegroundProperty, SettingsLook.TextSecondary);
+        text.Children.Add(version);
+        var checkNow = Ui.Button("Check Now", services.Updater.CheckNow, isEnabled: services.Updater.IsConfigured);
+        checkNow.VerticalAlignment = VerticalAlignment.Center;
+        var row = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(checkNow, Dock.Right);
+        row.Children.Add(checkNow);
+        // HStack sets each later child's left margin to its spacing: the gap is given here.
+        row.Children.Add(Ui.HStack(14, icon, text));
+        return row;
     }
 
     /// <summary>A text box drawn as plain text, so the version can be selected and copied (textSelection).</summary>

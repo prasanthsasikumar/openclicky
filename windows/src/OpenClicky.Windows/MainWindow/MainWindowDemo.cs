@@ -41,7 +41,7 @@ public static class MainWindowDemo
         var preferences = new Preferences(OpenClickyPaths.PreferencesFile);
         // The tour starts on its own the first time General opens; the demo starts it only when asked.
         preferences.Set(SettingsTourController.HasPlayedKey, !args.Contains("--tour"));
-        var settings = new DictationSettings(preferences) { Region = AppRegion.World };
+        var settings = new DictationSettings(preferences);
         OpenClickyConfiguration.Update(shell =>
         {
             shell.OpenaiApiKey = "sk-demo-not-a-real-key-7f3a";
@@ -142,7 +142,7 @@ public static class MainWindowDemo
     [DllImport("user32.dll")]
     private static extern bool SetCursorPos(int x, int y);
 
-    /// <summary>Every page in sidebar order, light then dark, plus the search results and the page ends.</summary>
+    /// <summary>Every page in sidebar order, then the pages opened from rows, light then dark, plus the search results and the page ends.</summary>
     private static async Task TakeScreenshotsAsync(DictationWindow window, DictationSettings settings, string folder, string? onlyPage)
     {
         Directory.CreateDirectory(folder);
@@ -155,7 +155,13 @@ public static class MainWindowDemo
             settings.Appearance = appearance;
             var themeName = appearance == DictationAppearance.Light ? "light" : "dark";
             await Delay(500);
-            foreach (var destination in DictationDestination.SidebarOrder)
+            DictationDestination[] destinations =
+            [
+                .. DictationDestination.SidebarOrder,
+                .. DictationSettingsPages.AllCases.Where(page => page.SidebarPage() != page).Select(DictationDestination.Of),
+                .. DictationSections.AllCases.Select(DictationDestination.Of),
+            ];
+            foreach (var destination in destinations)
             {
                 var name = destination.Page is { } page ? page.RawValue() : destination.Section!.Value.RawValue();
                 if (onlyPage is not null && onlyPage != name) continue;

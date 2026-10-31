@@ -1,7 +1,8 @@
 // Ports Dictation/UI/SettingsGeneralPage.swift (and the update rows of SettingsAboutPage.swift):
-// where you are, how OpenClicky looks and starts, and updates. The region, appearance, where the
-// island lives, the tray icon (always on while the island is hidden), open at sign-in (the HKCU Run
-// value, ILoginItem), the two tours, reduce motion, and software updates (IAppUpdater, Velopack).
+// how OpenClicky starts and looks. The tray icon (always on while the island is hidden), the app
+// icon's colour, open at sign-in (the HKCU Run value, ILoginItem), the two tours, reduce motion, and
+// software updates (IAppUpdater, Velopack). Appearance is the window's toolbar button (its row only
+// for search); where the island lives is built here and shown on Island (SettingsLayout).
 
 using System.Windows;
 using System.Windows.Controls;
@@ -37,9 +38,8 @@ internal sealed partial class SettingsRowFactory
         var companion = services.Companion;
         switch (item.Id)
         {
-            case "general.region":
-                return LiveSettingsCard(() => Ui.Row(item.Title, item.Detail, query,
-                    Ui.Picker(Enum.GetValues<AppRegion>().Select(region => (region, region.Title())), Settings.Region, region => Settings.Region = region, 180)));
+            case "general.appIcon":
+                return LiveSettingsCard(() => AppIconColorRow(item, query));
             case "general.appearance":
                 return LiveSettingsCard(() => AppearanceRow(item, query));
             case "general.hudPlacement":
@@ -75,9 +75,6 @@ internal sealed partial class SettingsRowFactory
                     return Ui.Card(Ui.Row(item.Title, detail, query,
                         Ui.Toggle(updater.AutomaticallyChecks, isOn => updater.AutomaticallyChecks = isOn, isEnabled: updater.IsConfigured)));
                 }, Changes.Of(services.Updater));
-            case "about.checkNow":
-                return new LiveContent(() => Ui.Card(Ui.Row(item.Title, null, query,
-                    Ui.Button("Check Now", services.Updater.CheckNow, isEnabled: services.Updater.IsConfigured))), Changes.Of(services.Updater));
             default:
                 return null;
         }
@@ -93,6 +90,34 @@ internal sealed partial class SettingsRowFactory
             row?.Rebuild();
         }))), Changes.Of(Settings, nameof(DictationSettings.DictationKey)));
         return row;
+    }
+
+    /// <summary>Signal, Ultraviolet, Sunset, Paper and Aqua as five icon tiles, the chosen one ringed in the accent.</summary>
+    private Grid AppIconColorRow(SettingsItem item, string query)
+    {
+        var tiles = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var color in AppIconColors.AllCases)
+        {
+            var isSelected = Settings.AppIconColor == color;
+            var picture = new Grid { Width = 40, Height = 40 };
+            picture.Children.Add(new Image { Source = OpenClickyMarkDrawing.AppIconImage(color), Width = 34, Height = 34 });
+            var ring = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(2), Visibility = isSelected ? Visibility.Visible : Visibility.Hidden };
+            ring.SetResourceReference(Border.BorderBrushProperty, SettingsLook.Accent);
+            picture.Children.Add(ring);
+            var caption = Ui.Text(color.Title(), SettingsLook.CaptionSize, isSelected ? SettingsLook.TextPrimary : SettingsLook.TextSecondary,
+                isSelected ? FontWeights.SemiBold : FontWeights.Normal, wrap: false);
+            caption.HorizontalAlignment = HorizontalAlignment.Center;
+            caption.Margin = new Thickness(0, 4, 0, 0);
+            var stack = new StackPanel();
+            stack.Children.Add(picture);
+            stack.Children.Add(caption);
+            var button = new Button { Content = stack, Template = Ui.TransparentButtonTemplate(), Cursor = Cursors.Hand, Margin = new Thickness(4, 0, 4, 0) };
+            Ui.AutomationProperties(button, isSelected ? $"{color.Title()}, selected" : color.Title());
+            var picked = color;
+            button.Click += (_, _) => Settings.AppIconColor = picked;
+            tiles.Children.Add(button);
+        }
+        return Ui.Row(item.Title, item.Detail, query, tiles);
     }
 
     /// <summary>Light, Dark and Auto as three tiles, the chosen one ringed in the accent.</summary>
