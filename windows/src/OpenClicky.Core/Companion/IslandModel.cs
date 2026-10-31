@@ -65,6 +65,7 @@ public sealed partial class IslandModel : ObservableObject
         this.delay = delay ?? Task.Delay;
         this.componentSettings = componentSettings ?? new IslandComponentSettings(Configuration.Preferences.InMemory());
         Registry = registry ?? IslandComponentRegistry.All;
+        HomeLayout = this.componentSettings.HomeLayout;
         Selection = ComputeSelection();
     }
 
@@ -84,8 +85,37 @@ public sealed partial class IslandModel : ObservableObject
 
     public IslandComponent ActiveComponent => Registry.FirstOrDefault(component => component.Id == Selection.Active) ?? Registry[0];
 
+    /// <summary>What the capsule flips between: everything available but the tools (they have buttons of their own in
+    /// the band) and the parts home already shows (Now playing, System).</summary>
+    public IReadOnlyList<string> CapsuleIds
+    {
+        get
+        {
+            var shownElsewhere = Plugins.IslandPluginRegistry.ToolIds.Concat([Plugins.IslandPluginRegistry.MediaId, Plugins.IslandPluginRegistry.SystemId]).ToHashSet();
+            return Selection.Available.Where(id => !shownElsewhere.Contains(id)).ToList();
+        }
+    }
+
+    /// <summary>The tools switched on, in the band's order.</summary>
+    public IReadOnlyList<string> ToolIds => Plugins.IslandPluginRegistry.ToolIds.Where(Selection.Available.Contains).ToList();
+
     /// <summary>The capsule shows in the band only when there is something to flip to.</summary>
-    public bool ShowsCapsule => Selection.Available.Count > 1;
+    public bool ShowsCapsule => CapsuleIds.Count > 1;
+
+    /// <summary>Home's columns as the switches stood at the last refresh (IslandHome.cs); read again by
+    /// <see cref="RefreshComponentSettings"/>, so the layout, asked every frame, never reads the preferences.</summary>
+    public IslandHomeLayout HomeLayout { get; private set; }
+
+    /// <summary>The open panel's style (Settings → Island); the window draws it.</summary>
+    [ObservableProperty] private IslandLook look = IslandLooks.DefaultLook;
+
+    /// <summary>Which way the hovered island grows (Settings → Island).</summary>
+    [ObservableProperty] private IslandPeekDirection peekDirection = IslandPeekDirections.DefaultDirection;
+
+    partial void OnPeekDirectionChanged(IslandPeekDirection value)
+    {
+        if (Expansion == IslandExpansion.Peek) LayoutChanged?.Invoke();
+    }
 
     public void SetContext(IslandContext newContext)
     {
@@ -97,15 +127,25 @@ public sealed partial class IslandModel : ObservableObject
         RecomputeSelection();
     }
 
-    /// <summary>The capsule: show this component until the moment changes.</summary>
-    public void SelectComponent(string id)
+    /// <summary>The capsule or a tool's button: show this component until the moment changes. Null goes back to what
+    /// the moment or the default asks for.</summary>
+    public void SelectComponent(string? id)
     {
         componentOverride = id;
         RecomputeSelection();
     }
 
-    /// <summary>A plugin, the default or the order changed in Settings: pick again.</summary>
-    public void RefreshComponentSettings() => RecomputeSelection();
+    /// <summary>A plugin, the default, the order or one of home's switches changed in Settings: pick again. Home's
+    /// size follows its switches, which no selection change reports, so the window follows while the island is open.</summary>
+    public void RefreshComponentSettings()
+    {
+        var sizeBefore = (Layout.FullWidth, Layout.FullHeight);
+        var homeBefore = HomeLayout;
+        HomeLayout = componentSettings.HomeLayout;
+        RecomputeSelection();
+        if (Expansion != IslandExpansion.Full) return;
+        if ((Layout.FullWidth, Layout.FullHeight) != sizeBefore || !HomeLayout.Equals(homeBefore)) LayoutChanged?.Invoke();
+    }
 
     private IslandComponentSelection ComputeSelection() => IslandComponentSelector.Select(
         Registry, componentSettings.Order, componentSettings.DefaultId, componentOverride, context, componentSettings.EnabledIds(Registry));
@@ -114,10 +154,10 @@ public sealed partial class IslandModel : ObservableObject
     {
         var selection = ComputeSelection();
         if (selection == Selection) return;
-        var heightBefore = Layout.FullHeight;
+        var sizeBefore = (Layout.FullWidth, Layout.FullHeight);
         Selection = selection;
         OnPropertyChanged(nameof(Selection));
-        if (Expansion == IslandExpansion.Full && Layout.FullHeight != heightBefore) LayoutChanged?.Invoke();
+        if (Expansion == IslandExpansion.Full && (Layout.FullWidth, Layout.FullHeight) != sizeBefore) LayoutChanged?.Invoke();
     }
 
     /// <summary>The permission cards or the tour are up: hovering or clicking must not open the panel over them.</summary>
@@ -135,8 +175,28 @@ public sealed partial class IslandModel : ObservableObject
         TourHasStatus: TourCard?.Status is not null,
         TourHasMicrophoneName: TourCard?.MicrophoneName is not null,
         TourHasField: TourCard?.Field is not null,
-        // The shortcuts keep the panel's own body height (45, or 92 in a side drawer).
-        SlotHeight: Selection.Active == IslandComponentRegistry.ShortcutsId ? null : ActiveComponent.PreferredHeight);
+        SlotHeight: SlotHeight,
+        SlotWidth: SlotWidth,
+        PeekGrowsSideways: PeekDirection == IslandPeekDirection.Sideways);
+
+    /// <summary>Home shows its dashboard row only under the top edge and with a column on; a side drawer and an empty
+    /// home show the shortcuts row instead.</summary>
+    private bool ShowsHomeDashboard => Selection.Active == IslandComponentRegistry.HomeId && !Placement.IsSideDrawer() && !HomeLayout.IsEmpty;
+
+    /// <summary>The shortcuts (and home showing them) keep the panel's own body height (45, or 92 in a side drawer);
+    /// home's dashboard its row; anything else what it asks for.</summary>
+    private double? SlotHeight
+    {
+        get
+        {
+            if (Selection.Active == IslandComponentRegistry.ShortcutsId) return null;
+            if (Selection.Active == IslandComponentRegistry.HomeId) return ShowsHomeDashboard ? HomeLayout.Height : null;
+            return ActiveComponent.PreferredHeight;
+        }
+    }
+
+    /// <summary>Home's dashboard sets the open island's width; everything else keeps the standard one.</summary>
+    private double? SlotWidth => ShowsHomeDashboard ? HomeLayout.Width : null;
 
     /// <summary>Sizes and frames for the current state.</summary>
     public IslandLayout Layout => new(Geometry, Placement, ContentState);
