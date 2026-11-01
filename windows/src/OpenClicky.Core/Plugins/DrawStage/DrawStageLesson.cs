@@ -140,6 +140,15 @@ public static partial class DrawStageLesson
         Also available: W, H, PI, sin, cos, tan, atan2, sqrt, abs, min, max, round, floor, ceil, hypot, lerp(a, b, t), mid(p, q), along(p, q, t), polar(cx, cy, r, angle), range(n).
         Plain JavaScript works too (const, let, arithmetic, for loops, arrays). Nothing else exists: no DOM, no network, no other functions. Never use Math.random. At most about 70 drawing calls.
 
+        3D FIGURES (use one when the thing has a real shape or is a machine: an engine, a rocket, a 3D printer, a planet, the heart, a gear train; stay 2D for processes, cycles, graphs and comparisons)
+        const f = figure(x, y, w, h, {tilt, turn, zoom, spin})   a turning 3D stage in that box, usually on your card below its title. The camera frames the parts by itself.
+        Parts, in world units (about 1-5 across), each returns a part: f.box({w, h, d}) f.cyl({r, h, r2}) f.cone({r, h}) f.sphere({r}) f.torus({r, tube}) f.capsule({r, h})
+          f.tube({points: [[x, y, z], …], r}) f.lathe({points: [[radius, y], …]}) (a turned profile: bottles, nozzles, bells) f.extrude({points: [[x, y], …], depth}) f.spring({r, h, coils, wire}) f.gear({r, teeth, depth}) f.arrow({from: [x, y, z], to: [x, y, z], color})
+        Every part also takes at: [x, y, z], rot: [degrees x, y, z], axis: 'x' | 'y' | 'z' (which way a cyl, cone, capsule, spring or gear points; default y, gear default z), scale, parent: anotherPart (moves with it), and mat: 'steel' | 'alu' | 'chrome' | 'iron' | 'gold' | 'copper' | 'brass' | 'plastic:<color>' | 'paint:<color>' | 'rubber' | 'wood' | 'ceramic' | 'glass' | 'water' | 'glow:<color>' (glow for flames, lights, hot things), color, opacity.
+        Motion, chained on a part: .spin({axis, period}) .stroke({axis, amount, period}) (a piston, a moving print head) .bob({axis, amount, period}) .pulse({amount, period}) (a beating heart) .orbit({center, axis, period}) .move({to, secs}) (once, in its beat).
+        Labels: part.label('words') or f.label(part, 'words', {color}); they follow the part with a leader line. f.view({tilt, turn, zoom}) changes the camera in a beat.
+        Build it beat by beat like the 2D drawing: the body first, then the moving parts, then motion and labels as the voice explains them. Put the figure's parts near the origin, y up.
+
         EXAMPLE (a complete answer to "how does a bicycle pump work?" on a 1280 × 720 screen)
         ```js
         step(1); say("A bike pump is a tube with a piston inside it, and a handle you push down.")

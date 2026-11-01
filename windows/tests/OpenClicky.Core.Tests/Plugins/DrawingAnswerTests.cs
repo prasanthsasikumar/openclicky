@@ -86,6 +86,8 @@ public partial class DrawingAnswerTests
         Assert.Contains("W = 1280 by H = 720", prompt);
         Assert.Contains("below y = 619", prompt);
         Assert.Contains("```js", prompt);
+        Assert.Contains("figure(x, y, w, h", prompt);
+        Assert.Contains(".stroke({axis, amount, period})", prompt);
         Assert.Contains("\"how does this work\"", DrawStageLesson.UserPrompt("  how does this work  "));
     }
 

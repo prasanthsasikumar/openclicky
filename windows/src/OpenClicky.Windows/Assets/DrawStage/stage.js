@@ -63,6 +63,7 @@
     markCount = 0;
     errors = 0;
     while (svg.lastChild) svg.removeChild(svg.lastChild);
+    if (window.Figure3D) window.Figure3D.clear();
     svg.appendChild(defs());
     showCaption(null);
   }
@@ -301,6 +302,11 @@
       case 'text': return clamp(String(mark.text).length * 0.045, 0.3, 1.6);
       case 'highlight': return 0.45;
       case 'card': return 0.4;
+      case 'figure': return 0.5;
+      case 'part3d': return 0.6;
+      case 'label3d': return 0.45;
+      case 'view3d': return 0.5;
+      case 'motion3d': return 0.05;
       default: return 0.2;
     }
   }
@@ -444,6 +450,17 @@
         const mark = el('rect', { x, y, width: m.w, height: m.h, rx: Math.min(6, m.h / 4), fill: tone(m.color, TONES.yellow), opacity: 0.38 });
         group.appendChild(mark);
         reveal(group, mark, { x, y, width: m.w, height: m.h }, seconds);
+        break;
+      }
+      case 'figure': case 'part3d': case 'label3d': case 'motion3d': case 'view3d': {
+        if (!window.Figure3D) { log('3D is not loaded; skipped ' + m.do); break; }
+        let rect = null;
+        if (m.do === 'figure') {
+          // The figure's box on the page: the canvas units through the SVG's own mapping.
+          const ctm = svg.getScreenCTM();
+          rect = { x: ctm.a * m.at[0] + ctm.e, y: ctm.d * m.at[1] + ctm.f, w: ctm.a * m.w, h: ctm.d * m.h };
+        }
+        window.Figure3D.apply(m, seconds, rect);
         break;
       }
       case 'card': {

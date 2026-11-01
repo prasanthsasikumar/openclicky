@@ -16,6 +16,27 @@ html, body {
   height: 100%;
 }
 
+/* 3D figures sit over the drawing (cards stay behind them); their labels over both. */
+#figures, #labels3d {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#figures canvas {
+  position: absolute;
+}
+
+#labels3d text {
+  font-family: "Ink Free", "Segoe Print", "Comic Sans MS", cursive;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
 /* Handwriting: Ink Free ships with Windows; the others are fallbacks for a preview in another browser. */
 #stage text {
   font-family: "Ink Free", "Segoe Print", "Comic Sans MS", cursive;

@@ -11,6 +11,9 @@
 //   circle(x, y, r, o) / ellipse(x, y, rx, ry, o) / rect(x, y, w, h, o) / poly(points, o)
 //   dot(x, y, r, o) / text(x, y, words, o) / highlight(x, y, w, h, o)
 //   card(x, y, w, h, o)                     a paper card to explain on ({title})
+//   figure(x, y, w, h, o)                   a 3D stage ({tilt, turn, zoom, spin}); its parts: f.box/cyl/cone/sphere/torus/
+//                                           capsule/tube/lathe/extrude/spring/gear/arrow({…}) → part.spin/bob/stroke/pulse/
+//                                           orbit/move({…}) and part.label(words); f.label(part, words), f.view({…})
 //   o: {color, width, fill, dashed, size, align: 'start' | 'middle' | 'end', bold}
 //   W, H (the canvas: the screenshot's size), math (sin, cos, PI, ...) and point helpers (mid, along, polar, lerp)
 'use strict';
@@ -65,9 +68,37 @@ const api = {
   highlight: (x, y, w, h, o) => needs('highlight', [x, y, w, h].every(finite)) ? push({ do: 'highlight', at: [x, y], w, h }, o) : null,
   card: (x, y, w, h, o) => needs('card', [x, y, w, h].every(finite)) ? push({ do: 'card', at: [x, y], w, h }, o) : null,
 
-  // 3D arrives with the next phase; until then a figure is skipped with a note rather than stopping the program.
-  figure: () => { warn('figure() is not available yet'); return new Proxy({}, { get: () => () => null }); },
+  figure: (x, y, w, h, o) => {
+    if (![x, y, w, h].every(finite) || w < 40 || h < 40) {
+      warn('figure() needs x, y, width and height (at least 40 each); skipped');
+      return new Proxy({}, { get: () => () => new Proxy({}, { get: () => () => null }) });
+    }
+    const id = 'fig' + (++figureCount);
+    push({ do: 'figure', id, at: [x, y], w, h }, o);
+    const figure = { id };
+    for (const kind of PART_KINDS) figure[kind] = opts => part3d(id, kind, opts);
+    figure.label = (part, words, opts) => { push({ do: 'label3d', fig: id, part: part && part.id, text: String(words) }, opts); return figure; };
+    figure.view = opts => { push({ do: 'view3d', fig: id }, opts); return figure; };
+    return figure;
+  },
 };
+
+// 3D parts of a figure (figure3d.js builds them). Options are plain data: functions and the like are dropped.
+const PART_KINDS = ['box', 'cyl', 'cone', 'sphere', 'torus', 'capsule', 'tube', 'lathe', 'extrude', 'spring', 'gear', 'arrow'];
+const MOTIONS = ['spin', 'bob', 'stroke', 'pulse', 'orbit', 'move'];
+let figureCount = 0, partCount = 0;
+const plain = o => { try { return JSON.parse(JSON.stringify(options(o))); } catch (_) { return {}; } };
+
+function part3d(fig, kind, o) {
+  const params = plain(o);
+  if (o && o.parent && o.parent.id) params.parent = o.parent.id;
+  const id = 'part' + (++partCount);
+  push({ do: 'part3d', fig, id, kind, params });
+  const handle = { id };
+  for (const motion of MOTIONS) handle[motion] = opts => { push({ do: 'motion3d', fig, part: id, kind: motion, params: plain(opts) }); return handle; };
+  handle.label = (words, opts) => { push({ do: 'label3d', fig, part: id, text: String(words) }, opts); return handle; };
+  return handle;
+}
 
 // The parts of `text` between commas outside brackets and strings.
 function splitTopLevelCommas(text) {

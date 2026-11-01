@@ -145,7 +145,8 @@ The program is model-written code, so:
 | 0 ✓ | the stage window, the message bridge, the page with streaming execution, the worker sandbox, the pen, captions and both pacing clocks; `--openclicky-drawstage-smoke` |
 | **1 (this)** | questions answered by drawing in the ask lane, with any answer model; the drawing prompt; the screenshot as the canvas; speech pacing from `SpeechQueue`; falling back to words |
 | 1.x | the Realtime voice lane; a Settings switch; a model-callable tool for questions the heuristic misses |
-| 2 | `figure()` 3D parts with three.js: materials, labels, motion, cutaways, drag to turn, click a part → ask about it |
+| 2 ✓ | `figure()` 3D figures with three.js r172 (`figure3d.js`, `vendor/three`): box, cyl, cone, sphere, torus, capsule, tube, lathe, extrude, spring, gear, arrow; real materials; parts growing in on their line; labels that follow their part; spin, stroke, bob, pulse, orbit, move |
+| 2.x | cutaways, drag to turn, click a part → ask about it (the stage window has to take the mouse over a figure) |
 | 3 | photo cards, molecules, graphs and timelines, live edits for follow-up questions |
 | 4 | lessons: save, replay, export as video, quiz cards |
 
