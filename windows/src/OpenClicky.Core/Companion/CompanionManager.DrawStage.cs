@@ -19,6 +19,54 @@ namespace OpenClicky.Core.Companion;
 
 public sealed partial class CompanionManager
 {
+    /// <summary>The fast-voice question being answered by drawing, while it is (null otherwise).</summary>
+    private CancellationTokenSource? realtimeDrawing;
+
+    /// <summary>
+    /// Fast voice (Realtime): a spoken question a picture answers is drawn on the stage and narrated by the answer voice,
+    /// as on the ask lane, while the fast voice's own reply is cut so two voices never talk over each other. False when
+    /// the question isn't one for a drawing; when the drawing can't be made, the fast voice answers it in words.
+    /// </summary>
+    private bool StartRealtimeDrawing(string transcript, CompanionScreenCapture? capture)
+    {
+        if (capture is null || DrawStageController.Shared.Surface is null || !DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)
+            || !DrawStageLesson.WantsADrawing(transcript))
+        {
+            return false;
+        }
+        realtimeDrawing?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        realtimeDrawing = cancellation;
+        RealtimeVoiceClient.StopSpeaking();
+        AppLog.Write("talk: answering by drawing; the fast voice steps aside");
+        _ = RunRealtimeDrawingAsync(transcript, capture, cancellation);
+        return true;
+    }
+
+    private async Task RunRealtimeDrawingAsync(string transcript, CompanionScreenCapture capture, CancellationTokenSource cancellation)
+    {
+        var drew = false;
+        try
+        {
+            drew = await TryDrawingAnswerAsync(transcript, capture, conversationHistory.ToList(), cancellation.Token);
+        }
+        catch (Exception error) when (error is OperationCanceledException || cancellation.IsCancellationRequested)
+        {
+            drew = true;
+        }
+        catch (Exception error)
+        {
+            AppLog.Write($"talk: the drawing failed ({error.GetType().Name}); the fast voice answers instead");
+        }
+        finally
+        {
+            if (ReferenceEquals(realtimeDrawing, cancellation)) realtimeDrawing = null;
+            cancellation.Dispose();
+        }
+        // Nothing was drawn or said: the fast voice answers the same question in words.
+        if (!drew) await RealtimeVoiceClient.SendTextTurnAsync(transcript);
+    }
+
     /// <summary>
     /// Answers <paramref name="transcript"/> by drawing on <paramref name="capture"/>'s screen while speaking. False when the
     /// question isn't one for a drawing or nothing could be drawn: the ask lane then answers it as usual. Cancellation (esc,

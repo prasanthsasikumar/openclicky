@@ -73,7 +73,8 @@ public sealed partial class CompanionManager
             {
                 LastTranscript = text;
                 AppLog.Write($"talk: you said ({text.Length} chars)");
-                TeacherPlugin.StartLesson(text, client.LastScreenCapture);
+                // A question a picture answers is drawn and narrated on the stage; the fast voice steps aside for it.
+                if (!StartRealtimeDrawing(text, client.LastScreenCapture)) TeacherPlugin.StartLesson(text, client.LastScreenCapture);
             }
             else
             {
@@ -85,6 +86,8 @@ public sealed partial class CompanionManager
         client.OnResponseStarted = () =>
         {
             if (!UsesRealtimeVoice) return;
+            // The drawing's own voice is explaining: the fast voice's reply to the same question is cut.
+            if (realtimeDrawing is not null) { client.StopSpeaking(); return; }
             if (VoiceState != CompanionVoiceState.Listening) VoiceState = CompanionVoiceState.Responding;
         };
         client.OnResponseFinished = () =>
