@@ -11,6 +11,7 @@ using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
@@ -23,6 +24,7 @@ using OpenClicky.Windows.Dictation;
 using OpenClicky.Windows.Island;
 using OpenClicky.Windows.Overlay;
 using OpenClicky.Windows.Platform;
+using OpenClicky.Windows.Plugins.DrawStage;
 using OpenClicky.Windows.Plugins.Teacher;
 using OpenClicky.Windows.Tray;
 
@@ -106,6 +108,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         };
         // The Teacher plugin's board windows (its state is Core's TeacherBoard).
         TeacherBoard.Shared.Surface = new TeacherBoardWindows(platform.Screens);
+        // The drawing stage's window (its state is Core's DrawStageController); WebView2 starts the first time it is shown.
+        DrawStageController.Shared.Surface = new DrawStageWindow();
         Companion = new CompanionManager(services,
             new CompanionModels(companionUi.Overlay, companionUi.Island, companionUi.Orb, companionUi.AgentCard), this);
 

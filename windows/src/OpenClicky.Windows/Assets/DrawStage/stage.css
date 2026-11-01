@@ -1,0 +1,64 @@
+/* The drawing stage: see-through everywhere but the drawing and the caption. */
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  cursor: default;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Handwriting: Ink Free ships with Windows; the others are fallbacks for a preview in another browser. */
+#stage text {
+  font-family: "Ink Free", "Segoe Print", "Comic Sans MS", cursive;
+  paint-order: stroke;
+  stroke-linejoin: round;
+}
+
+#stage .halo {
+  fill: none;
+  stroke: #ffffff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+
+#stage .pen {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#stage .fade {
+  opacity: 0;
+}
+
+/* What is being said, at the bottom of the screen. */
+#caption {
+  position: absolute;
+  left: 50%;
+  bottom: 7%;
+  transform: translateX(-50%);
+  max-width: min(70%, 900px);
+  padding: 10px 18px;
+  border-radius: 14px;
+  background: rgba(20, 22, 28, 0.78);
+  color: #ffffff;
+  font: 500 20px/1.35 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  transition: opacity 0.25s ease;
+}
+
+#caption[hidden] {
+  display: block;
+  opacity: 0;
+}

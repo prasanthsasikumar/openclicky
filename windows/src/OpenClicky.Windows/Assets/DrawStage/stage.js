@@ -1,0 +1,487 @@
+// OpenClicky drawing stage: the page.
+//
+// The app streams the model's answer here as a program (DrawStageMessages.cs: beginStream, feed, lineStarted,
+// lineEnded, finishNow, clear). Each statement runs in stage-worker.js once it is complete, and what it draws is
+// painted with a pen, in order, each beat's strokes spread over the time its line is spoken: by the app's voice
+// (pace "speech": the page asks for each line with lineDue) or by an estimate of 2.6 words a second.
+// The page answers ready, lineDue, finished, log and error.
+'use strict';
+
+(function () {
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('stage');
+  const caption = document.getElementById('caption');
+
+  const WORDS_PER_SECOND = 2.6;
+  const LINE_GAP = 0.25;          // between two estimated lines
+  const LEAD = 0.08, TAIL = 0.12; // a line's strokes start just after its words and end just before they do
+  const FASTEST = 0.35, SLOWEST = 2, OPEN_LINE_SLOWEST = 1.3;
+  const STATEMENT_SECONDS = 2;    // the longest one statement may run before the program is stopped
+  const MAX_ERRORS = 5;
+
+  const TONES = {
+    ink: '#1E2230', blue: '#2F6BFF', red: '#E5484D', green: '#25A55F', orange: '#F28C28', purple: '#7C5CD6',
+    pink: '#E85D9C', yellow: '#F2C200', teal: '#14A3A3', brown: '#9A6235', grey: '#7A808C', white: '#FFFFFF'
+  };
+  const tone = (name, fallback) => TONES[name] || (typeof name === 'string' && /^#[0-9a-f]{3,8}$/i.test(name) ? name : fallback);
+
+  // ------------------------------------------------------------------ talking to the app
+  const host = window.chrome && window.chrome.webview;
+  function send(message) {
+    if (host) host.postMessage(message);
+    else console.log('[stage →]', message);
+  }
+  const log = text => send({ type: 'log', text: String(text) });
+
+  // ------------------------------------------------------------------ state of one program
+  let W = 1280, H = 800, pace = 'estimate';
+  let worker = null, seq = 0, running = null, runTimer = 0;
+  let source = '', scanned = 0, feedDone = false, stopped = false;
+  let pending = [];              // complete statements not run yet
+  let lines = [], items = [], released = 0, penFreeAt = 0, finishing = false, finishedSent = false;
+  let markCount = 0, errors = 0, uid = 0;
+
+  const now = () => performance.now() / 1000;
+
+  function reset() {
+    if (worker) worker.terminate();
+    worker = null;
+    clearTimeout(runTimer);
+    running = null;
+    source = '';
+    scanned = 0;
+    feedDone = false;
+    stopped = false;
+    pending = [];
+    lines = [];
+    items = [];
+    released = 0;
+    penFreeAt = 0;
+    finishing = false;
+    finishedSent = false;
+    markCount = 0;
+    errors = 0;
+    while (svg.lastChild) svg.removeChild(svg.lastChild);
+    svg.appendChild(defs());
+    showCaption(null);
+  }
+
+  function begin(message) {
+    reset();
+    W = message.w > 0 ? message.w : W;
+    H = message.h > 0 ? message.h : H;
+    pace = message.pace === 'speech' ? 'speech' : 'estimate';
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    worker = new Worker('stage-worker.js');
+    worker.onmessage = event => ran(event.data);
+    worker.onerror = event => { event.preventDefault(); stop('the program worker failed: ' + (event.message || 'unknown error')); };
+    worker.postMessage({ type: 'begin', w: W, h: H });
+  }
+
+  // ------------------------------------------------------------------ finding complete statements in a stream
+  // A statement ends at a ';', a line break or a '}' outside brackets, strings and comments, when what follows can't
+  // continue it (".then", "+ 1", "else") and it doesn't end mid-expression ("=", ",", "("). Only an end with code after
+  // it is taken: the text at the end of the stream can still grow until the stream is done.
+  const CONTINUES_NEXT = '.?:+-*/%&|^,)]=<>';
+  const CONTINUES_PREVIOUS = '=+-*/%&|^,([{:?<>!';
+  function statementEnds(code, start) {
+    const ends = [];
+    let depth = 0, i = start;
+    const n = code.length;
+    while (i < n) {
+      const c = code[i];
+      if (c === '/' && code[i + 1] === '/') { const j = code.indexOf('\n', i); i = j < 0 ? n : j; continue; }
+      if (c === '/' && code[i + 1] === '*') { const j = code.indexOf('*/', i + 2); if (j < 0) break; i = j + 2; continue; }
+      if (c === '"' || c === "'" || c === '`') {
+        let j = i + 1;
+        while (j < n && code[j] !== c) j += code[j] === '\\' ? 2 : 1;
+        if (j >= n) break;
+        i = j + 1;
+        continue;
+      }
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth = Math.max(0, depth - 1);
+      if (depth === 0 && (c === ';' || c === '\n' || c === '}')) {
+        let j = i + 1;
+        while (j < n && /\s/.test(code[j])) j++;
+        if (j >= n) break; // nothing after it yet
+        let k = i - (c === ';' ? 1 : 0);
+        while (k >= start && /\s/.test(code[k])) k--;
+        const last = k >= start ? code[k] : '';
+        const statementIsEmpty = code.slice(start, i + 1).trim() === '' || code.slice(start, i + 1).trim() === ';';
+        const next = code[j];
+        const continues = CONTINUES_NEXT.includes(next) || (c === '}' && /^else\b|^catch\b|^finally\b/.test(code.slice(j))) ||
+          (c !== ';' && CONTINUES_PREVIOUS.includes(last));
+        if (!continues && !statementIsEmpty) { ends.push(i + 1); start = i + 1; }
+        else if (statementIsEmpty) start = i + 1;
+      }
+      i++;
+    }
+    return ends;
+  }
+
+  function feed(message) {
+    if (!worker || stopped) return;
+    const code = String(message.code || '');
+    if (!code.startsWith(source)) log('feed: the program changed under the stream; continuing from the new text');
+    source = code;
+    for (const end of statementEnds(source, scanned)) {
+      const statement = source.slice(scanned, end).trim();
+      if (statement && statement !== ';') pending.push(statement);
+      scanned = end;
+    }
+    if (message.done) {
+      const rest = source.slice(scanned).trim();
+      if (rest) pending.push(rest);
+      scanned = source.length;
+      feedDone = true;
+    }
+    runNext();
+  }
+
+  // ------------------------------------------------------------------ running statements in the worker
+  function runNext() {
+    if (running || stopped || !worker || !pending.length) return;
+    running = { seq: ++seq, code: pending.shift() };
+    worker.postMessage({ type: 'run', seq: running.seq, code: running.code });
+    runTimer = setTimeout(() => stop('a statement ran longer than ' + STATEMENT_SECONDS + ' s: ' + running.code.slice(0, 80)), STATEMENT_SECONDS * 1000);
+  }
+
+  function ran(result) {
+    if (!running || result.seq !== running.seq) return;
+    clearTimeout(runTimer);
+    const code = running.code;
+    running = null;
+    for (const warning of result.warnings || []) log('warning: ' + warning);
+    if (result.error && errors++ < MAX_ERRORS) send({ type: 'error', text: result.error + ' in: ' + code.slice(0, 120) });
+    // Marks and lines in the order the statement made them: a mark belongs to the latest say() before it. say().at
+    // counts the program's marks before it, as markCount does here.
+    const says = (result.says || []).slice();
+    for (const mark of result.marks || []) {
+      while (says.length && says[0].at <= markCount) addLine(says.shift());
+      addItem(mark);
+    }
+    while (says.length) addLine(says.shift());
+    runNext();
+  }
+
+  function stop(reason) {
+    stopped = true;
+    pending = [];
+    clearTimeout(runTimer);
+    running = null;
+    if (worker) worker.terminate();
+    worker = null;
+    feedDone = true;
+    send({ type: 'error', text: reason });
+  }
+
+  // ------------------------------------------------------------------ lines and pacing
+  function addLine(say) {
+    const k = lines.length;
+    const words = String(say.text).trim().split(/\s+/).filter(Boolean).length;
+    const line = { k, text: say.text, words, arrive: now(), start: null, end: null, asked: false };
+    lines.push(line);
+    if (pace === 'estimate') {
+      const before = lines[k - 1];
+      line.start = Math.max(line.arrive, before ? before.end + LINE_GAP : line.arrive);
+      line.end = line.start + Math.max(0.8, words / WORDS_PER_SECOND);
+    }
+  }
+
+  function addItem(mark) {
+    markCount++;
+    items.push({ mark, line: lines.length - 1, seconds: naturalSeconds(mark) });
+  }
+
+  const lineEnd = line => line.end != null ? line.end : line.start + Math.max(0.8, line.words / WORDS_PER_SECOND);
+  const lineIsOpen = line => !feedDone || pending.length > 0 || running !== null ? line.k === lines.length - 1 : false;
+
+  function askForLines(t) {
+    if (pace !== 'speech') return;
+    for (const line of lines) {
+      if (line.asked) continue;
+      const before = lines[line.k - 1];
+      if (before && !(before.end != null && before.end <= t)) break;
+      line.asked = true;
+      send({ type: 'lineDue', k: line.k, text: line.text });
+      break;
+    }
+  }
+
+  function tick() {
+    const t = now();
+    askForLines(t);
+    while (released < items.length) {
+      const item = items[released];
+      const line = item.line >= 0 ? lines[item.line] : null;
+      let startAt = penFreeAt;
+      if (line && !finishing) {
+        if (line.start == null) break;
+        startAt = Math.max(startAt, line.start + LEAD);
+      }
+      if (t < startAt) break;
+      let factor = 1;
+      if (finishing) factor = FASTEST;
+      else if (line) {
+        let rest = 0;
+        for (let i = released; i < items.length && items[i].line === item.line; i++) rest += items[i].seconds;
+        const available = lineEnd(line) - TAIL - t;
+        factor = available <= 0.05 ? FASTEST : Math.max(FASTEST, Math.min(lineIsOpen(line) ? OPEN_LINE_SLOWEST : SLOWEST, available / rest));
+      }
+      const seconds = item.seconds * factor;
+      paint(item.mark, seconds, released);
+      penFreeAt = t + seconds + 0.04;
+      released++;
+    }
+    updateCaption(t);
+    checkFinished(t);
+    requestAnimationFrame(tick);
+  }
+
+  function checkFinished(t) {
+    if (finishedSent || !feedDone || pending.length || running || released < items.length || t < penFreeAt) return;
+    const last = lines[lines.length - 1];
+    if (last && !finishing && (last.start == null || t < lineEnd(last))) return;
+    finishedSent = true;
+    showCaption(null);
+    send({ type: 'finished' });
+  }
+
+  function updateCaption(t) {
+    let shown = null;
+    for (const line of lines) if (line.start != null && line.start <= t && t <= lineEnd(line) + 0.4) shown = line;
+    showCaption(finishing ? null : shown);
+  }
+
+  function showCaption(line) {
+    if (!line) { caption.hidden = true; return; }
+    if (caption.textContent !== line.text) caption.textContent = line.text;
+    caption.hidden = false;
+  }
+
+  // ------------------------------------------------------------------ painting
+  function defs() {
+    const d = el('defs');
+    const shadow = el('filter', { id: 'card-shadow', x: '-10%', y: '-10%', width: '130%', height: '140%' });
+    shadow.appendChild(el('feDropShadow', { dx: 0, dy: 4, stdDeviation: 6, 'flood-color': '#000', 'flood-opacity': 0.22 }));
+    d.appendChild(shadow);
+    return d;
+  }
+
+  function el(name, attributes) {
+    const node = document.createElementNS(SVG_NS, name);
+    for (const key in attributes || {}) node.setAttribute(key, attributes[key]);
+    return node;
+  }
+
+  // a little randomness that is the same for the same mark every time
+  function random(seed) {
+    let a = (seed * 2654435761) >>> 0;
+    return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+
+  const length = pts => pts.reduce((sum, p, i) => i ? sum + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0, 0);
+
+  function naturalSeconds(mark) {
+    switch (mark.do) {
+      case 'line': case 'arrow': return clamp(length(mark.pts) / 700, 0.25, 1.2) + (mark.do === 'arrow' ? 0.15 : 0);
+      case 'poly': return clamp(length(mark.pts.concat([mark.pts[0]])) / 800, 0.35, 1.4);
+      case 'ellipse': return clamp((Math.PI * (mark.rx + mark.ry)) / 800, 0.3, 1.2);
+      case 'rect': return clamp((2 * (mark.w + mark.h)) / 900, 0.35, 1.3);
+      case 'text': return clamp(String(mark.text).length * 0.045, 0.3, 1.6);
+      case 'highlight': return 0.45;
+      case 'card': return 0.4;
+      default: return 0.2;
+    }
+  }
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  // A hand's line: the points with a slight wobble, through a smooth curve.
+  function handPoints(pts, rnd, closed) {
+    const out = [];
+    const all = closed ? pts.concat([pts[0]]) : pts;
+    for (let i = 0; i < all.length - 1; i++) {
+      const [x0, y0] = all[i], [x1, y1] = all[i + 1];
+      const d = Math.hypot(x1 - x0, y1 - y0), steps = Math.max(1, Math.round(d / 40));
+      const nx = -(y1 - y0) / (d || 1), ny = (x1 - x0) / (d || 1), wobble = Math.min(1.6, d * 0.006);
+      for (let s = 0; s < steps; s++) {
+        const t = s / steps, j = s === 0 ? 0 : (rnd() - 0.5) * 2 * wobble;
+        out.push([x0 + (x1 - x0) * t + nx * j, y0 + (y1 - y0) * t + ny * j]);
+      }
+    }
+    out.push(all[all.length - 1]);
+    return out;
+  }
+
+  function smoothPath(pts) {
+    if (pts.length < 3) return 'M' + pts.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
+    let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+      const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+      d += ` C${c1[0].toFixed(1)} ${c1[1].toFixed(1)} ${c2[0].toFixed(1)} ${c2[1].toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+    }
+    return d;
+  }
+
+  function ellipsePoints(m, rnd) {
+    const out = [], n = 40, start = rnd() * Math.PI * 2, overshoot = 0.06 + rnd() * 0.05;
+    for (let i = 0; i <= n * (1 + overshoot); i++) {
+      const a = start + (i / n) * Math.PI * 2, r = 1 + (rnd() - 0.5) * 0.03;
+      out.push([m.at[0] + Math.cos(a) * m.rx * r, m.at[1] + Math.sin(a) * m.ry * r]);
+    }
+    return out;
+  }
+
+  // One pen stroke: a white halo under the coloured line, both revealed from start to end.
+  function stroke(group, d, m, seconds, delay) {
+    const width = m.width > 0 ? m.width : 3.2;
+    const halo = el('path', { d, class: 'halo', 'stroke-width': width + 5 });
+    const pen = el('path', { d, class: 'pen', stroke: tone(m.color, TONES.blue), 'stroke-width': width });
+    if (m.dashed) pen.setAttribute('stroke-dasharray', `${width * 3} ${width * 2.5}`);
+    group.appendChild(halo);
+    group.appendChild(pen);
+    for (const path of m.dashed ? [halo] : [halo, pen]) {
+      const total = path.getTotalLength() + 2;
+      path.style.strokeDasharray = `${total} ${total}`;
+      path.animate([{ strokeDashoffset: total }, { strokeDashoffset: 0 }],
+        { duration: seconds * 1000, delay: (delay || 0) * 1000, easing: 'cubic-bezier(.35,.2,.55,.95)', fill: 'both' });
+    }
+    if (m.dashed) pen.animate([{ opacity: 0 }, { opacity: 1 }], { duration: seconds * 1000, delay: (delay || 0) * 1000, fill: 'both' });
+  }
+
+  function fillShape(group, d, m, delay) {
+    if (!m.fill) return;
+    const fill = el('path', { d, fill: tone(m.fill, TONES.yellow), stroke: 'none', class: 'fade' });
+    group.insertBefore(fill, group.firstChild);
+    fill.animate([{ opacity: 0 }, { opacity: m.fillOpacity > 0 ? m.fillOpacity : 0.3 }], { duration: 350, delay: delay * 1000, fill: 'forwards' });
+  }
+
+  function reveal(group, node, box, seconds) {
+    const id = 'clip' + (++uid);
+    const clip = el('clipPath', { id });
+    const rect = el('rect', { x: box.x - 6, y: box.y - 6, width: 0, height: box.height + 12 });
+    clip.appendChild(rect);
+    group.appendChild(clip);
+    node.setAttribute('clip-path', `url(#${id})`);
+    rect.animate([{ width: '0px' }, { width: `${box.width + 12}px` }], { duration: seconds * 1000, easing: 'linear', fill: 'forwards' });
+  }
+
+  function paint(m, seconds, index) {
+    const group = el('g');
+    svg.appendChild(group);
+    const rnd = random(index + 1);
+    switch (m.do) {
+      case 'line': {
+        const pts = m.smooth ? m.pts : handPoints(m.pts, rnd, false);
+        stroke(group, smoothPath(pts), m, seconds);
+        break;
+      }
+      case 'arrow': {
+        const shaft = Math.max(0.1, seconds - 0.15);
+        stroke(group, smoothPath(m.smooth ? m.pts : handPoints(m.pts, rnd, false)), m, shaft);
+        const tip = m.pts[m.pts.length - 1], back = m.pts[m.pts.length - 2];
+        const angle = Math.atan2(tip[1] - back[1], tip[0] - back[0]);
+        const size = Math.min(22, Math.max(10, length(m.pts) * 0.25));
+        for (const side of [-1, 1]) {
+          const a = angle + Math.PI + side * 0.5;
+          stroke(group, smoothPath([tip, [tip[0] + Math.cos(a) * size, tip[1] + Math.sin(a) * size]]), m, 0.12, shaft);
+        }
+        break;
+      }
+      case 'poly': {
+        const d = smoothPath(handPoints(m.pts, rnd, true));
+        stroke(group, d, m, seconds);
+        fillShape(group, d, m, seconds);
+        break;
+      }
+      case 'rect': {
+        const [x, y] = m.at;
+        const d = smoothPath(handPoints([[x, y], [x + m.w, y], [x + m.w, y + m.h], [x, y + m.h]], rnd, true));
+        stroke(group, d, m, seconds);
+        fillShape(group, d, m, seconds);
+        break;
+      }
+      case 'ellipse': {
+        const d = smoothPath(ellipsePoints(m, rnd));
+        stroke(group, d, m, seconds);
+        fillShape(group, d, m, seconds);
+        break;
+      }
+      case 'dot': {
+        const dot = el('circle', { cx: m.at[0], cy: m.at[1], r: m.r, fill: tone(m.color, TONES.blue), stroke: '#fff', 'stroke-width': 2 });
+        group.appendChild(dot);
+        dot.style.transformBox = 'fill-box';
+        dot.style.transformOrigin = 'center';
+        dot.animate([{ transform: 'scale(0)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: seconds * 1000, fill: 'both' });
+        break;
+      }
+      case 'text': {
+        const size = m.size > 0 ? m.size : 26;
+        const anchor = m.align === 'start' || m.align === 'end' ? m.align : 'middle';
+        const text = el('text', {
+          x: m.at[0], y: m.at[1], 'font-size': size, 'text-anchor': anchor, 'dominant-baseline': 'middle',
+          fill: tone(m.color, TONES.ink), stroke: '#fff', 'stroke-width': Math.max(3, size * 0.2), 'font-weight': m.bold ? 700 : 400
+        });
+        text.textContent = m.text;
+        group.appendChild(text);
+        reveal(group, text, text.getBBox(), seconds);
+        break;
+      }
+      case 'highlight': {
+        const [x, y] = m.at;
+        const mark = el('rect', { x, y, width: m.w, height: m.h, rx: Math.min(6, m.h / 4), fill: tone(m.color, TONES.yellow), opacity: 0.38 });
+        group.appendChild(mark);
+        reveal(group, mark, { x, y, width: m.w, height: m.h }, seconds);
+        break;
+      }
+      case 'card': {
+        const [x, y] = m.at;
+        const card = el('g', { filter: 'url(#card-shadow)' });
+        card.appendChild(el('rect', { x, y, width: m.w, height: m.h, rx: 14, fill: tone(m.fill, '#FFF8E7'), stroke: '#00000014' }));
+        if (m.title) {
+          const title = el('text', { x: x + 22, y: y + 34, 'font-size': 26, 'font-weight': 700, fill: TONES.ink, stroke: 'none' });
+          title.textContent = m.title;
+          card.appendChild(title);
+        }
+        group.appendChild(card);
+        card.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'translateY(0)' }],
+          { duration: seconds * 1000, easing: 'ease-out', fill: 'both' });
+        break;
+      }
+      default:
+        log('unknown mark: ' + m.do);
+    }
+  }
+
+  // ------------------------------------------------------------------ messages from the app
+  function handle(message) {
+    if (!message || typeof message !== 'object') return;
+    switch (message.type) {
+      case 'beginStream': begin(message); break;
+      case 'feed': feed(message); break;
+      case 'lineStarted': {
+        const line = lines[message.k];
+        if (line && line.start == null) line.start = now();
+        break;
+      }
+      case 'lineEnded': {
+        const line = lines[message.k];
+        if (line) { if (line.start == null) line.start = now(); line.end = now(); }
+        break;
+      }
+      case 'finishNow': finishing = true; break;
+      case 'clear': reset(); break;
+      default: log('unknown message: ' + message.type);
+    }
+  }
+
+  if (host) host.addEventListener('message', event => handle(event.data));
+  // For a preview in an ordinary browser: window.drawStage.handle({type: 'beginStream', ...}).
+  window.drawStage = { handle };
+  reset();
+  requestAnimationFrame(tick);
+  send({ type: 'ready' });
+})();

@@ -46,6 +46,7 @@ second time (or pick "Open OpenClicky" in the tray menu) to open its window.
 | `--openclicky-voice-smoke <voice>` | renders two sentences in one voice (`openai`, `kokoro`, `mac`…) |
 | `--openclicky-check-source <source>` | Settings' Test button for one answer source (`anthropic`, `openai`…) |
 | `--openclicky-answer-smoke` | one real question (a red square) through the answer route |
+| `--openclicky-drawstage-smoke [program.js] [--speech] [--shot <png>]` | streams a drawing program onto the drawing stage on the cursor's screen ([docs/draw-stage.md](../docs/draw-stage.md)) |
 
 The smoke flags write to the console they were started from and exit with 0 on success. The
 `--openclicky-kokoro-helper` / `--openclicky-parakeet-helper` / `--openclicky-moonshine-helper` flags are the app's own helper processes.
