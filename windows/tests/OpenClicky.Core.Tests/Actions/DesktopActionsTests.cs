@@ -617,7 +617,8 @@ public class FastActionToolDefinitionTests
         var names = DesktopAction.RealtimeToolDefinitions().Select(definition => definition["name"]!.GetValue<string>());
         Assert.Equal(["open_app", "open_url", "create_folder", "reveal_in_explorer", "set_volume", "media_control",
                       "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows",
-                      "scroll", "stop_scrolling", "open_folder", "find_files", "find_on_page", "switch_tab"], names);
+                      "scroll", "stop_scrolling", "open_folder", "find_files", "find_on_page", "switch_tab",
+                      "press_keys", "type_text", "window"], names);
     }
 
     [Fact]
@@ -655,7 +656,7 @@ public class FastActionToolDefinitionTests
         }
         // They fit the ask lane's hook.
         var tools = AskLanePrompts.AskTools(offersQuickActions: true, hasWritingTarget: false, anthropic);
-        Assert.Equal(18, tools.Count);
+        Assert.Equal(21, tools.Count);
     }
 
     /// <summary>
@@ -678,6 +679,8 @@ public class FastActionToolDefinitionTests
                 else if (propertySchema["type"]!.GetValue<string>() == "integer") arguments[key] = 55;
                 else arguments[key] = "Test Value";
             }
+            // Keys come from a closed set: a made-up value is refused, as it should be.
+            if (toolName == "press_keys") arguments["keys"] = "tab";
 
             var result = DesktopAction.Parse(toolName, arguments);
             var parsed = Assert.IsType<DesktopActionParseResult.Action>(result);
@@ -746,6 +749,17 @@ public class FastActionToolDefinitionTests
                     Assert.Equal("named", arguments["which"]!.GetValue<string>());
                     Assert.Equal(new BrowserTabTarget.Named(arguments["name"]!.GetValue<string>()), switchTab.Target);
                     break;
+                case DesktopAction.PressKeys pressKeys:
+                    Assert.Equal("tab", pressKeys.Chords.Single().Spoken);
+                    Assert.Equal(KeyChords.MaximumTimes, pressKeys.Times);
+                    break;
+                case DesktopAction.TypeText typeText:
+                    Assert.Equal(arguments["text"]!.GetValue<string>(), typeText.Text);
+                    break;
+                case DesktopAction.ControlWindow controlWindow:
+                    Assert.Equal(arguments["action"]!.GetValue<string>(), controlWindow.Command.RawValue());
+                    Assert.Equal(arguments["app"]!.GetValue<string>(), controlWindow.App);
+                    break;
                 default:
                     Assert.Fail($"{toolName} parsed into an unexpected action");
                     break;
@@ -766,7 +780,7 @@ public class DesktopActionPlanToolTests
     public void InstructionBlockNamesEveryRealToolWithItsDescriptionAndSchema()
     {
         var block = PlanToolProtocol.InstructionBlock(QuickActionTools);
-        Assert.Equal(18, QuickActionTools.Count);
+        Assert.Equal(21, QuickActionTools.Count);
         foreach (var tool in QuickActionTools)
         {
             Assert.Contains($"- {tool.Name}: {tool.Description}", block);
