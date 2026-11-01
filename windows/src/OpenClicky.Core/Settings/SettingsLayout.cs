@@ -43,7 +43,7 @@ public static class SettingsLayout
     [
         new(DictationSettingsPage.Clicky, "", ["keyboard.talk", "keyboard.mouseTalk", "clicky.assistantName", "clicky.speechVoice", "clicky.language", "clicky.answerSource"]),
         new(DictationSettingsPage.Clicky, "Hands-free", ["clicky.fastVoice", "clicky.realtimeProvider", "clicky.fastVoiceNeedsKey", "clicky.alwaysListening"]),
-        new(DictationSettingsPage.Clicky, "Pointer", ["clicky.pointer"]),
+        new(DictationSettingsPage.Clicky, "Pointer", ["clicky.pointer", "clicky.pointerColor", "clicky.pointerStyle"]),
         new(DictationSettingsPage.Clicky, "Models", ["models.ollama", "models.lmStudio", "models.custom", "clicky.drawingSource"]),
         new(DictationSettingsPage.Clicky, "More",
             ["keyboard.type", "keyboard.handsFree", "clicky.model", "clicky.emailApp", "clicky.emailNeverSent",

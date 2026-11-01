@@ -44,6 +44,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
     private readonly GlobalShortcutMonitor shortcuts;
     private readonly MouseTalkMonitor mouseTalk;
     private readonly IDisposable mouseTalkObservation;
+    private readonly IDisposable pointerColorObservation;
+    private readonly IDisposable pointerStyleObservation;
     private readonly GuidedStepInputSource guidedStepInput;
     private readonly VelopackAppUpdater updater;
     private readonly TrayIcon trayIcon;
@@ -84,6 +86,13 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         void ApplyMouseTalk() => mouseTalk.Button = MouseTalkButtons.FromRawValue(preferences.GetString(MouseTalkButtons.PreferenceKey));
         ApplyMouseTalk();
         mouseTalkObservation = preferences.Observe(MouseTalkButtons.PreferenceKey, () => platform.MainThread.Post(ApplyMouseTalk));
+        // The pointer's colour and shape (Settings → Clicky → Pointer), applied now and whenever they change.
+        void ApplyPointerLook() => Overlay.PointerTriangleView.ApplyLook(
+            Theme.DS.Hex(PointerLook.HexFor(preferences.GetString(PointerLook.ColorPreferenceKey))),
+            PointerLook.StyleFrom(preferences.GetString(PointerLook.StylePreferenceKey)));
+        ApplyPointerLook();
+        pointerColorObservation = preferences.Observe(PointerLook.ColorPreferenceKey, () => platform.MainThread.Post(ApplyPointerLook));
+        pointerStyleObservation = preferences.Observe(PointerLook.StylePreferenceKey, () => platform.MainThread.Post(ApplyPointerLook));
         guidedStepInput = new GuidedStepInputSource(platform.KeyboardMonitor);
         var services = new CompanionServices
         {
@@ -309,6 +318,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         memoryWatch.Stop();
         if (lowMemoryNotification != 0) CloseHandle(lowMemoryNotification);
         mouseTalkObservation.Dispose();
+        pointerColorObservation.Dispose();
+        pointerStyleObservation.Dispose();
         mouseTalk.Dispose();
         try
         {

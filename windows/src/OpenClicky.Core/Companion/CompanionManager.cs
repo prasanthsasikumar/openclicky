@@ -246,6 +246,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
             _ => DictationSettingsPage.General,
         });
         Island.QuitRequested += QuitWithFarewell;
+        Island.TogglePointerRequested += () => SetClickyCursorEnabled(!IsClickyCursorEnabled);
         Island.StopSpeakingRequested += StopSpeaking;
         Island.StopAskRequested += () => StopAskLane("the island");
         Island.EngineSetupRequested += () => ShowSettings(IslandVoiceDestination.SetupPage(DictationSettings.Engine,

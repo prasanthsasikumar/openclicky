@@ -14,6 +14,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
+using OpenClicky.Core.Pointing;
 using OpenClicky.Windows.Theme;
 
 namespace OpenClicky.Windows.Overlay;
@@ -26,17 +27,41 @@ public sealed class PointerTriangleView : Grid
     private readonly DropShadowEffect glow;
     private readonly double baseGlowRadius;
 
+    private readonly Path path;
+    private readonly double size;
+
+    /// <summary>The colour and shape the person picked (Settings → Clicky → Pointer); pointers made without a colour follow it.</summary>
+    private static (Color Color, PointerStyle Style) look = (DS.Colors.OverlayCursor, PointerStyle.Triangle);
+    private static readonly List<WeakReference<PointerTriangleView>> followers = [];
+
+    /// <summary>Restyles every pointer that follows the person's choice (the overlay's), now and from now on.</summary>
+    public static void ApplyLook(Color color, PointerStyle style)
+    {
+        look = (color, style);
+        lock (followers)
+        {
+            followers.RemoveAll(reference => !reference.TryGetTarget(out _));
+            foreach (var reference in followers) if (reference.TryGetTarget(out var view)) view.Restyle(color, style);
+        }
+    }
+
     public PointerTriangleView(double size = 16, Color? color = null, double glowRadius = 8)
     {
-        var fillColor = color ?? DS.Colors.OverlayCursor;
+        this.size = size;
+        var fillColor = color ?? look.Color;
         baseGlowRadius = glowRadius;
         Width = size;
         Height = size;
         IsHitTestVisible = false;
-        var path = new Path { Data = Shapes.Triangle(size, size), Fill = DS.Brush(fillColor), Width = size, Height = size };
+        path = new Path { Data = Shapes.Triangle(size, size), Fill = DS.Brush(fillColor), Width = size, Height = size };
         glow = new DropShadowEffect { Color = fillColor, ShadowDepth = 0, BlurRadius = glowRadius * 2, Opacity = 1, RenderingBias = RenderingBias.Performance };
         path.Effect = glowRadius > 0 ? glow : null;
         Children.Add(path);
+        if (color is null)
+        {
+            Restyle(look.Color, look.Style);
+            lock (followers) followers.Add(new WeakReference<PointerTriangleView>(this));
+        }
         RenderTransformOrigin = new Point(0.5, 0.5);
         path.RenderTransformOrigin = new Point(0.5, 0.5);
         path.RenderTransform = rotation;
@@ -59,6 +84,24 @@ public sealed class PointerTriangleView : Grid
             scale.ScaleY = value;
             glow.BlurRadius = (baseGlowRadius + (value - 1.0) * 20) * 2;
         }
+    }
+
+    private void Restyle(Color color, PointerStyle style)
+    {
+        path.Data = style switch
+        {
+            PointerStyle.Arrow => Shapes.Arrow(size, size),
+            PointerStyle.Dot => new EllipseGeometry(new Point(size / 2, size / 2), size * 0.36, size * 0.36),
+            PointerStyle.Ring => new EllipseGeometry(new Point(size / 2, size / 2), size * 0.4, size * 0.4),
+            _ => Shapes.Triangle(size, size),
+        };
+        var brush = DS.Brush(color);
+        path.Fill = style == PointerStyle.Ring ? Brushes.Transparent : brush;
+        path.Stroke = style == PointerStyle.Ring ? brush : null;
+        path.StrokeThickness = style == PointerStyle.Ring ? Math.Max(2, size * 0.16) : 0;
+        // The arrow and round marks read as they are; only the triangle leans like a cursor.
+        rotation.Angle = style == PointerStyle.Triangle ? -35 : 0;
+        glow.Color = color;
     }
 
     /// <summary>Dimmed: half opacity, no glow.</summary>
