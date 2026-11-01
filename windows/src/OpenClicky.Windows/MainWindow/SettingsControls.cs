@@ -123,9 +123,14 @@ internal static class Ui
             comboBox.Items.Add(new ComboBoxItem { Content = title, Tag = value });
         }
         comboBox.SelectedIndex = selectedIndex;
+        // Compared with the last value picked, not the first: a row that isn't rebuilt after a change (the pointer's
+        // colour and shape) must still take a pick back to where it started (blue, then red again).
+        var current = selected;
         comboBox.SelectionChanged += (_, _) =>
         {
-            if (comboBox.SelectedItem is ComboBoxItem { Tag: T value } && !Equals(value, selected)) onChange(value);
+            if (comboBox.SelectedItem is not ComboBoxItem { Tag: T value } || Equals(value, current)) return;
+            current = value;
+            onChange(value);
         };
         return comboBox;
     }
