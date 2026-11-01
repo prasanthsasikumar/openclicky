@@ -79,6 +79,9 @@ public sealed class OpenClickyShellSettings
     [JsonPropertyName("useClaudeCodePlan")] public bool? UseClaudeCodePlan { get; set; }
     [JsonPropertyName("useCodexPlan")] public bool? UseCodexPlan { get; set; }
 
+    /// <summary>What the assistant is called ("Dyna"); null is OpenClicky (AssistantName).</summary>
+    [JsonPropertyName("assistantName")] public string? AssistantName { get; set; }
+
     /// <summary>Who answers questions: null or "auto" picks in ProviderRouter's order; else an AnswerSource raw value.</summary>
     [JsonPropertyName("answerSource")] public string? AnswerSource { get; set; }
 

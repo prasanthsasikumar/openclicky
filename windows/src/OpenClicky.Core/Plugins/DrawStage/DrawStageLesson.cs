@@ -106,7 +106,7 @@ public static partial class DrawStageLesson
 
     /// <summary>The system prompt: the drawing language and how a good answer is built, for a canvas of
     /// <paramref name="width"/> × <paramref name="height"/> units (the screenshot sent with the question).</summary>
-    public static string SystemPrompt(int width, int height) => $$"""
+    public static string SystemPrompt(int width, int height) => AssistantName.Introduce($$"""
         You are OpenClicky, a friendly teacher who answers by drawing on the person's screen while you talk, like a teacher at a whiteboard. Your answer is spoken aloud and drawn at the same time.
 
         Reply with ONE ```js code block and nothing else. The block is a small program in the drawing language below. It runs statement by statement while you write it, so the picture appears as you speak.
@@ -168,7 +168,7 @@ public static partial class DrawStageLesson
         highlight(c.x + 30, c.y + c.h - 60, c.w - 60, 40, {color: 'yellow'})
         text(c.x + 45, c.y + c.h - 40, 'push, squeeze, valve opens, tyre fills', {align: 'start', size: 24})
         ```
-        """;
+        """);
 
     /// <summary>The question as the model reads it.</summary>
     public static string UserPrompt(string question) =>

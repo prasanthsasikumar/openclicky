@@ -154,7 +154,8 @@ public static class AskLanePrompts
     {
         var toolsLine = quickActionsOffered ? "\n\n" + AccountToolsInstruction : "";
         var writeInPlaceLine = "\n\n" + (hasWritingTarget ? WriteInPlace.PromptInstruction : WriteInPlace.NoTargetPromptInstruction);
-        return ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt + pluginPromptLines, languageCode) + toolsLine + writeInPlaceLine, skillsBlock);
+        return AssistantName.Introduce(
+            ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt + pluginPromptLines, languageCode) + toolsLine + writeInPlaceLine, skillsBlock));
     }
 
     /// <summary>

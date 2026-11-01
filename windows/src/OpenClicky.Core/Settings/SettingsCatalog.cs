@@ -214,6 +214,8 @@ public sealed class SettingsCatalog
         };
         return
         [
+            Item("clicky.assistantName", "Its name", "What your assistant is called and answers to, like Dyna or Professor Pip.",
+                ["name", "rename", "call it", "assistant", "persona", "dyna", "nickname"]),
             Item("clicky.answerSource", "Answers come from", "Automatic uses your own keys first, then plans you switched on, then the free credits.",
                 ["provider", "model", "openai", "anthropic", "claude", "openrouter", "gemini", "groq", "mistral", "grok", "codex", "subscription", "plan", "answers"]),
             Item("clicky.model", "Claude model", "When Claude answers: Sonnet is quicker, Opus thinks harder.",

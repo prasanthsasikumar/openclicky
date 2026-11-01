@@ -41,7 +41,7 @@ public static class SettingsLayout
 
     private static readonly IReadOnlyList<Group> ClickyGroups =
     [
-        new(DictationSettingsPage.Clicky, "", ["keyboard.talk", "clicky.speechVoice", "clicky.language", "clicky.answerSource"]),
+        new(DictationSettingsPage.Clicky, "", ["keyboard.talk", "clicky.assistantName", "clicky.speechVoice", "clicky.language", "clicky.answerSource"]),
         new(DictationSettingsPage.Clicky, "Hands-free", ["clicky.fastVoice", "clicky.realtimeProvider", "clicky.fastVoiceNeedsKey", "clicky.alwaysListening"]),
         new(DictationSettingsPage.Clicky, "Pointer", ["clicky.pointer"]),
         new(DictationSettingsPage.Clicky, "Models", ["models.ollama", "models.lmStudio", "models.custom", "clicky.drawingSource"]),
