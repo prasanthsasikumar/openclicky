@@ -28,6 +28,9 @@ public interface IDrawStageSurface
     /// <summary>Hides the stage; the page stays loaded for the next answer.</summary>
     void Hide();
 
+    /// <summary>Loads the page without showing anything, so the first drawing doesn't wait for the browser to start.</summary>
+    void Prepare();
+
     /// <summary>Sends one message (JSON, see <see cref="DrawStageMessages"/>) to the page.</summary>
     void Post(string json);
 
@@ -62,6 +65,12 @@ public sealed class DrawStageController
     /// <summary>A program is being drawn (from <see cref="Begin"/> until it is cleared).</summary>
     public bool IsShowing { get; private set; }
 
+    /// <summary>The program said line <c>k</c> (a say()), as soon as its statement ran: a voice can start fetching its audio.</summary>
+    public event Action<int, string>? LineAdded;
+
+    /// <summary>Every statement of the program has run, so every line it says has been added (the count).</summary>
+    public event Action<int>? ProgramRan;
+
     /// <summary>The page wants line <c>k</c> spoken now (pace "speech": its strokes wait for <see cref="LineStarted"/>).</summary>
     public event Action<int, string>? LineDue;
 
@@ -70,6 +79,9 @@ public sealed class DrawStageController
 
     /// <summary>A line the page logged (errors included, prefixed "error: ").</summary>
     public event Action<string>? Logged;
+
+    /// <summary>Gets the page loaded ahead of a drawing (the talk key went down); does nothing once it is.</summary>
+    public void Prepare() => Surface?.Prepare();
 
     /// <summary>Opens the stage over <paramref name="frame"/> for a new program drawn on a canvas of
     /// <paramref name="canvasWidth"/> × <paramref name="canvasHeight"/> units (the screenshot the model saw), clearing
@@ -103,6 +115,14 @@ public sealed class DrawStageController
         Surface?.Hide();
     }
 
+    /// <summary>Clears the stage when something is drawn on it (a new question, esc); otherwise does nothing.</summary>
+    public bool ClearIfShowing(string reason)
+    {
+        if (!IsShowing) return false;
+        Clear(reason);
+        return true;
+    }
+
     private void Send(string json)
     {
         if (Surface is null) return;
@@ -121,8 +141,14 @@ public sealed class DrawStageController
                 waiting.Clear();
                 foreach (var each in queued) Surface?.Post(each);
                 break;
+            case "line" when message.K is { } k:
+                LineAdded?.Invoke(k, message.Text ?? "");
+                break;
             case "lineDue" when message.K is { } k:
                 LineDue?.Invoke(k, message.Text ?? "");
+                break;
+            case "programRan":
+                ProgramRan?.Invoke(message.K ?? 0);
                 break;
             case "finished":
                 Finished?.Invoke();

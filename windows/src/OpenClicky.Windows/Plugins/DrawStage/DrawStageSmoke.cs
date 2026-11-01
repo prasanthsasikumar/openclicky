@@ -8,13 +8,23 @@
 //  ended on a clock) instead of the page's estimate. The stage is left capturable so `--shot` can
 //  save the screen with the drawing on it. Exits 1 if the page reported an error.
 //
+//  reply:<file> and lesson:<question> run a whole drawing answer (DrawingAnswer) on a screenshot of
+//  the cursor's screen, as a question does: a written model reply streamed in (the sample is
+//  samples/heart-reply.md), or the answer model's own reply to the question (needs a key or an
+//  account in shell.json). Its lines are said by this PC's voice with --voice, else on a silent
+//  clock.
+//
 //    OpenClicky --openclicky-drawstage-smoke [program.js] [--speech] [--shot <file.png>]
+//    OpenClicky --openclicky-drawstage-smoke reply:<file> | lesson:<question> [--voice] [--shot <file.png>]
 //
 
 using System.IO;
 using System.Windows;
+using OpenClicky.Core.Answers;
+using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Plugins.DrawStage;
+using OpenClicky.Core.Speech;
 using OpenClicky.Windows.Overlay;
 using OpenClicky.Windows.Platform;
 
@@ -45,7 +55,9 @@ internal static class DrawStageSmoke
         {
             try
             {
-                exitCode = await RunAsync(programPath, shotPath, pace);
+                exitCode = programPath is not null && (programPath.StartsWith("reply:", StringComparison.Ordinal) || programPath.StartsWith("lesson:", StringComparison.Ordinal))
+                    ? await RunAnswerAsync(programPath, shotPath, args.Contains("--voice"))
+                    : await RunAsync(programPath, shotPath, pace);
             }
             catch (Exception error)
             {
@@ -116,6 +128,91 @@ internal static class DrawStageSmoke
         stage.Clear("smoke done");
         stage.Surface = null;
         return errors == 0 ? 0 : 1;
+    }
+
+    /// <summary>A whole drawing answer, as a question gets one: on the cursor screen's screenshot, spoken line by line.</summary>
+    private static async Task<int> RunAnswerAsync(string argument, string? shotPath, bool withVoice)
+    {
+        FloatingWindowSupport.AllowsScreenCapture = true;
+        SpeechVoiceServices.Current = SpeechVoiceServices.ForThisPC(new WindowsSystemVoice());
+        using var screens = new Screens();
+        var screenCapture = new ScreenCapture(screens);
+        // Taken before the stage is up, as a question's is.
+        if (await screenCapture.CaptureCursorScreenAsync() is not { } capture)
+        {
+            Console.WriteLine("smoke: no screenshot");
+            return 1;
+        }
+        Func<Action<string>, CancellationToken, Task<string>> writeReply;
+        if (argument.StartsWith("reply:", StringComparison.Ordinal))
+        {
+            var reply = await File.ReadAllTextAsync(argument["reply:".Length..]);
+            writeReply = async (onReplySoFar, token) =>
+            {
+                for (var length = ChunkCharacters; length < reply.Length; length += ChunkCharacters)
+                {
+                    onReplySoFar(reply[..length]);
+                    await Task.Delay(ChunkInterval, token);
+                }
+                onReplySoFar(reply);
+                return reply;
+            };
+        }
+        else
+        {
+            var question = argument["lesson:".Length..];
+            Console.WriteLine($"smoke: asking the answer model (wants a drawing: {DrawStageLesson.WantsADrawing(question)})");
+            var answers = new ClaudeAPI(() => $"{OpenClickyConfiguration.BackendBaseUrl}/chat");
+            writeReply = async (onReplySoFar, token) => (await answers.AnalyzeImageStreamingAsync(
+                [Core.Companion.CompanionManager.ImageLabeledWithItsPixelSize(capture)],
+                DrawStageLesson.SystemPrompt(capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels),
+                null,
+                DrawStageLesson.UserPrompt(question),
+                null,
+                onReplySoFar,
+                token,
+                DrawStageLesson.MaximumOutputTokens)).Text;
+        }
+
+        // This PC's voice, or a silent one that takes as long as reading the line at 2.6 words a second.
+        var player = new AudioPlayer();
+        var speech = withVoice
+            ? new SpeechQueue((text, token) => CloudVoiceSpeaker.AudioAsync(text, SpeechVoiceChoice.Mac, cancellationToken: token),
+                (audio, token) => player.PlayToCompletionAsync(audio, token))
+            : new SpeechQueue((text, _) => Task.FromResult(BitConverter.GetBytes(text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length)),
+                (audio, token) => Task.Delay(TimeSpan.FromSeconds(Math.Max(0.8, BitConverter.ToInt32(audio) / 2.6)), token));
+        speech.PieceStarted += k => Console.WriteLine($"smoke: voice: line {k} starts");
+
+        using var window = new DrawStageWindow();
+        var stage = DrawStageController.Shared;
+        stage.Surface = window;
+        var errors = 0;
+        stage.Logged += line => { if (line.StartsWith("error: ", StringComparison.Ordinal)) errors++; };
+        stage.LineAdded += (k, text) => Console.WriteLine($"smoke: line {k}: {text}");
+        var mainThread = Application.Current.Dispatcher;
+        var started = DateTime.UtcNow;
+        Console.WriteLine($"smoke: canvas {capture.ScreenshotWidthInPixels}×{capture.ScreenshotHeightInPixels} over {capture.DeviceName}, voice {(withVoice ? "this PC's" : "silent")}");
+        using var timeout = new CancellationTokenSource(DrawingAnswer.Limit);
+        var result = await DrawingAnswer.RunAsync(stage, capture, writeReply, speech,
+            action => mainThread.BeginInvoke(action),
+            onFirstAudio: () => Console.WriteLine($"smoke: voice started after {(DateTime.UtcNow - started).TotalSeconds:0.0} s"),
+            line => Console.WriteLine($"smoke: {line}"),
+            timeout.Token);
+        Console.WriteLine($"smoke: drew {result.Drew}, {result.SpokenLines.Count} lines, {result.ProgramCharacters} chars, in {(DateTime.UtcNow - started).TotalSeconds:0.0} s"
+            + (result.UnspokenAfterVoiceFailure is { } unspoken ? $", voice failed with {unspoken.Count} unsaid" : ""));
+        if (shotPath is not null && result.Drew)
+        {
+            var shots = await screenCapture.CaptureAllScreensAsync(new ScreenCaptureOptions { MaxDimension = 0, Format = ScreenImageFormat.Png, CursorScreenOnly = true });
+            if (shots.Count > 0)
+            {
+                await File.WriteAllBytesAsync(shotPath, shots[0].ImageData);
+                Console.WriteLine($"smoke: screen saved to {shotPath}");
+            }
+        }
+        await Task.Delay(TimeSpan.FromSeconds(1.5));
+        stage.Clear("smoke done");
+        stage.Surface = null;
+        return result.Drew && errors == 0 ? 0 : 1;
     }
 
     /// <summary>The voice's part for one line: it starts now and lasts as long as reading it at 2.6 words a second.</summary>

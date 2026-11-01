@@ -181,6 +181,12 @@ public sealed partial class CompanionManager
 
         // A teaching question's lesson starts now, while the answer is still being asked for.
         var cursorCapture = CursorCapture(screenCaptures);
+        // A question a picture answers is answered by drawing on the screen while speaking (CompanionManager.DrawStage).
+        if (!isGuidedStepContinuation
+            && await TryDrawingAnswerAsync(transcript, cursorCapture, conversationHistory.ToList(), cancellationToken))
+        {
+            return;
+        }
         if (!isGuidedStepContinuation) TeacherPlugin.StartLesson(transcript, cursorCapture);
         var labeledImages = screenCaptures.Select(ImageLabeledWithItsPixelSize).ToList();
         // The pointer's place in its screenshot goes into the question, and a close-up of what is

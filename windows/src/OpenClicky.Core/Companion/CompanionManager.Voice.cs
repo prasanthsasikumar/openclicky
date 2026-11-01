@@ -5,6 +5,7 @@
 
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
@@ -232,6 +233,8 @@ public sealed partial class CompanionManager
         askOutcome = AskOutcome.Listening;
         askPressWasStopped = false;
         askLiveWordsShownSincePress = false;
+        // The drawing stage's browser takes a few seconds to start: it starts while they speak.
+        if (DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)) DrawStageController.Shared.Prepare();
         Overlay.CancelTransientHide();
         // The cursor is hidden: bring it back for this interaction.
         if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible) Overlay.ShowOverlayOnAllScreens();

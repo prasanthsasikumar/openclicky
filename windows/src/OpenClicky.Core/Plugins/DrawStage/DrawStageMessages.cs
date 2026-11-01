@@ -4,7 +4,7 @@
 //
 //  The messages between the app and the drawing stage's page (Assets/DrawStage/stage.js), as JSON
 //  objects with a "type". The app sends beginStream, feed, lineStarted, lineEnded, finishNow and
-//  clear; the page sends ready, lineDue, finished, log and error.
+//  clear; the page sends ready, line, programRan, lineDue, finished, log and error.
 //
 
 using System.Text.Json;
@@ -54,7 +54,8 @@ public static class DrawStageMessages
         {
             if (JsonNode.Parse(json) is not JsonObject message) return null;
             if (message["type"] is not JsonValue typeValue || !typeValue.TryGetValue<string>(out var type)) return null;
-            int? k = message["k"] is JsonValue kValue && kValue.TryGetValue<int>(out var number) ? number : null;
+            // Line messages carry "k"; programRan carries its count of lines as "lines".
+            int? k = (message["k"] ?? message["lines"]) is JsonValue kValue && kValue.TryGetValue<int>(out var number) ? number : null;
             var text = message["text"] is JsonValue textValue && textValue.TryGetValue<string>(out var words) ? words : null;
             return new DrawStageEvent(type, k, text);
         }

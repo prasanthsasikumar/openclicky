@@ -62,6 +62,8 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
         if (webView is not null) Place();
     }
 
+    public void Prepare() => starting ??= StartAsync();
+
     public void Hide()
     {
         if (windowHandle != 0) ShowWindow(windowHandle, SW_HIDE);

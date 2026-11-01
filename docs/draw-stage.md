@@ -61,9 +61,37 @@ running up to about 3× faster or 2× slower than its natural speed so they fini
 | Page → app | |
 |---|---|
 | `ready` | the page loaded (earlier messages wait for this) |
+| `line {k, text}` | a `say()` ran: the voice can fetch its audio now, well before it is due |
+| `programRan {lines}` | every statement has run, so every line is known (the voice may finish after the last) |
 | `lineDue {k, text}` | speak line `k` now (pace `speech`) |
 | `finished` | the program is done and everything is drawn |
 | `log {text}` / `error {text}` | warnings, statement errors, a stopped program |
+
+## Answering a question by drawing (phase 1)
+
+`CompanionManager.DrawStage` runs in the ask lane, before the Teacher's own lesson would start. A question gets a
+drawing (`DrawStageLesson.WantsADrawing`) when it is one of the Teacher's teaching questions ("how does a jet engine
+work"). It also gets one when it asks about the thing on the screen in a way a picture answers ("how does this
+work?", "what's inside this?", "draw …"). Asking how to *do* something on screen ("how do I export this") stays
+with pointing.
+
+1. The cursor screen's screenshot is the canvas. It goes to the **answer model the person already chose** (Claude,
+   OpenAI, Gemini, OpenRouter, Groq, Mistral, xAI, a plan, or the free account) with `DrawStageLesson.SystemPrompt`.
+   That prompt teaches the drawing language and how a good answer is built, and allows up to 4096 output tokens.
+2. `DrawingAnswer` feeds the program in the streamed reply (`DrawStageLesson.ProgramIn`: the ```js block) to the
+   stage as it grows.
+3. Each `line` from the page goes straight into a `SpeechQueue` in the person's answer voice. Its
+   `PieceStarted` / `PieceEnded` events become `lineStarted` / `lineEnded` (pace `speech`), so each beat is drawn
+   while its sentence is heard. `programRan` finishes the queue after the last line.
+4. If the reply holds no program, or the stage cannot start, the question goes back to the normal ask lane
+   before anything is said. If the voice fails partway, the stage draws the rest at once and the system voice
+   reads what was left.
+5. Esc and the next question clear the stage (`TeacherPlugin.ClearBoard`). The stage's browser starts as soon as
+   the talk key goes down (`DrawStageController.Prepare`), so the first drawing does not wait for it.
+
+It is on whenever the Teacher plugin is on. To turn it off, set the preference `teacher.drawingStage` to `false`;
+teaching questions then go back to the Teacher's board. The fast (Realtime) voice lane still uses the Teacher's
+board.
 
 ## The drawing language (phase 1 subset)
 
@@ -109,8 +137,9 @@ The program is model-written code, so:
 
 | Phase | |
 |---|---|
-| **0 (this)** | the stage window, the message bridge, the page with streaming execution, the worker sandbox, the pen, captions and both pacing clocks; `--openclicky-drawstage-smoke` |
-| 1 | the `explain_with_drawing` tool and prompt in the Teacher plugin; the screenshot as the canvas; speech pacing from `SpeechQueue` |
+| 0 ✓ | the stage window, the message bridge, the page with streaming execution, the worker sandbox, the pen, captions and both pacing clocks; `--openclicky-drawstage-smoke` |
+| **1 (this)** | questions answered by drawing in the ask lane, with any answer model; the drawing prompt; the screenshot as the canvas; speech pacing from `SpeechQueue`; falling back to words |
+| 1.x | the Realtime voice lane; a Settings switch; a model-callable tool for questions the heuristic misses |
 | 2 | `figure()` 3D parts with three.js: materials, labels, motion, cutaways, drag to turn, click a part → ask about it |
 | 3 | photo cards, molecules, graphs and timelines, live edits for follow-up questions |
 | 4 | lessons: save, replay, export as video, quiz cards |
@@ -122,6 +151,9 @@ cd windows
 dotnet build OpenClicky.Windows.sln
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke my-program.js --speech --shot stage.png
+# a whole drawing answer on a screenshot of your screen: a written reply, or your answer model's own (needs a key)
+.\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke reply:src\OpenClicky.Windows\Assets\DrawStage\samples\heart-reply.md --voice
+.\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke "lesson:how does a jet engine work?" --voice
 ```
 
 Set `OPENCLICKY_DRAWSTAGE_DEVTOOLS=1` to allow the page's dev tools and context menu. To preview the page in an

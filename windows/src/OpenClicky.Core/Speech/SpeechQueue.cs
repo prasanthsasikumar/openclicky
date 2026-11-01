@@ -51,6 +51,13 @@ public sealed class SpeechQueue
         this.playAudio = playAudio;
     }
 
+    /// <summary>Piece <c>n</c> (in enqueue order) starts playing, right after its audio arrived; on the run loop's thread.
+    /// The drawing stage times each beat's strokes by it.</summary>
+    public event Action<int>? PieceStarted;
+
+    /// <summary>Piece <c>n</c> finished playing (or its player was stopped); on the run loop's thread.</summary>
+    public event Action<int>? PieceEnded;
+
     public void Enqueue(string pieceText)
     {
         lock (stateLock)
@@ -112,7 +119,9 @@ public sealed class SpeechQueue
                     var audioData = await fetch!.WaitAsync(cancellationToken).ConfigureAwait(false);
                     CheckNotCancelled(cancellationToken);
                     if (nextPieceIndex == 0) onFirstAudio();
+                    PieceStarted?.Invoke(nextPieceIndex);
                     await playAudio(audioData, cancellationToken).ConfigureAwait(false);
+                    PieceEnded?.Invoke(nextPieceIndex);
                 }
                 catch (Exception) when (IsInterrupted(cancellationToken))
                 {

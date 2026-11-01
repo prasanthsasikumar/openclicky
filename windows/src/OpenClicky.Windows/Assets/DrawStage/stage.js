@@ -4,7 +4,7 @@
 // lineEnded, finishNow, clear). Each statement runs in stage-worker.js once it is complete, and what it draws is
 // painted with a pen, in order, each beat's strokes spread over the time its line is spoken: by the app's voice
 // (pace "speech": the page asks for each line with lineDue) or by an estimate of 2.6 words a second.
-// The page answers ready, lineDue, finished, log and error.
+// The page answers ready, line (each say() as it runs), programRan (all of it ran), lineDue, finished, log and error.
 'use strict';
 
 (function () {
@@ -38,7 +38,7 @@
   let worker = null, seq = 0, running = null, runTimer = 0;
   let source = '', scanned = 0, feedDone = false, stopped = false;
   let pending = [];              // complete statements not run yet
-  let lines = [], items = [], released = 0, penFreeAt = 0, finishing = false, finishedSent = false;
+  let lines = [], items = [], released = 0, penFreeAt = 0, finishing = false, finishedSent = false, ranSent = false;
   let markCount = 0, errors = 0, uid = 0;
 
   const now = () => performance.now() / 1000;
@@ -59,6 +59,7 @@
     penFreeAt = 0;
     finishing = false;
     finishedSent = false;
+    ranSent = false;
     markCount = 0;
     errors = 0;
     while (svg.lastChild) svg.removeChild(svg.lastChild);
@@ -141,6 +142,11 @@
 
   // ------------------------------------------------------------------ running statements in the worker
   function runNext() {
+    if (!running && !pending.length && feedDone && !ranSent) {
+      // Every statement has run: every line the program says is known (a voice can be told there are no more).
+      ranSent = true;
+      send({ type: 'programRan', lines: lines.length });
+    }
     if (running || stopped || !worker || !pending.length) return;
     running = { seq: ++seq, code: pending.shift() };
     worker.postMessage({ type: 'run', seq: running.seq, code: running.code });
@@ -174,6 +180,7 @@
     worker = null;
     feedDone = true;
     send({ type: 'error', text: reason });
+    runNext(); // nothing more will run: says programRan
   }
 
   // ------------------------------------------------------------------ lines and pacing
@@ -182,6 +189,8 @@
     const words = String(say.text).trim().split(/\s+/).filter(Boolean).length;
     const line = { k, text: say.text, words, arrive: now(), start: null, end: null, asked: false };
     lines.push(line);
+    // The app's voice can start fetching this line's audio now, long before it is due.
+    send({ type: 'line', k, text: line.text });
     if (pace === 'estimate') {
       const before = lines[k - 1];
       line.start = Math.max(line.arrive, before ? before.end + LINE_GAP : line.arrive);

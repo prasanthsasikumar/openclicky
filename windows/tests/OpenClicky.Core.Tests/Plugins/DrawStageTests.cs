@@ -20,6 +20,10 @@ public class DrawStageTests
 
         public void Hide() => Hides++;
 
+        public int Prepares { get; private set; }
+
+        public void Prepare() => Prepares++;
+
         public void Post(string json) => Posted.Add(json);
 
         public void PageSays(string json) => MessageReceived?.Invoke(json);
