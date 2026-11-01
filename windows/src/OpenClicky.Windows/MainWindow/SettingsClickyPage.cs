@@ -12,6 +12,7 @@ using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Shortcuts;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -22,6 +23,13 @@ internal sealed partial class SettingsRowFactory
         var companion = services.Companion;
         switch (item.Id)
         {
+            case "keyboard.mouseTalk":
+            {
+                var picked = MouseTalkButtons.FromRawValue(services.Preferences.GetString(MouseTalkButtons.PreferenceKey));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Picker(MouseTalkButtons.AllCases.Select(button => (button, button.Title())), picked,
+                        button => services.Preferences.Set(MouseTalkButtons.PreferenceKey, button.RawValue()), 200)));
+            }
             case "clicky.assistantName":
                 return Ui.Card(AssistantNameRow(item, query));
             case "clicky.answerSource":

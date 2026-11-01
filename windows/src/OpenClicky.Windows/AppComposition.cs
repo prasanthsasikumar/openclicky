@@ -42,6 +42,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
     private readonly TakeStore? takeStore;
     private readonly CompanionUi companionUi;
     private readonly GlobalShortcutMonitor shortcuts;
+    private readonly MouseTalkMonitor mouseTalk;
+    private readonly IDisposable mouseTalkObservation;
     private readonly GuidedStepInputSource guidedStepInput;
     private readonly VelopackAppUpdater updater;
     private readonly TrayIcon trayIcon;
@@ -77,6 +79,11 @@ public sealed class AppComposition : ICompanionHost, IDisposable
 
         companionUi = new CompanionUi(platform.Screens, preferences);
         shortcuts = new GlobalShortcutMonitor(platform.KeyboardMonitor, platform.MainThread);
+        // Holding a mouse button to talk (Settings → Clicky); the hook is only installed while a button is chosen.
+        mouseTalk = new MouseTalkMonitor(shortcuts.PublishMouseTalk);
+        void ApplyMouseTalk() => mouseTalk.Button = MouseTalkButtons.FromRawValue(preferences.GetString(MouseTalkButtons.PreferenceKey));
+        ApplyMouseTalk();
+        mouseTalkObservation = preferences.Observe(MouseTalkButtons.PreferenceKey, () => platform.MainThread.Post(ApplyMouseTalk));
         guidedStepInput = new GuidedStepInputSource(platform.KeyboardMonitor);
         var services = new CompanionServices
         {
@@ -301,6 +308,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         memoryWatch.Stop();
         if (lowMemoryNotification != 0) CloseHandle(lowMemoryNotification);
+        mouseTalkObservation.Dispose();
+        mouseTalk.Dispose();
         try
         {
             Companion.Dispose();

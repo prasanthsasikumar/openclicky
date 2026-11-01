@@ -128,6 +128,10 @@ public sealed class GlobalShortcutMonitor : ICompanionShortcutSource, IDisposabl
         }
     }
 
+    /// <summary>A mouse button held to talk (MouseTalkMonitor): the same as the talk keys going down and up.</summary>
+    public void PublishMouseTalk(bool isDown) =>
+        Publish(() => ShortcutTransition?.Invoke(isDown ? BuddyPushToTalkShortcut.ShortcutTransition.Pressed : BuddyPushToTalkShortcut.ShortcutTransition.Released));
+
     private void Publish(Action action) => mainThread.Post(() =>
     {
         try

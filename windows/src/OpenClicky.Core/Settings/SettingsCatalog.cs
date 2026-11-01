@@ -450,6 +450,8 @@ public sealed class SettingsCatalog
                 ["esc", "escape", "discard", "stop", "double-tap"]),
             Item("keyboard.talk", "Clicky", "Talk to Clicky", "Ask about anything on screen. It answers out loud and points.",
                 ["ctrl", "win", "windows key", "control windows", "voice", "ask", "companion"]),
+            Item("keyboard.mouseTalk", "Clicky", "Talk with a mouse button", "Hold it to ask, let go to send, like the keys. For a wireless mouse away from the keyboard.",
+                ["mouse", "button", "side button", "back button", "forward button", "middle", "wireless", "remote", "trigger"]),
             Item("keyboard.type", "Clicky", "Type to Clicky", "A one-line composer opens in the island.",
                 ["ctrl", "composer", "island", "text", "control twice"]),
             // Hands-free runs on fast voice or, without a realtime key, on the standard lane; with nothing that
