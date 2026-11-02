@@ -126,7 +126,10 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         // The Teacher plugin's board windows (its state is Core's TeacherBoard).
         TeacherBoard.Shared.Surface = new TeacherBoardWindows(platform.Screens);
         // The drawing stage's window (its state is Core's DrawStageController); WebView2 starts the first time it is shown.
-        DrawStageController.Shared.Surface = new DrawStageWindow();
+        // Its drawings are saved to Videos\OpenClicky as a picture and a video.
+        var drawStageWindow = new DrawStageWindow();
+        DrawStageController.Shared.Surface = drawStageWindow;
+        DrawStageController.Shared.Saver = new DrawingRecorder(drawStageWindow, DrawStageController.Shared);
         // Marking part of the screen to ask about (the island's marker button, Ctrl+Alt+M); its state is Core's ScreenMarker.
         screenMarker = new Overlay.ScreenMarkerWindow(platform.Screens);
         ScreenMarker.Shared.Surface = screenMarker;

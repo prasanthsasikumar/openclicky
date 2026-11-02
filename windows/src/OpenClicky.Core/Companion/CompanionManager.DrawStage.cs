@@ -8,7 +8,12 @@
 //  with no program, or a stage that never started, hands the question back to the ask lane before
 //  anything was said; a voice that fails partway hands the rest to the system voice.
 //
+//  A drawing that finished stays up (DrawStageController.Current). A question asked while it is up
+//  may be a follow-up: the model reads the drawing's program and adds to it or draws it again, or
+//  hands the question back. "Save it", or the page's Save button, saves it (IDrawingSaver).
+//
 
+using System.Collections.Concurrent;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Plugins.DrawStage;
@@ -33,6 +38,9 @@ public sealed partial class CompanionManager
     /// <summary>The fast-voice question being answered by drawing, while it is (null otherwise).</summary>
     private CancellationTokenSource? realtimeDrawing;
 
+    /// <summary>Until then the fast voice's own replies are cut (it was asked to save the drawing, which the app does).</summary>
+    private DateTimeOffset fastVoiceQuietUntil;
+
     /// <summary>
     /// Fast voice (Realtime): a spoken question a picture answers is drawn on the stage and narrated by the answer voice,
     /// as on the ask lane, while the fast voice's own reply is cut so two voices never talk over each other. False when
@@ -40,9 +48,9 @@ public sealed partial class CompanionManager
     /// </summary>
     private bool StartRealtimeDrawing(string transcript, CompanionScreenCapture? capture)
     {
-        if (capture is null || DrawStageController.Shared.Surface is null || !DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)
-            || !DrawStageLesson.WantsADrawing(transcript))
+        if (!IsForTheStage(transcript, capture))
         {
+            DrawStageController.Shared.ClearIfShowing("a question that isn't about the drawing");
             return false;
         }
         realtimeDrawing?.Cancel();
@@ -88,23 +96,32 @@ public sealed partial class CompanionManager
         (byte[] Data, string Label)? markCloseUp = null, string? markedAreaLine = null)
     {
         var stage = DrawStageController.Shared;
-        if (capture is null || stage.Surface is null || !DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)
-            || !DrawStageLesson.WantsADrawing(transcript))
+        if (capture is null || !IsForTheStage(transcript, capture))
         {
+            stage.ClearIfShowing("a question that isn't about the drawing");
             return false;
         }
-        AppLog.Write($"draw: answering by drawing ({capture.ScreenshotWidthInPixels}×{capture.ScreenshotHeightInPixels} canvas)");
+        // The drawing still up, when the question is asked on its screen: the question may be about it.
+        var drawingUp = DrawingUpOn(capture);
+        var wantsADrawing = DrawStageLesson.WantsADrawing(transcript);
+        AppLog.Write($"draw: answering by drawing ({capture.ScreenshotWidthInPixels}×{capture.ScreenshotHeightInPixels} canvas"
+            + (drawingUp is null ? ")" : $", a follow-up to the drawing up ({drawingUp.Lines.Count} lines))"));
         // One lesson per question: the Teacher's own board stays away from this one.
         TeacherBoard.Shared.QuestionHasLesson = true;
 
         var voiceSession = answerVoicePlayer.MakeAnswerSession();
-        var speech = new SpeechQueue(voiceSession.AudioAsync, (audio, token) => answerVoicePlayer.PlayToCompletionAsync(audio, token));
+        // Each line's audio is kept with the drawing, so a saved video says it in the same voice.
+        var audioByLine = new ConcurrentDictionary<string, byte[]>();
+        var speech = new SpeechQueue(async (text, token) => audioByLine[text] = await voiceSession.AudioAsync(text, token),
+            (audio, token) => answerVoicePlayer.PlayToCompletionAsync(audio, token));
         // The stop button and a new question stop this answer's voice like any other (StopActiveAnswer).
         using var answerCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         activeAnswerSpeaker = null;
         activeAnswerPlayback = answerCancellation;
         var startedAt = DateTimeOffset.UtcNow;
-        var writer = DrawStageLesson.WriterFor(OpenClickyConfiguration.Settings, claudeAPI);
+        var settings = OpenClickyConfiguration.Settings;
+        var writer = DrawStageLesson.WriterFor(settings, claudeAPI);
+        var detail = DrawStageLesson.DetailFrom(settings.DrawingDetail);
         try
         {
             var result = await DrawingAnswer.RunAsync(
@@ -112,13 +129,14 @@ public sealed partial class CompanionManager
                 capture,
                 async (onReplySoFar, token) => (await writer.AnalyzeImageStreamingAsync(
                     markCloseUp is { } closeUp ? [ImageLabeledWithItsPixelSize(capture), closeUp] : [ImageLabeledWithItsPixelSize(capture)],
-                    DrawStageLesson.SystemPrompt(capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels),
+                    DrawStageLesson.SystemPrompt(capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels, detail, settings.DrawingInstructions,
+                        DrawStageLesson.OffersPieces(settings)),
                     history,
-                    DrawStageLesson.UserPrompt(transcript, markedAreaLine),
+                    drawingUp is null ? DrawStageLesson.UserPrompt(transcript, markedAreaLine) : DrawStageLesson.FollowUpPrompt(transcript, drawingUp, markedAreaLine),
                     tools: null,
                     onReplySoFar,
                     token,
-                    DrawStageLesson.MaximumOutputTokens)).Text,
+                    DrawStageLesson.OutputTokens(detail))).Text,
                 speech,
                 services.MainThread.Post,
                 onFirstAudio: () => services.MainThread.Post(() =>
@@ -129,7 +147,9 @@ public sealed partial class CompanionManager
                 }),
                 line => AppLog.Write($"draw: {line}"),
                 answerCancellation.Token,
-                holdLine: DrawingAnswer.HoldLine);
+                // A question that may not be about the drawing at all says nothing until it is drawn.
+                holdLine: wantsADrawing ? DrawingAnswer.HoldLine : null,
+                followUp: drawingUp);
             if (!result.Drew)
             {
                 TeacherBoard.Shared.QuestionHasLesson = false;
@@ -141,6 +161,15 @@ public sealed partial class CompanionManager
                 SpeakWithSystemVoice(string.Join(" ", unspoken));
             }
             if (result.SpokenLines.Count > 0) RememberExchange(transcript, string.Join(" ", result.SpokenLines));
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                var lines = result.DrawnLines(text => audioByLine.TryGetValue(text, out var audio) ? audio : null);
+                var drawing = result.KeptTheDrawing && drawingUp is not null
+                    ? drawingUp.AddedTo(transcript, result.Program, lines)
+                    : new DrawnAnswer([transcript], result.Program, capture.DisplayFrame, capture.DisplayScale, capture.ScreenshotWidthInPixels,
+                        capture.ScreenshotHeightInPixels, lines);
+                services.MainThread.Post(() => stage.Remember(drawing));
+            }
             AppLog.Write($"draw: done in {(DateTimeOffset.UtcNow - startedAt).TotalSeconds:0.0} s ({result.SpokenLines.Count} lines, {result.ProgramCharacters} chars)");
             return true;
         }
@@ -148,5 +177,95 @@ public sealed partial class CompanionManager
         {
             if (ReferenceEquals(activeAnswerPlayback, answerCancellation)) activeAnswerPlayback = null;
         }
+    }
+
+    /// <summary>Whether the stage answers <paramref name="transcript"/>: one a picture answers, or one that may be about the
+    /// drawing still up on <paramref name="capture"/>'s screen.</summary>
+    private bool IsForTheStage(string transcript, CompanionScreenCapture? capture) =>
+        capture is not null && DrawStageController.Shared.Surface is not null && DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)
+        && (DrawStageLesson.WantsADrawing(transcript) || (DrawingUpOn(capture) is not null && DrawStageLesson.MayBeAFollowUp(transcript)));
+
+    /// <summary>The finished drawing on the stage, when it is on <paramref name="capture"/>'s screen.</summary>
+    private static DrawnAnswer? DrawingUpOn(CompanionScreenCapture capture) =>
+        DrawStageController.Shared.Current is { } drawing && drawing.Frame == capture.DisplayFrame ? drawing : null;
+
+    // MARK: - Saving the drawing
+
+    /// <summary>The drawing being saved, while it is.</summary>
+    private CancellationTokenSource? drawingSave;
+
+    /// <summary>"Save it" while a drawing is up: it is saved (the picture, the video or both, as asked), and true; otherwise
+    /// false (the request is answered as usual).</summary>
+    private bool TrySaveDrawing(string request)
+    {
+        if (DrawStageLesson.SaveRequestKind(request) is not { } what || DrawStageController.Shared.Current is null) return false;
+        AppLog.Write($"draw: asked to save the drawing ({what})");
+        SaveDrawing(what);
+        return true;
+    }
+
+    /// <summary>Saves the drawing up on the stage: a picture of it, a video of it drawn again with its voice, or both. How it
+    /// goes shows beside the drawing.</summary>
+    private void SaveDrawing(DrawingSaveKind what)
+    {
+        var stage = DrawStageController.Shared;
+        if (drawingSave is not null) return;
+        if (stage.Current is not { } drawing || stage.Saver is not { } saver)
+        {
+            ShowAskCaption("There's no finished drawing to save.", 4);
+            return;
+        }
+        var cancellation = new CancellationTokenSource();
+        drawingSave = cancellation;
+        _ = SaveDrawingAsync(saver, drawing, what, cancellation);
+    }
+
+    private async Task SaveDrawingAsync(IDrawingSaver saver, DrawnAnswer drawing, DrawingSaveKind what, CancellationTokenSource cancellation)
+    {
+        var stage = DrawStageController.Shared;
+        var startedAt = DateTimeOffset.UtcNow;
+        try
+        {
+            stage.ShowSaving(new DrawingSaveProgress(what == DrawingSaveKind.Picture ? "Saving the picture…" : "Getting ready…"));
+            var saved = await saver.SaveAsync(drawing, what, progress => services.MainThread.Post(() =>
+            {
+                if (!cancellation.IsCancellationRequested) stage.ShowSaving(progress);
+            }), cancellation.Token);
+            if (saved.Failure is { } failure)
+            {
+                AppLog.Write($"draw: saving failed ({failure})");
+                stage.ShowSaved($"Couldn't save it: {failure}", failed: true);
+                return;
+            }
+            AppLog.Write($"draw: saved in {(DateTimeOffset.UtcNow - startedAt).TotalSeconds:0.0} s (picture {saved.PicturePath is not null}, video {saved.VideoPath is not null})");
+            var where = saved.VideoPath ?? saved.PicturePath;
+            var lostTheVideo = what != DrawingSaveKind.Picture && saved.VideoPath is null;
+            stage.ShowSaved(where is null ? "Saved."
+                : lostTheVideo ? $"The video couldn't be made; the picture is in {Path.GetFileName(Path.GetDirectoryName(where))}"
+                : $"Saved to {Path.GetFileName(Path.GetDirectoryName(where))}: {Path.GetFileName(where)}", failed: lostTheVideo);
+        }
+        catch (Exception error) when (error is OperationCanceledException || cancellation.IsCancellationRequested)
+        {
+            AppLog.Write("draw: saving stopped");
+            stage.ShowSaved("Saving stopped.", failed: true);
+        }
+        catch (Exception error)
+        {
+            AppLog.Write($"draw: saving failed ({error.GetType().Name}: {error.Message})");
+            stage.ShowSaved("Couldn't save the drawing.", failed: true);
+        }
+        finally
+        {
+            if (ReferenceEquals(drawingSave, cancellation)) drawingSave = null;
+            cancellation.Dispose();
+        }
+    }
+
+    /// <summary>A new question or esc stops a save in progress (its replay is on the stage the next answer needs).</summary>
+    private void StopSavingTheDrawing()
+    {
+        if (drawingSave is null) return;
+        drawingSave.Cancel();
+        drawingSave = null;
     }
 }

@@ -9,6 +9,13 @@ html, body {
   cursor: default;
 }
 
+/* The drawing, its 3D figures and their tags: moved and scaled as one (stage.js place). */
+#board {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+
 #stage {
   position: absolute;
   inset: 0;
@@ -25,8 +32,11 @@ html, body {
   pointer-events: none;
 }
 
+/* The ground's shadow fades out at the figure's box instead of stopping at its edge. */
 #figures canvas {
   position: absolute;
+  mask-image: linear-gradient(to bottom, #000 93%, transparent), linear-gradient(to right, transparent, #000 3%, #000 97%, transparent);
+  mask-composite: intersect;
 }
 
 #labels3d text {
@@ -60,6 +70,141 @@ html, body {
 
 #stage .fade {
   opacity: 0;
+}
+
+/* Behind the drawing while it is recorded: the video shows paper there, never the screen under the stage. */
+#paper {
+  position: absolute;
+  background: #F4EFE6;
+}
+
+#paper[hidden] {
+  display: none;
+}
+
+/* The Picture and Video buttons in a finished drawing's corner (the stage window takes the mouse over them). */
+#tools {
+  position: absolute;
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+#tools[hidden], #grip[hidden], body.recording #tools, body.recording #grip, body.recording #caption {
+  display: none;
+}
+
+#tools button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The grip in the drawing's bottom-right corner: drag it to make the drawing bigger or smaller. */
+#grip {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  pointer-events: auto;
+  cursor: nwse-resize;
+  border-radius: 0 0 8px 0;
+  background: linear-gradient(135deg, transparent 0 46%, rgba(30, 34, 48, 0.4) 46% 52%, transparent 52% 64%,
+    rgba(30, 34, 48, 0.4) 64% 70%, transparent 70% 82%, rgba(30, 34, 48, 0.4) 82% 88%, transparent 88%);
+}
+
+#grip:hover {
+  background-color: rgba(47, 107, 255, 0.12);
+}
+
+/* What saving is doing, just outside the drawing (so a video of it never has this in). */
+#saving {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(20, 22, 28, 0.86);
+  color: #FFFFFF;
+  font: 500 14px/1.2 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+#saving[hidden] {
+  display: none;
+}
+
+#saving .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #FFFFFF;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+#saving.done .spinner, #saving.failed .spinner {
+  animation: none;
+  border: none;
+  font: 14px/14px "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  text-align: center;
+}
+
+#saving.done .spinner::before { content: "\E73E"; color: #5BD68A; }
+#saving.failed .spinner::before { content: "\E783"; color: #FF7A7E; }
+
+#saving .bar {
+  position: relative;
+  width: 120px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+#saving .bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: #4C8DFF;
+  transition: width 0.3s ease;
+}
+
+#saving.indeterminate .bar span {
+  width: 35% !important;
+  animation: slide 1.2s ease-in-out infinite;
+}
+
+#saving.done .bar, #saving.failed .bar {
+  display: none;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes slide { from { left: -35%; } to { left: 100%; } }
+
+#tools button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgba(30, 34, 48, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1E2230;
+  font: 600 14px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+}
+
+#tools button:hover {
+  background: #FFFFFF;
+  border-color: #2F6BFF;
+  color: #2F6BFF;
+}
+
+#tools .icon {
+  font: 15px/1 "Segoe Fluent Icons", "Segoe MDL2 Assets";
 }
 
 /* What is being said, at the bottom of the screen. */

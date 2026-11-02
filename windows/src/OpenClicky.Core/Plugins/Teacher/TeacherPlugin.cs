@@ -251,6 +251,14 @@ public static class TeacherPlugin
         return TeacherBoard.Shared.Clear(reason) || stageWasShowing;
     }
 
+    /// <summary>A new question takes the board off the screen; a finished drawing on the drawing stage stays up while the
+    /// question is answered, since it may be about the drawing (a question that isn't clears it then).</summary>
+    public static void ClearBoardForNewQuestion()
+    {
+        DrawStage.DrawStageController.Shared.HoldForFollowUp("a new question");
+        TeacherBoard.Shared.Clear("a new question");
+    }
+
     /// <summary>Esc takes the lesson off the screen whatever else it stops (the ask lane, the fast voice, or nothing),
     /// as on the Mac; a dictation take in progress keeps esc to itself.</summary>
     public static bool EscClearsTheBoard(EscapeTarget target) => target != EscapeTarget.DictationTake;

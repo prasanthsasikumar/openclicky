@@ -5,12 +5,23 @@
 // painted with a pen, in order, each beat's strokes spread over the time its line is spoken: by the app's voice
 // (pace "speech": the page asks for each line with lineDue) or by an estimate of 2.6 words a second.
 // The page answers ready, line (each say() as it runs), programRan (all of it ran), lineDue, finished, log and error.
+//
+// continueStream runs a follow-up's program after the one drawn (the drawing and its names stay). Once the app has
+// remembered a finished drawing, Picture and Video buttons sit in its corner (they say save) with a resize grip in the
+// other; measure answers with the drawing's box (bounds), recording hides the caption and the buttons while the app
+// records the drawing, and saving shows what the app is doing just outside it. A drawing on a card can be dragged
+// about by the card (and the wheel over it resizes it): the page then takes the mouse over the card (reportHits).
 'use strict';
 
 (function () {
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const svg = document.getElementById('stage');
   const caption = document.getElementById('caption');
+  const tools = document.getElementById('tools');
+  const paper = document.getElementById('paper');
+  const board = document.getElementById('board');
+  const grip = document.getElementById('grip');
+  const saving = document.getElementById('saving');
 
   const WORDS_PER_SECOND = 2.6;
   const LINE_GAP = 0.25;          // between two estimated lines
@@ -40,12 +51,23 @@
   let pending = [];              // complete statements not run yet
   let lines = [], items = [], released = 0, penFreeAt = 0, finishing = false, finishedSent = false, ranSent = false;
   let markCount = 0, errors = 0, uid = 0;
+  let remembered = false, recording = false;
 
   const now = () => performance.now() / 1000;
 
   function reset() {
     if (worker) worker.terminate();
     worker = null;
+    restartStream();
+    markCount = 0;
+    while (svg.lastChild) svg.removeChild(svg.lastChild);
+    if (window.Figure3D) window.Figure3D.clear();
+    if (typeof photos !== 'undefined') photos.clear();
+    svg.appendChild(defs());
+  }
+
+  // A new stream of statements: nothing pending, no lines, no button (what is drawn stays).
+  function restartStream() {
     clearTimeout(runTimer);
     running = null;
     source = '';
@@ -60,17 +82,16 @@
     finishing = false;
     finishedSent = false;
     ranSent = false;
-    markCount = 0;
     errors = 0;
-    while (svg.lastChild) svg.removeChild(svg.lastChild);
-    if (window.Figure3D) window.Figure3D.clear();
-    if (typeof photos !== 'undefined') photos.clear();
-    svg.appendChild(defs());
+    remembered = false;
     showCaption(null);
+    showTools();
   }
 
   function begin(message) {
     reset();
+    // A new drawing goes where it is drawn; the app's replay of one for a video keeps it where it was moved to.
+    if (!message.keepPlace) { resetPlace(); hideSaving(); }
     W = message.w > 0 ? message.w : W;
     H = message.h > 0 ? message.h : H;
     pace = message.pace === 'speech' ? 'speech' : 'estimate';
@@ -79,6 +100,20 @@
     worker.onmessage = event => ran(event.data);
     worker.onerror = event => { event.preventDefault(); stop('the program worker failed: ' + (event.message || 'unknown error')); };
     worker.postMessage({ type: 'begin', w: W, h: H });
+  }
+
+  // A follow-up that keeps the drawing: its statements run after the ones drawn, in the same worker, so the names the
+  // program made (its card, its figure and parts) are still there.
+  function continueStream(message) {
+    restartStream();
+    pace = message.pace === 'speech' ? 'speech' : 'estimate';
+    if (!worker) {
+      log('continue: the program worker had stopped; the follow-up runs without the earlier names');
+      worker = new Worker('stage-worker.js');
+      worker.onmessage = event => ran(event.data);
+      worker.onerror = event => { event.preventDefault(); stop('the program worker failed: ' + (event.message || 'unknown error')); };
+      worker.postMessage({ type: 'begin', w: W, h: H });
+    }
   }
 
   // ------------------------------------------------------------------ finding complete statements in a stream
@@ -202,6 +237,11 @@
 
   function addItem(mark) {
     markCount++;
+    // A 3D piece the app makes: asked for as soon as its statement runs, so it is being made while the voice talks.
+    if (mark.do === 'part3d' && mark.kind === 'piece') {
+      const p = mark.params || {};
+      send({ type: 'pieceWanted', id: mark.id, text: String(p.make || p.name || 'a part'), of: p.of ? String(p.of) : '', size: Array.isArray(p.size) ? p.size.slice(0, 3) : [1, 1, 1] });
+    }
     items.push({ mark, line: lines.length - 1, seconds: naturalSeconds(mark) });
   }
 
@@ -247,6 +287,8 @@
     }
     updateCaption(t);
     checkFinished(t);
+    // While it is drawn the card grows: where the page takes the mouse follows it.
+    if (t - hitsCheckedAt > 0.3 && !gesture) { hitsCheckedAt = t; showTools(); }
     requestAnimationFrame(tick);
   }
 
@@ -257,6 +299,7 @@
     finishedSent = true;
     showCaption(null);
     send({ type: 'finished' });
+    showTools();
   }
 
   function updateCaption(t) {
@@ -266,7 +309,7 @@
   }
 
   function showCaption(line) {
-    if (!line) { caption.hidden = true; return; }
+    if (!line || recording) { caption.hidden = true; return; }
     if (caption.textContent !== line.text) caption.textContent = line.text;
     caption.hidden = false;
   }
@@ -458,9 +501,11 @@
         if (!window.Figure3D) { log('3D is not loaded; skipped ' + m.do); break; }
         let rect = null;
         if (m.do === 'figure') {
-          // The figure's box on the page: the canvas units through the SVG's own mapping.
-          const ctm = svg.getScreenCTM();
-          rect = { x: ctm.a * m.at[0] + ctm.e, y: ctm.d * m.at[1] + ctm.f, w: ctm.a * m.w, h: ctm.d * m.h };
+          // The figure's box on the board: the canvas units through the SVG's viewBox (xMidYMid meet). Not the SVG's
+          // screen mapping, which has the board's move and size in too.
+          const k = Math.min(window.innerWidth / W, window.innerHeight / H);
+          const ox = (window.innerWidth - W * k) / 2, oy = (window.innerHeight - H * k) / 2;
+          rect = { x: ox + k * m.at[0], y: oy + k * m.at[1], w: k * m.w, h: k * m.h };
         }
         window.Figure3D.apply(m, seconds, rect);
         break;
@@ -468,6 +513,7 @@
       case 'photo': {
         // A polaroid: the frame and caption now, the photo when the app has found it (photoWanted → photo).
         const [x, y] = m.at, pad = 10, captionRoom = m.caption ? 34 : 12;
+        group.setAttribute('data-kind', 'photo');
         const frame = el('g', { filter: 'url(#card-shadow)' });
         frame.appendChild(el('rect', { x, y, width: m.w, height: m.h, rx: 6, fill: '#FFFFFF' }));
         const well = el('rect', { x: x + pad, y: y + pad, width: m.w - 2 * pad, height: m.h - pad - captionRoom, fill: '#ECEEF2' });
@@ -487,6 +533,7 @@
       }
       case 'card': {
         const [x, y] = m.at;
+        group.setAttribute('data-kind', 'card');
         const card = el('g', { filter: 'url(#card-shadow)' });
         card.appendChild(el('rect', { x, y, width: m.w, height: m.h, rx: 14, fill: tone(m.fill, '#FFF8E7'), stroke: '#00000014' }));
         if (m.title) {
@@ -531,11 +578,210 @@
     }
   }
 
+  // ------------------------------------------------------------------ the drawing's box, and its buttons
+  // What is drawn, in page pixels: its cards and photos with the 3D figures and their tags (marks pointing at the real
+  // screen outside them are left out), or every mark when there is no card; BOX_PAD round it.
+  const BOX_PAD = 14;
+  function contentBounds() {
+    let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    const add = box => {
+      if (!box || !(box.width > 1) || !(box.height > 1)) return;
+      l = Math.min(l, box.left); t = Math.min(t, box.top); r = Math.max(r, box.left + box.width); b = Math.max(b, box.top + box.height);
+    };
+    const framed = svg.querySelectorAll('[data-kind="card"], [data-kind="photo"]');
+    if (framed.length) framed.forEach(node => add(node.getBoundingClientRect()));
+    else for (const node of svg.children) if (node.tagName !== 'defs') add(node.getBoundingClientRect());
+    if (window.Figure3D) for (const f of window.Figure3D.rects()) add({ left: f.x, top: f.y, width: f.w, height: f.h });
+    for (const node of document.getElementById('labels3d').children) add(node.getBoundingClientRect());
+    if (!isFinite(l)) return null;
+    l = Math.max(0, l - BOX_PAD); t = Math.max(0, t - BOX_PAD);
+    r = Math.min(window.innerWidth, r + BOX_PAD); b = Math.min(window.innerHeight, b + BOX_PAD);
+    return { x: l, y: t, w: r - l, h: b - t };
+  }
+
+  // A drawing on a card (or a photo) can be moved and resized: not marks drawn straight over the screen, which point
+  // at what is under them.
+  function movable() {
+    return !recording && !!svg.querySelector('[data-kind="card"], [data-kind="photo"]');
+  }
+
+  // The buttons show in the drawing's top-right corner, and the grip in its bottom-right one, once the drawing has
+  // finished and the app remembers it.
+  let dragArea = null, hitsCheckedAt = 0, lastHits = '';
+  function showTools() {
+    const show = remembered && finishedSent && !recording;
+    const canMove = movable();
+    const box = show || canMove ? contentBounds() : null;
+    tools.hidden = grip.hidden = !(show && box);
+    if (show && box) {
+      tools.style.left = Math.max(0, box.x + box.w - tools.offsetWidth - 16) + 'px';
+      tools.style.top = (box.y + 16) + 'px';
+      // In the card's corner (the box has BOX_PAD round it).
+      grip.style.left = (box.x + box.w - BOX_PAD - grip.offsetWidth) + 'px';
+      grip.style.top = (box.y + box.h - BOX_PAD - grip.offsetHeight) + 'px';
+    }
+    dragArea = canMove ? box : null;
+    svg.style.cursor = canMove ? 'move' : '';
+    if (!gesture) reportHits();
+  }
+
+  // Where the stage window takes the mouse: over a card it can be dragged by, the 3D figures, the buttons and the grip
+  // (nowhere while recording, so a pointer resting over the drawing doesn't light up its parts in the video).
+  function reportHits() {
+    const rects = window.Figure3D && !recording ? window.Figure3D.rects() : [];
+    if (dragArea && !recording) rects.push(dragArea);
+    for (const node of [tools, grip]) {
+      if (node.hidden || recording) continue;
+      const box = node.getBoundingClientRect();
+      rects.push({ x: box.left, y: box.top, w: box.width, h: box.height });
+    }
+    const rounded = rects.map(r => ({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) }));
+    const key = JSON.stringify(rounded);
+    if (key === lastHits) return;
+    lastHits = key;
+    send({ type: 'figures', rects: rounded });
+  }
+
+  for (const button of tools.querySelectorAll('button')) {
+    button.addEventListener('click', () => { if (!button.disabled) send({ type: 'save', text: button.dataset.save }); });
+  }
+
+  // ------------------------------------------------------------------ moving and resizing the drawing
+  // The board (the drawing, its figures and their tags) is placed on the page at place.s × its own size, moved by
+  // (place.x, place.y): dragged by its card, resized by the grip or the wheel.
+  const place = { x: 0, y: 0, s: 1 };
+  const SMALLEST = 0.35, LARGEST = 3, KEEP_SHOWING = 80;
+  let gesture = null;
+
+  function applyPlace(settled) {
+    board.style.transform = place.x || place.y || place.s !== 1 ? `translate(${place.x}px, ${place.y}px) scale(${place.s})` : '';
+    // The 3D figures are drawn again at the new size once it settles, so they stay sharp.
+    if (settled && window.Figure3D) window.Figure3D.setScale(place.s);
+    showTools();
+  }
+
+  function resetPlace() {
+    place.x = place.y = 0;
+    place.s = 1;
+    gesture = null;
+    applyPlace(true);
+  }
+
+  // Scales the board to s keeping the page point (ax, ay) where it is.
+  function scaleAbout(ax, ay, from, s) {
+    s = clamp(s, SMALLEST, LARGEST);
+    const ux = (ax - from.x) / from.s, uy = (ay - from.y) / from.s;
+    place.s = s;
+    place.x = ax - s * ux;
+    place.y = ay - s * uy;
+  }
+
+  function startGesture(event, kind) {
+    const box = contentBounds();
+    if (!box || event.button !== 0) return;
+    gesture = { kind, box, x0: event.clientX, y0: event.clientY, from: { ...place }, id: event.pointerId };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function moveGesture(event) {
+    if (!gesture || event.pointerId !== gesture.id) return;
+    const dx = event.clientX - gesture.x0, dy = event.clientY - gesture.y0, b = gesture.box, from = gesture.from;
+    if (gesture.kind === 'move') {
+      // A part of it always stays on the screen.
+      place.x = from.x + clamp(dx, KEEP_SHOWING - b.x - b.w, window.innerWidth - KEEP_SHOWING - b.x);
+      place.y = from.y + clamp(dy, KEEP_SHOWING - b.y - b.h, window.innerHeight - KEEP_SHOWING - b.y);
+    } else {
+      // The grip follows the pointer along the diagonal; the drawing's top-left corner stays put.
+      scaleAbout(b.x, b.y, from, from.s * Math.max(0.05, (b.w + dx + b.h + dy) / (b.w + b.h)));
+    }
+    applyPlace(false);
+  }
+
+  function endGesture(event) {
+    if (!gesture || event.pointerId !== gesture.id) return;
+    gesture = null;
+    applyPlace(true);
+  }
+
+  svg.addEventListener('pointerdown', event => { if (movable()) startGesture(event, 'move'); });
+  grip.addEventListener('pointerdown', event => startGesture(event, 'size'));
+  for (const node of [svg, grip]) {
+    node.addEventListener('pointermove', moveGesture);
+    node.addEventListener('pointerup', endGesture);
+    node.addEventListener('pointercancel', endGesture);
+  }
+  svg.addEventListener('wheel', event => {
+    if (!movable() || gesture) return;
+    event.preventDefault();
+    scaleAbout(event.clientX, event.clientY, { ...place }, place.s * Math.exp(-event.deltaY * 0.0012));
+    applyPlace(true);
+  }, { passive: false });
+
+  // ------------------------------------------------------------------ saving: what the app is doing
+  // A pill with a bar (or a spinner while it can't say how far it is), just outside the drawing's box: below it, above
+  // it or beside it, so the video's frames (cut to the box) never have it in.
+  let savingBox = null, savingTimer = 0;
+  function showSaving(message) {
+    clearTimeout(savingTimer);
+    const busy = message.state !== 'done' && message.state !== 'failed';
+    for (const button of tools.querySelectorAll('button')) button.disabled = busy;
+    if (saving.hidden || !savingBox) savingBox = contentBounds();
+    const known = typeof message.fraction === 'number' && isFinite(message.fraction);
+    saving.className = busy ? (known ? '' : 'indeterminate') : message.state;
+    saving.querySelector('.text').textContent = String(message.text || '').slice(0, 140);
+    saving.querySelector('.bar span').style.width = (known ? Math.round(clamp(message.fraction, 0, 1) * 100) : 0) + '%';
+    saving.hidden = false;
+    placeSaving();
+    if (!busy) savingTimer = setTimeout(hideSaving, message.state === 'failed' ? 6000 : 4000);
+  }
+
+  function hideSaving() {
+    clearTimeout(savingTimer);
+    saving.hidden = true;
+    savingBox = null;
+    for (const button of tools.querySelectorAll('button')) button.disabled = false;
+  }
+
+  function placeSaving() {
+    const box = savingBox || { x: window.innerWidth / 2, y: window.innerHeight / 2, w: 0, h: 0 };
+    const w = saving.offsetWidth, h = saving.offsetHeight, gap = 10, edge = 6;
+    const pageW = window.innerWidth, pageH = window.innerHeight;
+    const middleX = clamp(box.x + box.w / 2 - w / 2, edge, pageW - w - edge);
+    const middleY = clamp(box.y + box.h / 2 - h / 2, edge, pageH - h - edge);
+    const spots = [
+      [middleX, box.y + box.h + gap], [middleX, box.y - h - gap],
+      [box.x + box.w + gap, middleY], [box.x - w - gap, middleY],
+    ];
+    const fits = ([x, y]) => x >= edge && y >= edge && x + w <= pageW - edge && y + h <= pageH - edge;
+    // No room outside: low inside it (it may show in the video then).
+    const [left, top] = spots.find(fits) || [middleX, clamp(box.y + box.h - h - 2 * gap, edge, pageH - h - edge)];
+    Object.assign(saving.style, { left: left + 'px', top: top + 'px' });
+  }
+
   // ------------------------------------------------------------------ messages from the app
   function handle(message) {
     if (!message || typeof message !== 'object') return;
     switch (message.type) {
       case 'beginStream': begin(message); break;
+      case 'continueStream': continueStream(message); break;
+      case 'remembered': remembered = true; showTools(); break;
+      case 'recording': {
+        recording = !!message.on;
+        document.body.classList.toggle('recording', recording);
+        // Paper behind the drawing's box, so its frames never show the screen under the stage.
+        const box = recording ? contentBounds() : null;
+        paper.hidden = !box;
+        if (box) Object.assign(paper.style, { left: box.x + 'px', top: box.y + 'px', width: box.w + 'px', height: box.h + 'px' });
+        showCaption(null);
+        showTools();
+        break;
+      }
+      case 'measure': {
+        const box = contentBounds() || { x: 0, y: 0, w: 0, h: 0 };
+        send({ type: 'bounds', x: box.x, y: box.y, w: box.w, h: box.h, pageWidth: window.innerWidth, pageHeight: window.innerHeight });
+        break;
+      }
       case 'feed': feed(message); break;
       case 'lineStarted': {
         const line = lines[message.k];
@@ -549,7 +795,9 @@
       }
       case 'finishNow': finishing = true; break;
       case 'photo': showPhoto(message); break;
-      case 'clear': reset(); break;
+      case 'piece': if (window.Figure3D) window.Figure3D.pieceArrived(message); break;
+      case 'saving': showSaving(message); break;
+      case 'clear': reset(); resetPlace(); hideSaving(); break;
       default: log('unknown message: ' + message.type);
     }
   }
@@ -559,7 +807,7 @@
   window.addEventListener('error', event => send({ type: 'error', text: 'page: ' + event.message + ' (' + (event.filename || '').split('/').pop() + ':' + event.lineno + ')' }));
   window.addEventListener('unhandledrejection', event => send({ type: 'error', text: 'page: ' + (event.reason && event.reason.message || event.reason) }));
   // For a preview in an ordinary browser: window.drawStage.handle({type: 'beginStream', ...}).
-  window.drawStage = { handle };
+  window.drawStage = { handle, reportHits, place };
   reset();
   requestAnimationFrame(tick);
   send({ type: 'ready' });

@@ -8,6 +8,10 @@
 // on the card. Labels are little tags that follow their part with a leader line; motions (spin, bob, stroke, pulse,
 // orbit, move) keep a machine running. stage.js hands each mark here through window.Figure3D.apply as the pacer
 // releases it.
+//
+// A piece (f.piece({make, size})) is made by the app (a 3D generator, or the drawing model from parts): it shows as a
+// faint box of its size until the app sends it (Figure3D.pieceArrived), then the real shape is fitted into that box,
+// and from then on it is a part like any other.
 import * as THREE from './vendor/three/three.module.min.js';
 import { RoomEnvironment } from './vendor/three/RoomEnvironment.js';
 
@@ -476,6 +480,7 @@ function cutPlanes(figure, cut) {
 // One unit of a part: its mesh with its outline and creases (and cut face), or an arrow.
 function partUnit(figure, kind, o) {
   if (kind === 'arrow') return arrowObject(o);
+  if (kind === 'piece') return pieceSlot(o);
   const g = geometry(kind, o);
   if (!g) return null;
   const mat = material(o);
@@ -538,7 +543,7 @@ function createFigure(m, rect, seconds) {
   Object.assign(canvas.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.w}px`, height: `${rect.h}px`, opacity: '0' });
   layer.appendChild(canvas);
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(pixelRatio());
   renderer.setSize(rect.w, rect.h, false);
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.NeutralToneMapping;
@@ -576,6 +581,8 @@ function createFigure(m, rect, seconds) {
     outlineSize: { value: new THREE.Vector2(2 * 1.4 / rect.w, 2 * 1.4 / rect.h) },
     tilt: num(m.tilt, 18), turn: num(m.turn, -28), spin: num(m.spin, 0), sway: m.spin ? 0 : 32, zoom: num(m.zoom, 1),
     center: new THREE.Vector3(), radius: 1, distance: 4, footprint: 1, floor: 0, framed: false, age: 0,
+    // How the person has turned it by dragging (any way round, no limit), and the camera's right and up.
+    held: new THREE.Quaternion(), right: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0),
   };
   figures.set(m.id, figure);
   canvas.animate([{ opacity: 0 }, { opacity: 1 }], { duration: Math.max(150, seconds * 1000), fill: 'forwards' });
@@ -585,13 +592,36 @@ function createFigure(m, rect, seconds) {
 
 // ------------------------------------------------------------------ turning, zooming and clicking a figure
 // The stage window takes the mouse only over a figure (it asks for that with the figures' boxes, reportFigures):
-// a drag turns the figure, the wheel zooms, a part under the pointer lights up, and a click on it asks about it.
+// a drag turns the figure any way round (left and right, up and down, all the way over), the wheel zooms, a part under
+// the pointer lights up, and a click on it asks about it.
 const host = window.chrome && window.chrome.webview;
 const raycaster = new THREE.Raycaster(), pointerNdc = new THREE.Vector2();
 
+// Where they are on the page, the board's move and size included (the page reports them with its own buttons' boxes:
+// stage.js reportHits).
+function figureRects() {
+  return [...figures.values()].map(f => {
+    const box = f.canvas.getBoundingClientRect();
+    return { x: box.left, y: box.top, w: box.width, h: box.height };
+  });
+}
+
+// How big the board is drawn (stage.js place.s): the figures render with more pixels when it is bigger, so they stay sharp.
+let boardScale = 1;
+const pixelRatio = () => Math.min(3, (window.devicePixelRatio || 1) * Math.max(1, boardScale));
+
+function setScale(scale) {
+  if (!(scale > 0) || scale === boardScale) return;
+  boardScale = scale;
+  for (const figure of figures.values()) {
+    figure.renderer.setPixelRatio(pixelRatio());
+    figure.renderer.setSize(figure.rect.w, figure.rect.h, false);
+  }
+}
+
 function reportFigures() {
-  const rects = [...figures.values()].map(f => ({ x: f.rect.x, y: f.rect.y, w: f.rect.w, h: f.rect.h }));
-  if (host) host.postMessage({ type: 'figures', rects });
+  if (window.drawStage && window.drawStage.reportHits) window.drawStage.reportHits();
+  else if (host) host.postMessage({ type: 'figures', rects: figureRects() });
 }
 
 function partAt(figure, event) {
@@ -632,16 +662,16 @@ function interact(figure) {
   canvas.style.pointerEvents = 'auto';
   let drag = null, hovered = null;
   canvas.addEventListener('pointerdown', event => {
-    drag = { x: event.clientX, y: event.clientY, moved: 0, turn: figure.turn, tilt: figure.tilt };
+    drag = { x: event.clientX, y: event.clientY, moved: 0 };
     canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener('pointermove', event => {
     if (drag) {
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-      drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
-      figure.sway = 0;
-      figure.turn = drag.turn - dx * 0.45;
-      figure.tilt = Math.max(-80, Math.min(80, drag.tilt + dy * 0.3));
+      drag.x = event.clientX;
+      drag.y = event.clientY;
+      drag.moved += Math.hypot(dx, dy);
+      if (drag.moved >= 5) turnBy(figure, dx, dy);
       return;
     }
     const part = partAt(figure, event);
@@ -666,16 +696,47 @@ function interact(figure) {
   }, { passive: false });
 }
 
+// A drag of dx, dy pixels turns the figure round the camera's up and right axes, as if the pointer rolled it. Its own
+// sway and spin stop where they are, so it doesn't jump when it is taken hold of.
+const turning = new THREE.Quaternion();
+function turnBy(figure, dx, dy) {
+  if (figure.sway || figure.spin) {
+    figure.held.premultiply(turning.setFromAxisAngle(AXES.y, figure.turned || 0));
+    figure.sway = 0;
+    figure.spin = 0;
+  }
+  const perPixel = Math.PI / Math.max(240, Math.min(figure.rect.w, figure.rect.h));
+  figure.held.premultiply(turning.setFromAxisAngle(figure.up, dx * perPixel));
+  figure.held.premultiply(turning.setFromAxisAngle(figure.right, dy * perPixel));
+  figure.held.normalize();
+}
+
 const degrees = v => THREE.MathUtils.degToRad(v);
 
 function addPart(m, seconds) {
   const figure = figures.get(m.fig);
   if (!figure) return;
   const o = m.params || {};
-  const unit = partUnit(figure, m.kind, o);
-  if (!unit) return;
+  const placed = placedPart(figure, m.kind, o);
+  if (!placed) return;
+  const scale = typeof o.scale === 'number' ? new THREE.Vector3(o.scale, o.scale, o.scale) : vec3(o.scale, new THREE.Vector3(1, 1, 1));
+  const parent = o.parent && parts.get(o.parent);
+  (parent ? parent.object : figure.root).add(placed);
+  const part = { id: m.id, kind: m.kind, name: typeof o.name === 'string' ? o.name : null, figure, object: placed, base: { position: placed.position.clone(), scale, rotation: placed.rotation.clone() }, motions: [], grow: { start: figure.age, seconds: Math.max(0.15, seconds) } };
+  placed.scale.setScalar(1e-3);
+  parts.set(m.id, part);
+  if (m.kind === 'piece') {
+    part.piece = o;
+    if (pieceResults.has(m.id)) fillPiece(part, pieceResults.get(m.id));
+  }
+}
+
+// A part's unit, repeated and placed: at, rot, copies, around and mirror.
+function placedPart(figure, kind, o) {
+  const unit = partUnit(figure, kind, o);
+  if (!unit) return null;
   const body = withCopies(unit, o);
-  const at = m.kind === 'arrow' ? new THREE.Vector3() : vec3(o.at, vec3(o.pos, new THREE.Vector3()));
+  const at = kind === 'arrow' ? new THREE.Vector3() : vec3(o.at, vec3(o.pos, new THREE.Vector3()));
   const rot = vec3(o.rot, null);
   // around: n (or {n, axis, center}) repeats the part round an axis through `center` (blades, teeth, bolts on a
   // flange); mirror: 'x' adds its mirror image across x = 0. The part then turns about that centre.
@@ -707,13 +768,256 @@ function addPart(m, seconds) {
     placed.position.copy(at);
     if (rot) placed.rotation.set(degrees(rot.x), degrees(rot.y), degrees(rot.z));
   }
-  const scale = typeof o.scale === 'number' ? new THREE.Vector3(o.scale, o.scale, o.scale) : vec3(o.scale, new THREE.Vector3(1, 1, 1));
-  const parent = o.parent && parts.get(o.parent);
-  (parent ? parent.object : figure.root).add(placed);
-  const part = { id: m.id, kind: m.kind, name: typeof o.name === 'string' ? o.name : null, figure, object: placed, base: { position: placed.position.clone(), scale, rotation: placed.rotation.clone() }, motions: [], grow: { start: figure.age, seconds: Math.max(0.15, seconds) } };
-  placed.scale.setScalar(1e-3);
-  parts.set(m.id, part);
+  return placed;
 }
+
+// ------------------------------------------------------------------ pieces the app makes
+// A piece waits in a faint box of its size (a slot; copies, around and mirror make more slots) until its shape comes.
+const pieceResults = new Map();
+const waitingSlots = new Set();
+
+function pieceSize(o) {
+  const s = Array.isArray(o.size) ? o.size : [];
+  return new THREE.Vector3(size(s[0], 1), size(s[1], 1), size(s[2], 1));
+}
+
+function pieceSlot(o) {
+  const box = pieceSize(o);
+  const m = new THREE.MeshStandardMaterial({ color: '#BFD0E6', transparent: true, opacity: 0.3, depthWrite: false, roughness: 0.6 });
+  const mesh = new THREE.Mesh(roundedBox(box.x, box.y, box.z, Math.min(box.x, box.y, box.z) * 0.12), m);
+  const slot = new THREE.Group();
+  slot.userData.pieceSlot = true;
+  slot.add(mesh);
+  waitingSlots.add(m);
+  return slot;
+}
+
+// The app's answer for piece `id` (pieceWanted → piece): kept until its part is drawn, then put in its slots.
+function pieceArrived(message) {
+  pieceResults.set(message.id, message);
+  const part = parts.get(message.id);
+  if (part) fillPiece(part, message);
+}
+
+async function fillPiece(part, message) {
+  if (part.filled) return;
+  part.filled = true;
+  const o = part.piece, figure = part.figure;
+  let model = null;
+  try {
+    if (message.kind === 'glb') model = await glbModel(message.data);
+    else if (message.kind === 'obj') model = objModel(message.text, o);
+    else if (message.kind === 'parts') model = partsModel(figure, message.parts, o);
+  } catch (error) {
+    if (host) host.postMessage({ type: 'log', text: 'piece ' + (o.make || '') + ' could not be shown: ' + (error && error.message || error) });
+  }
+  // Nothing came (or it couldn't be read): the box itself becomes the piece, solid, in the piece's material.
+  if (!model) model = new THREE.Mesh(roundedBox(...pieceSize(o).toArray(), Math.min(...pieceSize(o).toArray()) * 0.12), material(o));
+  // Parts were built for this box, so they are stretched to fill it (pieces meet as planned); a generated mesh keeps its
+  // proportions.
+  const fitted = fitToBox(model, pieceSize(o), message.kind === 'parts');
+  dressModel(figure, fitted, o, message.kind !== 'parts');
+  const slots = [];
+  part.object.traverse(child => { if (child.userData.pieceSlot) slots.push(child); });
+  slots.forEach((slot, k) => {
+    for (const child of [...slot.children]) {
+      slot.remove(child);
+      if (child.material) waitingSlots.delete(child.material);
+    }
+    const shape = k === 0 ? fitted : fitted.clone();
+    slot.add(shape);
+    shape.scale.multiplyScalar(0.001);
+    slot.userData.grow = { start: figure.age, seconds: 0.6, scale: shape.scale.clone().divideScalar(0.001), shape };
+  });
+}
+
+// The model scaled to fit the box and centred in it: evenly, or stretched to fill it in each direction.
+function fitToBox(model, box, stretch) {
+  model.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(model);
+  const extent = bounds.getSize(new THREE.Vector3()), centre = bounds.getCenter(new THREE.Vector3());
+  const ratios = ['x', 'y', 'z'].filter(a => extent[a] > 1e-6).map(a => box[a] / extent[a]);
+  const k = ratios.length ? Math.min(...ratios) : 1;
+  const holder = new THREE.Group();
+  model.position.sub(centre);
+  const inner = new THREE.Group();
+  inner.add(model);
+  inner.scale.setScalar(k);
+  if (stretch) for (const a of ['x', 'y', 'z']) if (extent[a] > 1e-6) inner.scale[a] = box[a] / extent[a];
+  holder.add(inner);
+  return holder;
+}
+
+// A made mesh as the figure's own parts look: shadows, its part's material when it has no colours of its own, the
+// part's cut, and an ink outline.
+function dressModel(figure, model, o, generated) {
+  const planes = cutPlanes(figure, o.cut);
+  const meshes = [];
+  model.traverse(child => { if (child.isMesh) meshes.push(child); });
+  for (const mesh of meshes) {
+    if (!generated) continue;
+    if (o.mat && !(mesh.material && (mesh.material.map || mesh.material.vertexColors))) mesh.material = material(o);
+    mesh.castShadow = mesh.receiveShadow = true;
+    if (planes) {
+      mesh.material.clippingPlanes = planes;
+      mesh.material.clipShadows = true;
+      mesh.parent.add(cutFaceMesh(mesh.geometry, mesh.material, planes));
+    }
+    if (mesh.geometry.attributes.position.count < 150000) {
+      const outline = outlineMesh(figure, mesh.geometry, planes);
+      outline.position.copy(mesh.position); outline.quaternion.copy(mesh.quaternion); outline.scale.copy(mesh.scale);
+      mesh.parent.add(outline);
+    }
+  }
+}
+
+// Parts of the figure language (from the drawing model): each built and placed as a part is, inside the piece.
+function partsModel(figure, specs, o) {
+  const group = new THREE.Group();
+  for (const spec of Array.isArray(specs) ? specs : []) {
+    if (!spec || typeof spec !== 'object' || spec.kind === 'piece') continue;
+    const params = Object.assign({}, spec, o.cut && !spec.cut ? { cut: o.cut } : {});
+    delete params.parent;
+    try {
+      const placed = placedPart(figure, String(spec.kind), params);
+      if (placed) group.add(placed);
+    } catch (_) { /* a part that can't be built is left out */ }
+  }
+  if (!group.children.length) throw new Error('no parts');
+  return group;
+}
+
+// An OBJ mesh (LLaMA-Mesh's: "v x y z" and "f a b c" lines, maybe with vertex colours), faceted.
+function objModel(text, o) {
+  const vertices = [], colours = [], positions = [], faceColours = [];
+  let coloured = false;
+  for (const line of String(text).split('\n')) {
+    const p = line.trim().split(/\s+/);
+    if (p[0] === 'v' && p.length >= 4) {
+      vertices.push([+p[1], +p[2], +p[3]]);
+      if (p.length >= 7) { colours.push([+p[4], +p[5], +p[6]]); coloured = true; } else colours.push(null);
+    } else if (p[0] === 'f' && p.length >= 4) {
+      const ids = p.slice(1).map(c => { const i = parseInt(c, 10); return i < 0 ? vertices.length + i : i - 1; });
+      for (let k = 1; k + 1 < ids.length; k++) {
+        for (const i of [ids[0], ids[k], ids[k + 1]]) {
+          const v = vertices[i];
+          if (!v) throw new Error('a face names a missing vertex');
+          positions.push(...v);
+          const c = colours[i] || [0.7, 0.7, 0.7];
+          faceColours.push(...c.map(x => x > 1 ? x / 255 : x));
+        }
+      }
+    }
+  }
+  if (positions.length < 9) throw new Error('no faces');
+  // Faces wound inward (the mesh's volume comes out negative) are turned outward, so its outline stays behind it.
+  let volume = 0;
+  for (let i = 0; i < positions.length; i += 9) {
+    const [ax, ay, az, bx, by, bz, cx, cy, cz] = positions.slice(i, i + 9);
+    volume += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+  }
+  if (volume < 0) {
+    for (let i = 0; i < positions.length; i += 9) {
+      for (const list of [positions, faceColours]) for (let k = 0; k < 3; k++) [list[i + 3 + k], list[i + 6 + k]] = [list[i + 6 + k], list[i + 3 + k]];
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  if (coloured) g.setAttribute('color', new THREE.Float32BufferAttribute(faceColours, 3));
+  g.computeVertexNormals();
+  const m = coloured && !o.mat ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 }) : material(o);
+  m.side = THREE.DoubleSide;
+  return new THREE.Mesh(g, m);
+}
+
+// A GLB file (a data URL), read here: meshes with their nodes' placement, positions, normals, UVs, vertex colours and
+// indices, and each material's base colour, metalness, roughness and colour texture. (Draco-compressed files can't be.)
+async function glbModel(dataUrl) {
+  const bytes = Uint8Array.from(atob(String(dataUrl).split(',')[1] || ''), c => c.charCodeAt(0));
+  const view = new DataView(bytes.buffer);
+  if (bytes.length < 20 || view.getUint32(0, true) !== 0x46546C67) throw new Error('not a GLB file');
+  let json = null, bin = null;
+  for (let offset = 12; offset + 8 <= bytes.length;) {
+    const length = view.getUint32(offset, true), type = view.getUint32(offset + 4, true);
+    const chunk = bytes.subarray(offset + 8, offset + 8 + length);
+    if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(chunk));
+    else if (type === 0x004E4942) bin = chunk;
+    offset += 8 + length;
+  }
+  if (!json) throw new Error('the GLB has no JSON');
+  if ((json.extensionsUsed || []).includes('KHR_draco_mesh_compression')) throw new Error('Draco-compressed GLB files are not read');
+  const COMPONENTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
+  const ARRAYS = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array };
+  const attribute = index => {
+    const a = json.accessors[index], view = json.bufferViews[a.bufferView];
+    const Arr = ARRAYS[a.componentType], n = COMPONENTS[a.type], element = Arr.BYTES_PER_ELEMENT * n;
+    const start = (view.byteOffset || 0) + (a.byteOffset || 0), stride = view.byteStride || element;
+    const out = new Uint8Array(a.count * element);
+    for (let i = 0; i < a.count; i++) out.set(bin.subarray(start + i * stride, start + i * stride + element), i * element);
+    return new THREE.BufferAttribute(new Arr(out.buffer), n, !!a.normalized);
+  };
+  const textures = new Map();
+  const texture = async index => {
+    if (textures.has(index)) return textures.get(index);
+    const image = json.images[json.textures[index].source];
+    const v = json.bufferViews[image.bufferView];
+    const blob = new Blob([bin.subarray(v.byteOffset || 0, (v.byteOffset || 0) + v.byteLength)], { type: image.mimeType || 'image/png' });
+    const t = new THREE.Texture(await createImageBitmap(blob));
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.flipY = false;
+    t.needsUpdate = true;
+    textures.set(index, t);
+    return t;
+  };
+  const materials = new Map();
+  const materialAt = async index => {
+    if (index === undefined) return new THREE.MeshStandardMaterial({ color: '#B9BEC6', roughness: 0.5 });
+    if (materials.has(index)) return materials.get(index);
+    const spec = json.materials[index] || {}, pbr = spec.pbrMetallicRoughness || {};
+    const c = pbr.baseColorFactor || [1, 1, 1, 1];
+    const m = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(c[0], c[1], c[2]), metalness: num(pbr.metallicFactor, 0.1), roughness: num(pbr.roughnessFactor, 0.6),
+      side: spec.doubleSided ? THREE.DoubleSide : THREE.FrontSide,
+    });
+    if (c[3] < 1 || spec.alphaMode === 'BLEND') { m.transparent = true; m.opacity = c[3]; }
+    if (pbr.baseColorTexture) m.map = await texture(pbr.baseColorTexture.index);
+    materials.set(index, m);
+    return m;
+  };
+  const node = async index => {
+    const spec = json.nodes[index], object = new THREE.Group();
+    if (spec.matrix) object.applyMatrix4(new THREE.Matrix4().fromArray(spec.matrix));
+    else {
+      if (spec.translation) object.position.fromArray(spec.translation);
+      if (spec.rotation) object.quaternion.fromArray(spec.rotation);
+      if (spec.scale) object.scale.fromArray(spec.scale);
+    }
+    if (spec.mesh !== undefined) {
+      for (const primitive of json.meshes[spec.mesh].primitives) {
+        if (primitive.mode !== undefined && primitive.mode !== 4) continue;
+        const g = new THREE.BufferGeometry(), at = primitive.attributes;
+        if (at.POSITION === undefined) continue;
+        g.setAttribute('position', attribute(at.POSITION));
+        if (at.NORMAL !== undefined) g.setAttribute('normal', attribute(at.NORMAL));
+        if (at.TEXCOORD_0 !== undefined) g.setAttribute('uv', attribute(at.TEXCOORD_0));
+        if (at.COLOR_0 !== undefined) g.setAttribute('color', attribute(at.COLOR_0));
+        if (primitive.indices !== undefined) g.setIndex(attribute(primitive.indices));
+        if (at.NORMAL === undefined) g.computeVertexNormals();
+        const m = await materialAt(primitive.material);
+        if (at.COLOR_0 !== undefined) m.vertexColors = true;
+        object.add(new THREE.Mesh(g, m));
+      }
+    }
+    for (const child of spec.children || []) object.add(await node(child));
+    return object;
+  };
+  const scene = (json.scenes || [])[json.scene || 0];
+  const roots = scene ? scene.nodes : (json.nodes || []).map((_, i) => i);
+  const model = new THREE.Group();
+  for (const index of roots) model.add(await node(index));
+  return model;
+}
+
 
 // A label: a little paper tag with a coloured edge, tied to its part by a leader line that ends in a dot.
 const LABEL_TONES = { ink: '#1E2230', blue: '#2F6BFF', red: '#E5484D', green: '#25A55F', orange: '#F28C28', purple: '#7C5CD6', yellow: '#E3B23C', teal: '#1F9E99', pink: '#E0679A' };
@@ -765,7 +1069,7 @@ function setView(m) {
 
 // ------------------------------------------------------------------ every frame
 const box = new THREE.Box3(), point = new THREE.Vector3(), away = new THREE.Vector3(), corner = new THREE.Vector3();
-const toCamera = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
+const toCamera = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(), swayed = new THREE.Quaternion();
 
 function updatePart(part, t) {
   const object = part.object;
@@ -801,14 +1105,23 @@ function updatePart(part, t) {
 function updateFigure(figure, dt) {
   figure.age += dt;
   const t = figure.age;
+  for (const m of waitingSlots) m.opacity = 0.22 + 0.12 * Math.sin(t * 4);
+  figure.root.traverse(child => {
+    const grow = child.userData.grow;
+    if (!grow) return;
+    const k = Math.min(1, (t - grow.start) / grow.seconds);
+    grow.shape.scale.copy(grow.scale).multiplyScalar(Math.max(1e-3, easeOutBack(k)));
+    if (k >= 1) child.userData.grow = null;
+  });
   for (const part of parts.values()) if (part.figure === figure) updatePart(part, t);
   const sway = figure.sway ? Math.sin((t / 14) * Math.PI * 2) * figure.sway : 0;
   const turned = THREE.MathUtils.degToRad(sway) + figure.spin * t * Math.PI * 2 / 60;
-  // The figure's own box, measured unturned so the framing holds still while it sways.
-  figure.root.rotation.y = 0;
+  figure.turned = turned;
+  // The figure's own box, as the person turned it but without its sway, so the framing holds still while it sways.
+  figure.root.quaternion.copy(figure.held);
   figure.root.updateMatrixWorld(true);
   box.setFromObject(figure.root);
-  figure.root.rotation.y = turned;
+  figure.root.quaternion.premultiply(swayed.setFromAxisAngle(AXES.y, turned));
   figure.root.updateMatrixWorld(true);
   for (const plane of figure.cuts.values()) plane.world.copy(plane.local).applyMatrix4(figure.root.matrixWorld);
   const camera = figure.camera;
@@ -821,6 +1134,8 @@ function updateFigure(figure, dt) {
     const center = point.clone().applyAxisAngle(AXES.y, turned);
     right.crossVectors(AXES.y, toCamera).normalize();
     up.crossVectors(toCamera, right);
+    figure.right.copy(right);
+    figure.up.copy(up);
     const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2), tanH = tanV * camera.aspect;
     let needed = 0;
     for (let i = 0; i < 8; i++) {
@@ -862,41 +1177,56 @@ function updateFigure(figure, dt) {
   contact.position.set(c.x, figure.floor - r * 0.005, c.z);
   contact.scale.setScalar(figure.footprint * 1.25);
   figure.renderer.render(figure.scene, camera);
-  placeLabels(figure);
+  placeLabels(figure, dt);
 }
 
-function placeLabels(figure) {
+function placeLabels(figure, dt) {
   const { rect } = figure;
   const middle = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
   const placed = [];
-  for (const label of figure.labels) {
+  figure.labels.forEach((label, index) => {
     if (label.part) {
       if (label.at) point.copy(label.at).applyMatrix4(label.part.object.matrixWorld);
       else { box.setFromObject(label.part.object); box.getCenter(point); }
     } else point.copy(label.at || figure.center);
     point.project(figure.camera);
     const ax = rect.x + (point.x * 0.5 + 0.5) * rect.w, ay = rect.y + (-point.y * 0.5 + 0.5) * rect.h;
-    let dx = ax - middle.x, dy = ay - middle.y;
-    const length = Math.hypot(dx, dy) || 1;
-    dx /= length; dy /= length;
-    if (Math.abs(dx) < 0.35) dx = dx < 0 ? -0.35 : 0.35;                   // labels sit to the side, not on top of each other
+    // A tag keeps its side until its part has clearly crossed the middle, so a part on the figure's axis (a rocket's
+    // nozzle, swaying) doesn't flip it from side to side every frame.
+    const offset = ax - middle.x;
+    if (!label.side || offset * label.side < -rect.w * 0.08) label.side = offset < 0 ? -1 : 1;
+    const length = Math.hypot(offset, ay - middle.y) || 1;
+    const dx = label.side * Math.max(0.35, Math.abs(offset) / length), dy = (ay - middle.y) / length;
     const reach = Math.max(60, rect.w * 0.18);
     const lx = Math.max(rect.x - 120, Math.min(rect.x + rect.w + 120, ax + dx * reach));
     const ly = Math.max(rect.y + 16, Math.min(rect.y + rect.h - 16, ay + dy * reach * 0.6));
-    placed.push({ label, ax, ay, lx, ly, side: dx > 0 ? 1 : -1 });
-  }
+    placed.push({ label, index, ax, ay, lx, ly, side: label.side });
+  });
   // Tags on the same side keep a tag's height apart, so two parts near each other never print on top of each other.
+  // They stack in the order of their parts (ties by the order they came in), so two tags at about the same height
+  // don't swap places to and fro.
   for (const side of [-1, 1]) {
-    const column = placed.filter(p => p.side === side).sort((a, b) => a.ly - b.ly);
+    const column = placed.filter(p => p.side === side).sort((a, b) => (a.ay - b.ay) || (a.index - b.index));
     for (let i = 1; i < column.length; i++) column[i].ly = Math.max(column[i].ly, column[i - 1].ly + column[i - 1].label.size * 1.75 + 6);
     const overflow = column.length ? column[column.length - 1].ly - (rect.y + rect.h - 16) : 0;
     if (overflow > 0) for (const p of column) p.ly -= overflow;
+  }
+  // Tags glide to where they belong rather than jump (the dot stays on its part).
+  const glide = 1 - Math.exp(-Math.max(0, dt) * 8);
+  for (const p of placed) {
+    const { label } = p;
+    if (label.x === undefined || label.shownSide !== p.side) { label.x = p.lx; label.y = p.ly; label.shownSide = p.side; }
+    label.x += (p.lx - label.x) * glide;
+    label.y += (p.ly - label.y) * glide;
+    p.lx = label.x;
+    p.ly = label.y;
   }
   for (const { label, ax, ay, lx, ly, side } of placed) {
     // The text is measured once its font has loaded (the first second or so).
     if (label.measured < 60) { label.width = label.text.getComputedTextLength() || label.text.textContent.length * label.size * 0.5; label.measured++; }
     const pad = 9, h = label.size * 1.6, w = label.width + pad * 2 + 4;
-    const left = side > 0 ? lx : lx - w;
+    // Tags stay inside the figure's box, so they stay on its card (and in a saved video's frame).
+    const left = Math.max(rect.x + 4, Math.min(rect.x + rect.w - w - 4, side > 0 ? lx : lx - w));
     label.line.setAttribute('x1', ax); label.line.setAttribute('y1', ay);
     label.line.setAttribute('x2', side > 0 ? left : left + w); label.line.setAttribute('y2', ly);
     label.dot.setAttribute('cx', ax); label.dot.setAttribute('cy', ay);
@@ -918,6 +1248,8 @@ requestAnimationFrame(frame);
 
 // ------------------------------------------------------------------ what stage.js calls
 window.Figure3D = {
+  /** The figures' boxes in page pixels. */
+  rects: figureRects,
   /** One released mark: rect is the figure's box in page pixels (figure marks only). */
   apply(m, seconds, rect) {
     switch (m.do) {
@@ -928,6 +1260,10 @@ window.Figure3D = {
       case 'view3d': setView(m); break;
     }
   },
+  /** The app's answer for a piece the page asked for (pieceWanted). */
+  pieceArrived,
+  /** The board is drawn at this size (1 as drawn). */
+  setScale,
   clear() {
     for (const figure of figures.values()) {
       figure.renderer.dispose();
@@ -937,6 +1273,8 @@ window.Figure3D = {
     }
     figures.clear();
     parts.clear();
+    pieceResults.clear();
+    waitingSlots.clear();
     reportFigures();
   },
 };

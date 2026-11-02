@@ -76,6 +76,16 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
 
     public void Post(string json) => webView?.CoreWebView2?.PostWebMessageAsJson(json);
 
+    /// <summary>The page as it looks now, the whole monitor's worth, as a PNG or JPEG; null before the page has loaded.
+    /// WebView2 renders it itself, so it works although the window is left out of screen captures.</summary>
+    public async Task<byte[]?> CaptureAsync(bool png)
+    {
+        if (webView?.CoreWebView2 is not { } page) return null;
+        using var stream = new MemoryStream();
+        await page.CapturePreviewAsync(png ? CoreWebView2CapturePreviewImageFormat.Png : CoreWebView2CapturePreviewImageFormat.Jpeg, stream);
+        return stream.ToArray();
+    }
+
     public void Dispose()
     {
         webView?.Close();
@@ -157,6 +167,8 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
         finally { Marshal.Release(visualPointer); }
 
         controller.DefaultBackgroundColor = System.Drawing.Color.Transparent;
+        // Visual hosting leaves the pointer's look to the window: the page's (grab over a figure, move over a card).
+        controller.CursorChanged += (_, _) => { if (takesMouse) SetCursor(controller.Cursor); };
         controller.ShouldDetectMonitorScaleChanges = false;
         var page = controller.CoreWebView2;
         var settings = page.Settings;
@@ -204,6 +216,9 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
                 return takesMouse ? HTCLIENT : HTTRANSPARENT;
             case WM_MOUSEACTIVATE:
                 return MA_NOACTIVATE;
+            case WM_SETCURSOR when takesMouse && webView is not null && (lParam.ToInt64() & 0xFFFF) == HTCLIENT:
+                SetCursor(webView.Cursor);
+                return 1;
             case WM_MOUSEMOVE or WM_LBUTTONDOWN or WM_LBUTTONUP or WM_RBUTTONDOWN or WM_RBUTTONUP or WM_MOUSEWHEEL when webView is not null:
             {
                 // A 3D figure is under the pointer: the mouse goes into the page (visual hosting has no window of its own).
@@ -291,6 +306,7 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
     private const uint SWP_SHOWWINDOW = 0x0040;
     private const uint WM_NCHITTEST = 0x0084;
     private const uint WM_MOUSEACTIVATE = 0x0021;
+    private const uint WM_SETCURSOR = 0x0020;
     private const nint HTTRANSPARENT = -1;
     private const nint HTCLIENT = 1;
     private const int GWL_EXSTYLE = -20;
@@ -309,6 +325,9 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
 
     [DllImport("user32.dll")]
     private static extern nint SetCapture(nint hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern nint SetCursor(nint hCursor);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

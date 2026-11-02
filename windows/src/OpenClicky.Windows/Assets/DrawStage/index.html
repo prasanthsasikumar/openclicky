@@ -11,10 +11,19 @@
 <link rel="stylesheet" href="stage.css">
 </head>
 <body>
+<div id="paper" hidden></div>
+<div id="board">
 <svg id="stage" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
 <div id="figures"></div>
 <svg id="labels3d" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
 <div id="caption" hidden></div>
+<div id="tools" hidden>
+<button type="button" data-save="picture" title="Save a picture of this drawing (PNG)"><span class="icon">&#xE8B9;</span>Picture</button>
+<button type="button" data-save="video" title="Save a video of this drawing being drawn, with its voice (MP4)"><span class="icon">&#xE714;</span>Video</button>
+</div>
+<div id="grip" hidden title="Drag to make the drawing bigger or smaller"></div>
+<div id="saving" hidden><span class="spinner"></span><span class="text"></span><span class="bar"><span></span></span></div>
 <script src="stage.js"></script>
 <script type="module" src="figure3d.js"></script>
 </body>

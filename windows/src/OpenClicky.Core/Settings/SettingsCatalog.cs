@@ -257,6 +257,12 @@ public sealed class SettingsCatalog
                 ["openai compatible", "custom", "server", "endpoint", "vllm", "llama.cpp", "localai", "deepseek", "together", "self-hosted", "api"]),
             Item("clicky.drawingSource", "Drawings come from", "Who writes the answers drawn on your screen. A stronger model draws better; answers can stay quick.",
                 ["drawing", "draw", "diagram", "teacher", "3d", "model", "explain", "whiteboard"]),
+            Item("clicky.drawingDetail", "How detailed", "More parts and finer detail take longer to draw. Very detailed suits a strong model.",
+                ["drawing", "detail", "detailed", "parts", "realistic", "real", "quality", "3d", "simple", "complex"]),
+            Item("clicky.pieceMaker", "3D pieces come from", "A complex thing (a plane, a car, an animal) is built from pieces made one at a time, each one clickable.",
+                ["3d", "generator", "pieces", "model", "mesh", "hunyuan", "llama-mesh", "ollama", "lm studio", "gpu", "graphics card", "realistic"]),
+            Item("clicky.drawingInstructions", "Your drawing instructions", "Added to every drawing's instructions: a style, a level, what to show more of.",
+                ["drawing", "prompt", "instructions", "style", "custom", "realistic", "kids", "colours", "language", "3d", "2d"]),
         ];
     }
 

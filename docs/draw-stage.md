@@ -4,7 +4,10 @@ Ask "how does this work?" about a rocket, a 3D printer, a heart, and OpenClicky 
 screen while it talks**: a hand-drawn diagram that appears stroke by stroke, each beat in step with the sentence
 being spoken. Machines, bodies and boards come as turning 3D models (cut open to show their inside) that you can
 drag, zoom and click to ask about a part, and a real photo can sit beside the drawing. Mark part of the screen first
-(the island's marker button or Ctrl+Alt+M) and the answer is about that part.
+(the island's marker button or Ctrl+Alt+M) and the answer is about that part. Ask again while the drawing is up ("now
+show it in 3D", "what does the turbine do?") and the answer builds on it. Drag the drawing by its card to move it out
+of the way, and drag its corner grip (or use the wheel over it) to make it bigger or smaller. Say "save it", or click
+its Picture or Video button, and it is saved as a picture, a video with its voice, or both.
 
 This is the same kind of feature HeyClicky ships as "draw and explain". It is written from scratch for OpenClicky:
 no HeyClicky code, prompts or assets are used.
@@ -58,11 +61,16 @@ running up to about 3× faster or 2× slower than its natural speed so they fini
 
 | App → page | |
 |---|---|
-| `beginStream {w, h, pace}` | a new program on a `w`×`h` canvas; wipes the old drawing |
+| `beginStream {w, h, pace, keepPlace?}` | a new program on a `w`×`h` canvas; wipes the old drawing (and where it was moved, unless `keepPlace`: a replay for a video) |
+| `continueStream {pace}` | a follow-up's program, run after the one drawn: the drawing and the program's names stay |
 | `feed {code, done}` | the whole program so far; `done` on the last |
 | `lineStarted {k}` / `lineEnded {k}` | the voice's timing for line `k` (pace `speech`) |
 | `finishNow` | draw everything still waiting, quickly (the voice was cut short) |
 | `clear` | wipe the drawing |
+| `remembered` | the app keeps the finished drawing: its Picture and Video buttons and its resize grip show |
+| `measure` | answer with the drawing's box (`bounds`) |
+| `recording {on}` | while the drawing is recorded: no caption, no buttons, no mouse, paper behind the drawing's box |
+| `saving {text, state, fraction?}` | how a save is going (`working`, with how far through when known) or ended (`done`, `failed`): a bar beside the drawing |
 
 | Page → app | |
 |---|---|
@@ -71,6 +79,9 @@ running up to about 3× faster or 2× slower than its natural speed so they fini
 | `programRan {lines}` | every statement has run, so every line is known (the voice may finish after the last) |
 | `lineDue {k, text}` | speak line `k` now (pace `speech`) |
 | `finished` | the program is done and everything is drawn |
+| `figures {rects}` | where the window takes the mouse: a card it can be dragged by, the 3D figures, the buttons and the grip |
+| `figurePart {text}` / `save {text}` | a part of a figure was clicked / the Picture or Video button was (`text`: `picture`, `video`) |
+| `bounds {x, y, w, h, pageWidth, pageHeight}` | the drawing's box: its cards, photos, figures and their tags |
 | `log {text}` / `error {text}` | warnings, statement errors, a stopped program |
 
 ## Answering a question by drawing (phase 1)
@@ -141,9 +152,82 @@ round an axis, `mirror: 'x'` adds its mirror image. Motion: `.spin .stroke .bob 
 `part.label(words, {color})`; camera: `f.view({tilt, turn, zoom})`. A part named by its const (`const liftFan =
 f.cyl(…)`) is asked about as "lift fan" when clicked.
 
+Dragging a figure turns it any way round, all the way over (it stops swaying where it was); the wheel zooms.
+
+How much a drawing shows is set in Settings → Clicky → Drawings: **How detailed** (simple: 8-15 parts and 3-4 beats;
+detailed: 15-40 parts; very detailed: 30-70 parts and up to 7 beats, with 16,000 tokens to write them) and **Your
+drawing instructions**, which are added to the end of every drawing's prompt (a style, a level, what to show more of).
+
 The look: soft key light with shadows on an invisible ground, a rim light behind, an ink outline round every part
-and lighter lines on its sharp edges, and labels as small tags on leader lines. The camera fits the figure's box.
+and lighter lines on its sharp edges, and labels as small tags on leader lines
+that keep to their side and their order while the figure sways. The camera fits the figure's box.
 When the first spoken line is slow to come, "One moment, let me draw that for you." is said first.
+
+## 3D pieces made apart
+
+A complex real thing (a plane, a car, an animal) is built from pieces, like a model kit: the drawing model lays it out
+as 3 to 8 pieces (`f.piece({make, of, size, at, rot, mirror, …})`: an F-35's fuselage, wing, tail fins, canopy and
+nozzle), and each piece is made on its own while the voice talks (`pieceWanted` → `piece`). It shows as a faint box of
+its size at once and fills in when it arrives; then it is a part like any other: labelled, clicked, cut, mirrored. The
+same piece is made once (`PieceWorkshop`), a few at a time.
+
+Who makes them (Settings → Clicky → Drawings → 3D pieces come from, `PieceMakers`):
+
+| Maker | Needs | Sends |
+|---|---|---|
+| Your drawing model | any answer source; best with a strong one | parts of the figure language (JSON), stretched to fill the piece's box |
+| LLaMA-Mesh in Ollama or LM Studio | about 5 GB (Q4) to 9 GB (Q8): `ollama pull hf.co/bartowski/LLaMA-Mesh-GGUF:Q8_0` | an OBJ mesh |
+| Hunyuan3D-2 server (`api_server.py`) | 6 GB for shapes, 16-24 GB with textures | a GLB, from a picture made by OpenAI's image model when there is an OpenAI key, else from the words |
+
+Settings reads the graphics card's memory (`GraphicsCards`) and suggests a maker for its grade: low (under 6 GB), medium
+(6-15 GB) or high (16 GB and up). A maker on another PC is reached by its address. A maker that fails hands the piece to
+the drawing model; one that can't be made at all becomes a solid box of the piece's size. Pieces are offered to the model
+when a maker is set up, or when drawings are very detailed. The page reads GLB files itself (meshes, node placement,
+colours, textures; not Draco-compressed ones) and OBJ meshes (inward-wound ones are turned outward).
+
+## Follow-up questions
+
+A finished drawing stays up, and the stage remembers it (`DrawStageController.Current`: its questions, its whole
+program, its screen, and each spoken line with how long it took and its audio). A new question holds it instead of
+clearing it. When the question may be about it (`DrawStageLesson.MayBeAFollowUp`: one a picture answers, or one that
+asks for more of the drawing, another view, a part of it), the model gets the drawing's program
+(`DrawStageLesson.FollowUpPrompt`) and answers one of three ways:
+
+- **Add to it**: the program starts with `keep()` and has only the new beats. The stage gets `continueStream`, and the
+  new statements run in the same worker after the old ones, so `c`, `f` and the parts are still there to label, move or
+  turn to (`f.view`). `DrawingAnswer` waits for the program's first statement before choosing.
+- **Draw it afresh**, another way ("now in 3D", a cutaway, simpler): a new program, as for a new question.
+- **`NONE`**: it isn't about the drawing. The drawing goes, and the question is answered as usual.
+
+A question that can't be about it (opening an app, small talk, a question for the agent) clears it first.
+
+## Saving a drawing
+
+"Save it" (`DrawStageLesson.SaveRequestKind`) or the Picture and Video buttons in the drawing's corner save the
+drawing up to `Videos\OpenClicky` (`DrawingRecorder`). "Save the picture" or the Picture button saves only the PNG;
+"save the video" or the Video button only the MP4; "save it" both.
+
+- **a PNG** of the drawing as it is, cut to its box: its cards, photos, 3D figures and their tags, on paper. Marks that
+  point at the real screen outside the card, and the screen itself, are never in it.
+- **an MP4** of it being drawn, with its voice. The stage draws it once more on screen, each line started and ended on
+  the clock it was first spoken on, while WebView2 captures the page (about 15 frames a second); each line's audio is
+  placed where its line starts. `DrawingVideo` writes H.264 and AAC with Media Foundation's sink writer (it ships with
+  Windows) through NAudio's bindings. While it records, the page shows no caption or button, takes no mouse, and puts
+  paper behind the drawing's box.
+
+A drawing about 40 seconds long takes about as long to save. A bar beside the drawing (below it, above it or to one
+side, so it stays out of the video) shows how far it is; the buttons wait meanwhile. A new question or esc stops a save;
+Explorer opens on the file when it is done.
+
+## Moving and resizing a drawing
+
+A drawing on a card (or a photo) sits on a board (`#board`) the page moves and scales as one, 3D figures and their
+tags included. Drag the card to move it (a part of it always stays on screen); drag the grip in its bottom-right corner,
+or turn the wheel over it, to make it bigger or smaller (0.35× to 3×). The 3D figures render with more pixels when it
+is bigger, so they stay sharp. While there is a card the stage window takes the mouse over it (the page reports the
+card's box with the figures'), so the card can be grabbed even while it is still being drawn; marks drawn straight
+over the screen (pointing at what is under them) are never movable. A new drawing goes where it is drawn; a replay for
+a video keeps it where it was moved.
 
 ## Marking part of the screen
 
@@ -186,8 +270,8 @@ The program is model-written code, so:
 | 1.x | the Realtime voice lane; a Settings switch; a model-callable tool for questions the heuristic misses |
 | 2 ✓ | `figure()` 3D figures with three.js r172 (`figure3d.js`, `vendor/three`): box, cyl, cone, sphere, torus, capsule, tube, lathe, extrude, spring, gear, arrow; real materials; parts growing in on their line; labels that follow their part; spin, stroke, bob, pulse, orbit, move |
 | 2.x ✓ | drag to turn, wheel to zoom, click a part → ask about it; cutaways, copies, mirror, rounded boxes, pipes, organic blobs; the studio look (shadows, outlines, rim light, tags); a hold line; marking part of the screen |
-| 3 | photo cards ✓, molecules, graphs and timelines, live edits for follow-up questions |
-| 4 | lessons: save, replay, export as video, quiz cards |
+| 3 | photo cards ✓, follow-up questions that add to the drawing ✓, molecules, graphs and timelines |
+| 4 | lessons: saving as a picture and a video with its voice ✓, quiz cards |
 
 ## Trying it
 
@@ -196,11 +280,13 @@ cd windows
 dotnet build OpenClicky.Windows.sln
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke my-program.js --speech --shot stage.png
-# the 3D samples: samples\heart-blob-3d.js, samples\jet-engine-cutaway-3d.js, samples\board-3d.js, samples\heart-photo-3d.js
+# the 3D samples: samples\heart-blob-3d.js, samples\jet-engine-cutaway-3d.js, samples\board-3d.js, samples\rocket-engine-3d.js, samples\heart-photo-3d.js
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke src\OpenClicky.Windows\Assets\DrawStage\samples\jet-engine-cutaway-3d.js
 # a whole drawing answer on a screenshot of your screen: a written reply, or your answer model's own (needs a key)
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke reply:src\OpenClicky.Windows\Assets\DrawStage\samples\heart-reply.md --voice
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke "lesson:how does a jet engine work?" --voice
+# a follow-up that adds to the drawing, then saving it (a PNG and an MP4 in Videos\OpenClicky)
+.\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke reply:src\OpenClicky.Windows\Assets\DrawStage\samples\jet-engine-cutaway-3d.js --then reply:src\OpenClicky.Windows\Assets\DrawStage\samples\jet-engine-followup-reply.md --voice --save
 ```
 
 Set `OPENCLICKY_DRAWSTAGE_DEVTOOLS=1` to allow the page's dev tools and context menu. To preview the page in an

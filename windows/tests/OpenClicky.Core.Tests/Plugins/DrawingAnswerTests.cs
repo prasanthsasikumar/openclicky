@@ -123,6 +123,11 @@ public partial class DrawingAnswerTests
             {
                 switch (type)
                 {
+                    case "continueStream":
+                        lines.Clear();
+                        programDone = false;
+                        finished = false;
+                        break;
                     case "feed":
                         foreach (Match say in SayCall().Matches((string)message["code"]!).Skip(lines.Count))
                         {
@@ -166,7 +171,7 @@ public partial class DrawingAnswerTests
 
     private static async Task<(DrawingAnswerResult Result, FakePage Page, List<string> Played)> DrawAsync(
         Func<Action<string>, CancellationToken, Task<string>> writeReply, FakePage? page = null, string? failingLine = null,
-        string? holdLine = null, TimeSpan? holdLineAfter = null)
+        string? holdLine = null, TimeSpan? holdLineAfter = null, DrawnAnswer? followUp = null)
     {
         page ??= new FakePage();
         var stage = new DrawStageController { Surface = page };
@@ -176,7 +181,7 @@ public partial class DrawingAnswerTests
             (audio, _) => { lock (played) played.Add(Encoding.UTF8.GetString(audio)); return Task.CompletedTask; });
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var result = await DrawingAnswer.RunAsync(stage, Capture, writeReply, speech, action => action(), () => { }, _ => { }, timeout.Token,
-            holdLine, holdLineAfter);
+            holdLine, holdLineAfter, followUp);
         return (result, page, played);
     }
 

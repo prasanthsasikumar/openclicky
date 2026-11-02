@@ -11,6 +11,7 @@ using OpenClicky.Core.Actions;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
@@ -86,13 +87,21 @@ public sealed partial class CompanionManager
     /// </summary>
     private void SendTranscriptToClaudeWithScreenshot(string transcript, bool isGuidedStepContinuation = false)
     {
+        StopSavingTheDrawing();
+        // "Save it" with a drawing up saves the drawing; nothing is asked.
+        if (!isGuidedStepContinuation && TrySaveDrawing(transcript))
+        {
+            IsAskInFlight = false;
+            VoiceState = CompanionVoiceState.Idle;
+            return;
+        }
         InterruptCurrentAnswer(includingAgentWork: false);
         // Anything the person asks starts afresh; only OpenClicky's own "what's next?" continues a guide.
         if (!isGuidedStepContinuation)
         {
             guidedStepsGivenSoFar = 0;
             guidedStepGoal = transcript;
-            TeacherPlugin.ClearBoard("a new question");
+            TeacherPlugin.ClearBoardForNewQuestion();
         }
         guidedStepPointedLocation = null;
         var cancellation = new CancellationTokenSource();
@@ -185,6 +194,7 @@ public sealed partial class CompanionManager
         if (agentLaneRuns)
         {
             AgentActivityText = "deciding…";
+            DrawStageController.Shared.ClearIfShowing("a question for the agent");
             var lane = await openClickyAgentClient.ClassifyLaneAsync(transcript, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             AppLog.Write($"agent: gate says {lane}");

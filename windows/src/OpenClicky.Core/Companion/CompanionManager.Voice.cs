@@ -96,7 +96,7 @@ public sealed partial class CompanionManager
                 var escapeTarget = AskLaneEscape.Target(IsTakeInProgress, AskLaneCanBeStopped,
                     realtimeIsBusy: EscStopsFastVoice(IsTakeInProgress, UsesRealtimeVoice, RealtimeVoiceClient.IsBusy));
                 // Whatever else it stops, esc takes a lesson off the screen too (never mid-take).
-                if (TeacherPlugin.EscClearsTheBoard(escapeTarget)) TeacherPlugin.ClearBoard("esc");
+                if (TeacherPlugin.EscClearsTheBoard(escapeTarget)) { StopSavingTheDrawing(); TeacherPlugin.ClearBoard("esc"); }
                 switch (escapeTarget)
                 {
                     case EscapeTarget.AskLane:
@@ -144,7 +144,7 @@ public sealed partial class CompanionManager
         InterruptCurrentAnswer(includingAgentWork: true);
         Overlay.ClearDetectedElementLocation();
         Overlay.DismissCursorCaption();
-        TeacherPlugin.ClearBoard("a new question");
+        TeacherPlugin.ClearBoardForNewQuestion();
         lastQuestionWasTyped = true;
         LastTranscript = trimmedText;
         AppLog.Write($"ask: typed request ({trimmedText.Length} chars)");

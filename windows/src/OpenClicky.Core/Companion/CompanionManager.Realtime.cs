@@ -73,6 +73,13 @@ public sealed partial class CompanionManager
             {
                 LastTranscript = text;
                 AppLog.Write($"talk: you said ({text.Length} chars)");
+                // "Save it" saves the drawing up; the fast voice keeps quiet about it.
+                if (TrySaveDrawing(text))
+                {
+                    fastVoiceQuietUntil = DateTimeOffset.UtcNow.AddSeconds(8);
+                    client.StopSpeaking();
+                    return;
+                }
                 // A question a picture answers is drawn and narrated on the stage; the fast voice steps aside for it.
                 if (!StartRealtimeDrawing(text, client.LastScreenCapture)) TeacherPlugin.StartLesson(text, client.LastScreenCapture);
             }
@@ -87,7 +94,7 @@ public sealed partial class CompanionManager
         {
             if (!UsesRealtimeVoice) return;
             // The drawing's own voice is explaining: the fast voice's reply to the same question is cut.
-            if (realtimeDrawing is not null) { client.StopSpeaking(); return; }
+            if (realtimeDrawing is not null || DateTimeOffset.UtcNow < fastVoiceQuietUntil) { client.StopSpeaking(); return; }
             if (VoiceState != CompanionVoiceState.Listening) VoiceState = CompanionVoiceState.Responding;
         };
         client.OnResponseFinished = () =>
@@ -280,7 +287,8 @@ public sealed partial class CompanionManager
                 if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible) Overlay.ShowOverlayOnAllScreens();
                 InterruptCurrentAnswer(includingAgentWork: true);
                 Overlay.ClearDetectedElementLocation();
-                TeacherPlugin.ClearBoard("a new question");
+                StopSavingTheDrawing();
+                TeacherPlugin.ClearBoardForNewQuestion();
                 VoiceState = CompanionVoiceState.Listening;
                 _ = BeginRealtimePushToTalkAsync();
                 break;

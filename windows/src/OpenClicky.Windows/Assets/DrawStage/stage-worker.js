@@ -6,6 +6,7 @@
 //
 // The drawing language (keep docs/draw-stage.md in sync):
 //   step(n) / say(text)                     a beat and its spoken line; marks after a say() are drawn while it is said
+//   keep()                                  a follow-up's first statement: it draws after the drawing on the stage
 //   line(points, o) / curve(points, o)      a pen stroke through [[x, y], ...]; curve() is smooth
 //   arrow(points, o)                        a stroke with a head at its last point
 //   circle(x, y, r, o) / ellipse(x, y, rx, ry, o) / rect(x, y, w, h, o) / poly(points, o)
@@ -13,7 +14,7 @@
 //   card(x, y, w, h, o)                     a paper card to explain on ({title})
 //   photo(x, y, w, h, {query, caption})     a real photo (Wikimedia Commons, found by the app) in a polaroid frame
 //   figure(x, y, w, h, o)                   a 3D stage ({tilt, turn, zoom, spin, ground}); its parts: f.box/cyl/cone/sphere/
-//                                           torus/capsule/tube/pipe/lathe/extrude/spring/gear/blob/arrow({…}) (any of them
+//                                           torus/capsule/tube/pipe/lathe/extrude/spring/gear/blob/arrow/piece({…}) (any of them
 //                                           cut open, repeated or mirrored: cut, copies, around, mirror) → part.spin/bob/
 //                                           stroke/pulse/orbit/move({…}) and part.label(words); f.label(part, words), f.view({…})
 //   o: {color, width, fill, dashed, size, align: 'start' | 'middle' | 'end', bold}
@@ -55,6 +56,7 @@ const api = {
   along: (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t],
   polar: (cx, cy, r, angle) => [cx + Math.cos(angle) * r, cy + Math.sin(angle) * r],
 
+  keep: () => {}, // the app reads it: this program is drawn after the one already on the stage
   step: n => { if (finite(n)) currentStep = n; },
   say: words => { says.push({ text: String(words), step: currentStep, at: total }); },
 
@@ -87,7 +89,7 @@ const api = {
 };
 
 // 3D parts of a figure (figure3d.js builds them). Options are plain data: functions and the like are dropped.
-const PART_KINDS = ['box', 'cyl', 'cone', 'sphere', 'torus', 'capsule', 'tube', 'pipe', 'lathe', 'extrude', 'spring', 'gear', 'blob', 'arrow'];
+const PART_KINDS = ['box', 'cyl', 'cone', 'sphere', 'torus', 'capsule', 'tube', 'pipe', 'lathe', 'extrude', 'spring', 'gear', 'blob', 'arrow', 'piece'];
 const MOTIONS = ['spin', 'bob', 'stroke', 'pulse', 'orbit', 'move'];
 let figureCount = 0, partCount = 0;
 const plain = o => { try { return JSON.parse(JSON.stringify(options(o))); } catch (_) { return {}; } };

@@ -75,6 +75,18 @@ public sealed class OpenClickyShellSettings
     [JsonPropertyName("drawingSource")] public string? DrawingSource { get; set; }
     [JsonPropertyName("drawingModel")] public string? DrawingModel { get; set; }
 
+    /// <summary>How detailed drawings are: "simple", "detailed" (null) or "veryDetailed" (DrawStageLesson.DetailFrom).</summary>
+    [JsonPropertyName("drawingDetail")] public string? DrawingDetail { get; set; }
+
+    /// <summary>The person's own instructions for drawings, added to the drawing prompt (null: none).</summary>
+    [JsonPropertyName("drawingInstructions")] public string? DrawingInstructions { get; set; }
+
+    /// <summary>Who makes a drawing's 3D pieces (PieceMakers.KindFrom: "drawingModel" when null, "llamaMeshOllama",
+    /// "llamaMeshLmStudio", "hunyuan3d"), at `pieceMakerUrl` with `pieceMakerModel` (LLaMA-Mesh's name there).</summary>
+    [JsonPropertyName("pieceMaker")] public string? PieceMaker { get; set; }
+    [JsonPropertyName("pieceMakerUrl")] public string? PieceMakerUrl { get; set; }
+    [JsonPropertyName("pieceMakerModel")] public string? PieceMakerModel { get; set; }
+
     /// <summary>Answer through a plan the person already pays for (Claude Code / Codex). Off until switched on.</summary>
     [JsonPropertyName("useClaudeCodePlan")] public bool? UseClaudeCodePlan { get; set; }
     [JsonPropertyName("useCodexPlan")] public bool? UseCodexPlan { get; set; }

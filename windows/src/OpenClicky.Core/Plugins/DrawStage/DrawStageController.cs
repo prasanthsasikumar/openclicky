@@ -11,12 +11,39 @@
 //  page are the Windows side's (IDrawStageSurface: OpenClicky.Windows/Plugins/DrawStage). Messages
 //  sent before the page has loaded wait for its "ready".
 //
+//  A drawing that finished stays up and is remembered (Current): a new question holds it, so a
+//  follow-up can add to it or draw it again another way; one that isn't about it clears it. It can
+//  be saved (IDrawingSaver) from the page's Picture and Video buttons or by asking; the page shows
+//  how the save is going (ShowSaving).
+//
 //  Threading: called on the UI thread; page messages come back on it.
 //
 
 using OpenClicky.Core.Platform;
 
 namespace OpenClicky.Core.Plugins.DrawStage;
+
+/// <summary>Where a saved drawing went: a picture of it and a video of it being drawn, or why it could not be saved.</summary>
+public sealed record DrawingSaved(string? PicturePath, string? VideoPath, string? Failure = null);
+
+/// <summary>What to save of a drawing: a picture of it, a video of it being drawn, or both.</summary>
+public enum DrawingSaveKind
+{
+    Both,
+    Picture,
+    Video,
+}
+
+/// <summary>How a save is going: what it is doing, and how far through it is (0 to 1) when it can tell.</summary>
+public sealed record DrawingSaveProgress(string Text, double? Fraction = null);
+
+/// <summary>Saves the drawing on the stage to disk (the Windows side: a picture, and a video of it replayed with its voice).</summary>
+public interface IDrawingSaver
+{
+    /// <summary>Saves <paramref name="what"/> of <paramref name="drawing"/>, which is on the stage now; <paramref name="progress"/>
+    /// says how it is going.</summary>
+    Task<DrawingSaved> SaveAsync(DrawnAnswer drawing, DrawingSaveKind what, Action<DrawingSaveProgress> progress, CancellationToken cancellationToken);
+}
 
 /// <summary>What only the app's windows can do for the stage.</summary>
 public interface IDrawStageSurface
@@ -63,8 +90,29 @@ public sealed class DrawStageController
     /// photo cards say none was found.</summary>
     public Func<string, string, CancellationToken, Task<DrawStagePhoto?>>? FindPhoto { get; set; }
 
+    /// <summary>Makes a 3D piece a drawing asks for (f.piece); set by the companion. Without one, the page fills each piece's
+    /// box itself.</summary>
+    public Func<PieceRequest, Task<DrawStagePiece?>>? MakePiece { get; set; }
+
     /// <summary>A part of a 3D figure was clicked: its label (or its kind when it has none).</summary>
     public event Action<string>? FigurePartClicked;
+
+    /// <summary>The page's Picture or Video button was clicked.</summary>
+    public event Action<DrawingSaveKind>? SaveRequested;
+
+    /// <summary>Saves a drawing to disk; set by the composition root. Without one, drawings can't be saved.</summary>
+    public IDrawingSaver? Saver { get; set; }
+
+    /// <summary>The drawing on the stage, once it has finished (null while one is being drawn, and after a clear).</summary>
+    public DrawnAnswer? Current { get; private set; }
+
+    /// <summary>The drawing on the stage has finished: it is kept for a follow-up question or for saving.</summary>
+    public void Remember(DrawnAnswer drawing)
+    {
+        if (!IsShowing) return;
+        Current = drawing;
+        if (IsReady) Surface?.Post(DrawStageMessages.Simple("remembered"));
+    }
 
     /// <summary>The page has loaded and takes messages straight away.</summary>
     public bool IsReady { get; private set; }
@@ -92,13 +140,55 @@ public sealed class DrawStageController
 
     /// <summary>Opens the stage over <paramref name="frame"/> for a new program drawn on a canvas of
     /// <paramref name="canvasWidth"/> × <paramref name="canvasHeight"/> units (the screenshot the model saw), clearing
-    /// anything drawn before.</summary>
-    public void Begin(PixelRect frame, double scale, int canvasWidth, int canvasHeight, DrawStagePace pace = DrawStagePace.Estimate)
+    /// anything drawn before. <paramref name="keepPlace"/> draws it where the last one was moved to (a replay of it).</summary>
+    public void Begin(PixelRect frame, double scale, int canvasWidth, int canvasHeight, DrawStagePace pace = DrawStagePace.Estimate,
+        bool keepPlace = false)
     {
         IsShowing = true;
-        Send(DrawStageMessages.BeginStream(canvasWidth, canvasHeight, pace));
+        Current = null;
+        Send(DrawStageMessages.BeginStream(canvasWidth, canvasHeight, pace, keepPlace));
         Surface?.Present(frame, scale);
     }
+
+    /// <summary>A follow-up's program, run after the drawing on the stage, which stays (its names too).</summary>
+    public void Continue(PixelRect frame, double scale, DrawStagePace pace = DrawStagePace.Estimate)
+    {
+        IsShowing = true;
+        Current = null;
+        Send(DrawStageMessages.ContinueStream(pace));
+        Surface?.Present(frame, scale);
+    }
+
+    /// <summary>A new question: a finished drawing stays up while it is answered (it may be about the drawing); anything
+    /// else on the stage is cleared.</summary>
+    public void HoldForFollowUp(string reason)
+    {
+        if (Current is null) ClearIfShowing(reason);
+        else Logged?.Invoke($"drawing kept for a follow-up ({reason})");
+    }
+
+    /// <summary>What is drawn on the page, as a box in page pixels; null without an answer within <paramref name="timeout"/>.</summary>
+    public async Task<DrawStageBounds?> MeasureAsync(TimeSpan timeout)
+    {
+        if (Surface is null || !IsReady) return null;
+        var measured = new TaskCompletionSource<DrawStageBounds>(TaskCreationOptions.RunContinuationsAsynchronously);
+        measuring = measured;
+        Surface.Post(DrawStageMessages.Simple("measure"));
+        var done = await Task.WhenAny(measured.Task, Task.Delay(timeout));
+        if (ReferenceEquals(measuring, measured)) measuring = null;
+        return done == measured.Task ? measured.Task.Result : null;
+    }
+
+    private TaskCompletionSource<DrawStageBounds>? measuring;
+
+    /// <summary>While a drawing is recorded, the page leaves out its caption and its buttons.</summary>
+    public void SetRecording(bool on) => Send(DrawStageMessages.Recording(on));
+
+    /// <summary>Shows how a save is going beside the drawing (its buttons wait meanwhile).</summary>
+    public void ShowSaving(DrawingSaveProgress progress) => Send(DrawStageMessages.Saving(progress.Text, progress.Fraction, "working"));
+
+    /// <summary>Shows how a save ended beside the drawing, for a few seconds: saved, or <paramref name="failed"/>.</summary>
+    public void ShowSaved(string text, bool failed = false) => Send(DrawStageMessages.Saving(text, null, failed ? "failed" : "done"));
 
     /// <summary>The program so far (the whole text each time, as a stream accumulates it); <paramref name="done"/> on the last.</summary>
     public void Feed(string programSoFar, bool done) => Send(DrawStageMessages.Feed(programSoFar, done));
@@ -117,6 +207,7 @@ public sealed class DrawStageController
     {
         Logged?.Invoke($"stage cleared ({reason})");
         IsShowing = false;
+        Current = null;
         waiting.Clear();
         if (IsReady) Surface?.Post(DrawStageMessages.Simple("clear"));
         Surface?.Hide();
@@ -147,6 +238,26 @@ public sealed class DrawStageController
         }
         Logged?.Invoke(photo is null ? $"no photo for \"{query}\"" : $"photo for \"{query}\" ({photo.ImageData.Length / 1024} KB, {photo.Credit})");
         var message = DrawStageMessages.Photo(id, photo);
+        if (MainThread is { } mainThread) mainThread.Post(() => Surface?.Post(message));
+        else Surface?.Post(message);
+    }
+
+    private async Task SendPieceAsync(string id, PieceRequest request)
+    {
+        var startedAt = DateTimeOffset.UtcNow;
+        DrawStagePiece? piece = null;
+        try
+        {
+            if (MakePiece is { } make) piece = await make(request);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            Logged?.Invoke($"piece failed ({error.GetType().Name})");
+        }
+        Logged?.Invoke(piece is null
+            ? $"no piece for \"{request.Make}\""
+            : $"piece \"{request.Make}\" ({piece.Kind}, {(piece.Data?.Length ?? piece.Text?.Length ?? 0) / 1024} KB) by {piece.MadeBy} in {(DateTimeOffset.UtcNow - startedAt).TotalSeconds:0.0} s");
+        var message = DrawStageMessages.Piece(id, piece);
         if (MainThread is { } mainThread) mainThread.Post(() => Surface?.Post(message));
         else Surface?.Post(message);
     }
@@ -184,8 +295,18 @@ public sealed class DrawStageController
             case "figurePart" when message.Text is { Length: > 0 } part:
                 FigurePartClicked?.Invoke(part);
                 break;
+            case "save":
+                SaveRequested?.Invoke(message.Text switch { "picture" => DrawingSaveKind.Picture, "video" => DrawingSaveKind.Video, _ => DrawingSaveKind.Both });
+                break;
+            case "bounds" when message.Bounds is { } bounds:
+                measuring?.TrySetResult(bounds);
+                break;
             case "photoWanted" when message.Id is { } photoId:
                 _ = SendPhotoAsync(photoId, message.Query ?? "", message.Text ?? "");
+                break;
+            case "pieceWanted" when message.Id is { } pieceId && message.Text is { Length: > 0 } make:
+                var size = message.Size ?? [1, 1, 1];
+                _ = SendPieceAsync(pieceId, new PieceRequest(make, size[0], size[1], size[2], message.Of));
                 break;
             case "finished":
                 Finished?.Invoke();
