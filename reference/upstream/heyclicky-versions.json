@@ -1,5 +1,13 @@
 {
   "seen": {
+    "1.1.4": {
+      "build": "",
+      "date": "Nov 1, 2026",
+      "url": "",
+      "title": "Go deeper with your agents, support for 130+ languages, and lots of bug fixes",
+      "recordedAt": "2026-11-02T15:47:28.566Z",
+      "issue": "https://github.com/prasanthsasikumar/openclicky/issues/40"
+    },
     "1.1.3": {
       "build": "",
       "date": "Oct 24, 2026",

@@ -2,6 +2,37 @@
 
 Recorded by `scripts/upstream-watch.mjs` from https://www.heyclicky.com/changelog and the Sparkle appcast. Newest first.
 
+## v1.1.4 — Go deeper with your agents, support for 130+ languages, and lots of bug fixes (Nov 1, 2026)
+
+Open the notch into a big window to dig into any agent: its whole chat, the files it made, and what it's doing right now. HeyClicky also talks in 130+ languages now. For much less of an accent, pick one of the 30 new voices in Settings > Voice > Voices. Plus lots of bug fixes. Thank you to everyone who wrote in <3
+
+### what's new
+
+- **The HeyClicky window:** Your chat, full replies, documents and Settings can now open into a resizable window that grows out of the notch. Your chat with HeyClicky and every agent's chat sit in a sidebar, documents open beside the chat, and it follows your PC's light or dark look.
+- **Voices in 130+ languages:** HeyClicky now talks to you in more than 130 languages: just talk to it in yours. For much less of an accent, open Settings > Voice and pick one of the 30 new voices under Voices. They sound like someone from there, not an English speaker reading a script. Tap a voice to hear it first.
+- **Agents get names:** Every job gets a short name like "Inbox Hunter", shown on its card and in the window's sidebar, so you can tell your agents apart at a glance. Press ← and → to flip through the cards under the notch.
+- **Smarter ears in every language:** Voice and dictation now hear you through Google's newest speech model. It picks up your language on its own and follows you when you switch mid-sentence, like English with Hindi or Urdu.
+- **Dictation in 83 languages:** The language picker in Settings > Dictation now has 83 languages, and picking Urdu finally writes Urdu.
+- **Chrome in one click:** The HeyClicky extension now comes from the Chrome Web Store, so connecting it is just Add to Chrome, no Developer mode. It works in Edge, Brave, Arc and Vivaldi too. If you have the old preview copy, HeyClicky can swap it for the new one for you.
+- **Updates install themselves:** Once an update has downloaded and HeyClicky has been idle for 5 minutes, it restarts into the new version on its own. No more staying on an old version for weeks.
+
+### agents
+
+- **Long jobs keep going:** A job that runs past 20 minutes now just keeps working instead of pausing, and still costs one agent message as long as it stays within its budget. When a job does need your OK, it shows Keep going instead of looking broken.
+- **Agents that remember:** Jobs now remember earlier work you've done together, read public web pages without asking for Chrome, and pick up your answer to a Chrome question in the middle of what they're doing.
+- **Your chat updates as you talk:** What you say and what HeyClicky answers now show up in the chat as it happens, and the chat stays still when a new message arrives.
+
+### fixed
+
+- A drive could end the moment it started, as soon as your pointer left the Let Clicky drive button.
+- A message sent to an agent that was already working was charged as a new agent message. It now counts as part of the same job, and a job that never got started is refunded.
+- Jobs could fail on a brief database error and show you the raw error. They now ride it out.
+- Jobs failed on networks that block some web addresses, and after an app was disconnected. They now carry on without that app.
+- A job could break for good after reading a page with a flag emoji in it.
+- Sending a follow-up right after a job finished said it was still working, and large images could make a job fail.
+- Voice could get stuck on "Speaking" with some audio devices.
+- A tiny crack in the chime when you pressed the talk keys.
+
 ## v1.1.3 — A quick check of the new updates (Oct 24, 2026)
 
 A small behind-the-scenes update that checks HeyClicky's new self-updating works smoothly. Nothing changes in how you use it.
