@@ -165,7 +165,8 @@ public partial class DrawingAnswerTests
     };
 
     private static async Task<(DrawingAnswerResult Result, FakePage Page, List<string> Played)> DrawAsync(
-        Func<Action<string>, CancellationToken, Task<string>> writeReply, FakePage? page = null, string? failingLine = null)
+        Func<Action<string>, CancellationToken, Task<string>> writeReply, FakePage? page = null, string? failingLine = null,
+        string? holdLine = null, TimeSpan? holdLineAfter = null)
     {
         page ??= new FakePage();
         var stage = new DrawStageController { Surface = page };
@@ -174,7 +175,8 @@ public partial class DrawingAnswerTests
             (text, _) => text == failingLine ? throw new IOException("no voice") : Task.FromResult(Encoding.UTF8.GetBytes(text)),
             (audio, _) => { lock (played) played.Add(Encoding.UTF8.GetString(audio)); return Task.CompletedTask; });
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var result = await DrawingAnswer.RunAsync(stage, Capture, writeReply, speech, action => action(), () => { }, _ => { }, timeout.Token);
+        var result = await DrawingAnswer.RunAsync(stage, Capture, writeReply, speech, action => action(), () => { }, _ => { }, timeout.Token,
+            holdLine, holdLineAfter);
         return (result, page, played);
     }
 
@@ -226,5 +228,29 @@ public partial class DrawingAnswerTests
         Assert.Equal(["One."], played);
         Assert.Equal(["Two."], result.UnspokenAfterVoiceFailure);
         Assert.Contains("finishNow", page.Received);
+    }
+
+    [Fact]
+    public async Task ASlowFirstLineIsPrecededByTheHoldLineAndTheBeatsStillMatchTheirLines()
+    {
+        async Task<string> Slow(Action<string> onReplySoFar, CancellationToken token)
+        {
+            await Task.Delay(400, token);
+            onReplySoFar(TwoBeats);
+            return TwoBeats;
+        }
+        var (result, page, played) = await DrawAsync(Slow, holdLine: DrawingAnswer.HoldLine, holdLineAfter: TimeSpan.FromMilliseconds(50));
+        Assert.True(result.Drew);
+        Assert.Equal([DrawingAnswer.HoldLine, "One.", "Two."], played);
+        // The hold line is the voice's, not the drawing's: the beats are still lines 0 and 1, and the drawing finished on line 1.
+        Assert.Equal(["One.", "Two."], result.SpokenLines);
+        Assert.Equal(2, page.Received.Count(type => type == "lineStarted"));
+    }
+
+    [Fact]
+    public async Task AQuickFirstLineHasNoHoldLine()
+    {
+        var (_, _, played) = await DrawAsync(Streams(TwoBeats), holdLine: DrawingAnswer.HoldLine, holdLineAfter: TimeSpan.FromSeconds(5));
+        Assert.Equal(["One.", "Two."], played);
     }
 }

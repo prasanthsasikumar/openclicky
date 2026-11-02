@@ -43,6 +43,7 @@ public sealed class AppComposition : ICompanionHost, IDisposable
     private readonly CompanionUi companionUi;
     private readonly GlobalShortcutMonitor shortcuts;
     private readonly MouseTalkMonitor mouseTalk;
+    private readonly Overlay.ScreenMarkerWindow screenMarker;
     private readonly IDisposable mouseTalkObservation;
     private readonly IDisposable pointerColorObservation;
     private readonly IDisposable pointerStyleObservation;
@@ -126,6 +127,9 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         TeacherBoard.Shared.Surface = new TeacherBoardWindows(platform.Screens);
         // The drawing stage's window (its state is Core's DrawStageController); WebView2 starts the first time it is shown.
         DrawStageController.Shared.Surface = new DrawStageWindow();
+        // Marking part of the screen to ask about (the island's marker button, Ctrl+Alt+M); its state is Core's ScreenMarker.
+        screenMarker = new Overlay.ScreenMarkerWindow(platform.Screens);
+        ScreenMarker.Shared.Surface = screenMarker;
         Companion = new CompanionManager(services,
             new CompanionModels(companionUi.Overlay, companionUi.Island, companionUi.Orb, companionUi.AgentCard), this);
 
@@ -321,6 +325,7 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         pointerColorObservation.Dispose();
         pointerStyleObservation.Dispose();
         mouseTalk.Dispose();
+        screenMarker.Dispose();
         try
         {
             Companion.Dispose();

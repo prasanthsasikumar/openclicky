@@ -64,6 +64,7 @@
     errors = 0;
     while (svg.lastChild) svg.removeChild(svg.lastChild);
     if (window.Figure3D) window.Figure3D.clear();
+    if (typeof photos !== 'undefined') photos.clear();
     svg.appendChild(defs());
     showCaption(null);
   }
@@ -302,6 +303,7 @@
       case 'text': return clamp(String(mark.text).length * 0.045, 0.3, 1.6);
       case 'highlight': return 0.45;
       case 'card': return 0.4;
+      case 'photo': return 0.5;
       case 'figure': return 0.5;
       case 'part3d': return 0.6;
       case 'label3d': return 0.45;
@@ -463,6 +465,26 @@
         window.Figure3D.apply(m, seconds, rect);
         break;
       }
+      case 'photo': {
+        // A polaroid: the frame and caption now, the photo when the app has found it (photoWanted → photo).
+        const [x, y] = m.at, pad = 10, captionRoom = m.caption ? 34 : 12;
+        const frame = el('g', { filter: 'url(#card-shadow)' });
+        frame.appendChild(el('rect', { x, y, width: m.w, height: m.h, rx: 6, fill: '#FFFFFF' }));
+        const well = el('rect', { x: x + pad, y: y + pad, width: m.w - 2 * pad, height: m.h - pad - captionRoom, fill: '#ECEEF2' });
+        frame.appendChild(well);
+        if (m.caption) {
+          const caption = el('text', { x: x + m.w / 2, y: y + m.h - 16, 'font-size': 22, 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: TONES.ink, stroke: 'none' });
+          caption.textContent = m.caption;
+          frame.appendChild(caption);
+        }
+        group.appendChild(frame);
+        frame.animate([{ opacity: 0, transform: 'rotate(-2deg) translateY(10px)' }, { opacity: 1, transform: 'rotate(0) translateY(0)' }],
+          { duration: seconds * 1000, easing: 'ease-out', fill: 'both' });
+        const id = 'photo' + (++uid);
+        photos.set(id, { group: frame, box: { x: x + pad, y: y + pad, w: m.w - 2 * pad, h: m.h - pad - captionRoom } });
+        send({ type: 'photoWanted', id, query: String(m.query), text: String(m.caption || '') });
+        break;
+      }
       case 'card': {
         const [x, y] = m.at;
         const card = el('g', { filter: 'url(#card-shadow)' });
@@ -479,6 +501,33 @@
       }
       default:
         log('unknown mark: ' + m.do);
+    }
+  }
+
+  // ------------------------------------------------------------------ photos the app found
+  const photos = new Map();
+  function showPhoto(message) {
+    const photo = photos.get(message.id);
+    if (!photo) return;
+    photos.delete(message.id);
+    const { box, group } = photo;
+    if (message.failed || !message.data) {
+      const note = el('text', { x: box.x + box.w / 2, y: box.y + box.h / 2, 'font-size': 18, 'text-anchor': 'middle', fill: TONES.grey, stroke: 'none' });
+      note.textContent = 'no photo found';
+      group.appendChild(note);
+      return;
+    }
+    const clip = el('clipPath', { id: message.id + 'clip' });
+    clip.appendChild(el('rect', { x: box.x, y: box.y, width: box.w, height: box.h }));
+    group.appendChild(clip);
+    const image = el('image', { x: box.x, y: box.y, width: box.w, height: box.h, preserveAspectRatio: 'xMidYMid slice', 'clip-path': `url(#${message.id}clip)` });
+    image.setAttribute('href', message.data);
+    group.appendChild(image);
+    image.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 600, fill: 'both' });
+    if (message.credit) {
+      const credit = el('text', { x: box.x + box.w - 6, y: box.y + box.h - 6, 'font-size': 11, 'text-anchor': 'end', fill: '#FFFFFF', stroke: '#000000', 'stroke-width': 2, 'paint-order': 'stroke', 'font-family': 'Segoe UI, sans-serif' });
+      credit.textContent = String(message.credit).slice(0, 80);
+      group.appendChild(credit);
     }
   }
 
@@ -499,12 +548,16 @@
         break;
       }
       case 'finishNow': finishing = true; break;
+      case 'photo': showPhoto(message); break;
       case 'clear': reset(); break;
       default: log('unknown message: ' + message.type);
     }
   }
 
   if (host) host.addEventListener('message', event => handle(event.data));
+  // Any script error on the page (the 3D module included) reaches the app's log instead of failing silently.
+  window.addEventListener('error', event => send({ type: 'error', text: 'page: ' + event.message + ' (' + (event.filename || '').split('/').pop() + ':' + event.lineno + ')' }));
+  window.addEventListener('unhandledrejection', event => send({ type: 'error', text: 'page: ' + (event.reason && event.reason.message || event.reason) }));
   // For a preview in an ordinary browser: window.drawStage.handle({type: 'beginStream', ...}).
   window.drawStage = { handle };
   reset();

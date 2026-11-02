@@ -158,4 +158,59 @@ public class DrawStageTests
         var parsed = DrawStageMessages.ParseEvent(DrawStageMessages.Error("the stage did not start: no WebView2"));
         Assert.Equal(new DrawStageEvent("error", null, "the stage did not start: no WebView2"), parsed);
     }
+
+    [Fact]
+    public void APhotoTheSketchAsksForComesBackAsADataUrlWithItsCredit()
+    {
+        var (stage, surface) = MakeStage();
+        var asked = new List<(string Query, string Caption)>();
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 1];
+        stage.FindPhoto = (query, caption, _) =>
+        {
+            asked.Add((query, caption));
+            return Task.FromResult<DrawStagePhoto?>(new DrawStagePhoto(png, DrawStageMessages.MediaTypeOf(png), "Wikimedia Commons"));
+        };
+        surface.PageSays("""{"type":"ready"}""");
+        surface.PageSays("""{"type":"photoWanted","id":"p1","query":"human heart","text":"a real heart"}""");
+
+        Assert.Equal([("human heart", "a real heart")], asked);
+        var reply = JsonNode.Parse(surface.Posted.Last())!;
+        Assert.Equal("photo", (string)reply["type"]!);
+        Assert.Equal("p1", (string)reply["id"]!);
+        Assert.Equal("Wikimedia Commons", (string)reply["credit"]!);
+        Assert.Equal("data:image/png;base64," + Convert.ToBase64String(png), (string)reply["data"]!);
+    }
+
+    [Fact]
+    public void WithoutAPhotoThePageIsToldNoneWasFound()
+    {
+        var (stage, surface) = MakeStage();
+        stage.FindPhoto = (_, _, _) => Task.FromResult<DrawStagePhoto?>(null);
+        surface.PageSays("""{"type":"ready"}""");
+        surface.PageSays("""{"type":"photoWanted","id":"p2","query":"nothing like it"}""");
+        var reply = JsonNode.Parse(surface.Posted.Last())!;
+        Assert.Equal("p2", (string)reply["id"]!);
+        Assert.True((bool)reply["failed"]!);
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0 }, "image/jpeg")]
+    [InlineData(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0 }, "image/png")]
+    [InlineData(new byte[] { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61 }, "image/gif")]
+    [InlineData(new byte[] { 0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0 }, "image/webp")]
+    public void APhotosTypeIsReadFromItsFirstBytes(byte[] data, string mediaType)
+    {
+        Assert.Equal(mediaType, DrawStageMessages.MediaTypeOf(data));
+    }
+
+    [Fact]
+    public void AClickedPartOfAFigureIsPassedOnByName()
+    {
+        var (stage, surface) = MakeStage();
+        var clicked = new List<string>();
+        stage.FigurePartClicked += clicked.Add;
+        surface.PageSays("""{"type":"figurePart","text":"left side: to the body"}""");
+        surface.PageSays("""{"type":"figurePart","text":""}""");
+        Assert.Equal(["left side: to the body"], clicked);
+    }
 }

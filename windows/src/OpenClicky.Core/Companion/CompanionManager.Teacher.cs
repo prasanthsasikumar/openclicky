@@ -32,6 +32,11 @@ public sealed partial class CompanionManager
         board.MainThread = services.MainThread;
         board.OnLabelWritten = (location, displayFrame) => PointAt(location, displayFrame, null);
         teacherWasEnabled = TeacherPlugin.IsEnabled;
+        // Photo cards on the drawing stage use the Teacher's Wikimedia search.
+        Plugins.DrawStage.DrawStageController.Shared.MainThread = services.MainThread;
+        Plugins.DrawStage.DrawStageController.Shared.FindPhoto = Plugins.DrawStage.DrawStagePhotos.Finder(() => board.Surface);
+        // A part of a 3D drawing clicked: a follow-up question about that part, answered by a new drawing.
+        Plugins.DrawStage.DrawStageController.Shared.FigurePartClicked += part => services.MainThread.Post(() => AskAboutFigurePart(part));
         teacherSwitchObservation = preferences.Observe(IslandComponentSettings.PluginsKey, () => services.MainThread.Post(TeacherSwitchMayHaveChanged));
     }
 

@@ -84,6 +84,8 @@ internal static class DrawStageSmoke
         using var window = new DrawStageWindow();
         var stage = DrawStageController.Shared;
         stage.Surface = window;
+        stage.MainThread = new DispatcherMainThread(Application.Current.Dispatcher);
+        stage.FindPhoto = DrawStagePhotos.Finder(() => null);
         var errors = 0;
         var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         stage.Logged += line =>
@@ -186,6 +188,8 @@ internal static class DrawStageSmoke
         using var window = new DrawStageWindow();
         var stage = DrawStageController.Shared;
         stage.Surface = window;
+        stage.MainThread = new DispatcherMainThread(Application.Current.Dispatcher);
+        stage.FindPhoto = DrawStagePhotos.Finder(() => null);
         var errors = 0;
         stage.Logged += line => { if (line.StartsWith("error: ", StringComparison.Ordinal)) errors++; };
         stage.LineAdded += (k, text) => Console.WriteLine($"smoke: line {k}: {text}");

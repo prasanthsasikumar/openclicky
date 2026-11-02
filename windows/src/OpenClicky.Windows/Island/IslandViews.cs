@@ -827,6 +827,14 @@ internal sealed class FullPanelView : Grid, IIslandContent
             });
         eye.Margin = new Thickness(6, 0, 0, 0);
         controls.Children.Add(eye);
+        // Quick action: mark part of the screen, then ask about it.
+        var marker = new IslandIconButton(Icons.Marker, 12, "Mark part of the screen to ask about (Ctrl+Alt+M)", () =>
+        {
+            model.Dismiss();
+            hub.MarkAreaCommand.Execute(null);
+        });
+        marker.Margin = new Thickness(6, 0, 0, 0);
+        controls.Children.Add(marker);
         var power = new IslandIconButton(Icons.Power, 11, IslandTexts.QuitToolTip, () => hub.QuitCommand.Execute(null));
         power.Margin = new Thickness(6, 0, 0, 0);
         controls.Children.Add(power);

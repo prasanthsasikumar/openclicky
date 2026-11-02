@@ -8,6 +8,9 @@
 //  of each line tell the stage when to draw that beat. The companion runs it for a question
 //  (CompanionManager.DrawStage); the smoke command runs it with a written reply.
 //
+//  When the first line is slow to come (a strong model thinking, a detailed figure), a short hold
+//  line ("One moment, let me draw that for you.") is said first, so the wait doesn't feel broken.
+//
 //  A reply with no program, or a stage that never started, comes back as not drawn while nothing
 //  has been said, so the caller can answer another way. A voice that fails mid-answer comes back
 //  with what it did not say; the stage draws the rest straight away.
@@ -30,11 +33,17 @@ public static class DrawingAnswer
     /// <summary>The longest a drawing may take once its program is written, voice included, before the stage is let go.</summary>
     public static readonly TimeSpan Limit = TimeSpan.FromMinutes(3);
 
+    /// <summary>Said when the first line of the drawing hasn't come after <see cref="HoldLineAfter"/>.</summary>
+    public const string HoldLine = "One moment, let me draw that for you.";
+
+    public static readonly TimeSpan HoldLineAfter = TimeSpan.FromSeconds(2);
+
     /// <summary>
     /// Draws the answer <paramref name="writeReply"/> streams (it calls its argument with the whole reply so far and returns the
     /// whole reply) on <paramref name="capture"/>'s screen, speaking it through <paramref name="speech"/>. Stage calls go
     /// through <paramref name="onMainThread"/> in order. Cancelling <paramref name="cancellationToken"/> stops the reply and the
-    /// voice; it is thrown as OperationCanceledException.
+    /// voice; it is thrown as OperationCanceledException. <paramref name="holdLine"/> (none when null) is said when the first
+    /// line is slower than <paramref name="holdLineAfter"/> (default <see cref="HoldLineAfter"/>).
     /// </summary>
     public static async Task<DrawingAnswerResult> RunAsync(
         DrawStageController stage,
@@ -44,15 +53,32 @@ public static class DrawingAnswer
         Action<Action> onMainThread,
         Action onFirstAudio,
         Action<string> log,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? holdLine = null,
+        TimeSpan? holdLineAfter = null)
     {
         var spokenLines = new List<string>();
+        // The voice's pieces are the stage's lines, after the hold line when it was said first.
+        var piecesBeforeLines = 0;
         var drawingFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var stageFailed = false;
         void LineAdded(int k, string text)
         {
-            lock (spokenLines) spokenLines.Add(text);
-            speech.Enqueue(text);
+            lock (spokenLines)
+            {
+                spokenLines.Add(text);
+                speech.Enqueue(text);
+            }
+        }
+        void SayHoldLine()
+        {
+            lock (spokenLines)
+            {
+                if (spokenLines.Count > 0 || piecesBeforeLines > 0 || holdLine is null) return;
+                piecesBeforeLines = 1;
+                speech.Enqueue(holdLine);
+            }
+            log("the first line is slow; saying the hold line");
         }
         void Finished() => drawingFinished.TrySetResult();
         void Logged(string line)
@@ -65,8 +91,9 @@ public static class DrawingAnswer
         // No more lines will come: the voice may end after the last one (and report a failure without waiting for more).
         void ProgramRan(int lineCount) => speech.Finish();
         int LinesSoFar() { lock (spokenLines) return spokenLines.Count; }
-        speech.PieceStarted += k => onMainThread(() => stage.LineStarted(k));
-        speech.PieceEnded += k => onMainThread(() => stage.LineEnded(k));
+        int LineOf(int piece) { lock (spokenLines) return piece - piecesBeforeLines; }
+        speech.PieceStarted += piece => { var k = LineOf(piece); if (k >= 0) onMainThread(() => stage.LineStarted(k)); };
+        speech.PieceEnded += piece => { var k = LineOf(piece); if (k >= 0) onMainThread(() => stage.LineEnded(k)); };
         stage.LineAdded += LineAdded;
         stage.Finished += Finished;
         stage.Logged += Logged;
@@ -88,6 +115,11 @@ public static class DrawingAnswer
             var playback = speech.RunAsync(onFirstAudio, playbackCancellation.Token);
             // Not drawn, the stopped playback is never awaited: its exception is not an unobserved one.
             _ = playback.ContinueWith(static task => _ = task.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+            if (holdLine is not null)
+            {
+                _ = Task.Delay(holdLineAfter ?? HoldLineAfter, playbackCancellation.Token).ContinueWith(
+                    task => { if (task.IsCompletedSuccessfully) SayHoldLine(); }, TaskScheduler.Default);
+            }
 
             string reply;
             try
@@ -121,7 +153,7 @@ public static class DrawingAnswer
             {
                 log($"voice failed ({failure.UnderlyingError.GetType().Name}); drawing the rest now");
                 onMainThread(stage.FinishNow);
-                unspoken = failure.UnspokenText;
+                unspoken = holdLine is null ? failure.UnspokenText : [.. failure.UnspokenText.Where(text => text != holdLine)];
             }
             catch (OperationCanceledException)
             {

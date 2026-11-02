@@ -19,6 +19,17 @@ namespace OpenClicky.Core.Companion;
 
 public sealed partial class CompanionManager
 {
+    /// <summary>A part of the 3D drawing on the screen was clicked: "how does the hot end work?", about the question it answered.</summary>
+    private void AskAboutFigurePart(string part)
+    {
+        var earlier = lastAskQuestion?.Transcript ?? LastTranscript;
+        var question = earlier is { Length: > 0 }
+            ? $"How does the {part} work? It is a part of the 3D drawing you made for \"{earlier}\"."
+            : $"How does the {part} work?";
+        AppLog.Write($"draw: a part of the figure was clicked; asking about it");
+        SendTranscriptToClaudeWithScreenshot(question);
+    }
+
     /// <summary>The fast-voice question being answered by drawing, while it is (null otherwise).</summary>
     private CancellationTokenSource? realtimeDrawing;
 
@@ -73,7 +84,8 @@ public sealed partial class CompanionManager
     /// a new question) is thrown as from the ask lane.
     /// </summary>
     private async Task<bool> TryDrawingAnswerAsync(string transcript, CompanionScreenCapture? capture,
-        IReadOnlyList<(string UserTranscript, string AssistantResponse)> history, CancellationToken cancellationToken)
+        IReadOnlyList<(string UserTranscript, string AssistantResponse)> history, CancellationToken cancellationToken,
+        (byte[] Data, string Label)? markCloseUp = null, string? markedAreaLine = null)
     {
         var stage = DrawStageController.Shared;
         if (capture is null || stage.Surface is null || !DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)
@@ -99,10 +111,10 @@ public sealed partial class CompanionManager
                 stage,
                 capture,
                 async (onReplySoFar, token) => (await writer.AnalyzeImageStreamingAsync(
-                    [ImageLabeledWithItsPixelSize(capture)],
+                    markCloseUp is { } closeUp ? [ImageLabeledWithItsPixelSize(capture), closeUp] : [ImageLabeledWithItsPixelSize(capture)],
                     DrawStageLesson.SystemPrompt(capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels),
                     history,
-                    DrawStageLesson.UserPrompt(transcript),
+                    DrawStageLesson.UserPrompt(transcript, markedAreaLine),
                     tools: null,
                     onReplySoFar,
                     token,
@@ -116,7 +128,8 @@ public sealed partial class CompanionManager
                     AppLog.Write($"draw: voice started after {(DateTimeOffset.UtcNow - startedAt).TotalSeconds:0.0} s");
                 }),
                 line => AppLog.Write($"draw: {line}"),
-                answerCancellation.Token);
+                answerCancellation.Token,
+                holdLine: DrawingAnswer.HoldLine);
             if (!result.Drew)
             {
                 TeacherBoard.Shared.QuestionHasLesson = false;

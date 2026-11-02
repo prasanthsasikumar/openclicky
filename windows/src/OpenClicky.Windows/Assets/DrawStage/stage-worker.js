@@ -11,9 +11,11 @@
 //   circle(x, y, r, o) / ellipse(x, y, rx, ry, o) / rect(x, y, w, h, o) / poly(points, o)
 //   dot(x, y, r, o) / text(x, y, words, o) / highlight(x, y, w, h, o)
 //   card(x, y, w, h, o)                     a paper card to explain on ({title})
-//   figure(x, y, w, h, o)                   a 3D stage ({tilt, turn, zoom, spin}); its parts: f.box/cyl/cone/sphere/torus/
-//                                           capsule/tube/lathe/extrude/spring/gear/arrow({…}) → part.spin/bob/stroke/pulse/
-//                                           orbit/move({…}) and part.label(words); f.label(part, words), f.view({…})
+//   photo(x, y, w, h, {query, caption})     a real photo (Wikimedia Commons, found by the app) in a polaroid frame
+//   figure(x, y, w, h, o)                   a 3D stage ({tilt, turn, zoom, spin, ground}); its parts: f.box/cyl/cone/sphere/
+//                                           torus/capsule/tube/pipe/lathe/extrude/spring/gear/blob/arrow({…}) (any of them
+//                                           cut open, repeated or mirrored: cut, copies, around, mirror) → part.spin/bob/
+//                                           stroke/pulse/orbit/move({…}) and part.label(words); f.label(part, words), f.view({…})
 //   o: {color, width, fill, dashed, size, align: 'start' | 'middle' | 'end', bold}
 //   W, H (the canvas: the screenshot's size), math (sin, cos, PI, ...) and point helpers (mid, along, polar, lerp)
 'use strict';
@@ -67,6 +69,7 @@ const api = {
   text: (x, y, words, o) => needs('text', [x, y].every(finite)) ? push({ do: 'text', at: [x, y], text: String(words) }, o) : null,
   highlight: (x, y, w, h, o) => needs('highlight', [x, y, w, h].every(finite)) ? push({ do: 'highlight', at: [x, y], w, h }, o) : null,
   card: (x, y, w, h, o) => needs('card', [x, y, w, h].every(finite)) ? push({ do: 'card', at: [x, y], w, h }, o) : null,
+  photo: (x, y, w, h, o) => needs('photo', [x, y, w, h].every(finite) && options(o).query) ? push({ do: 'photo', at: [x, y], w, h }, o) : null,
 
   figure: (x, y, w, h, o) => {
     if (![x, y, w, h].every(finite) || w < 40 || h < 40) {
@@ -84,7 +87,7 @@ const api = {
 };
 
 // 3D parts of a figure (figure3d.js builds them). Options are plain data: functions and the like are dropped.
-const PART_KINDS = ['box', 'cyl', 'cone', 'sphere', 'torus', 'capsule', 'tube', 'lathe', 'extrude', 'spring', 'gear', 'arrow'];
+const PART_KINDS = ['box', 'cyl', 'cone', 'sphere', 'torus', 'capsule', 'tube', 'pipe', 'lathe', 'extrude', 'spring', 'gear', 'blob', 'arrow'];
 const MOTIONS = ['spin', 'bob', 'stroke', 'pulse', 'orbit', 'move'];
 let figureCount = 0, partCount = 0;
 const plain = o => { try { return JSON.parse(JSON.stringify(options(o))); } catch (_) { return {}; } };
@@ -136,6 +139,10 @@ function run(statement) {
   // eslint-disable-next-line no-new-func
   const body = new Function('__api', '__scope', 'with (__api) { with (__scope) {\n' + rewrite(statement) + '\n} }');
   body(api, scope);
+  // const liftFan = f.cyl(…): the part is named after its variable ("lift fan"), so a click on it asks about that.
+  const named = /^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[A-Za-z_$][\w$]*\s*\.\s*[a-z]+\s*\(/.exec(statement);
+  const part = named && named[1].length > 2 && marks.find(m => m.do === 'part3d' && !m.params.name);
+  if (part) part.params.name = named[1].replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_$]+/g, ' ').trim().toLowerCase();
 }
 
 // Nothing the program writes can reach the network or load more code.

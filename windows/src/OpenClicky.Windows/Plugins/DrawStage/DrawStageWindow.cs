@@ -44,6 +44,11 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
     private CoreWebView2CompositionController? webView;
     private Task? starting;
     private (PixelRect Frame, double Scale)? placement;
+    /// <summary>The 3D figures' boxes in physical screen pixels: over them the window takes the mouse.</summary>
+    private List<PixelRect> figureBoxes = [];
+    private System.Windows.Threading.DispatcherTimer? pointerWatch;
+    private bool takesMouse;
+    private bool dragging;
 
     public Action<string>? MessageReceived { get; set; }
 
@@ -171,7 +176,12 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
             if (!args.Uri.StartsWith("https://" + PageHost + "/", StringComparison.OrdinalIgnoreCase)) args.Cancel = true;
         };
         page.NewWindowRequested += (_, args) => args.Handled = true;
-        page.WebMessageReceived += (_, args) => MessageReceived?.Invoke(args.WebMessageAsJson);
+        page.WebMessageReceived += (_, args) =>
+        {
+            var json = args.WebMessageAsJson;
+            if (json.Contains("\"figures\"", StringComparison.Ordinal)) NoteFigureBoxes(json);
+            MessageReceived?.Invoke(json);
+        };
         webView = controller;
         page.Navigate(PageUrl);
     }
@@ -186,12 +196,84 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
         NativeSetWindowPos(windowHandle, HWND_TOPMOST, frame.Left, frame.Top, Math.Max(1, frame.Width), Math.Max(1, frame.Height), SWP_NOACTIVATE | SWP_SHOWWINDOW);
     }
 
-    private nint WindowProcedure(nint handle, uint message, nint wParam, nint lParam) => message switch
+    private nint WindowProcedure(nint handle, uint message, nint wParam, nint lParam)
     {
-        WM_NCHITTEST => HTTRANSPARENT,
-        WM_MOUSEACTIVATE => MA_NOACTIVATE,
-        _ => NativeMethods.DefWindowProc(handle, message, wParam, lParam),
-    };
+        switch (message)
+        {
+            case WM_NCHITTEST:
+                return takesMouse ? HTCLIENT : HTTRANSPARENT;
+            case WM_MOUSEACTIVATE:
+                return MA_NOACTIVATE;
+            case WM_MOUSEMOVE or WM_LBUTTONDOWN or WM_LBUTTONUP or WM_RBUTTONDOWN or WM_RBUTTONUP or WM_MOUSEWHEEL when webView is not null:
+            {
+                // A 3D figure is under the pointer: the mouse goes into the page (visual hosting has no window of its own).
+                var x = (short)(lParam.ToInt64() & 0xFFFF);
+                var y = (short)((lParam.ToInt64() >> 16) & 0xFFFF);
+                var point = new System.Drawing.Point(x, y);
+                if (message == WM_MOUSEWHEEL)
+                {
+                    var client = new NativePoint { X = x, Y = y };
+                    ScreenToClient(handle, ref client);
+                    point = new System.Drawing.Point(client.X, client.Y);
+                }
+                if (message == WM_LBUTTONDOWN) { dragging = true; SetCapture(handle); }
+                if (message == WM_LBUTTONUP) { dragging = false; ReleaseCapture(); }
+                var keys = (CoreWebView2MouseEventVirtualKeys)(int)(wParam.ToInt64() & 0xFFFF);
+                var data = message == WM_MOUSEWHEEL ? (uint)(short)((wParam.ToInt64() >> 16) & 0xFFFF) : 0;
+                webView.SendMouseInput((CoreWebView2MouseEventKind)(int)message, keys, data, point);
+                return 0;
+            }
+            default:
+                return NativeMethods.DefWindowProc(handle, message, wParam, lParam);
+        }
+    }
+
+    // MARK: - Taking the mouse over 3D figures
+
+    /// <summary>The page's "figures" message: each figure's box in page pixels, turned into screen pixels.</summary>
+    private void NoteFigureBoxes(string json)
+    {
+        if (System.Text.Json.Nodes.JsonNode.Parse(json) is not System.Text.Json.Nodes.JsonObject message
+            || message["type"]?.GetValue<string>() != "figures" || placement is not { } where) return;
+        var boxes = new List<PixelRect>();
+        foreach (var node in message["rects"]?.AsArray() ?? [])
+        {
+            double Value(string key) => node?[key]?.GetValue<double>() ?? 0;
+            boxes.Add(new PixelRect(where.Frame.Left + (int)(Value("x") * where.Scale), where.Frame.Top + (int)(Value("y") * where.Scale),
+                (int)(Value("w") * where.Scale), (int)(Value("h") * where.Scale)));
+        }
+        figureBoxes = boxes;
+        if (boxes.Count > 0 && pointerWatch is null)
+        {
+            pointerWatch = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
+            pointerWatch.Tick += (_, _) => WatchPointer();
+            pointerWatch.Start();
+        }
+        else if (boxes.Count == 0)
+        {
+            pointerWatch?.Stop();
+            pointerWatch = null;
+            SetTakesMouse(false);
+        }
+    }
+
+    /// <summary>Takes the mouse while the pointer is over a figure (or a drag that started on one goes on), else lets it through.</summary>
+    private void WatchPointer()
+    {
+        var cursor = FloatingWindowSupport.CursorPixel();
+        var over = figureBoxes.Any(box => cursor.X >= box.Left && cursor.X < box.Right && cursor.Y >= box.Top && cursor.Y < box.Bottom);
+        SetTakesMouse(over || dragging);
+    }
+
+    private void SetTakesMouse(bool value)
+    {
+        if (takesMouse == value || windowHandle == 0) return;
+        takesMouse = value;
+        var style = (long)GetWindowLongPtr(windowHandle, GWL_EXSTYLE);
+        style = value ? style & ~(long)WS_EX_TRANSPARENT : style | WS_EX_TRANSPARENT;
+        SetWindowLongPtr(windowHandle, GWL_EXSTYLE, (nint)style);
+        if (!value) webView?.SendMouseInput(CoreWebView2MouseEventKind.Leave, CoreWebView2MouseEventVirtualKeys.None, 0, new System.Drawing.Point());
+    }
 
     // MARK: - Win32 and composition interop
 
@@ -210,6 +292,33 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
     private const uint WM_NCHITTEST = 0x0084;
     private const uint WM_MOUSEACTIVATE = 0x0021;
     private const nint HTTRANSPARENT = -1;
+    private const nint HTCLIENT = 1;
+    private const int GWL_EXSTYLE = -20;
+    private const uint WM_MOUSEMOVE = 0x0200, WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_RBUTTONDOWN = 0x0204, WM_RBUTTONUP = 0x0205, WM_MOUSEWHEEL = 0x020A;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ScreenToClient(nint hWnd, ref NativePoint point);
+
+    [DllImport("user32.dll")]
+    private static extern nint SetCapture(nint hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern nint GetWindowLongPtr(nint hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern nint SetWindowLongPtr(nint hWnd, int nIndex, nint dwNewLong);
     private const nint MA_NOACTIVATE = 3;
     private const int DQTYPE_THREAD_CURRENT = 2;
     private const int DQTAT_COM_STA = 2;

@@ -165,10 +165,12 @@ public static class AskLanePrompts
     /// context for "what does this mean". Each line of context sits in its own brackets.
     /// </summary>
     /// <param name="selectedText">The text highlighted in the app in front (the Platform layer reads it); null for none.</param>
+    /// <param name="markedAreaLine">Where the part of the screen they marked before asking is (MarkedArea.PromptLine); null for none.</param>
     public static string AskUserPrompt(string transcript, WritingTarget? writingTarget, string? selectedText = null,
-                                       PointerInCapture? pointer = null, bool isRepeatedQuestion = false)
+                                       PointerInCapture? pointer = null, bool isRepeatedQuestion = false, string? markedAreaLine = null)
     {
         var contextLines = new List<string>();
+        if (markedAreaLine is not null) contextLines.Add(markedAreaLine);
         if (writingTarget is not null) contextLines.Add(writingTarget.ContextLine);
         else if (!string.IsNullOrWhiteSpace(selectedText)) contextLines.Add(SelectedTextContextLine(selectedText));
         if (pointer is not null) contextLines.Add(pointer.PromptLine);

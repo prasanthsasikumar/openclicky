@@ -13,7 +13,10 @@ public static partial class AssistantName
     public const int MaximumLength = 30;
 
     /// <summary>shell.json's `assistantName`, cleaned (letters, digits, spaces, '-' and '.', at most 30), else "OpenClicky".</summary>
-    public static string Current => Cleaned(OpenClickyConfiguration.Settings.AssistantName) ?? Default;
+    public static string Current => Pinned ?? Cleaned(OpenClickyConfiguration.Settings.AssistantName) ?? Default;
+
+    /// <summary>A name that wins over shell.json: the tests pin the default so a renamed install doesn't change their prompts.</summary>
+    internal static string? Pinned { get; set; }
 
     /// <summary>A name fit to be said and shown; null when nothing usable is left.</summary>
     public static string? Cleaned(string? raw)

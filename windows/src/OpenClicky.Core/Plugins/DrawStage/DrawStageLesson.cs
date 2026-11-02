@@ -27,8 +27,9 @@ public static partial class DrawStageLesson
     /// <summary>On by default while the Teacher plugin is on; off sends teaching questions to the Teacher's board.</summary>
     public const string PreferenceKey = "teacher.drawingStage";
 
-    /// <summary>A program for a few beats is 1,000-2,500 tokens; the ask lane's 1,024 would cut most of them off mid-beat.</summary>
-    public const int MaximumOutputTokens = 4096;
+    /// <summary>A program for a few beats is 1,000-2,500 tokens and a detailed 3D figure several thousand more; the ask lane's
+    /// 1,024 would cut most of them off mid-beat.</summary>
+    public const int MaximumOutputTokens = 8192;
 
     public static bool IsEnabled(Preferences preferences, bool teacherIsOn) => teacherIsOn && preferences.GetBool(PreferenceKey, defaultValue: true);
 
@@ -114,7 +115,7 @@ public static partial class DrawStageLesson
         HOW AN ANSWER IS BUILT
         - 3 to 6 beats. Each beat is step(n); say("…") followed by the drawing calls for that beat. Everything a beat draws is drawn while its say() line is spoken, so draw exactly what that line talks about.
         - Each say() is one or two short spoken sentences (8 to 25 words), in plain words a curious 12-year-old follows. No lists, no markdown, no emojis, no symbols the voice can't read (write "equals", not "=").
-        - Beat 1 sets the scene: the outline of the thing and its main parts. Later beats add what moves or happens (arrows, flows, forces), one idea per beat. The last beat sums it up in one line, with a short highlighted takeaway.
+        - Beat 1 sets the scene: the outline of the thing and its main parts. When beat 1 builds a detailed 3D figure, its line says so first, in a natural way ("Let me build a 3D model of the engine for you."), since the parts appear while it is built. Later beats add what moves or happens (arrows, flows, forces), one idea per beat. The last beat sums it up in one line, with a short highlighted takeaway.
         - Make it correct: real proportions, real directions, real physics. Work out coordinates before you write them.
         - Answer in the language the question was asked in.
 
@@ -136,18 +137,29 @@ public static partial class DrawStageLesson
         dot(x, y, r, o)                          a filled point
         text(x, y, words, o)                     handwriting centred on x, y (align 'start' puts its left edge at x)
         highlight(x, y, w, h, o)                 a marker sweep behind words
+        photo(x, y, w, h, {query, caption})      a real photo from Wikimedia Commons in a polaroid frame: for real things a drawing can't show well (an animal, an organ, a place, a real machine). query is a short English search ('human heart anatomy'); use at most one or two, beside the drawing, never instead of it
         Options o: {color, width, fill, fillOpacity, dashed, size, align, bold}. Colors: ink, blue, red, green, orange, purple, pink, yellow, teal, brown, grey, white, or '#rrggbb'. Default stroke width 3.2, text size 26.
         Also available: W, H, PI, sin, cos, tan, atan2, sqrt, abs, min, max, round, floor, ceil, hypot, lerp(a, b, t), mid(p, q), along(p, q, t), polar(cx, cy, r, angle), range(n).
-        Plain JavaScript works too (const, let, arithmetic, for loops, arrays). Nothing else exists: no DOM, no network, no other functions. Never use Math.random. At most about 70 drawing calls.
+        Plain JavaScript works too (const, let, arithmetic, for loops, arrays). Nothing else exists: no DOM, no network, no other functions. Never use Math.random. At most about 70 drawing calls, plus up to 50 parts for a 3D figure.
 
-        3D FIGURES (use one when the thing has a real shape or is a machine: an engine, a rocket, a 3D printer, a planet, the heart, a gear train; stay 2D for processes, cycles, graphs and comparisons)
-        const f = figure(x, y, w, h, {tilt, turn, zoom, spin})   a turning 3D stage in that box, usually on your card below its title. The camera frames the parts by itself.
-        Parts, in world units (about 1-5 across), each returns a part: f.box({w, h, d}) f.cyl({r, h, r2}) f.cone({r, h}) f.sphere({r}) f.torus({r, tube}) f.capsule({r, h})
-          f.tube({points: [[x, y, z], …], r}) f.lathe({points: [[radius, y], …]}) (a turned profile: bottles, nozzles, bells) f.extrude({points: [[x, y], …], depth}) f.spring({r, h, coils, wire}) f.gear({r, teeth, depth}) f.arrow({from: [x, y, z], to: [x, y, z], color})
-        Every part also takes at: [x, y, z], rot: [degrees x, y, z], axis: 'x' | 'y' | 'z' (which way a cyl, cone, capsule, spring or gear points; default y, gear default z), scale, parent: anotherPart (moves with it), and mat: 'steel' | 'alu' | 'chrome' | 'iron' | 'gold' | 'copper' | 'brass' | 'plastic:<color>' | 'paint:<color>' | 'rubber' | 'wood' | 'ceramic' | 'glass' | 'water' | 'glow:<color>' (glow for flames, lights, hot things), color, opacity.
+        3D FIGURES (use one when the thing has a real shape or is a machine: an engine, a plane, a rocket, a circuit board, a 3D printer, a planet, the heart, a gear train; stay 2D for processes, cycles, graphs and comparisons)
+        const f = figure(x, y, w, h, {tilt, turn, zoom, spin, ground})   a turning 3D stage in that box, usually filling your card below its title. The camera frames the parts by itself; ground: false for things that float (planets, atoms).
+        Parts, in world units (about 1-5 across), each returns a part:
+          f.box({w, h, d, round}) (round: corner radius, for cases, chips, buttons, bodies) f.cyl({r, h, r2, open}) f.cone({r, h}) f.sphere({r}) f.torus({r, tube}) f.capsule({r, h})
+          f.lathe({points: [[radius, y], …]}) (a turned profile: casings, nozzles, bottles, bells, a fuselage on axis: 'x')
+          f.extrude({points: [[x, y], …], depth, holes: [[[x, y], …]], bevel}) (a flat outline made thick: wings, fins, brackets, a plane seen from above)
+          f.tube({points: [[x, y, z], …], r}) (smooth: cables, hoses, veins) f.pipe({points, r, bend}) (straight runs with bends: plumbing, exhausts)
+          f.spring({r, h, coils, wire}) f.gear({r, teeth, depth}) f.arrow({from: [x, y, z], to: [x, y, z], color}) (flows and forces)
+          f.blob({balls: [[x, y, z, r], [x, y, z, rx, ry, rz], …], sticks: [{from, to, r, r2}], paths: [{points, r, r2}], holes: [[x, y, z, r]], smooth}) one smooth organic surface over its balls and sticks, blended where they touch (smooth 0.1-0.6): organs, bodies, animals, teeth, leaves, rocks, clouds. Use it for anything alive; spheres and capsules side by side look like toys.
+        Every part also takes at: [x, y, z], rot: [degrees x, y, z], axis: 'x' | 'y' | 'z' (which way a cyl, cone, capsule, spring, lathe or gear points; default y, gear and extrude default z), scale, parent: anotherPart (moves with it), color, opacity, and
+          mat: 'steel' | 'alu' | 'titanium' | 'chrome' | 'iron' | 'gold' | 'copper' | 'brass' | 'plastic:<color>' | 'paint:<color>' | 'rubber' | 'wood' | 'stone' | 'ceramic' | 'glass' | 'water' | 'glow:<color>' (flames, lights, hot things)
+               | 'tissue' | 'muscle' | 'skin' | 'bone' | 'leaf' | 'fabric' | 'pcb' (a green circuit board); any of them takes a colour: 'tissue:#4A6FB5'.
+          cut: 'z' cuts the part open along the figure's middle and takes away its front half (z > 0), so what is inside shows: use it on a casing, a body or a shell with the working parts inside it. '-z', 'x', 'y' … cut other halves; {axis: 'z', at: 0.3} cuts elsewhere.
+          copies: {n, step: [dx, dy, dz]} a row of the same part (pins, keys, compressor stages, windows); around: {n, axis, center} the same part repeated round an axis (fan and turbine blades, gear teeth, bolts on a flange, petals); mirror: 'x' adds its mirror image across x = 0 (wings, legs, ears).
         Motion, chained on a part: .spin({axis, period}) .stroke({axis, amount, period}) (a piston, a moving print head) .bob({axis, amount, period}) .pulse({amount, period}) (a beating heart) .orbit({center, axis, period}) .move({to, secs}) (once, in its beat).
-        Labels: part.label('words') or f.label(part, 'words', {color}); they follow the part with a leader line. f.view({tilt, turn, zoom}) changes the camera in a beat.
-        Build it beat by beat like the 2D drawing: the body first, then the moving parts, then motion and labels as the voice explains them. Put the figure's parts near the origin, y up.
+        Labels: part.label('words', {color}) or f.label(part, 'words', {color}); they are small tags tied to the part by a leader line. f.view({tilt, turn, zoom}) changes the camera in a beat.
+        Name each part's const after what it is (const liftFan = f.cyl(…)): a click on the part asks about it by that name.
+        MAKE IT LOOK REAL: a figure is built from many parts, like a good model kit: usually 15-40 parts, with the small things that make it recognisable (bolts, ribs, ports, chips, blades, windows, seams, a lens). Get the proportions right, keep parts touching (nothing floats unless it really does), and use the real materials and colours. Show the inside with cut instead of drawing two separate pictures. Build the body in beat 1 (it may take a dozen parts), then add the moving and inner parts, motion and labels as the voice explains them. Put the figure's parts near the origin, y up, x along its length.
 
         EXAMPLE (a complete answer to "how does a bicycle pump work?" on a 1280 × 720 screen)
         ```js
@@ -177,11 +189,40 @@ public static partial class DrawStageLesson
         highlight(c.x + 30, c.y + c.h - 60, c.w - 60, 40, {color: 'yellow'})
         text(c.x + 45, c.y + c.h - 40, 'push, squeeze, valve opens, tyre fills', {align: 'start', size: 24})
         ```
+
+        3D EXAMPLE (the first beats of "how does a jet engine work?" on a 1280 × 720 screen)
+        ```js
+        step(1); say("A jet engine is a tube that sucks air in at the front with a big spinning fan.")
+        const c = {x: 380, y: 40, w: 860, h: 560}
+        card(c.x, c.y, c.w, c.h, {title: 'Inside a jet engine'})
+        const f = figure(c.x + 30, c.y + 70, c.w - 60, c.h - 100, {tilt: 22, turn: -35})
+        const casing = f.lathe({points: [[1.05, -2.3], [1.12, -1.9], [1.1, -0.6], [0.95, 0.6], [0.95, 1.4], [0.7, 2.2]], axis: 'x', mat: 'alu', cut: 'z'})
+        const shaft = f.cyl({r: 0.09, h: 4.2, axis: 'x', mat: 'steel'})
+        const spinner = f.cone({r: 0.32, h: 0.55, axis: '-x', at: [-2.15, 0, 0], mat: 'paint:#30343B'})
+        const fanBlade = f.box({w: 0.05, h: 0.78, d: 0.3, at: [-1.75, 0.5, 0], rot: [0, 30, 0], around: {n: 18, axis: 'x', center: [-1.75, 0, 0]}, mat: 'titanium'}).spin({axis: 'x', period: 0.8})
+        fanBlade.label('fan', {color: 'blue'})
+
+        step(2); say("Rows of smaller blades squeeze that air tighter and tighter: that part is the compressor.")
+        const compressor = f.cyl({r: 0.62, r2: 0.48, h: 0.06, axis: 'x', at: [-1.2, 0, 0], copies: {n: 7, step: [0.16, 0, 0]}, mat: 'steel'}).spin({axis: 'x', period: 0.6})
+        compressor.label('compressor', {color: 'purple'})
+
+        step(3); say("Fuel burns in the squeezed air, and the hot gas rushes out of the back.")
+        const burner = f.torus({r: 0.55, tube: 0.16, axis: 'x', at: [0.25, 0, 0], mat: 'glow:orange'})
+        burner.label('burn fuel', {color: 'orange'})
+        ```
+
+        ORGANIC EXAMPLE (one beat of "how does the heart pump blood?": a blob for the muscle, blobs for the big vessels)
+        ```js
+        const heart = f.blob({balls: [[0.35, -0.35, 0, 0.85, 1.1, 0.8], [-0.35, -0.2, 0.15, 0.75, 0.95, 0.7], [0.2, -1.25, 0.05, 0.3]], smooth: 0.45, mat: 'tissue'}).pulse({amount: 0.035, period: 1})
+        const aorta = f.blob({paths: [{points: [[0.1, 0.5, 0], [0.12, 1.5, -0.05], [0.55, 2.05, -0.1], [1.1, 1.75, -0.15], [1.2, 1.0, -0.2]], r: 0.3, r2: 0.26}], mat: 'tissue:#C0392B'})
+        aorta.label('to the body', {color: 'red'})
+        ```
         """);
 
     /// <summary>The question as the model reads it.</summary>
-    public static string UserPrompt(string question) =>
-        $"They asked: \"{question.Trim()}\"\nAnswer it by drawing on their screen, as one ```js program.";
+    public static string UserPrompt(string question, string? markedAreaLine = null) =>
+        $"They asked: \"{question.Trim()}\"\n" + (markedAreaLine is null ? "" : $"[{markedAreaLine}]\n")
+        + "Answer it by drawing on their screen, as one ```js program.";
 
     // MARK: - Reading the reply
 

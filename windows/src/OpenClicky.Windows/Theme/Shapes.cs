@@ -176,6 +176,8 @@ public static class Icons
     /// <summary>Segoe Fluent "View" and "Hide": the island's pointer quick action.</summary>
     public const string ShowPointer = "\uE890";
     public const string HidePointer = "\uED1A";
+    /// <summary>Segoe Fluent "Highlight": the island's marker (mark part of the screen to ask about).</summary>
+    public const string Marker = "\uE7E6";
     public const string Power = "";           // power
     public const string Microphone = "";      // mic.fill
     public const string Stop = "";            // stop.circle.fill (drawn in a circle)

@@ -2,10 +2,16 @@
 
 Ask "how does this work?" about a rocket, a 3D printer, a heart, and OpenClicky answers by **drawing on your
 screen while it talks**: a hand-drawn diagram that appears stroke by stroke, each beat in step with the sentence
-being spoken. Later phases add turning 3D models you can click to ask about a part.
+being spoken. Machines, bodies and boards come as turning 3D models (cut open to show their inside) that you can
+drag, zoom and click to ask about a part, and a real photo can sit beside the drawing. Mark part of the screen first
+(the island's marker button or Ctrl+Alt+M) and the answer is about that part.
 
 This is the same kind of feature HeyClicky ships as "draw and explain". It is written from scratch for OpenClicky:
 no HeyClicky code, prompts or assets are used.
+
+| | | |
+|---|---|---|
+| ![A jet engine cut open](media/draw-stage/jet-engine-cutaway.png) | ![Plugging a camera into a board](media/draw-stage/board-camera.png) | ![Inside a heart](media/draw-stage/heart.png) |
 
 ## How it works
 
@@ -108,10 +114,43 @@ board.
 | `circle(x, y, r, o)`, `ellipse(x, y, rx, ry, o)`, `rect(x, y, w, h, o)`, `poly(points, o)` | outlines, optionally filled |
 | `dot(x, y, r, o)`, `text(x, y, words, o)`, `highlight(x, y, w, h, o)` | a point, handwriting, a marker sweep |
 | `card(x, y, w, h, {title})` | a paper card to explain on |
+| `photo(x, y, w, h, {query, caption})` | a real photo from Wikimedia Commons (found by the app) in a polaroid frame |
+| `figure(x, y, w, h, {tilt, turn, zoom, spin, ground})` | a turning 3D stage; its parts are below |
 | `W`, `H`, `sin`, `cos`, `PI`, `mid`, `along`, `polar`, `lerp`, `range` | the canvas and helpers |
 
 Options `o`: `color` (`ink, blue, red, green, orange, purple, pink, yellow, teal, brown, grey, white` or `#hex`),
 `width`, `fill`, `fillOpacity`, `dashed`, `size`, `align` (`start`, `middle`, `end`), `bold`.
+
+### 3D figures
+
+| Part | Shape |
+|---|---|
+| `f.box({w, h, d, round})` | a box; `round` rounds its edges and corners |
+| `f.cyl({r, h, r2, open})`, `f.cone({r, h})`, `f.sphere({r})`, `f.torus({r, tube})`, `f.capsule({r, h})` | the round solids |
+| `f.lathe({points: [[radius, y], …]})` | a turned profile: casings, nozzles, bottles |
+| `f.extrude({points, depth, holes, bevel})` | a flat outline made thick: wings, fins, brackets |
+| `f.tube({points, r})`, `f.pipe({points, r, bend})` | a smooth tube; a pipe with straight runs and bends |
+| `f.spring({r, h, coils, wire})`, `f.gear({r, teeth, depth})`, `f.arrow({from, to, color})` | |
+| `f.blob({balls, sticks, paths, holes, smooth})` | one smooth organic surface over balls, (tapering) sticks and paths, blended where they meet: organs, animals, leaves (a distance field meshed with surface nets) |
+
+Every part takes `at`, `rot`, `axis`, `scale`, `parent`, `color`, `opacity` and a material: `steel, alu, titanium,
+chrome, iron, gold, copper, brass, plastic:<color>, paint:<color>, rubber, wood, stone, ceramic, glass, water,
+glow:<color>`, and the organic `tissue, muscle, skin, bone, leaf, fabric, pcb`. `cut: 'z'` takes the front half
+away (a hatched cut face shows where), `copies: {n, step}` makes a row, `around: {n, axis, center}` repeats the part
+round an axis, `mirror: 'x'` adds its mirror image. Motion: `.spin .stroke .bob .pulse .orbit .move`; labels:
+`part.label(words, {color})`; camera: `f.view({tilt, turn, zoom})`. A part named by its const (`const liftFan =
+f.cyl(…)`) is asked about as "lift fan" when clicked.
+
+The look: soft key light with shadows on an invisible ground, a rim light behind, an ink outline round every part
+and lighter lines on its sharp edges, and labels as small tags on leader lines. The camera fits the figure's box.
+When the first spoken line is slow to come, "One moment, let me draw that for you." is said first.
+
+## Marking part of the screen
+
+The island's marker button (or Ctrl+Alt+M) dims the screen under the pointer a little and lets you draw a loop with a
+yellow marker round some code, part of a photo or a chart. The mark stays while the next question is answered: the
+question carries where it is and a close-up of it, and a drawing answer is made on that screen so it can point at it.
+A mark nobody asks about goes after three minutes. `--openclicky-marker-smoke` draws one by itself.
 
 ## Safety
 
@@ -146,8 +185,8 @@ The program is model-written code, so:
 | **1 (this)** | questions answered by drawing in the ask lane, with any answer model; the drawing prompt; the screenshot as the canvas; speech pacing from `SpeechQueue`; falling back to words |
 | 1.x | the Realtime voice lane; a Settings switch; a model-callable tool for questions the heuristic misses |
 | 2 ✓ | `figure()` 3D figures with three.js r172 (`figure3d.js`, `vendor/three`): box, cyl, cone, sphere, torus, capsule, tube, lathe, extrude, spring, gear, arrow; real materials; parts growing in on their line; labels that follow their part; spin, stroke, bob, pulse, orbit, move |
-| 2.x | cutaways, drag to turn, click a part → ask about it (the stage window has to take the mouse over a figure) |
-| 3 | photo cards, molecules, graphs and timelines, live edits for follow-up questions |
+| 2.x ✓ | drag to turn, wheel to zoom, click a part → ask about it; cutaways, copies, mirror, rounded boxes, pipes, organic blobs; the studio look (shadows, outlines, rim light, tags); a hold line; marking part of the screen |
+| 3 | photo cards ✓, molecules, graphs and timelines, live edits for follow-up questions |
 | 4 | lessons: save, replay, export as video, quiz cards |
 
 ## Trying it
@@ -157,6 +196,8 @@ cd windows
 dotnet build OpenClicky.Windows.sln
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke my-program.js --speech --shot stage.png
+# the 3D samples: samples\heart-blob-3d.js, samples\jet-engine-cutaway-3d.js, samples\board-3d.js, samples\heart-photo-3d.js
+.\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke src\OpenClicky.Windows\Assets\DrawStage\samples\jet-engine-cutaway-3d.js
 # a whole drawing answer on a screenshot of your screen: a written reply, or your answer model's own (needs a key)
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke reply:src\OpenClicky.Windows\Assets\DrawStage\samples\heart-reply.md --voice
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke "lesson:how does a jet engine work?" --voice

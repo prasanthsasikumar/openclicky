@@ -59,6 +59,13 @@ public sealed class DrawStageController
         }
     }
 
+    /// <summary>Finds a real photo for a query (the Teacher's Wikimedia search); set by the composition root. Without one,
+    /// photo cards say none was found.</summary>
+    public Func<string, string, CancellationToken, Task<DrawStagePhoto?>>? FindPhoto { get; set; }
+
+    /// <summary>A part of a 3D figure was clicked: its label (or its kind when it has none).</summary>
+    public event Action<string>? FigurePartClicked;
+
     /// <summary>The page has loaded and takes messages straight away.</summary>
     public bool IsReady { get; private set; }
 
@@ -123,6 +130,30 @@ public sealed class DrawStageController
         return true;
     }
 
+    private async Task SendPhotoAsync(string id, string query, string caption)
+    {
+        DrawStagePhoto? photo = null;
+        try
+        {
+            if (FindPhoto is { } find && query.Trim().Length > 0)
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                photo = await find(query, caption, timeout.Token);
+            }
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            Logged?.Invoke($"photo search failed ({error.GetType().Name})");
+        }
+        Logged?.Invoke(photo is null ? $"no photo for \"{query}\"" : $"photo for \"{query}\" ({photo.ImageData.Length / 1024} KB, {photo.Credit})");
+        var message = DrawStageMessages.Photo(id, photo);
+        if (MainThread is { } mainThread) mainThread.Post(() => Surface?.Post(message));
+        else Surface?.Post(message);
+    }
+
+    /// <summary>Where page replies are posted (the UI thread); set by the composition root.</summary>
+    public IMainThread? MainThread { get; set; }
+
     private void Send(string json)
     {
         if (Surface is null) return;
@@ -149,6 +180,12 @@ public sealed class DrawStageController
                 break;
             case "programRan":
                 ProgramRan?.Invoke(message.K ?? 0);
+                break;
+            case "figurePart" when message.Text is { Length: > 0 } part:
+                FigurePartClicked?.Invoke(part);
+                break;
+            case "photoWanted" when message.Id is { } photoId:
+                _ = SendPhotoAsync(photoId, message.Query ?? "", message.Text ?? "");
                 break;
             case "finished":
                 Finished?.Invoke();

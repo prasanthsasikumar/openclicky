@@ -27,6 +27,8 @@ public sealed partial class CompanionManager
     /// <summary>The last question sent down the ask lane and when: the same one again soon after means the
     /// answer missed what they meant (RepeatedQuestion).</summary>
     private (string Transcript, DateTimeOffset AskedAt)? lastAskQuestion;
+    /// <summary>The part of the screen marked before the question being answered (ScreenMarker); it goes once answered.</summary>
+    private MarkedArea? markInQuestion;
 
     /// <summary>The running response, cancelled when the person speaks again.</summary>
     private CancellationTokenSource? currentResponseCancellation;
@@ -109,6 +111,8 @@ public sealed partial class CompanionManager
         try
         {
             await AnswerAsync(transcript, pauseSeconds, isGuidedStepContinuation, cancellationToken);
+            // The marked part has had its answer: the mark goes (one asked about again is marked again).
+            ScreenMarker.Shared.ClearIfCurrent(markInQuestion);
         }
         catch (Exception error) when (AskLaneFailures.IsCancellation(error) || cancellationToken.IsCancellationRequested)
         {
@@ -159,6 +163,19 @@ public sealed partial class CompanionManager
         if (allScreenCaptures.Count == 0) throw new AskScreenCaptureException(new InvalidOperationException("no screen was captured"));
         var screenCaptures = ScreensForAsk(allScreenCaptures, AccountCapabilities.Current());
         cancellationToken.ThrowIfCancellationRequested();
+        // A part of the screen marked before asking: a close-up of it rides along and the question says where it is.
+        markInQuestion = ScreenMarker.Shared.ForQuestion(DateTimeOffset.Now);
+        (byte[] Data, string Label)? markCloseUp = null;
+        string? markedAreaLine = null;
+        CompanionScreenCapture? markedCapture = null;
+        if (markInQuestion?.In(screenCaptures) is { } marked)
+        {
+            markedCapture = marked.Capture;
+            markedAreaLine = MarkedArea.PromptLine(marked.Area, marked.Capture.Label);
+            var closeUpArea = MarkedArea.CloseUpRect(marked.Area, marked.Capture.ScreenshotWidthInPixels, marked.Capture.ScreenshotHeightInPixels);
+            if (services.ScreenCapture.CropJpeg(marked.Capture.ImageData, closeUpArea) is { } closeUp) markCloseUp = (closeUp, MarkedArea.CloseUpLabel);
+            AppLog.Write($"ask: the question is about a marked area ({marked.Area.Width}×{marked.Area.Height} px)");
+        }
 
         // Two-tier routing: the gate decides whether this is a quick question (the ask lane below) or
         // real work (the agent lane). The agent lane needs the openclicky tool; without it the quick
@@ -182,8 +199,10 @@ public sealed partial class CompanionManager
         // A teaching question's lesson starts now, while the answer is still being asked for.
         var cursorCapture = CursorCapture(screenCaptures);
         // A question a picture answers is answered by drawing on the screen while speaking (CompanionManager.DrawStage).
+        // Drawn on the screen with the mark, so the drawing can point at it.
         if (!isGuidedStepContinuation
-            && await TryDrawingAnswerAsync(transcript, cursorCapture, conversationHistory.ToList(), cancellationToken))
+            && await TryDrawingAnswerAsync(transcript, markedCapture ?? cursorCapture, conversationHistory.ToList(), cancellationToken,
+                markCloseUp, markedAreaLine))
         {
             return;
         }
@@ -193,7 +212,8 @@ public sealed partial class CompanionManager
         // around it rides along, so "what is this?" is about the thing pointed at and not the
         // window with focus.
         var pointer = PointerInCapture.Locate(mouseLocationAtRelease, screenCaptures);
-        if (pointer is not null && screenCaptures.FirstOrDefault(capture => capture.Label == pointer.ScreenLabel) is { } pointedCapture
+        if (markCloseUp is { } markedCloseUp) labeledImages.Add(markedCloseUp);
+        else if (pointer is not null && screenCaptures.FirstOrDefault(capture => capture.Label == pointer.ScreenLabel) is { } pointedCapture
             && PointerCloseUp.CropRect(pointer, pointedCapture.ScreenshotWidthInPixels, pointedCapture.ScreenshotHeightInPixels) is { } closeUpArea
             && services.ScreenCapture.CropJpeg(pointedCapture.ImageData, closeUpArea) is { } closeUp)
         {
@@ -255,7 +275,7 @@ public sealed partial class CompanionManager
                 labeledImages,
                 systemPrompt,
                 historyForApi,
-                AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText, pointer, isRepeatedQuestion),
+                AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText, pointer, isRepeatedQuestion, markedAreaLine),
                 askTools,
                 accumulatedAnswer => services.MainThread.Post(() => answerSpeaker.Receive(accumulatedAnswer)),
                 cancellationToken);
