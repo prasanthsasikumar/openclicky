@@ -22,8 +22,33 @@ public sealed class DictationWindowNavigationTests
         foreach (var page in DictationSettingsPages.AllCases)
         {
             model.Select(DictationDestination.Of(page));
-            Assert.Equal(DictationDestination.Of(page), model.Destination);
+            // A page shown one section at a time opens on its first section.
+            var expected = SettingsLayout.SectionsOf(page) is [var first, ..] ? DictationDestination.Of(page, first.Title!) : DictationDestination.Of(page);
+            Assert.Equal(expected, model.Destination);
         }
+    }
+
+    [Fact]
+    public void ClickyOpensIntoItsSectionsAndEachRowHasOne()
+    {
+        var sections = SettingsLayout.SectionsOf(DictationSettingsPage.Clicky).Select(section => section.Title).ToList();
+        Assert.Equal(["Talking", "Hands-free", "Pointer", "Drawings", "Your models", "More"], sections);
+        Assert.Empty(SettingsLayout.SectionsOf(DictationSettingsPage.Dictation));
+
+        var model = new DictationWindowModel();
+        model.Select(DictationSettingsPage.Clicky);
+        Assert.Equal(DictationDestination.Of(DictationSettingsPage.Clicky, "Talking"), model.Destination);
+        Assert.Equal("Talking", model.Destination.Title);
+        Assert.Equal(DictationSettingsPage.Clicky, model.Destination.SidebarPage);
+        model.Select(DictationDestination.Of(DictationSettingsPage.Clicky, "Drawings"));
+        Assert.Equal("settings(clicky/Drawings)", model.Destination.ToString());
+
+        // A row's own section: the drawing switch is with the drawings now, and a page without sections is just the page.
+        Assert.Equal(DictationDestination.Of(DictationSettingsPage.Clicky, "Drawings"), SettingsLayout.DestinationOf("plugins.teacher"));
+        Assert.Equal(DictationDestination.Of(DictationSettingsPage.Clicky, "Your models"), SettingsLayout.DestinationOf("models.ollama"));
+        Assert.Equal(DictationDestination.Of(DictationSettingsPage.Dictation), SettingsLayout.DestinationOf("dictation.language"));
+        Assert.Equal("sidebar.page.clicky.your-models",
+            SettingsTourTargets.SidebarTargetId(DictationDestination.Of(DictationSettingsPage.Clicky, "Your models")));
     }
 
     [Fact]

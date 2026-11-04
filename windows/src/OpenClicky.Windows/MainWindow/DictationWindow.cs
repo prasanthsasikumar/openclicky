@@ -2,7 +2,9 @@
 // NavigationView lists six pages — Dictation, Clicky, Island, Keys & Account, Privacy, General — with
 // a search over every setting at the top and incognito and the account at the foot. Rows on a page
 // open the pages under it (Your words, How it writes and The orb under Dictation; Calendars under
-// Island); the back button above the page returns, and the button opposite it picks the appearance. Every way in
+// Island); the back button above the page returns, and the button opposite it picks the appearance. A page
+// shown one section at a time (Clicky) opens into its sections in the sidebar while it is the one picked,
+// and its page shows just that section, with a Next button to the one after. Every way in
 // (Ctrl+, the tray, the island, the orb's menu) goes through Open(section, settingsPage), which
 // lands on the page it asks for. The window is reopened rather than recreated, and remembers where
 // it was. Closing it stops the Settings tour.
@@ -35,6 +37,8 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
     private readonly WpfUi.NavigationView navigation;
     private readonly WpfUi.TextBox searchBox;
     private readonly Dictionary<DictationDestination, WpfUi.NavigationViewItem> sidebarItems = [];
+    /// <summary>The sections of pages shown one section at a time, under their page in the sidebar while it is picked.</summary>
+    private readonly Dictionary<DictationDestination, WpfUi.NavigationViewItem> sectionItems = [];
     private readonly ContentControl footerAccount = new() { Focusable = false, HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly ContentControl contentHost = new() { Focusable = false, HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
     /// <summary>The page with its toolbar above it: back on the left, appearance on the right.</summary>
@@ -114,6 +118,13 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
             var item = SidebarItem(destination);
             sidebarItems[destination] = item;
             navigation.MenuItems.Add(item);
+            foreach (var section in SettingsLayout.SectionsOf(destination.SidebarPage))
+            {
+                var sectionDestination = DictationDestination.Of(destination.SidebarPage, section.Title!);
+                var sectionItem = SectionItem(sectionDestination);
+                sectionItems[sectionDestination] = sectionItem;
+                navigation.MenuItems.Add(sectionItem);
+            }
         }
 
         backButton = ToolbarButton("", "Back", () => Model.GoBack());
@@ -276,7 +287,20 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
     private IReadOnlyList<string> CurrentItemIds()
     {
         if (Model.IsSearching) return catalog.SearchMatches(Model.TrimmedSearchText).Select(item => item.Id).ToList();
-        return Model.Destination.Page is { } page ? catalog.PageItems(page).Select(item => item.Id).ToList() : [];
+        return Model.Destination.Page is { } page ? ShownItems(page, Model.Destination.PageSection).Select(item => item.Id).ToList() : [];
+    }
+
+    /// <summary>A page's rows, or one section's.</summary>
+    private IReadOnlyList<SettingsItem> ShownItems(DictationSettingsPage page, string? pageSection) =>
+        pageSection is null ? catalog.PageItems(page) : [.. catalog.PageItems(page).Where(item => item.Section == pageSection)];
+
+    /// <summary>The section after <paramref name="destination"/>'s on its page, for its Next button; null after the last.</summary>
+    private static DictationDestination? NextSection(DictationDestination destination)
+    {
+        if (destination.Page is not { } page || destination.PageSection is not { } pageSection) return null;
+        var sections = SettingsLayout.SectionsOf(page);
+        var index = sections.ToList().FindIndex(section => section.Title == pageSection);
+        return index >= 0 && index + 1 < sections.Count ? DictationDestination.Of(page, sections[index + 1].Title!) : null;
     }
 
     /// <summary>A setting changed which rows apply (the region, the engine, a key): redraw, keeping the scroll position.</summary>
@@ -305,6 +329,18 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
             contentHost.Content = new SettingsFormView("Search Results", SettingsSectionGroup.SearchResultGroups(matches, query),
                 item => rowFactory.Build(item, query), $"No settings match “{query}”.");
         }
+        else if (Model.Destination.Page is { } sectionedPage && Model.Destination.PageSection is { } pageSection)
+        {
+            // One section: its rows under the page's header, its title and its line, then the way on to the next.
+            var sections = SettingsLayout.SectionsOf(sectionedPage);
+            var section = sections.First(group => group.Title == pageSection);
+            var next = NextSection(Model.Destination);
+            contentHost.Content = new SettingsFormView(pageSection, SettingsSectionGroup.Groups(ShownItems(sectionedPage, pageSection), _ => ""),
+                item => rowFactory.Build(item, ""), page: sectionedPage,
+                section: new SettingsFormView.SectionLook(pageSection, section.Intro ?? "",
+                    $"Section {sections.ToList().FindIndex(each => each.Title == pageSection) + 1} of {sections.Count}",
+                    next?.PageSection, next is null ? null : () => Model.Select(next)));
+        }
         else if (Model.Destination.Page is { } page)
         {
             contentHost.Content = new SettingsFormView(page.Title(), SettingsSectionGroup.Groups(catalog.PageItems(page), foldsAdvanced: true),
@@ -326,13 +362,24 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         var matches = Model.IsSearching ? catalog.SearchMatches(Model.TrimmedSearchText) : [];
         foreach (var (destination, item) in sidebarItems)
         {
-            // A page opened from a row keeps its parent selected (The orb keeps Dictation).
-            var isCurrent = !Model.IsSearching && destination.SidebarPage == Model.Destination.SidebarPage;
+            // A page opened from a row keeps its parent selected (The orb keeps Dictation); a page shown in sections leaves
+            // the mark to its section.
+            var isCurrent = !Model.IsSearching && destination.SidebarPage == Model.Destination.SidebarPage && Model.Destination.PageSection is null;
             if (isCurrent) item.Activate(navigation);
             else item.Deactivate(navigation);
             // While searching, the pages with no match on them or the pages under them fade back.
             var hasMatch = matches.Any(match => match.Page.SidebarPage() == destination.SidebarPage);
             item.Opacity = Model.IsSearching && !hasMatch ? 0.35 : 1;
+            item.FontWeight = destination.SidebarPage == Model.Destination.SidebarPage && !Model.IsSearching ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+        foreach (var (destination, item) in sectionItems)
+        {
+            // A page's sections show under it while it is the page picked (or a search finds rows in them).
+            var hasMatch = matches.Any(match => match.Page == destination.Page && match.Section == destination.PageSection);
+            item.Visibility = Model.IsSearching ? (hasMatch ? Visibility.Visible : Visibility.Collapsed)
+                : destination.SidebarPage == Model.Destination.SidebarPage ? Visibility.Visible : Visibility.Collapsed;
+            if (!Model.IsSearching && destination == Model.Destination) item.Activate(navigation);
+            else item.Deactivate(navigation);
         }
     }
 
@@ -352,6 +399,36 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         TourTarget.Attach(item, SettingsTourTargets.SidebarTargetId(destination));
         return item;
     }
+
+    /// <summary>A section of a page shown one at a time: under its page, indented, with a small line icon of its own.</summary>
+    private WpfUi.NavigationViewItem SectionItem(DictationDestination destination)
+    {
+        var item = new WpfUi.NavigationViewItem
+        {
+            Content = destination.Title,
+            Icon = new WpfUi.SymbolIcon { Symbol = SectionSymbol(destination.PageSection), FontSize = 15 },
+            Cursor = Cursors.Hand,
+            Margin = new Thickness(30, 0, 0, 0),
+            FontSize = 13,
+            Visibility = Visibility.Collapsed,
+        };
+        Ui.AutomationProperties(item, $"{destination.SidebarPage.Title()}: {destination.Title}");
+        item.Click += (_, _) => Model.Select(destination);
+        TourTarget.Attach(item, SettingsTourTargets.SidebarTargetId(destination));
+        return item;
+    }
+
+    /// <summary>A section's icon in the sidebar (the Fluent icons WPF-UI ships).</summary>
+    private static WpfUi.SymbolRegular SectionSymbol(string? pageSection) => pageSection switch
+    {
+        "Talking" => WpfUi.SymbolRegular.Mic24,
+        "Hands-free" => WpfUi.SymbolRegular.Headphones24,
+        "Pointer" => WpfUi.SymbolRegular.CursorClick24,
+        "Drawings" => WpfUi.SymbolRegular.PaintBrush24,
+        "Your models" => WpfUi.SymbolRegular.Server24,
+        "More" => WpfUi.SymbolRegular.MoreHorizontal24,
+        _ => WpfUi.SymbolRegular.Circle24,
+    };
 
     /// <summary>A sidebar icon like System Settings': a white glyph in a coloured rounded square (the orb's own capsule for The Orb).</summary>
     public static ImageSource SidebarIcon(string glyph, string tintHex)

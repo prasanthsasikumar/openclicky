@@ -4,7 +4,9 @@
 // window's Settings*Page.cs files; this file only decides their page, their group and their order.
 //
 // Each page puts what people come for above the fold and folds what is rarely changed into one
-// group at the bottom ("More"), which opens in place. Search ignores the fold. The Mac-only rows (the
+// group at the bottom ("More"), which opens in place. Search ignores the fold. A page with sections
+// (Clicky, PagesWithSections) shows one group at a time instead: the sidebar opens it into its groups,
+// each a section with a line on what it holds, and "More" is shown open there. The Mac-only rows (the
 // fn key, haptics, the macOS permissions, answering on this Mac) have no Windows twin and aren't
 // listed; the Windows-only ones (tap to keep listening, the tray icon) sit where their Mac
 // neighbours do.
@@ -24,6 +26,9 @@ public static class SettingsLayout
 
         /// <summary>False for rows only search finds.</summary>
         public bool ShowsOnPage { get; init; } = true;
+
+        /// <summary>A section's line on what it holds (pages with sections), under its title.</summary>
+        public string? Intro { get; init; }
     }
 
     private static readonly IReadOnlyList<Group> DictationGroups =
@@ -39,16 +44,23 @@ public static class SettingsLayout
             ["orb.hidesWhenIdle", "orb.restsExpanded", "orb.opensBoxWhenPasteUnverified", "orb.isDraggable", "orb.tooltips"]),
     ];
 
+    // Clicky's groups are its sections (PagesWithSections): each one shows on its own, under its own title.
     private static readonly IReadOnlyList<Group> ClickyGroups =
     [
-        new(DictationSettingsPage.Clicky, "", ["keyboard.talk", "keyboard.mouseTalk", "clicky.assistantName", "clicky.speechVoice", "clicky.language", "clicky.answerSource"]),
-        new(DictationSettingsPage.Clicky, "Hands-free", ["clicky.fastVoice", "clicky.realtimeProvider", "clicky.fastVoiceNeedsKey", "clicky.alwaysListening"]),
-        new(DictationSettingsPage.Clicky, "Pointer", ["clicky.pointer", "clicky.pointerColor", "clicky.pointerStyle"]),
-        new(DictationSettingsPage.Clicky, "Drawings", ["clicky.drawingSource", "clicky.drawingDetail", "clicky.pieceMaker", "clicky.drawingInstructions", "clicky.markerShortcut"]),
-        new(DictationSettingsPage.Clicky, "Models", ["models.ollama", "models.lmStudio", "models.custom"]),
+        new(DictationSettingsPage.Clicky, "Talking", ["keyboard.talk", "keyboard.mouseTalk", "clicky.assistantName", "clicky.speechVoice", "clicky.language", "clicky.answerSource"])
+            { Intro = "How you ask, and who answers in which voice." },
+        new(DictationSettingsPage.Clicky, "Hands-free", ["clicky.fastVoice", "clicky.realtimeProvider", "clicky.fastVoiceNeedsKey", "clicky.alwaysListening"])
+            { Intro = "Talking back instantly, and listening without the keys." },
+        new(DictationSettingsPage.Clicky, "Pointer", ["clicky.pointer", "clicky.pointerColor", "clicky.pointerStyle"])
+            { Intro = "The pointer that flies to what Clicky means." },
+        new(DictationSettingsPage.Clicky, "Drawings",
+            ["plugins.teacher", "clicky.drawingSource", "clicky.drawingDetail", "clicky.pieceMaker", "clicky.drawingInstructions", "clicky.markerShortcut"])
+            { Intro = "Answers drawn on your screen while Clicky explains them, in 2D and 3D." },
+        new(DictationSettingsPage.Clicky, "Your models", ["models.ollama", "models.lmStudio", "models.custom"])
+            { Intro = "Models you run yourself, on this PC or another one on your network." },
         new(DictationSettingsPage.Clicky, "More",
             ["keyboard.type", "keyboard.handsFree", "clicky.model", "clicky.emailApp", "clicky.emailNeverSent",
-             "plugins.teacher", "clicky.agentMode", "clicky.workspace"]) { IsAdvanced = true },
+             "clicky.agentMode", "clicky.workspace"]) { IsAdvanced = true, Intro = "What is rarely changed." },
     ];
 
     private static readonly IReadOnlyList<Group> IslandGroups =
@@ -93,6 +105,27 @@ public static class SettingsLayout
 
     public static IReadOnlyList<Group> Groups { get; } =
         [.. DictationGroups, .. ClickyGroups, .. IslandGroups, .. AccountGroups, .. PrivacyGroups, .. GeneralGroups];
+
+    /// <summary>The pages shown one section at a time: the sidebar opens them into their groups (Clicky had grown to some
+    /// thirty rows on one page).</summary>
+    public static IReadOnlyList<DictationSettingsPage> PagesWithSections { get; } = [DictationSettingsPage.Clicky];
+
+    /// <summary>A page's sections, in order (its groups on the page, the folded one last); none for a page without.</summary>
+    public static IReadOnlyList<Group> SectionsOf(DictationSettingsPage page) =>
+        PagesWithSections.Contains(page)
+            ? [.. Groups.Where(group => group.Page == page && group.ShowsOnPage && !string.IsNullOrEmpty(group.Title))]
+            : [];
+
+    /// <summary>Where the row <paramref name="itemId"/> shows: its section of a page with sections, else its page (the tour
+    /// goes there before pointing at it).</summary>
+    public static DictationDestination DestinationOf(string itemId)
+    {
+        var group = Groups.FirstOrDefault(group => group.ItemIds.Any(pattern => PatternMatches(pattern, itemId)));
+        if (group is null) return DictationDestination.Of(DictationSettingsPage.Dictation);
+        return PagesWithSections.Contains(group.Page) && !string.IsNullOrEmpty(group.Title)
+            ? DictationDestination.Of(group.Page, group.Title)
+            : DictationDestination.Of(group.Page);
+    }
 
     /// <summary>Whether <paramref name="itemId"/> is one the pattern names ("dictation.engine.*" names every engine row).</summary>
     public static bool PatternMatches(string pattern, string itemId) =>

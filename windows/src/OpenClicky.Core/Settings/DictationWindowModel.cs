@@ -5,7 +5,8 @@
 // their parent selected in the sidebar, and the back button returns. Every way into the window
 // (Ctrl+, the tray, the island, the orb's menu) goes through DictationWindowModel.Open, which lands on
 // the page it asks for; a settings page wins over a section, and a leftover search is cleared.
-// SettingsLayout says which rows each page holds.
+// SettingsLayout says which rows each page holds. A page shown one section at a time (Clicky) opens
+// on its first section, and a destination can name the section (Clicky › Drawings).
 
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -154,18 +155,24 @@ public sealed record DictationDestination
     public DictationSection? Section { get; }
     public DictationSettingsPage? Page { get; }
 
-    private DictationDestination(DictationSection? section, DictationSettingsPage? page)
+    /// <summary>A section of a page shown one at a time (Clicky's "Drawings"): its group's title in SettingsLayout.</summary>
+    public string? PageSection { get; }
+
+    private DictationDestination(DictationSection? section, DictationSettingsPage? page, string? pageSection = null)
     {
         Section = section;
         Page = page;
+        PageSection = pageSection;
     }
 
     public static DictationDestination Of(DictationSection section) => new(section, null);
 
     public static DictationDestination Of(DictationSettingsPage page) => new(null, page);
 
-    /// <summary>Its own name, as its page's title shows it.</summary>
-    public string Title => Page is { } page ? page.Title() : Section!.Value.SidebarTitle();
+    public static DictationDestination Of(DictationSettingsPage page, string pageSection) => new(null, page, pageSection);
+
+    /// <summary>Its own name, as its page's title shows it (a section's own: "Drawings").</summary>
+    public string Title => PageSection ?? (Page is { } page ? page.Title() : Section!.Value.SidebarTitle());
 
     /// <summary>The sidebar page that stays selected while this one shows: Dictation for your pages.</summary>
     public DictationSettingsPage SidebarPage => Page is { } page ? page.SidebarPage() : DictationSettingsPage.Dictation;
@@ -173,7 +180,13 @@ public sealed record DictationDestination
     /// <summary>The sidebar's destinations, in order.</summary>
     public static IReadOnlyList<DictationDestination> SidebarOrder { get; } = DictationSettingsPages.SidebarPages.Select(Of).ToList();
 
-    public override string ToString() => Page is { } page ? $"settings({page.RawValue()})" : $"section({Section!.Value.RawValue()})";
+    public override string ToString() => Page is { } page
+        ? PageSection is { } pageSection ? $"settings({page.RawValue()}/{pageSection})" : $"settings({page.RawValue()})"
+        : $"section({Section!.Value.RawValue()})";
+
+    /// <summary>Where the window lands for this one: a page shown one section at a time opens on its first section.</summary>
+    public DictationDestination Landing() =>
+        Page is { } page && PageSection is null && SettingsLayout.SectionsOf(page) is [var first, ..] ? Of(page, first.Title!) : this;
 }
 
 public sealed class DictationWindowModel : ObservableObject
@@ -227,7 +240,7 @@ public sealed class DictationWindowModel : ObservableObject
     {
         SearchText = "";
         SetBackStack(() => backStack.Clear());
-        Destination = chosenDestination;
+        Destination = chosenDestination.Landing();
     }
 
     public void Select(DictationSection section) => Select(DictationDestination.Of(section));
@@ -237,6 +250,7 @@ public sealed class DictationWindowModel : ObservableObject
     /// <summary>A row that opens another page (The orb from Dictation): back returns to this one.</summary>
     public void Push(DictationDestination chosenDestination)
     {
+        chosenDestination = chosenDestination.Landing();
         if (chosenDestination == Destination) return;
         SetBackStack(() => backStack.Add(Destination));
         SearchText = "";
