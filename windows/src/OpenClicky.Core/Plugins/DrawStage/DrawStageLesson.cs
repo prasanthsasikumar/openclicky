@@ -15,8 +15,10 @@
 //
 
 using System.Text.RegularExpressions;
+using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Plugins.Teacher;
+using OpenClicky.Core.Providers;
 
 namespace OpenClicky.Core.Plugins.DrawStage;
 
@@ -29,6 +31,32 @@ public static partial class DrawStageLesson
     public const int MaximumOutputTokens = 4096;
 
     public static bool IsEnabled(Preferences preferences, bool teacherIsOn) => teacherIsOn && preferences.GetBool(PreferenceKey, defaultValue: true);
+
+    // MARK: - Who writes the drawing
+
+    /// <summary>
+    /// The model that writes drawn answers: shell.json's `drawingSource` (when it can answer) and `drawingModel`, so a
+    /// person can answer quickly with a small local model and draw with a stronger one; with neither set, the same
+    /// <paramref name="answers"/> that answers questions.
+    /// </summary>
+    public static ClaudeAPI WriterFor(OpenClickyShellSettings settings, ClaudeAPI answers)
+    {
+        var source = AnswerSources.FromRawValue(settings.DrawingSource);
+        var model = OpenClickyConfiguration.Cleaned(settings.DrawingModel);
+        if (source is null && model is null) return answers;
+        var modelOverrides = new Dictionary<string, string>(settings.AnswerModels ?? []);
+        return new ClaudeAPI(
+            () => $"{OpenClickyConfiguration.BackendBaseUrl}/chat",
+            model ?? answers.Model,
+            currentCredentials: source is { } chosen ? () => ProviderRouter.CurrentCredentials() with { PreferredAnswerSource = chosen } : null,
+            makeAnswerProvider: (answering, credentials, cancellationToken) =>
+            {
+                // The drawing model is for whichever source ends up writing the drawing.
+                var overrides = model is null ? modelOverrides : new Dictionary<string, string>(modelOverrides) { [answering.Id()] = model };
+                return AnswerProviderFactory.MakeAsync(answering, credentials, overrides, cancellationToken: cancellationToken);
+            },
+            warmUpConnection: false);
+    }
 
     // MARK: - Which questions
 

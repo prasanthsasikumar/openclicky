@@ -89,6 +89,11 @@ with pointing.
 5. Esc and the next question clear the stage (`TeacherPlugin.ClearBoard`). The stage's browser starts as soon as
    the talk key goes down (`DrawStageController.Prepare`), so the first drawing does not wait for it.
 
+Drawings can come from a different model than answers. Under Settings → Clicky → Models, "Drawings come from" sets
+`drawingSource` and `drawingModel` in shell.json (`DrawStageLesson.WriterFor`). The same section turns on your own
+models: Ollama, LM Studio, or any OpenAI-compatible server. Each is reached at its address, needs no key, and its
+models are read from `/v1/models` (`LocalModels`). When no model is picked, it uses the first one that sees images.
+
 It is on whenever the Teacher plugin is on. To turn it off, set the preference `teacher.drawingStage` to `false`;
 teaching questions then go back to the Teacher's board. The fast (Realtime) voice lane still uses the Teacher's
 board.

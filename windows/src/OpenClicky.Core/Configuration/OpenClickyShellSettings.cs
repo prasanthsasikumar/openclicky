@@ -70,6 +70,11 @@ public sealed class OpenClickyShellSettings
     [JsonPropertyName("customOpenAIUrl")] public string? CustomOpenAIUrl { get; set; }
     [JsonPropertyName("customOpenAIKey")] public string? CustomOpenAIKey { get; set; }
 
+    /// <summary>Who writes drawn answers (the drawing stage): null uses whoever answers questions, else an
+    /// AnswerSource raw value; `drawingModel` overrides that source's model for drawings only.</summary>
+    [JsonPropertyName("drawingSource")] public string? DrawingSource { get; set; }
+    [JsonPropertyName("drawingModel")] public string? DrawingModel { get; set; }
+
     /// <summary>Answer through a plan the person already pays for (Claude Code / Codex). Off until switched on.</summary>
     [JsonPropertyName("useClaudeCodePlan")] public bool? UseClaudeCodePlan { get; set; }
     [JsonPropertyName("useCodexPlan")] public bool? UseCodexPlan { get; set; }

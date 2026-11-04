@@ -5,6 +5,7 @@
 using System.Text.Json.Nodes;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Providers;
 
 namespace OpenClicky.Core.Tests.Answers;
@@ -169,5 +170,17 @@ public class SelfHostedSourcesTests
         var error = await Assert.ThrowsAsync<AnswerProviderException>(() =>
             AnswerProviderFactory.MakeAsync(AnswerSource.LMStudio, new ProviderCredentials(null, null, null), new Dictionary<string, string>()));
         Assert.Contains("settings, models", error.Message);
+    }
+
+    // MARK: - who writes drawings
+
+    [Fact]
+    public void DrawingsAreWrittenByTheAnswerModelUnlessAnotherIsPicked()
+    {
+        var answers = new ClaudeAPI(() => "http://localhost/chat", warmUpConnection: false);
+        Assert.Same(answers, DrawStageLesson.WriterFor(new OpenClickyShellSettings(), answers));
+        var writer = DrawStageLesson.WriterFor(new OpenClickyShellSettings { DrawingSource = "anthropic", DrawingModel = "claude-opus-5-5" }, answers);
+        Assert.NotSame(answers, writer);
+        Assert.Equal("claude-opus-5-5", writer.Model);
     }
 }

@@ -1,5 +1,6 @@
 // Settings → Clicky → Models: the person's own models (Ollama, LM Studio, any OpenAI-compatible server), each turned
-// on by its address and connected by listing the models it serves.
+// on by its address and connected by listing the models it serves, and who writes the drawn answers (the drawing
+// stage), which may be a different source and model from the one that answers questions.
 
 using System.Windows;
 using System.Windows.Controls;
@@ -32,6 +33,8 @@ internal sealed partial class SettingsRowFactory
                 return SelfHostedRow(AnswerSource.LMStudio, item, query);
             case "models.custom":
                 return SelfHostedRow(AnswerSource.CustomOpenAI, item, query);
+            case "clicky.drawingSource":
+                return new LiveContent(() => Ui.Card(DrawingSourceRow(item, query)), Changes.Shell);
             default:
                 return null;
         }
@@ -96,7 +99,7 @@ internal sealed partial class SettingsRowFactory
                     }
                 });
                 ShellSettingsRevision.NoteChanged();
-                selfHosted.Status[source] = $"Connected: {served.Count} model{(served.Count == 1 ? "" : "s")}. Pick it under “Answers come from”.";
+                selfHosted.Status[source] = $"Connected: {served.Count} model{(served.Count == 1 ? "" : "s")}. Pick it under “Answers come from” or “Drawings come from”.";
             }
             catch (LocalModelsException failure)
             {
@@ -167,5 +170,36 @@ internal sealed partial class SettingsRowFactory
     }
 
     private static string Capitalized(string sentence) => sentence.Length == 0 ? sentence : char.ToUpperInvariant(sentence[0]) + sentence[1..];
+
+    /// <summary>Who writes drawings: the same source as answers, or any one set up, and a model of its own (blank: its usual one).</summary>
+    private static Grid DrawingSourceRow(SettingsItem item, string query)
+    {
+        var shell = OpenClickyConfiguration.Settings;
+        var available = ProviderCredentials.Current().AnswerSourcesInOrder;
+        var picked = AnswerSources.FromRawValue(shell.DrawingSource);
+        var options = new List<(string Id, string Title)> { ("same", "Same as answers") };
+        options.AddRange(available.Select(source => (source.Id(), source.DisplayName())));
+        if (picked is { } stale && !available.Contains(stale)) options.Add((stale.Id(), $"{stale.DisplayName()} (not set up)"));
+        var picker = Ui.Picker(options, picked?.Id() ?? "same", choice =>
+        {
+            OpenClickyConfiguration.Update(saved => saved.DrawingSource = choice == "same" ? null : choice);
+            ShellSettingsRevision.NoteChanged();
+        }, 200);
+        var modelField = new WpfUi.TextBox
+        {
+            Width = 170, Text = shell.DrawingModel ?? "", PlaceholderText = "its usual model", VerticalAlignment = VerticalAlignment.Center,
+        };
+        Ui.AutomationProperties(modelField, "Drawing model");
+        void SaveModel()
+        {
+            var typed = modelField.Text.Trim();
+            if (typed == (OpenClickyConfiguration.Settings.DrawingModel ?? "")) return;
+            OpenClickyConfiguration.Update(saved => saved.DrawingModel = typed.Length == 0 ? null : typed);
+            ShellSettingsRevision.NoteChanged();
+        }
+        modelField.LostFocus += (_, _) => SaveModel();
+        modelField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) SaveModel(); };
+        return Ui.Row(item.Title, item.Detail, query, Ui.HStack(8, picker, modelField));
+    }
 
 }

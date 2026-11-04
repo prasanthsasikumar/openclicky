@@ -162,7 +162,7 @@ internal static class DrawStageSmoke
         {
             var question = argument["lesson:".Length..];
             Console.WriteLine($"smoke: asking the answer model (wants a drawing: {DrawStageLesson.WantsADrawing(question)})");
-            var answers = new ClaudeAPI(() => $"{OpenClickyConfiguration.BackendBaseUrl}/chat");
+            var answers = DrawStageLesson.WriterFor(OpenClickyConfiguration.Settings, new ClaudeAPI(() => $"{OpenClickyConfiguration.BackendBaseUrl}/chat"));
             writeReply = async (onReplySoFar, token) => (await answers.AnalyzeImageStreamingAsync(
                 [Core.Companion.CompanionManager.ImageLabeledWithItsPixelSize(capture)],
                 DrawStageLesson.SystemPrompt(capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels),

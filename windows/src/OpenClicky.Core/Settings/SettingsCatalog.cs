@@ -234,7 +234,7 @@ public sealed class SettingsCatalog
 
     public const string FastVoiceNeedsKeyDetail = "Instant replies need your own OpenAI or Gemini key. Without one, Clicky answers in the standard voice.";
 
-    /// <summary>Models of the person's own (Ollama, LM Studio, any OpenAI-compatible server).</summary>
+    /// <summary>Models of the person's own (Ollama, LM Studio, any OpenAI-compatible server) and who writes drawings.</summary>
     public IReadOnlyList<SettingsItem> ModelsItems()
     {
         SettingsItem Item(string id, string title, string detail, string[] keywords) => new()
@@ -249,6 +249,8 @@ public sealed class SettingsCatalog
                 ["lm studio", "lmstudio", "local", "offline", "private", "model", "free"]),
             Item("models.custom", "Your own server", "Any OpenAI-compatible endpoint: vLLM, llama.cpp, LocalAI, DeepSeek, Together, and others, with a key if it needs one.",
                 ["openai compatible", "custom", "server", "endpoint", "vllm", "llama.cpp", "localai", "deepseek", "together", "self-hosted", "api"]),
+            Item("clicky.drawingSource", "Drawings come from", "Who writes the answers drawn on your screen. A stronger model draws better; answers can stay quick.",
+                ["drawing", "draw", "diagram", "teacher", "3d", "model", "explain", "whiteboard"]),
         ];
     }
 

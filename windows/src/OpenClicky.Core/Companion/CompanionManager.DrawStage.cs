@@ -44,12 +44,13 @@ public sealed partial class CompanionManager
         activeAnswerSpeaker = null;
         activeAnswerPlayback = answerCancellation;
         var startedAt = DateTimeOffset.UtcNow;
+        var writer = DrawStageLesson.WriterFor(OpenClickyConfiguration.Settings, claudeAPI);
         try
         {
             var result = await DrawingAnswer.RunAsync(
                 stage,
                 capture,
-                async (onReplySoFar, token) => (await claudeAPI.AnalyzeImageStreamingAsync(
+                async (onReplySoFar, token) => (await writer.AnalyzeImageStreamingAsync(
                     [ImageLabeledWithItsPixelSize(capture)],
                     DrawStageLesson.SystemPrompt(capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels),
                     history,
