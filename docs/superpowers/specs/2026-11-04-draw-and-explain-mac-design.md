@@ -50,6 +50,8 @@ With Teacher on, lessons lean on it harder.
   LLaMA-Mesh or Hunyuan3D, your-own-models (Ollama / LM Studio), the voice-key actions, the mouse-button
   talk, the assistant's name. These are separate Windows features, not part of drawing.
 - The fast-voice (OpenAI Realtime) lane. v1 is the classic ask lane only; Realtime keeps its Teacher board.
+  Known cost (the reviewer raised it): a person with an own OpenAI key and fast voice on uses the Realtime
+  lane for ⌃⌥, so they see no drawings until the Realtime follow-up lands. It is the first follow-up.
 - A "drawings come from" model picker and a detail-level setting. v1 draws with the person's answer model
   at the "detailed" level.
 
@@ -90,7 +92,7 @@ draw-stage/
 ```
 
 These files are copied from PR #39 (branch `pr-39`, commit `23afa99`), with credit to darkworks in the
-README and in the commit. Three changes are made in the shared copy, all platform-neutral:
+README and in the commit. Five changes are made in the shared copy, all platform-neutral:
 
 1. **The host bridge.** `stage.js` talks to its host through `window.chrome.webview` (WebView2). Add a
    second branch: when `window.webkit.messageHandlers.stage` exists, `send()` posts there, and the host calls
@@ -103,6 +105,13 @@ README and in the commit. Three changes are made in the shared copy, all platfor
 3. **The page stops its loops when told to.** Add two messages, `sleep` and `wake`: on `sleep` the page
    cancels its `requestAnimationFrame` loops (`stage.js` `tick`, the 3D `frame`) and on `wake` restarts them.
    The Mac sends `sleep` whenever the stage window is hidden. (Windows can use it for the same bug.)
+4. **A first-question prompt with a way out.** The Windows user prompt demands a program ("Answer it by
+   drawing … as one ```js program"); only its follow-up prompt offers `NONE`. A new shared file,
+   `prompt/question.md`, is the first-question user prompt with the `NONE` rule (below). It is a new file,
+   so Windows is untouched until its maintainers choose it. (Reviewer's question; my call.)
+5. **A Mac handwriting face.** `stage.css` names Ink Free, Segoe Print and Comic Sans MS for labels and
+   tags; on a Mac that falls to Comic Sans. Noteworthy and Bradley Hand are added to the stack, before
+   Comic Sans. Windows is unaffected. (Reviewer's question; my call.)
 
 The **drawing language and the message protocol are the contract** between platforms. They are documented in
 `draw-stage/README.md` (moved from the PR's `docs/draw-stage.md`, trimmed of Windows specifics) and must not
@@ -111,6 +120,9 @@ change without both platforms agreeing. The Mac does not add messages beyond `sl
 The prompt text in `prompt/` is the shared version of the Windows prompt. The Mac fills the placeholders
 for the "detailed" level: 3 to 6 beats, 70 calls, 15-40 parts, 50 parts at most, 8,192 output tokens. The
 "pieces" section of the Windows prompt is left out (no piece makers on the Mac).
+
+Not sent by the Mac: `remembered` (it shows the page's Picture and Video buttons, which do nothing without
+saving), `recording`, `saving`, `piece`. The wheel still resizes a card without the grip.
 
 **Bundling.** A new build phase "Embed draw stage" (`macos/OpenClicky/scripts/embed-draw-stage.sh`, the twin
 of `embed-app-skills.sh`) copies `draw-stage/` minus `README.md` and `prompt/*.md` kept as-is into
@@ -137,13 +149,23 @@ programming error: the feature turns itself off and logs).
 
 Two gates, both cheap, and the model has the last word:
 
-1. **A keyword pre-filter**, `DrawStageLesson.wantsADrawing(question)`, ported from the Windows
-   `WantsADrawing` with its exclusions: anything that is doing something on screen ("how do I…", "where is…",
-   "click", "open"), fewer than two words, "how do you…". It passes only curious how-and-why questions
-   ("how does…", "why…", "what happens when…", "what's inside…", "what are the parts…") and explicit asks
-   ("draw", "sketch", "diagram", "show me how", "explain this/that/it", "how does this/it work"). Teacher's
-   teaching questions ("teach me how X works") pass when Teacher is on.
-2. **The model decides, with a high bar.** The drawing request's user prompt (shared `prompt/`) says: answer
+1. **A keyword pre-filter**, `DrawStageLesson.wantsADrawing(question)`, narrower than the Windows
+   `WantsADrawing`, erring on the side of no drawing (the reviewer asked which way to err; my call):
+   - Out, whatever else it says: doing something on screen ("how do I…", "how can I…", "where is…",
+     "click", "open"), fewer than two words, "how do you/we…", "how are you", "why not".
+   - Out: **trouble and work words**, because those are the person's own situation, which words answer and
+     a drawing cannot: error, errors, fail, failing, failed, crash, crashes, broken, bug, warning, stuck,
+     slow, won't, doesn't work, not working, issue, problem; and app, file, files, code, build, setting,
+     settings, window, tab, button, menu, folder, email, message, page (the thing on screen the person is
+     working in); and first-person ownership: my, mine, our, I'm, I've. "How does my heart beat" is lost to
+     this rule; it is accepted so that "why is my build failing" never pays a round trip.
+   - In, otherwise: curious how-and-why questions ("how does…", "how do…", "why…", "what happens when…",
+     "what makes…", "what's inside…", "what are the parts…"), explicit asks ("draw", "sketch", "diagram",
+     "show me how", "how does this/that/it work", "what's inside this", "how is this made"), and the
+     teaching phrases ("teach me…", "explain how…", "explain … works"), **always, Teacher on or off**
+     (reviewer's question; my call: the feature is for everyone). "X vs Y" and "difference between" stay
+     out of the pre-filter: words answer those well.
+2. **The model decides, with a high bar.** The drawing request's user prompt (shared `prompt/question.md`) says: answer
    with only the word `NONE` unless a drawing or a 3D model is genuinely needed to understand the answer; never
    for a definition, a fact, a number, a yes or no, a short explanation words carry well, or anything about the
    person's own files, errors, settings or the app in front of them. `DrawingAnswer` waits for the first
@@ -164,8 +186,8 @@ Same route as the ordinary answer: the person's answer source via `ClaudeAPI.ana
 - `analyzeImageStreaming` gains an optional `maxTokens` (default unchanged at 1,024). Drawings pass 8,192.
   `OpenAIChatAnswerProvider`, `GeminiAnswerProvider` and the plan providers honour it; the request to the
   backend sends it as `max_tokens`.
-- **Backend:** `/chat` accepts `max_tokens` up to 8,192 for signed-in accounts (today it ignores or caps at
-  1,024). This is the only backend change and is small. Without it, account users get cut-off drawings; with
+- **Backend:** `/chat` accepts `max_tokens` up to 8,192 when the request carries the header
+  `X-OpenClicky-Purpose: drawing` (today `MAX_TOKENS_CAP` clamps everything to 1,024). This is the only backend change and is small. Without it, account users get cut-off drawings; with
   it, a drawing costs an account roughly eight ordinary answers of budget, which is acceptable because the
   pre-filter and `NONE` keep drawings rare. (A per-day drawing cap for the free account is a follow-up if
   the budget shows it is needed.)
@@ -174,6 +196,12 @@ Same route as the ordinary answer: the person's answer source via `ClaudeAPI.ana
 - User prompt: the question, and (when a drawing is open) the follow-up prompt with its program.
 - Images: the cursor screen's screenshot only (that is the canvas; `W`×`H` are its pixel size as labelled by
   `imageLabeledWithItsPixelSize`). No pointer close-up.
+- Thinking: the request asks for no thinking the way `TeacherSketchWriter` does (`thinking: between_tools`
+  for Sonnet 5.5 direct; the backend maps it per model), or the model spends the budget before a stroke.
+- Plans: Codex returns the whole reply at the end (no streaming) and the Claude Code provider's 90 s
+  timeout can be short for 8k tokens; a drawing request on a plan gets 180 s and is logged.
+- A 402 from the account (the 8,192-token hold is about eight ordinary answers of budget) is treated like
+  `NONE`: fall through to the ordinary lane, which carries the budget messages.
 
 The reply's program is `DrawStageLesson.programIn(replySoFar)`, ported as-is (the ```js fence, or a bare
 program that starts like code).
@@ -323,6 +351,10 @@ follow-up path; while it is *playing*, it interrupts it first (as any new questi
 - The exact bubble geometry and its show/hide animation.
 - Log lines (`AppLog`) for: decision (pre-filter pass, model `NONE`, program), readiness timeout, voice
   fallback, time to first beat.
+- Spike first: a `Worker('stage-worker.js')` and the ES-module `figure3d.js` import over the custom
+  `WKURLSchemeHandler` scheme. If WebKit refuses either, fall back to `loadFileURL(_:allowingReadAccessTo:)`
+  on the bundled folder and keep the navigation delegate as the fence.
+- The island's frame is private model state; the bubble needs a small accessor on `NotchHUDManager`.
 
 ## Credits
 
