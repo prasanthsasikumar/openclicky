@@ -18,9 +18,17 @@ export default tseslint.config(
     ignores: [
       "**/dist/**",
       "**/node_modules/**",
+      ".claude/**",
       "macos/**",
       "reference/**",
       "backend/src/skills-manifest.ts",
+      // The Windows build output, and the shared drawing stage's vendored three.js (as shipped) and
+      // sample programs (written for the stage's worker, whose drawing language they call, not
+      // scripts of their own).
+      "windows/**/bin/**",
+      "windows/**/obj/**",
+      "draw-stage/vendor/**",
+      "draw-stage/samples/**",
     ],
   },
 
@@ -86,5 +94,13 @@ export default tseslint.config(
     files: ["**/*.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: { globals: { ...globals.node } },
+  },
+
+  {
+    // The drawing stage's page (`draw-stage/`, shared by the Mac's WKWebView and Windows' WebView2):
+    // plain browser scripts and a Web Worker, no tsconfig, so no type-aware rules either.
+    files: ["draw-stage/**/*.js"],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: { globals: { ...globals.browser, ...globals.worker } },
   },
 );
