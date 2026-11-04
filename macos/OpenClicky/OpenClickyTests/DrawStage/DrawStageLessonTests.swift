@@ -15,6 +15,8 @@ import Testing
         "how does a jet engine work?", "why is the sky blue", "what happens when ice melts", "what's inside this?",
         "draw a heart for me", "show me how a rocket flies", "teach me how pythagoras works",
         "explain how a transistor works", "how does this work", "what makes a plane fly", "what are the parts of a cell",
+        "show me a rotary engine in 3d", "show a jet engine in 3D", "a 3d model of the heart", "can you show me the inside of a turbine",
+        "rotary engine cutaway", "show me what a transistor looks like",
     ])
     func curiousQuestionsPassTheGate(question: String) {
         #expect(DrawStageLesson.wantsADrawing(question), "\(question)")
@@ -26,6 +28,7 @@ import Testing
         "how does my code reach the server", "why is this slow", "what's the difference between tcp and udp",
         "python vs rust", "hi", "how does this button work", "why does this file keep crashing", "how do you do",
         "how does the settings page work", "what happens when I press this", "draw", "",
+        "show me the weather", "show me my files", "show me the downloads folder", "show me a good restaurant nearby",
     ])
     func simpleAndPersonalQuestionsStayOut(question: String) {
         #expect(!DrawStageLesson.wantsADrawing(question), "\(question)")

@@ -83,6 +83,9 @@ enum DrawStageLesson {
         " how this works ", " how that works ", " how it works ", " what's inside ", " what is inside ", " how is this made ",
         " how is it made ", " how are these made ", " explain this ", " explain that ", " explain it ", " show me how ",
         " teach me ", " explain how ",
+        // Asked for a figure outright: "show me a rotary engine in 3d", "a 3d model of the heart", "a turbine cutaway".
+        " 3d ", " 3 d ", " three d ", " in three dimensions ", " model of ", " show me what ", " show me the inside ",
+        " the inside of ", " inside of ", " cutaway ", " cross section ", " looks like ",
     ]
 
     /// Whether `question` is best answered with a drawing. Narrow on purpose: everything about the

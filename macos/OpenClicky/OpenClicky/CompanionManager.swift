@@ -1843,6 +1843,7 @@ final class CompanionManager: ObservableObject {
                     question: transcript, stageState: DrawStageSession.shared.state,
                     drawToExplain: dictationSettings.drawToExplain, isGuidedStepContinuation: isGuidedStepContinuation)
                 var drawingWasAttempted = false
+                AppLog.append("draw: gate \(drawingDecision) for a \(transcript.count)-char question (stage \(DrawStageSession.shared.state), setting \(dictationSettings.drawToExplain ? "on" : "off"))")
                 if drawingDecision == .toBubbleThenOrdinary {
                     await minimiseDrawingToBubble(reason: "a question about something else")
                 } else if drawingDecision != .notADrawingQuestion,
