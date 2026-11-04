@@ -250,9 +250,10 @@ struct PermissionPromptTests {
 
         model.setSpeaking(false)
         model.setBusy(false)
-        // A busy CI runner can take longer than the island's grace period. Hovering only peeks;
-        // a click is what opens the panel.
-        for _ in 0..<150 where model.expansion != .peek {
+        // The island settles 1.8 s after speaking ends, and CI's runner has stretched that past
+        // the 3 s this used to allow (2026-11-04): ten seconds is still far from a hang. Hovering
+        // only peeks; a click is what opens the panel.
+        for _ in 0..<500 where model.expansion != .peek {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         #expect(model.expansion == .peek)
