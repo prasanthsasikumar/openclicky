@@ -273,6 +273,7 @@ final class DictationSettings: ObservableObject {
         readNearbyText = defaults.object(forKey: Keys.readNearbyText) == nil ? true : defaults.bool(forKey: Keys.readNearbyText)
         pauseBeforeSendingScreen = defaults.object(forKey: Keys.pauseBeforeSendingScreen) == nil ? true : defaults.bool(forKey: Keys.pauseBeforeSendingScreen)
         answerSimpleRequestsOnThisMac = defaults.object(forKey: Keys.answerSimpleRequestsOnThisMac) == nil ? true : defaults.bool(forKey: Keys.answerSimpleRequestsOnThisMac)
+        drawToExplain = defaults.object(forKey: Keys.drawToExplain) == nil ? true : defaults.bool(forKey: Keys.drawToExplain)
         hasCompletedDictationOnboarding = defaults.bool(forKey: Keys.hasCompletedDictationOnboarding)
         preferredMicrophoneUID = defaults.string(forKey: Keys.preferredMicrophoneUID)
         orbPosition = Self.decodePoint(defaults.string(forKey: Keys.orbPosition))
@@ -311,6 +312,7 @@ final class DictationSettings: ObservableObject {
         static let readNearbyText = "dictation.readNearbyText"
         static let pauseBeforeSendingScreen = "openclicky.ask.pauseBeforeSendingScreen"
         static let answerSimpleRequestsOnThisMac = "openclicky.ask.onThisMac"
+        static let drawToExplain = "openclicky.ask.drawToExplain"
         static let hasCompletedDictationOnboarding = "dictation.onboarded"
         static let preferredMicrophoneUID = "dictation.preferredMicrophoneUID"
     }
@@ -433,6 +435,10 @@ final class DictationSettings: ObservableObject {
     /// read, so those never send a screenshot or spend answer credits. English, macOS 26 with
     /// Apple Intelligence on; elsewhere the switch does nothing. On by default.
     @Published var answerSimpleRequestsOnThisMac: Bool { didSet { defaults.set(answerSimpleRequestsOnThisMac, forKey: Keys.answerSimpleRequestsOnThisMac) } }
+    /// Draw to explain: a question a picture or a 3D model answers ("how does a jet engine
+    /// work?") is drawn on the stage while Clicky talks (`DrawStageLesson`). On by default; off,
+    /// every question is answered in words as before.
+    @Published var drawToExplain: Bool { didSet { defaults.set(drawToExplain, forKey: Keys.drawToExplain) } }
     @Published var hasCompletedDictationOnboarding: Bool { didSet { defaults.set(hasCompletedDictationOnboarding, forKey: Keys.hasCompletedDictationOnboarding) } }
 
     /// Settings → general → reset, and the orb page's reset: back to a fresh install's values.

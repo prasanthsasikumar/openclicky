@@ -33,7 +33,7 @@ enum CompanionVoiceState {
 
 @MainActor
 final class CompanionManager: ObservableObject {
-    @Published private(set) var voiceState: CompanionVoiceState = .idle {
+    @Published var voiceState: CompanionVoiceState = .idle {
         didSet {
             // A guide whose next step never came (the request failed or was cancelled) is over:
             // nothing is being said or fetched and no step waits, so the stop strip must not stay.
@@ -611,11 +611,11 @@ final class CompanionManager: ObservableObject {
 
     // Both read the backend URL per request: built once from it, they kept asking the old
     // backend after shell.json changed while everything else followed the new one.
-    private lazy var claudeAPI: ClaudeAPI = {
+    lazy var claudeAPI: ClaudeAPI = {
         return ClaudeAPI(currentProxyURL: { "\(OpenClickyConfiguration.backendBaseURL)/chat" }, model: selectedModel)
     }()
 
-    private lazy var answerVoicePlayer: AnswerVoicePlayer = {
+    lazy var answerVoicePlayer: AnswerVoicePlayer = {
         return AnswerVoicePlayer(currentProxyURL: { "\(OpenClickyConfiguration.backendBaseURL)/tts" })
     }()
 
@@ -635,7 +635,7 @@ final class CompanionManager: ObservableObject {
 
     /// The currently running AI response task, if any. Cancelled when the user
     /// speaks again so a new response can begin immediately.
-    private var currentResponseTask: Task<Void, Never>?
+    var currentResponseTask: Task<Void, Never>?
 
     /// The answer being spoken (the ask lane's, or the agent's result), kept so a new question
     /// stops it outright. Stopping only the player ends the current piece "normally", and the queue
@@ -840,6 +840,7 @@ final class CompanionManager: ObservableObject {
 
     func start() {
         refreshAllPermissions()
+        DrawStageSession.shared.attach(to: self)
         pointerPresenceTracker = PointerPresenceTracker(presence: pointerPresence)
         isPointerAwake = pointerPresenceTracker.isAwake
         startPointerPresenceMonitor()
@@ -1024,6 +1025,9 @@ final class CompanionManager: ObservableObject {
                 // rung's decision fits inside the pause that follows the release.
                 if state == .listening, self.dictationSettings.answerSimpleRequestsOnThisMac {
                     self.localAskRung?.model.prewarm()
+                }
+                if state == .listening, self.dictationSettings.drawToExplain, !self.usesRealtimeVoice {
+                    DrawStageController.shared.prepare()
                 }
             }
         // A spoken answer and a dictation that produced words each count as a use.
@@ -1424,8 +1428,12 @@ final class CompanionManager: ObservableObject {
             // A dictation take in progress keeps esc to itself (it cancels the take, as always);
             // otherwise esc stops whatever the ask lane is doing.
             switch AskLaneEscape.target(dictationTakeInProgress: dictationTakeController.isTakeInProgress, askLaneCanBeStopped: askLaneCanBeStopped,
-                                        realtimeIsBusy: usesRealtimeVoice && realtimeVoiceClient.isBusy) {
+                                        realtimeIsBusy: usesRealtimeVoice && realtimeVoiceClient.isBusy,
+                                        drawingIsPlaying: DrawStageSession.shared.state == .playing,
+                                        drawingIsOpen: DrawStageSession.shared.state == .open || DrawStageSession.shared.state == .bubble) {
             case .dictationTake: dictationTakeController.handle(shortcutEvent)
+            case .drawing:
+                escapeStopsTheDrawing()
             case .askLane:
                 stopAskLane(from: "esc")
                 TeacherPlugin.clearBoard(reason: "esc")
@@ -1822,7 +1830,25 @@ final class CompanionManager: ObservableObject {
                 let isRepeatedQuestion = RepeatedQuestion.isRepeat(transcript, of: lastAskQuestion?.transcript, secondsSincePrevious: secondsSinceLastQuestion)
                 lastAskQuestion = (transcript: transcript, askedAt: Date())
                 if isRepeatedQuestion { AppLog.append("ask: the same question again; answering about what is under the pointer") }
-                if !isGuidedStepContinuation {
+                // Draw to explain: a question a picture answers is drawn on the stage while it is
+                // spoken (CompanionManager+DrawStage.swift). The model may say NONE, in which case
+                // nothing was said or shown and the question goes on to the ordinary answer below.
+                let drawingDecision = DrawStageTurn.decide(
+                    question: transcript, stageState: DrawStageSession.shared.state,
+                    drawToExplain: dictationSettings.drawToExplain, isGuidedStepContinuation: isGuidedStepContinuation)
+                var drawingWasAttempted = false
+                if drawingDecision == .toBubbleThenOrdinary {
+                    await minimiseDrawingToBubble(reason: "a question about something else")
+                } else if drawingDecision != .notADrawingQuestion,
+                          let cursorCapture = screenCaptures.first(where: { $0.isCursorScreen }) ?? screenCaptures.first {
+                    drawingWasAttempted = true
+                    if try await tryDrawingAnswer(transcript: transcript, cursorCapture: cursorCapture, decision: drawingDecision) {
+                        await finishAskTurn()
+                        return
+                    }
+                    guard !Task.isCancelled else { return }
+                }
+                if !isGuidedStepContinuation, !drawingWasAttempted {
                     TeacherPlugin.startLesson(for: transcript, capture: screenCaptures.first(where: { $0.isCursorScreen }) ?? screenCaptures.first)
                 }
                 // The text a "rephrase this" would replace: the highlight, or the box the cursor is in
@@ -2020,7 +2046,7 @@ final class CompanionManager: ObservableObject {
 
     /// The end of an ask turn, local or cloud: a notice in the system voice is still being said, so
     /// the turn is over when it ends; a cancelled turn (esc, a new question) was reset by its stopper.
-    private func finishAskTurn() async {
+    func finishAskTurn() async {
         await waitForSystemVoiceNoticeToEnd()
         if !Task.isCancelled {
             isAskInFlight = false
@@ -2535,7 +2561,7 @@ final class CompanionManager: ObservableObject {
     /// Says `text` in this Mac's voice, or plays its recording when it is one of the fixed notices.
     /// The state is `.responding` while it talks and goes back to `.idle` when it ends: nothing set
     /// it back before, so the island stayed "speaking" after a notice until the next question.
-    private func speakWithSystemVoice(_ text: String) {
+    func speakWithSystemVoice(_ text: String) {
         answeringSourceName = nil
         stopSystemVoice()
         let noticeNumber = systemVoiceNoticeNumber
@@ -2817,7 +2843,7 @@ final class CompanionManager: ObservableObject {
     }
 
     /// A caption by the pointer for the ask lane (what was heard, "thinking…", a problem).
-    private func showAskCaption(_ message: String, holdSeconds: TimeInterval) {
+    func showAskCaption(_ message: String, holdSeconds: TimeInterval) {
         streamCursorCaption(message, holdSeconds: holdSeconds)
     }
 
@@ -2995,7 +3021,7 @@ final class CompanionManager: ObservableObject {
 
     /// Remembers one exchange for the ask lane's next question, keeping only the last 10 so the
     /// context does not grow without bound over a long session.
-    private func rememberExchange(userTranscript: String, assistantResponse: String) {
+    func rememberExchange(userTranscript: String, assistantResponse: String) {
         conversationHistory.append((userTranscript: userTranscript, assistantResponse: assistantResponse))
         if conversationHistory.count > Self.maximumRememberedExchanges {
             conversationHistory.removeFirst(conversationHistory.count - Self.maximumRememberedExchanges)

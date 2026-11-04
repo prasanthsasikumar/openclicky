@@ -20,15 +20,24 @@ enum EscapeTarget: Equatable {
     case nothing
     /// The fast voice lane: stop its reply and drop what its actions were about to say.
     case realtime
+    /// A drawing on the stage: one playing stops and goes to its bubble; a finished one, with
+    /// nothing else to stop, is cleared.
+    case drawing
 }
 
 enum AskLaneEscape {
     /// `realtimeIsBusy`: the fast voice lane is answering, speaking, or still working on an action
     /// (a page settling before the look): esc stops that too, as it stops the ask lane.
-    static func target(dictationTakeInProgress: Bool, askLaneCanBeStopped: Bool, realtimeIsBusy: Bool = false) -> EscapeTarget {
+    /// `drawingIsPlaying`: a drawing is being drawn and spoken, which esc stops before anything
+    /// else in the ask lane; `drawingIsOpen`: a finished drawing (open or in its bubble) that esc
+    /// clears when nothing else is running.
+    static func target(dictationTakeInProgress: Bool, askLaneCanBeStopped: Bool, realtimeIsBusy: Bool = false,
+                       drawingIsPlaying: Bool = false, drawingIsOpen: Bool = false) -> EscapeTarget {
         if dictationTakeInProgress { return .dictationTake }
+        if drawingIsPlaying { return .drawing }
         if askLaneCanBeStopped { return .askLane }
-        return realtimeIsBusy ? .realtime : .nothing
+        if realtimeIsBusy { return .realtime }
+        return drawingIsOpen ? .drawing : .nothing
     }
 
     /// Whether the ask lane has anything to stop: a ⌃⌥ press not yet settled (listening or

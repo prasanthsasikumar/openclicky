@@ -22,6 +22,17 @@ struct AskLaneControlTests {
         #expect(AskLaneEscape.target(dictationTakeInProgress: false, askLaneCanBeStopped: false) == .nothing)
     }
 
+    /// A drawing playing on the stage: esc stops its voice and sends it to its bubble, before the
+    /// ask lane's own stop; with only a finished drawing (open or in its bubble) and nothing else
+    /// running, esc clears it.
+    @Test func escStopsADrawingBeforeTheAskLane() {
+        #expect(AskLaneEscape.target(dictationTakeInProgress: false, askLaneCanBeStopped: true, drawingIsPlaying: true) == .drawing)
+        #expect(AskLaneEscape.target(dictationTakeInProgress: false, askLaneCanBeStopped: false, drawingIsOpen: true) == .drawing)
+        #expect(AskLaneEscape.target(dictationTakeInProgress: false, askLaneCanBeStopped: true, drawingIsOpen: true) == .askLane)
+        #expect(AskLaneEscape.target(dictationTakeInProgress: true, askLaneCanBeStopped: false, drawingIsPlaying: true) == .dictationTake)
+        #expect(AskLaneEscape.target(dictationTakeInProgress: false, askLaneCanBeStopped: false, realtimeIsBusy: true, drawingIsOpen: true) == .realtime)
+    }
+
     /// Hands-free (Realtime) answering, speaking or still working on an action: esc stops that
     /// too. Pressing esc while Gmail loaded did nothing, and Clicky read the inbox (2026-10-28).
     @Test func escStopsTheRealtimeLaneWhenItIsBusy() {
