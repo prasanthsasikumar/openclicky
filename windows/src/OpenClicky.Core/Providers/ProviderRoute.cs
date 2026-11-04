@@ -109,6 +109,12 @@ public sealed record ProviderCredentials
     public string? XaiKey { get; init; }
     public bool ClaudeCodePlanOn { get; init; }
     public bool CodexPlanOn { get; init; }
+    /// <summary>Self-hosted sources' addresses ("http://localhost:11434"), each null until the person turns it on, and the
+    /// optional key of their own server.</summary>
+    public string? OllamaUrl { get; init; }
+    public string? LMStudioUrl { get; init; }
+    public string? CustomOpenAIUrl { get; init; }
+    public string? CustomOpenAIKey { get; init; }
     /// <summary>Who should answer, when the person picked one (null: automatic).</summary>
     public AnswerSource? PreferredAnswerSource { get; init; }
 
@@ -116,7 +122,8 @@ public sealed record ProviderCredentials
     public ProviderCredentials(string? openAIKey, string? anthropicKey, string? accountToken,
                                string? openRouterKey = null, string? geminiKey = null, string? groqKey = null,
                                string? mistralKey = null, string? xaiKey = null,
-                               bool claudeCodePlanOn = false, bool codexPlanOn = false, AnswerSource? preferredAnswerSource = null)
+                               bool claudeCodePlanOn = false, bool codexPlanOn = false, AnswerSource? preferredAnswerSource = null,
+                               string? ollamaUrl = null, string? lmStudioUrl = null, string? customOpenAIUrl = null, string? customOpenAIKey = null)
     {
         OpenAIKey = OpenClickyConfiguration.Cleaned(openAIKey);
         AnthropicKey = OpenClickyConfiguration.Cleaned(anthropicKey);
@@ -129,14 +136,40 @@ public sealed record ProviderCredentials
         ClaudeCodePlanOn = claudeCodePlanOn;
         CodexPlanOn = codexPlanOn;
         PreferredAnswerSource = preferredAnswerSource;
+        OllamaUrl = BaseUrl(ollamaUrl);
+        LMStudioUrl = BaseUrl(lmStudioUrl);
+        CustomOpenAIUrl = BaseUrl(customOpenAIUrl);
+        CustomOpenAIKey = OpenClickyConfiguration.Cleaned(customOpenAIKey);
     }
+
+    /// <summary>An http(s) address without a trailing slash or "/v1" (the requests add their own path); null when it isn't one.</summary>
+    public static string? BaseUrl(string? url)
+    {
+        var cleaned = OpenClickyConfiguration.Cleaned(url)?.TrimEnd('/');
+        if (cleaned is null) return null;
+        if (cleaned.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)) cleaned = cleaned[..^3];
+        return Uri.TryCreate(cleaned, UriKind.Absolute, out var parsed) && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps)
+            ? cleaned
+            : null;
+    }
+
+    /// <summary>A self-hosted source's address; null for the vendors (their address is fixed) and for one not turned on.</summary>
+    public string? SelfHostedUrl(AnswerSource source) => source switch
+    {
+        AnswerSource.Ollama => OllamaUrl,
+        AnswerSource.LMStudio => LMStudioUrl,
+        AnswerSource.CustomOpenAI => CustomOpenAIUrl,
+        _ => null,
+    };
 
     public static ProviderCredentials FromSettings(OpenClickyShellSettings settings) =>
         new(settings.OpenaiApiKey, settings.AnthropicApiKey, settings.Token,
             openRouterKey: settings.OpenRouterApiKey, geminiKey: settings.GeminiApiKey, groqKey: settings.GroqApiKey,
             mistralKey: settings.MistralApiKey, xaiKey: settings.XaiApiKey,
             claudeCodePlanOn: settings.UseClaudeCodePlan == true, codexPlanOn: settings.UseCodexPlan == true,
-            preferredAnswerSource: AnswerSources.FromRawValue(settings.AnswerSource));
+            preferredAnswerSource: AnswerSources.FromRawValue(settings.AnswerSource),
+            ollamaUrl: settings.OllamaUrl, lmStudioUrl: settings.LMStudioUrl,
+            customOpenAIUrl: settings.CustomOpenAIUrl, customOpenAIKey: settings.CustomOpenAIKey);
 
     /// <summary>The keys and token in shell.json now.</summary>
     public static ProviderCredentials Current() => FromSettings(OpenClickyConfiguration.Settings);
@@ -151,6 +184,7 @@ public sealed record ProviderCredentials
         AnswerSource.Groq => GroqKey,
         AnswerSource.Mistral => MistralKey,
         AnswerSource.Xai => XaiKey,
+        AnswerSource.CustomOpenAI => CustomOpenAIKey,
         _ => null,
     };
 
@@ -160,18 +194,20 @@ public sealed record ProviderCredentials
         AnswerSource.ClaudeCodePlan => ClaudeCodePlanOn,
         AnswerSource.CodexPlan => CodexPlanOn,
         AnswerSource.OpenClickyAccount => AccountToken is not null,
+        _ when source.IsSelfHosted() => SelfHostedUrl(source) is not null,
         _ => Key(source) is not null,
     };
 
     private static readonly AnswerSource[] AutomaticOrder =
     [
         AnswerSource.Anthropic, AnswerSource.OpenRouter, AnswerSource.OpenAI, AnswerSource.Gemini, AnswerSource.Xai,
-        AnswerSource.Mistral, AnswerSource.Groq, AnswerSource.ClaudeCodePlan, AnswerSource.CodexPlan, AnswerSource.OpenClickyAccount,
+        AnswerSource.Mistral, AnswerSource.Groq, AnswerSource.Ollama, AnswerSource.LMStudio, AnswerSource.CustomOpenAI, AnswerSource.ClaudeCodePlan, AnswerSource.CodexPlan, AnswerSource.OpenClickyAccount,
     ];
 
     /// <summary>
     /// The sources that can answer, in the order "automatic" tries them: own keys (Anthropic first,
-    /// then OpenRouter, which reaches the most models), then the plans switched on, then the account.
+    /// then OpenRouter, which reaches the most models), then the person's own models (Ollama, LM Studio, their server),
+    /// then the plans switched on, then the account.
     /// </summary>
     public IReadOnlyList<AnswerSource> AnswerSourcesInOrder => AutomaticOrder.Where(CanAnswer).ToList();
 }

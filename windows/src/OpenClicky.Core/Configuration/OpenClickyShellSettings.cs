@@ -62,6 +62,14 @@ public sealed class OpenClickyShellSettings
     [JsonPropertyName("mistralApiKey")] public string? MistralApiKey { get; set; }
     [JsonPropertyName("xaiApiKey")] public string? XaiApiKey { get; set; }
 
+    /// <summary>Models on this PC or the person's own server, through their OpenAI-compatible API: Ollama
+    /// ("http://localhost:11434"), LM Studio ("http://localhost:1234"), and any other endpoint (vLLM, llama.cpp,
+    /// LocalAI, DeepSeek, Together…) with an optional key. Each is off until its URL is set.</summary>
+    [JsonPropertyName("ollamaUrl")] public string? OllamaUrl { get; set; }
+    [JsonPropertyName("lmStudioUrl")] public string? LMStudioUrl { get; set; }
+    [JsonPropertyName("customOpenAIUrl")] public string? CustomOpenAIUrl { get; set; }
+    [JsonPropertyName("customOpenAIKey")] public string? CustomOpenAIKey { get; set; }
+
     /// <summary>Answer through a plan the person already pays for (Claude Code / Codex). Off until switched on.</summary>
     [JsonPropertyName("useClaudeCodePlan")] public bool? UseClaudeCodePlan { get; set; }
     [JsonPropertyName("useCodexPlan")] public bool? UseCodexPlan { get; set; }

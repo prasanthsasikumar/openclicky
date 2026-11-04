@@ -26,6 +26,24 @@ public static class AnswerProviderFactory
             case AnswerSource.OpenAI or AnswerSource.OpenRouter or AnswerSource.Groq or AnswerSource.Mistral or AnswerSource.Xai:
                 if (credentials.Key(source) is not { } key || model is null) throw Missing(source, "add its key in settings, account.");
                 return new OpenAIChatAnswerProvider(source, key, model);
+            case AnswerSource.Ollama or AnswerSource.LMStudio or AnswerSource.CustomOpenAI:
+            {
+                if (credentials.SelfHostedUrl(source) is not { } baseUrl) throw Missing(source, "turn it on in settings, models.");
+                var apiKey = credentials.Key(source) ?? "";
+                // No model picked: the first one it serves that sees images (a question carries a screenshot).
+                if (model is null)
+                {
+                    try
+                    {
+                        model = LocalModels.DefaultModel(await LocalModels.ListAsync(baseUrl, apiKey, cancellationToken: cancellationToken).ConfigureAwait(false));
+                    }
+                    catch (LocalModelsException unreachable)
+                    {
+                        throw Missing(source, unreachable.Message);
+                    }
+                }
+                return new OpenAIChatAnswerProvider(source, apiKey, model!, chatCompletionsUrl: new Uri($"{baseUrl}/v1/chat/completions"));
+            }
             case AnswerSource.Gemini:
                 if (credentials.GeminiKey is not { } geminiKey || model is null) throw Missing(source, "add its key in settings, account.");
                 return new GeminiAnswerProvider(geminiKey, model);

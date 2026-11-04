@@ -44,6 +44,7 @@ public static class SettingsLayout
         new(DictationSettingsPage.Clicky, "", ["keyboard.talk", "clicky.speechVoice", "clicky.language", "clicky.answerSource"]),
         new(DictationSettingsPage.Clicky, "Hands-free", ["clicky.fastVoice", "clicky.realtimeProvider", "clicky.fastVoiceNeedsKey", "clicky.alwaysListening"]),
         new(DictationSettingsPage.Clicky, "Pointer", ["clicky.pointer"]),
+        new(DictationSettingsPage.Clicky, "Models", ["models.ollama", "models.lmStudio", "models.custom"]),
         new(DictationSettingsPage.Clicky, "More",
             ["keyboard.type", "keyboard.handsFree", "clicky.model", "clicky.emailApp", "clicky.emailNeverSent",
              "plugins.teacher", "clicky.agentMode", "clicky.workspace"]) { IsAdvanced = true },
