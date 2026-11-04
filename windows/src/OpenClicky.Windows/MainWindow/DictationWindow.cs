@@ -400,12 +400,13 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         return item;
     }
 
-    /// <summary>A section of a page shown one at a time: under its page, indented, with no icon of its own.</summary>
+    /// <summary>A section of a page shown one at a time: under its page, indented, with a small line icon of its own.</summary>
     private WpfUi.NavigationViewItem SectionItem(DictationDestination destination)
     {
         var item = new WpfUi.NavigationViewItem
         {
             Content = destination.Title,
+            Icon = new WpfUi.SymbolIcon { Symbol = SectionSymbol(destination.PageSection), FontSize = 15 },
             Cursor = Cursors.Hand,
             Margin = new Thickness(30, 0, 0, 0),
             FontSize = 13,
@@ -416,6 +417,18 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         TourTarget.Attach(item, SettingsTourTargets.SidebarTargetId(destination));
         return item;
     }
+
+    /// <summary>A section's icon in the sidebar (the Fluent icons WPF-UI ships).</summary>
+    private static WpfUi.SymbolRegular SectionSymbol(string? pageSection) => pageSection switch
+    {
+        "Talking" => WpfUi.SymbolRegular.Mic24,
+        "Hands-free" => WpfUi.SymbolRegular.Headphones24,
+        "Pointer" => WpfUi.SymbolRegular.CursorClick24,
+        "Drawings" => WpfUi.SymbolRegular.PaintBrush24,
+        "Your models" => WpfUi.SymbolRegular.Server24,
+        "More" => WpfUi.SymbolRegular.MoreHorizontal24,
+        _ => WpfUi.SymbolRegular.Circle24,
+    };
 
     /// <summary>A sidebar icon like System Settings': a white glyph in a coloured rounded square (the orb's own capsule for The Orb).</summary>
     public static ImageSource SidebarIcon(string glyph, string tintHex)
