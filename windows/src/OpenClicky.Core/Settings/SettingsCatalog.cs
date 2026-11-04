@@ -214,10 +214,16 @@ public sealed class SettingsCatalog
         };
         return
         [
+            Item("clicky.assistantName", "Its name", "What your assistant is called and answers to, like Dyna or Professor Pip.",
+                ["name", "rename", "call it", "assistant", "persona", "dyna", "nickname"]),
             Item("clicky.answerSource", "Answers come from", "Automatic uses your own keys first, then plans you switched on, then the free credits.",
                 ["provider", "model", "openai", "anthropic", "claude", "openrouter", "gemini", "groq", "mistral", "grok", "codex", "subscription", "plan", "answers"]),
             Item("clicky.model", "Claude model", "When Claude answers: Sonnet is quicker, Opus thinks harder.",
                 ["model", "claude", "sonnet", "opus", "smarter", "quicker"]),
+            Item("clicky.pointerColor", "Pointer colour", "The colour it flies and glows in.",
+                ["pointer", "cursor", "colour", "color", "red", "blue", "green", "theme"]),
+            Item("clicky.pointerStyle", "Pointer shape", "A triangle, an arrow, a dot or a ring.",
+                ["pointer", "cursor", "shape", "style", "arrow", "dot", "ring", "triangle", "design"]),
             Item("clicky.pointer", "Show the pointer", "It flies to what Clicky means.",
                 ["pointer", "cursor", "buddy", "orange", "visible", "hide", "always", "while the mouse moves", "after a shake", "shake", "while i talk"]),
             Item("clicky.agentMode", "Agent mode", "Clicky can hand work to Codex.",
@@ -234,7 +240,7 @@ public sealed class SettingsCatalog
 
     public const string FastVoiceNeedsKeyDetail = "Instant replies need your own OpenAI or Gemini key. Without one, Clicky answers in the standard voice.";
 
-    /// <summary>Models of the person's own (Ollama, LM Studio, any OpenAI-compatible server).</summary>
+    /// <summary>Models of the person's own (Ollama, LM Studio, any OpenAI-compatible server) and who writes drawings.</summary>
     public IReadOnlyList<SettingsItem> ModelsItems()
     {
         SettingsItem Item(string id, string title, string detail, string[] keywords) => new()
@@ -249,6 +255,16 @@ public sealed class SettingsCatalog
                 ["lm studio", "lmstudio", "local", "offline", "private", "model", "free"]),
             Item("models.custom", "Your own server", "Any OpenAI-compatible endpoint: vLLM, llama.cpp, LocalAI, DeepSeek, Together, and others, with a key if it needs one.",
                 ["openai compatible", "custom", "server", "endpoint", "vllm", "llama.cpp", "localai", "deepseek", "together", "self-hosted", "api"]),
+            Item("clicky.drawingSource", "Drawings come from", "Who writes the answers drawn on your screen. A stronger model draws better; answers can stay quick.",
+                ["drawing", "draw", "diagram", "teacher", "3d", "model", "explain", "whiteboard"]),
+            Item("clicky.drawingDetail", "How detailed", "More parts and finer detail take longer to draw. Very detailed suits a strong model.",
+                ["drawing", "detail", "detailed", "parts", "realistic", "real", "quality", "3d", "simple", "complex"]),
+            Item("clicky.pieceMaker", "3D pieces come from", "A complex thing (a plane, a car, an animal) is built from pieces made one at a time, each one clickable.",
+                ["3d", "generator", "pieces", "model", "mesh", "hunyuan", "llama-mesh", "ollama", "lm studio", "gpu", "graphics card", "realistic"]),
+            Item("clicky.drawingInstructions", "Your drawing instructions", "Added to every drawing's instructions: a style, a level, what to show more of.",
+                ["drawing", "prompt", "instructions", "style", "custom", "realistic", "kids", "colours", "language", "3d", "2d"]),
+            Item("clicky.markerShortcut", "Mark the screen with", "Keys that let you circle part of the screen to ask about it, while drawn answers are on. Word uses Ctrl+Alt+M for comments.",
+                ["marker", "mark", "circle", "highlight", "shortcut", "hotkey", "keys", "ctrl+alt+m", "screen", "ask about"]),
         ];
     }
 
@@ -446,6 +462,8 @@ public sealed class SettingsCatalog
                 ["esc", "escape", "discard", "stop", "double-tap"]),
             Item("keyboard.talk", "Clicky", "Talk to Clicky", "Ask about anything on screen. It answers out loud and points.",
                 ["ctrl", "win", "windows key", "control windows", "voice", "ask", "companion"]),
+            Item("keyboard.mouseTalk", "Clicky", "Talk with a mouse button", "Hold it to ask, let go to send, like the keys. For a wireless mouse away from the keyboard.",
+                ["mouse", "button", "side button", "back button", "forward button", "middle", "wireless", "remote", "trigger"]),
             Item("keyboard.type", "Clicky", "Type to Clicky", "A one-line composer opens in the island.",
                 ["ctrl", "composer", "island", "text", "control twice"]),
             // Hands-free runs on fast voice or, without a realtime key, on the standard lane; with nothing that

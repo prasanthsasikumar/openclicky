@@ -12,6 +12,7 @@ using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Shortcuts;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -22,6 +23,25 @@ internal sealed partial class SettingsRowFactory
         var companion = services.Companion;
         switch (item.Id)
         {
+            case "clicky.pointerColor":
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Picker(PointerLook.Colors.Select(color => (color.Name, color.Title)),
+                        services.Preferences.GetString(PointerLook.ColorPreferenceKey) ?? PointerLook.DefaultColor,
+                        name => services.Preferences.Set(PointerLook.ColorPreferenceKey, name), 160)));
+            case "clicky.pointerStyle":
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Picker(PointerLook.Styles.Select(style => (style, style.Title())),
+                        PointerLook.StyleFrom(services.Preferences.GetString(PointerLook.StylePreferenceKey)),
+                        style => services.Preferences.Set(PointerLook.StylePreferenceKey, style.RawValue()), 160)));
+            case "keyboard.mouseTalk":
+            {
+                var picked = MouseTalkButtons.FromRawValue(services.Preferences.GetString(MouseTalkButtons.PreferenceKey));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Picker(MouseTalkButtons.AllCases.Select(button => (button, button.Title())), picked,
+                        button => services.Preferences.Set(MouseTalkButtons.PreferenceKey, button.RawValue()), 200)));
+            }
+            case "clicky.assistantName":
+                return Ui.Card(AssistantNameRow(item, query));
             case "clicky.answerSource":
                 return new LiveContent(() => Ui.Card(AnswerSourceRow(item, query)), Changes.Shell);
             case "clicky.model":
@@ -57,6 +77,28 @@ internal sealed partial class SettingsRowFactory
 
     private LiveContent CompanionToggle(SettingsItem item, string query, Func<bool> read, Action<bool> write, string propertyName) =>
         new(() => Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Toggle(read(), write))), Changes.Of(services.Companion, propertyName));
+
+    /// <summary>The assistant's name: saved when the field loses focus or Enter is pressed; blank goes back to OpenClicky.</summary>
+    private static Grid AssistantNameRow(SettingsItem item, string query)
+    {
+        var field = new Wpf.Ui.Controls.TextBox
+        {
+            Width = 190, Text = AssistantName.Cleaned(OpenClickyConfiguration.Settings.AssistantName) ?? "", PlaceholderText = AssistantName.Default,
+            MaxLength = AssistantName.MaximumLength, VerticalAlignment = VerticalAlignment.Center,
+        };
+        Ui.AutomationProperties(field, "Assistant name");
+        void Save()
+        {
+            var name = AssistantName.Cleaned(field.Text);
+            if (name == AssistantName.Cleaned(OpenClickyConfiguration.Settings.AssistantName)) return;
+            OpenClickyConfiguration.Update(shell => shell.AssistantName = name);
+            ShellSettingsRevision.NoteChanged();
+            field.Text = name ?? "";
+        }
+        field.LostFocus += (_, _) => Save();
+        field.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) Save(); };
+        return Ui.Row(item.Title, item.Detail, query, field);
+    }
 
     /// <summary>Who answers questions: automatic, or one source that is set up. Shows who is answering now.</summary>
     private static Grid AnswerSourceRow(SettingsItem item, string query)

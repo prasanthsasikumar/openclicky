@@ -1,0 +1,22 @@
+// A sample answer with a detailed small board (rounded boxes, copies): "where does the camera cable go?"
+step(1); say("This is a small computer board. The camera plugs into a thin slot near the middle.")
+const c = {x: W * 0.32, y: H * 0.05, w: W * 0.64, h: H * 0.86}
+card(c.x, c.y, c.w, c.h, {title: 'Plugging in the camera'})
+const f = figure(c.x + 30, c.y + 70, c.w - 60, c.h - 150, {tilt: 30, turn: -20})
+const board = f.box({w: 3.4, h: 0.08, d: 2.2, round: 0.06, mat: 'pcb'})
+const chip = f.box({w: 0.6, h: 0.08, d: 0.6, round: 0.02, at: [-0.4, 0.08, 0.05], mat: 'plastic:black'})
+const ram = f.box({w: 0.5, h: 0.07, d: 0.38, round: 0.02, at: [0.35, 0.08, 0.05], mat: 'plastic:black'})
+const usb = f.box({w: 0.55, h: 0.6, d: 0.5, round: 0.03, at: [1.4, 0.34, 0.5], copies: {n: 2, step: [0, 0, -0.62]}, mat: 'steel'})
+const ethernet = f.box({w: 0.6, h: 0.5, d: 0.56, round: 0.03, at: [1.4, 0.29, -0.78], mat: 'steel'})
+const pins = f.box({w: 0.03, h: 0.3, d: 0.03, at: [-1.45, 0.18, -0.98], copies: {n: 20, step: [0.11, 0, 0]}, mat: 'gold'})
+const pins2 = f.box({w: 0.03, h: 0.3, d: 0.03, at: [-1.45, 0.18, -0.88], copies: {n: 20, step: [0.11, 0, 0]}, mat: 'gold'})
+const header = f.box({w: 2.3, h: 0.08, d: 0.24, at: [-0.4, 0.08, -0.93], mat: 'plastic:black'})
+const caps = f.cyl({r: 0.06, h: 0.1, at: [-1.4, 0.09, 0.7], copies: {n: 5, step: [0.18, 0, 0]}, mat: 'alu'})
+
+step(2); say("Lift the little latch on the camera slot, slide the ribbon in with the blue side facing away, and press the latch down.")
+const slot = f.box({w: 0.12, h: 0.12, d: 0.7, round: 0.02, at: [0.8, 0.1, 0.1], mat: 'plastic:cream'})
+const ribbon = f.box({w: 0.02, h: 1.2, d: 0.6, at: [0.8, 0.7, 0.1], mat: 'plastic:#C9CCD1'}).move({to: [0.8, 0.66, 0.1], secs: 1})
+const camera = f.box({w: 0.4, h: 0.4, d: 0.6, round: 0.04, at: [0.8, 1.45, 0.1], mat: 'pcb'})
+const lens = f.cyl({r: 0.12, h: 0.12, axis: 'x', at: [1.04, 1.45, 0.1], mat: 'plastic:black'})
+slot.label('camera slot', {color: 'green'})
+camera.label('camera', {color: 'blue'})

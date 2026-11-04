@@ -642,6 +642,12 @@ public sealed partial class IslandCompanionModel : ObservableObject
     [RelayCommand] private void Explain() => ExplainRequested?.Invoke();
     [RelayCommand] private void OpenSettings(IslandSettingsDestination destination) => SettingsRequested?.Invoke(destination);
     [RelayCommand] private void Quit() => QuitRequested?.Invoke();
+    /// <summary>The island's eye button: hides the pointer, or brings it back.</summary>
+    [RelayCommand] private void TogglePointer() => TogglePointerRequested?.Invoke();
+    public event Action? TogglePointerRequested;
+    /// <summary>The island's marker button: mark part of the screen to ask about (ScreenMarker).</summary>
+    [RelayCommand] private void MarkArea() => MarkAreaRequested?.Invoke();
+    public event Action? MarkAreaRequested;
     [RelayCommand] private void StopSpeaking() => StopSpeakingRequested?.Invoke();
     [RelayCommand] private void StopAsk() => StopAskRequested?.Invoke();
     [RelayCommand] private void OpenEngineSetup() => EngineSetupRequested?.Invoke();

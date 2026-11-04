@@ -11,6 +11,7 @@ using OpenClicky.Core.Actions;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
@@ -27,6 +28,8 @@ public sealed partial class CompanionManager
     /// <summary>The last question sent down the ask lane and when: the same one again soon after means the
     /// answer missed what they meant (RepeatedQuestion).</summary>
     private (string Transcript, DateTimeOffset AskedAt)? lastAskQuestion;
+    /// <summary>The part of the screen marked before the question being answered (ScreenMarker); it goes once answered.</summary>
+    private MarkedArea? markInQuestion;
 
     /// <summary>The running response, cancelled when the person speaks again.</summary>
     private CancellationTokenSource? currentResponseCancellation;
@@ -84,13 +87,21 @@ public sealed partial class CompanionManager
     /// </summary>
     private void SendTranscriptToClaudeWithScreenshot(string transcript, bool isGuidedStepContinuation = false)
     {
+        StopSavingTheDrawing();
+        // "Save it" with a drawing up saves the drawing; nothing is asked.
+        if (!isGuidedStepContinuation && TrySaveDrawing(transcript))
+        {
+            IsAskInFlight = false;
+            VoiceState = CompanionVoiceState.Idle;
+            return;
+        }
         InterruptCurrentAnswer(includingAgentWork: false);
         // Anything the person asks starts afresh; only OpenClicky's own "what's next?" continues a guide.
         if (!isGuidedStepContinuation)
         {
             guidedStepsGivenSoFar = 0;
             guidedStepGoal = transcript;
-            TeacherPlugin.ClearBoard("a new question");
+            TeacherPlugin.ClearBoardForNewQuestion();
         }
         guidedStepPointedLocation = null;
         var cancellation = new CancellationTokenSource();
@@ -109,6 +120,8 @@ public sealed partial class CompanionManager
         try
         {
             await AnswerAsync(transcript, pauseSeconds, isGuidedStepContinuation, cancellationToken);
+            // The marked part has had its answer: the mark goes (one asked about again is marked again).
+            ScreenMarker.Shared.ClearIfCurrent(markInQuestion);
         }
         catch (Exception error) when (AskLaneFailures.IsCancellation(error) || cancellationToken.IsCancellationRequested)
         {
@@ -159,6 +172,19 @@ public sealed partial class CompanionManager
         if (allScreenCaptures.Count == 0) throw new AskScreenCaptureException(new InvalidOperationException("no screen was captured"));
         var screenCaptures = ScreensForAsk(allScreenCaptures, AccountCapabilities.Current());
         cancellationToken.ThrowIfCancellationRequested();
+        // A part of the screen marked before asking: a close-up of it rides along and the question says where it is.
+        markInQuestion = ScreenMarker.Shared.ForQuestion(DateTimeOffset.Now);
+        (byte[] Data, string Label)? markCloseUp = null;
+        string? markedAreaLine = null;
+        CompanionScreenCapture? markedCapture = null;
+        if (markInQuestion?.In(screenCaptures) is { } marked)
+        {
+            markedCapture = marked.Capture;
+            markedAreaLine = MarkedArea.PromptLine(marked.Area, marked.Capture.Label);
+            var closeUpArea = MarkedArea.CloseUpRect(marked.Area, marked.Capture.ScreenshotWidthInPixels, marked.Capture.ScreenshotHeightInPixels);
+            if (services.ScreenCapture.CropJpeg(marked.Capture.ImageData, closeUpArea) is { } closeUp) markCloseUp = (closeUp, MarkedArea.CloseUpLabel);
+            AppLog.Write($"ask: the question is about a marked area ({marked.Area.Width}×{marked.Area.Height} px)");
+        }
 
         // Two-tier routing: the gate decides whether this is a quick question (the ask lane below) or
         // real work (the agent lane). The agent lane needs the openclicky tool; without it the quick
@@ -168,6 +194,7 @@ public sealed partial class CompanionManager
         if (agentLaneRuns)
         {
             AgentActivityText = "deciding…";
+            DrawStageController.Shared.ClearIfShowing("a question for the agent");
             var lane = await openClickyAgentClient.ClassifyLaneAsync(transcript, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             AppLog.Write($"agent: gate says {lane}");
@@ -181,13 +208,23 @@ public sealed partial class CompanionManager
 
         // A teaching question's lesson starts now, while the answer is still being asked for.
         var cursorCapture = CursorCapture(screenCaptures);
-        if (!isGuidedStepContinuation) TeacherPlugin.StartLesson(transcript, cursorCapture);
+        // A question a picture answers is answered by drawing on the screen while speaking (CompanionManager.DrawStage).
+        // Drawn on the screen with the mark, so the drawing can point at it.
+        if (!isGuidedStepContinuation
+            && await TryDrawingAnswerAsync(transcript, markedCapture ?? cursorCapture, conversationHistory.ToList(), cancellationToken,
+                markCloseUp, markedAreaLine))
+        {
+            return;
+        }
+        // The Teacher's own board only teaches while the drawing stage is off (the stage took this question if it wanted it).
+        if (!isGuidedStepContinuation && !DrawingStageIsOn) TeacherPlugin.StartLesson(transcript, cursorCapture);
         var labeledImages = screenCaptures.Select(ImageLabeledWithItsPixelSize).ToList();
         // The pointer's place in its screenshot goes into the question, and a close-up of what is
         // around it rides along, so "what is this?" is about the thing pointed at and not the
         // window with focus.
         var pointer = PointerInCapture.Locate(mouseLocationAtRelease, screenCaptures);
-        if (pointer is not null && screenCaptures.FirstOrDefault(capture => capture.Label == pointer.ScreenLabel) is { } pointedCapture
+        if (markCloseUp is { } markedCloseUp) labeledImages.Add(markedCloseUp);
+        else if (pointer is not null && screenCaptures.FirstOrDefault(capture => capture.Label == pointer.ScreenLabel) is { } pointedCapture
             && PointerCloseUp.CropRect(pointer, pointedCapture.ScreenshotWidthInPixels, pointedCapture.ScreenshotHeightInPixels) is { } closeUpArea
             && services.ScreenCapture.CropJpeg(pointedCapture.ImageData, closeUpArea) is { } closeUp)
         {
@@ -212,7 +249,8 @@ public sealed partial class CompanionManager
         var claudeRoute = ProviderRouter.Route(ProviderCapability.Claude, ProviderRouter.CurrentCredentials());
         // Offered wherever the agent lane doesn't run, and to a plan through PlanToolProtocol's [ACTION: …] lines.
         var offersQuickActions = AskLanePrompts.OffersQuickActionsToAskLane(agentLaneRuns, claudeRoute.AnsweringSource);
-        var teacherIsOn = TeacherPlugin.IsEnabled;
+        // The Teacher's board tools only while the drawing stage is off: with it on, drawings are the stage's.
+        var teacherIsOn = TeacherPlugin.IsEnabled && !DrawingStageIsOn;
         IReadOnlyList<System.Text.Json.Nodes.JsonObject> askTools =
         [
             .. AskLanePrompts.AskTools(offersQuickActions, writingTarget is not null, DesktopAction.AnthropicToolDefinitions()),
@@ -249,7 +287,7 @@ public sealed partial class CompanionManager
                 labeledImages,
                 systemPrompt,
                 historyForApi,
-                AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText, pointer, isRepeatedQuestion),
+                AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText, pointer, isRepeatedQuestion, markedAreaLine),
                 askTools,
                 accumulatedAnswer => services.MainThread.Post(() => answerSpeaker.Receive(accumulatedAnswer)),
                 cancellationToken);

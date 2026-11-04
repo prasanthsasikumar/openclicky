@@ -70,9 +70,33 @@ public sealed class OpenClickyShellSettings
     [JsonPropertyName("customOpenAIUrl")] public string? CustomOpenAIUrl { get; set; }
     [JsonPropertyName("customOpenAIKey")] public string? CustomOpenAIKey { get; set; }
 
+    /// <summary>Who writes drawn answers (the drawing stage): null uses whoever answers questions, else an
+    /// AnswerSource raw value; `drawingModel` overrides that source's model for drawings only.</summary>
+    [JsonPropertyName("drawingSource")] public string? DrawingSource { get; set; }
+    [JsonPropertyName("drawingModel")] public string? DrawingModel { get; set; }
+
+    /// <summary>How detailed drawings are: "simple", "detailed" (null) or "veryDetailed" (DrawStageLesson.DetailFrom).</summary>
+    [JsonPropertyName("drawingDetail")] public string? DrawingDetail { get; set; }
+
+    /// <summary>The person's own instructions for drawings, added to the drawing prompt (null: none).</summary>
+    [JsonPropertyName("drawingInstructions")] public string? DrawingInstructions { get; set; }
+
+    /// <summary>The keys that start a mark from anywhere while drawn answers are on: unset is Ctrl+Alt+M, "ctrlAltShiftM",
+    /// "off" (MarkerShortcuts).</summary>
+    [JsonPropertyName("markerShortcut")] public string? MarkerShortcut { get; set; }
+
+    /// <summary>Who makes a drawing's 3D pieces (PieceMakers.KindFrom: "drawingModel" when null, "llamaMeshOllama",
+    /// "llamaMeshLmStudio", "hunyuan3d"), at `pieceMakerUrl` with `pieceMakerModel` (LLaMA-Mesh's name there).</summary>
+    [JsonPropertyName("pieceMaker")] public string? PieceMaker { get; set; }
+    [JsonPropertyName("pieceMakerUrl")] public string? PieceMakerUrl { get; set; }
+    [JsonPropertyName("pieceMakerModel")] public string? PieceMakerModel { get; set; }
+
     /// <summary>Answer through a plan the person already pays for (Claude Code / Codex). Off until switched on.</summary>
     [JsonPropertyName("useClaudeCodePlan")] public bool? UseClaudeCodePlan { get; set; }
     [JsonPropertyName("useCodexPlan")] public bool? UseCodexPlan { get; set; }
+
+    /// <summary>What the assistant is called ("Dyna"); null is OpenClicky (AssistantName).</summary>
+    [JsonPropertyName("assistantName")] public string? AssistantName { get; set; }
 
     /// <summary>Who answers questions: null or "auto" picks in ProviderRouter's order; else an AnswerSource raw value.</summary>
     [JsonPropertyName("answerSource")] public string? AnswerSource { get; set; }

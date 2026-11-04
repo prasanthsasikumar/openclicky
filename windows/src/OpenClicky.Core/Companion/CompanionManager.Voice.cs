@@ -5,6 +5,7 @@
 
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
@@ -95,7 +96,14 @@ public sealed partial class CompanionManager
                 var escapeTarget = AskLaneEscape.Target(IsTakeInProgress, AskLaneCanBeStopped,
                     realtimeIsBusy: EscStopsFastVoice(IsTakeInProgress, UsesRealtimeVoice, RealtimeVoiceClient.IsBusy));
                 // Whatever else it stops, esc takes a lesson off the screen too (never mid-take).
-                if (TeacherPlugin.EscClearsTheBoard(escapeTarget)) TeacherPlugin.ClearBoard("esc");
+                var clearedADrawing = false;
+                if (TeacherPlugin.EscClearsTheBoard(escapeTarget)) { StopSavingTheDrawing(); clearedADrawing = TeacherPlugin.ClearBoard("esc"); }
+                // With nothing else to stop or take away, esc takes a mark left on the screen (the drawing goes first).
+                if (ScreenMarker.EscClearsTheMark(escapeTarget, clearedADrawing, ScreenMarker.Shared.Current is not null))
+                {
+                    ScreenMarker.Shared.Clear();
+                    AppLog.Write("marker: mark taken away (esc)");
+                }
                 switch (escapeTarget)
                 {
                     case EscapeTarget.AskLane:
@@ -143,7 +151,7 @@ public sealed partial class CompanionManager
         InterruptCurrentAnswer(includingAgentWork: true);
         Overlay.ClearDetectedElementLocation();
         Overlay.DismissCursorCaption();
-        TeacherPlugin.ClearBoard("a new question");
+        TeacherPlugin.ClearBoardForNewQuestion();
         lastQuestionWasTyped = true;
         LastTranscript = trimmedText;
         AppLog.Write($"ask: typed request ({trimmedText.Length} chars)");
@@ -163,7 +171,7 @@ public sealed partial class CompanionManager
         {
             await RealtimeVoiceClient.ConnectIfNeededAsync(IsAlwaysListening ? RealtimeTurnMode.AlwaysOn : RealtimeTurnMode.PushToTalk);
             await RealtimeVoiceClient.SendTextTurnAsync(text);
-            TeacherPlugin.StartLesson(text, RealtimeVoiceClient.LastScreenCapture);
+            if (!DrawingStageIsOn) TeacherPlugin.StartLesson(text, RealtimeVoiceClient.LastScreenCapture);
         }
         catch (Exception error)
         {
@@ -232,6 +240,8 @@ public sealed partial class CompanionManager
         askOutcome = AskOutcome.Listening;
         askPressWasStopped = false;
         askLiveWordsShownSincePress = false;
+        // The drawing stage's browser takes a few seconds to start: it starts while they speak.
+        if (DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)) DrawStageController.Shared.Prepare();
         Overlay.CancelTransientHide();
         // The cursor is hidden: bring it back for this interaction.
         if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible) Overlay.ShowOverlayOnAllScreens();

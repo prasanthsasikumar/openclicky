@@ -32,6 +32,20 @@ public sealed partial class CompanionManager
         board.MainThread = services.MainThread;
         board.OnLabelWritten = (location, displayFrame) => PointAt(location, displayFrame, null);
         teacherWasEnabled = TeacherPlugin.IsEnabled;
+        // Photo cards on the drawing stage use the Teacher's Wikimedia search.
+        Plugins.DrawStage.DrawStageController.Shared.MainThread = services.MainThread;
+        Plugins.DrawStage.DrawStageController.Shared.FindPhoto = Plugins.DrawStage.DrawStagePhotos.Finder(() => board.Surface);
+        // A part of a 3D drawing clicked: a follow-up question about that part, answered by a new drawing.
+        Plugins.DrawStage.DrawStageController.Shared.FigurePartClicked += part => services.MainThread.Post(() => AskAboutFigurePart(part));
+        // The drawing's Save button.
+        Plugins.DrawStage.DrawStageController.Shared.SaveRequested += what => services.MainThread.Post(() => SaveDrawing(what));
+        // The drawing's close button.
+        Plugins.DrawStage.DrawStageController.Shared.CloseRequested += () => services.MainThread.Post(CloseDrawing);
+        // 3D pieces a drawing asks for (f.piece), made by the maker Settings picks, the drawing model when it fails.
+        var pieceWorkshop = new Plugins.DrawStage.PieceWorkshop(() => Plugins.DrawStage.PieceMakers.For(Configuration.OpenClickyConfiguration.Settings,
+            Plugins.DrawStage.DrawStageLesson.WriterFor(Configuration.OpenClickyConfiguration.Settings, claudeAPI),
+            () => Providers.ProviderRouter.CurrentCredentials().OpenAIKey));
+        Plugins.DrawStage.DrawStageController.Shared.MakePiece = pieceWorkshop.MakeAsync;
         teacherSwitchObservation = preferences.Observe(IslandComponentSettings.PluginsKey, () => services.MainThread.Post(TeacherSwitchMayHaveChanged));
     }
 

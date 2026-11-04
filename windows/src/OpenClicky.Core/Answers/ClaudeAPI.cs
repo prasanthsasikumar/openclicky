@@ -261,7 +261,8 @@ public sealed class ClaudeAPI
         string userPrompt,
         IReadOnlyList<JsonObject>? tools,
         Action<string> onTextChunk,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int maxTokens = 1024)
     {
         var stopwatch = Stopwatch.StartNew();
         conversationHistory ??= [];
@@ -273,14 +274,14 @@ public sealed class ClaudeAPI
         if (route.Kind == ProviderRouteKind.AnswerProvider)
         {
             var result = await AnswerThroughProviderAsync(route.Source!.Value, images, systemPrompt, conversationHistory,
-                                                          userPrompt, tools, 1024, onTextChunk, cancellationToken).ConfigureAwait(false);
+                                                          userPrompt, tools, maxTokens, onTextChunk, cancellationToken).ConfigureAwait(false);
             return (result.Text, result.ToolCalls, stopwatch.Elapsed);
         }
 
         var body = new JsonObject
         {
             ["model"] = Model,
-            ["max_tokens"] = 1024,
+            ["max_tokens"] = maxTokens,
             ["stream"] = true,
             ["system"] = systemPrompt,
             ["messages"] = MessagesBody(images, conversationHistory, userPrompt),

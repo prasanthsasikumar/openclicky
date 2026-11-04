@@ -246,6 +246,10 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
             _ => DictationSettingsPage.General,
         });
         Island.QuitRequested += QuitWithFarewell;
+        Island.TogglePointerRequested += () => SetClickyCursorEnabled(!IsClickyCursorEnabled);
+        Island.MarkAreaRequested += () => ScreenMarker.Shared.Begin();
+        ScreenMarker.Shared.Marked += _ => services.MainThread.Post(() =>
+            ShowAskCaption("Marked. Now ask about it: hold the talk key, or type your question.", 6));
         Island.StopSpeakingRequested += StopSpeaking;
         Island.StopAskRequested += () => StopAskLane("the island");
         Island.EngineSetupRequested += () => ShowSettings(IslandVoiceDestination.SetupPage(DictationSettings.Engine,

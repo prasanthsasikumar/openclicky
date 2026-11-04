@@ -31,9 +31,12 @@
     <Content Include="Assets\OpenClicky.ico" CopyToOutputDirectory="PreserveNewest" />
     <!-- The built-in dictation model (Moonshine tiny), put here by scripts\fetch-speech-model.ps1; absent in a plain dev build. -->
     <Content Include="Assets\Models\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The drawing stage's page (Plugins/DrawStage), loaded by WebView2 from the app's folder. -->
+    <Content Include="Assets\DrawStage\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="org.k2fsa.sherpa.onnx" Version="1.13.8" />
     <PackageReference Include="Velopack" Version="1.2.161" />

@@ -37,6 +37,21 @@ public class SpeechQueueTests
     }
 
     [Fact]
+    public async Task EachPieceSaysWhenItStartsAndEndsPlaying()
+    {
+        var events = new ConcurrentQueue<string>();
+        var queue = new SpeechQueue((text, _) => Task.FromResult(Bytes(text)), (data, _) => { events.Enqueue("play " + Text(data)); return Task.CompletedTask; });
+        queue.PieceStarted += n => events.Enqueue($"start {n}");
+        queue.PieceEnded += n => events.Enqueue($"end {n}");
+        var playback = queue.RunAsync(() => { });
+        queue.Enqueue("one");
+        queue.Enqueue("two");
+        queue.Finish();
+        await playback;
+        Assert.Equal(["start 0", "play one", "end 0", "start 1", "play two", "end 1"], events);
+    }
+
+    [Fact]
     public async Task RunWaitsForPiecesThatArriveLater()
     {
         var played = new ConcurrentQueue<string>();

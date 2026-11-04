@@ -818,6 +818,26 @@ internal sealed class FullPanelView : Grid, IIslandContent
         });
         gear.Margin = new Thickness(6, 0, 0, 0);
         controls.Children.Add(gear);
+        // Quick action: hide the pointer, or bring it back.
+        var eye = new IslandIconButton(hub.IsClickyCursorEnabled ? Icons.HidePointer : Icons.ShowPointer, 12,
+            hub.IsClickyCursorEnabled ? "Hide the pointer" : "Show the pointer", () =>
+            {
+                model.Dismiss();
+                hub.TogglePointerCommand.Execute(null);
+            });
+        eye.Margin = new Thickness(6, 0, 0, 0);
+        controls.Children.Add(eye);
+        // Quick action: mark part of the screen, then ask about it.
+        var markKeys = MarkerShortcuts.Wanted(OpenClicky.Core.Configuration.OpenClickyConfiguration.Settings.MarkerShortcut,
+            OpenClicky.Core.Plugins.DrawStage.DrawStageLesson.IsEnabled(OpenClicky.Core.Configuration.Preferences.Shared, OpenClicky.Core.Plugins.Teacher.TeacherPlugin.IsEnabled));
+        var marker = new IslandIconButton(Icons.Marker, 12,
+            "Mark part of the screen to ask about" + (markKeys is { } keys ? $" ({MarkerShortcuts.Title(keys)})" : ""), () =>
+        {
+            model.Dismiss();
+            hub.MarkAreaCommand.Execute(null);
+        });
+        marker.Margin = new Thickness(6, 0, 0, 0);
+        controls.Children.Add(marker);
         var power = new IslandIconButton(Icons.Power, 11, IslandTexts.QuitToolTip, () => hub.QuitCommand.Execute(null));
         power.Margin = new Thickness(6, 0, 0, 0);
         controls.Children.Add(power);

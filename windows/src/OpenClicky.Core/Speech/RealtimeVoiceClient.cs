@@ -972,7 +972,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
 
     // MARK: - Instructions (skills)
 
-    private string CurrentInstructions() => InstructionsProvider?.Invoke() ?? instructions;
+    private string CurrentInstructions() => Configuration.AssistantName.Introduce(InstructionsProvider?.Invoke() ?? instructions);
 
     /// <summary>
     /// Re-send the session when the provider's instructions changed (a different app is in front, a

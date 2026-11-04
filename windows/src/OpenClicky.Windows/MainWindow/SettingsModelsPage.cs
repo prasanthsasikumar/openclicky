@@ -1,9 +1,13 @@
 // Settings → Clicky → Models: the person's own models (Ollama, LM Studio, any OpenAI-compatible server), each turned
-// on by its address and connected by listing the models it serves.
+// on by its address and connected by listing the models it serves. Settings → Clicky → Drawings: who writes the drawn
+// answers (the drawing stage), which may be a different source and model from the one that answers questions, how
+// detailed they are, and the person's own instructions for them.
 
 using System.Windows;
 using System.Windows.Controls;
+using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Settings;
 using WpfUi = Wpf.Ui.Controls;
@@ -32,6 +36,16 @@ internal sealed partial class SettingsRowFactory
                 return SelfHostedRow(AnswerSource.LMStudio, item, query);
             case "models.custom":
                 return SelfHostedRow(AnswerSource.CustomOpenAI, item, query);
+            case "clicky.drawingSource":
+                return new LiveContent(() => Ui.Card(DrawingSourceRow(item, query)), Changes.Shell);
+            case "clicky.drawingDetail":
+                return Ui.Card(DrawingDetailRow(item, query));
+            case "clicky.drawingInstructions":
+                return Ui.Card(DrawingInstructionsRow(item, query));
+            case "clicky.markerShortcut":
+                return Ui.Card(MarkerShortcutRow(item, query));
+            case "clicky.pieceMaker":
+                return new LiveContent(() => Ui.Card(PieceMakerRow(item, query)), Changes.Shell);
             default:
                 return null;
         }
@@ -96,7 +110,7 @@ internal sealed partial class SettingsRowFactory
                     }
                 });
                 ShellSettingsRevision.NoteChanged();
-                selfHosted.Status[source] = $"Connected: {served.Count} model{(served.Count == 1 ? "" : "s")}. Pick it under “Answers come from”.";
+                selfHosted.Status[source] = $"Connected: {served.Count} model{(served.Count == 1 ? "" : "s")}. Pick it under “Answers come from” or “Drawings come from”.";
             }
             catch (LocalModelsException failure)
             {
@@ -168,4 +182,169 @@ internal sealed partial class SettingsRowFactory
 
     private static string Capitalized(string sentence) => sentence.Length == 0 ? sentence : char.ToUpperInvariant(sentence[0]) + sentence[1..];
 
+    /// <summary>Who writes drawings: the same source as answers, or any one set up, and a model of its own (blank: its usual one).</summary>
+    private static Grid DrawingSourceRow(SettingsItem item, string query)
+    {
+        var shell = OpenClickyConfiguration.Settings;
+        var available = ProviderCredentials.Current().AnswerSourcesInOrder;
+        var picked = AnswerSources.FromRawValue(shell.DrawingSource);
+        var options = new List<(string Id, string Title)> { ("same", "Same as answers") };
+        options.AddRange(available.Select(source => (source.Id(), source.DisplayName())));
+        if (picked is { } stale && !available.Contains(stale)) options.Add((stale.Id(), $"{stale.DisplayName()} (not set up)"));
+        var picker = Ui.Picker(options, picked?.Id() ?? "same", choice =>
+        {
+            OpenClickyConfiguration.Update(saved => saved.DrawingSource = choice == "same" ? null : choice);
+            ShellSettingsRevision.NoteChanged();
+        }, 200);
+        var modelField = new WpfUi.TextBox
+        {
+            Width = 170, Text = shell.DrawingModel ?? "", PlaceholderText = "its usual model", VerticalAlignment = VerticalAlignment.Center,
+        };
+        Ui.AutomationProperties(modelField, "Drawing model");
+        void SaveModel()
+        {
+            var typed = modelField.Text.Trim();
+            if (typed == (OpenClickyConfiguration.Settings.DrawingModel ?? "")) return;
+            OpenClickyConfiguration.Update(saved => saved.DrawingModel = typed.Length == 0 ? null : typed);
+            ShellSettingsRevision.NoteChanged();
+        }
+        modelField.LostFocus += (_, _) => SaveModel();
+        modelField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) SaveModel(); };
+        return Ui.Row(item.Title, item.Detail, query, Ui.HStack(8, picker, modelField));
+    }
+
+    /// <summary>How detailed drawings are: simple, detailed or very detailed (DrawStageLesson.DetailFrom).</summary>
+    private static Grid DrawingDetailRow(SettingsItem item, string query)
+    {
+        var current = DrawStageLesson.DetailFrom(OpenClickyConfiguration.Settings.DrawingDetail);
+        var picker = Ui.Picker(
+            [(DrawingDetail.Simple, "Simple"), (DrawingDetail.Detailed, "Detailed"), (DrawingDetail.VeryDetailed, "Very detailed")],
+            current,
+            choice =>
+            {
+                OpenClickyConfiguration.Update(saved => saved.DrawingDetail = choice == DrawingDetail.Detailed ? null : DrawStageLesson.RawValue(choice));
+                ShellSettingsRevision.NoteChanged();
+            },
+            200);
+        return Ui.Row(item.Title, item.Detail, query, picker);
+    }
+
+    /// <summary>The keys that start a mark from anywhere, or none (the island's marker button always works).</summary>
+    private static Grid MarkerShortcutRow(SettingsItem item, string query)
+    {
+        var picker = Ui.Picker(MarkerShortcuts.Choices.Select(each => (each.Shortcut, each.Title)),
+            MarkerShortcuts.From(OpenClickyConfiguration.Settings.MarkerShortcut),
+            choice =>
+            {
+                OpenClickyConfiguration.Update(saved => saved.MarkerShortcut = MarkerShortcuts.RawValue(choice));
+                ShellSettingsRevision.NoteChanged();
+            },
+            200);
+        return Ui.Row(item.Title, item.Detail, query, picker);
+    }
+
+    /// <summary>The graphics card, read once (the registry doesn't change while Settings is open).</summary>
+    private static readonly Lazy<(string Name, double MemoryGB)?> GraphicsCard = new(Platform.GraphicsCards.Biggest);
+
+    /// <summary>Who makes 3D pieces: the picker, its address and model (for the makers that need them), and what this PC's
+    /// graphics card suits.</summary>
+    private static UIElement PieceMakerRow(SettingsItem item, string query)
+    {
+        var shell = OpenClickyConfiguration.Settings;
+        var kind = PieceMakers.KindFrom(shell.PieceMaker);
+        var choice = PieceMakers.Choices.First(each => each.Kind == kind);
+        var picker = Ui.Picker(PieceMakers.Choices.Select(each => (each.Kind, each.Title)), kind, picked =>
+        {
+            OpenClickyConfiguration.Update(saved =>
+            {
+                saved.PieceMaker = picked == PieceMakerKind.DrawingModel ? null : PieceMakers.RawValue(picked);
+                // Each maker has its own address and model: a new one starts from its own defaults.
+                saved.PieceMakerUrl = null;
+                saved.PieceMakerModel = null;
+            });
+            ShellSettingsRevision.NoteChanged();
+        }, 220);
+        var stack = new StackPanel();
+        stack.Children.Add(Ui.Row(item.Title, item.Detail, query, picker));
+        stack.Children.Add(Caption(choice.Needs));
+        if (kind != PieceMakerKind.DrawingModel)
+        {
+            var urlField = new WpfUi.TextBox
+            {
+                Width = 240, Text = shell.PieceMakerUrl ?? "", PlaceholderText = PieceMakers.DefaultUrl(kind), VerticalAlignment = VerticalAlignment.Center,
+            };
+            Ui.AutomationProperties(urlField, "3D piece maker address");
+            void SaveUrl()
+            {
+                var typed = urlField.Text.Trim();
+                if (typed == (OpenClickyConfiguration.Settings.PieceMakerUrl ?? "")) return;
+                OpenClickyConfiguration.Update(saved => saved.PieceMakerUrl = typed.Length == 0 ? null : typed);
+                ShellSettingsRevision.NoteChanged();
+            }
+            urlField.LostFocus += (_, _) => SaveUrl();
+            urlField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) SaveUrl(); };
+            var fields = Ui.HStack(8, urlField);
+            if (kind is PieceMakerKind.LlamaMeshOllama or PieceMakerKind.LlamaMeshLMStudio)
+            {
+                var modelField = new WpfUi.TextBox
+                {
+                    Width = 280, Text = shell.PieceMakerModel ?? "", VerticalAlignment = VerticalAlignment.Center,
+                    PlaceholderText = kind == PieceMakerKind.LlamaMeshOllama ? PieceMakers.DefaultLlamaMeshModel : "its model name in LM Studio",
+                };
+                Ui.AutomationProperties(modelField, "LLaMA-Mesh model");
+                void SaveModel()
+                {
+                    var typed = modelField.Text.Trim();
+                    if (typed == (OpenClickyConfiguration.Settings.PieceMakerModel ?? "")) return;
+                    OpenClickyConfiguration.Update(saved => saved.PieceMakerModel = typed.Length == 0 ? null : typed);
+                    ShellSettingsRevision.NoteChanged();
+                }
+                modelField.LostFocus += (_, _) => SaveModel();
+                modelField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) SaveModel(); };
+                fields.Children.Add(modelField);
+            }
+            fields.Margin = new Thickness(0, 8, 0, 0);
+            stack.Children.Add(fields);
+        }
+        var card = GraphicsCard.Value;
+        var grade = PieceMakers.GradeFor(card?.MemoryGB);
+        var (suggested, why) = PieceMakers.Recommend(grade);
+        var gradeName = grade switch { GraphicsGrade.High => "high", GraphicsGrade.Medium => "medium", _ => "low" };
+        var cardLine = card is { } found ? $"This PC: {found.Name}, {found.MemoryGB:0.#} GB ({gradeName})." : "This PC: no graphics card with its own memory found (low).";
+        var suggestion = suggested == kind ? "That's the one suggested for it." : $"Suggested: {PieceMakers.Choices.First(each => each.Kind == suggested).Title}.";
+        stack.Children.Add(Caption($"{cardLine} {why} {suggestion} A maker on another PC (its address above) uses that PC's card instead."));
+        return stack;
+    }
+
+    private static TextBlock Caption(string text)
+    {
+        var block = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = SettingsLook.CaptionSize, Margin = new Thickness(0, 6, 0, 0) };
+        block.SetResourceReference(TextBlock.ForegroundProperty, SettingsLook.TextSecondary);
+        return block;
+    }
+
+    /// <summary>The person's own words added to every drawing's instructions, saved when the box loses focus.</summary>
+    private static UIElement DrawingInstructionsRow(SettingsItem item, string query)
+    {
+        var box = new WpfUi.TextBox
+        {
+            Text = OpenClickyConfiguration.Settings.DrawingInstructions ?? "",
+            PlaceholderText = "e.g. Use bright colours. Show what's inside with a cutaway. Explain for a 9-year-old.",
+            AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 76, MaxHeight = 160,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxLength = DrawStageLesson.LongestInstructions,
+            Margin = new Thickness(0, 10, 0, 0),
+        };
+        Ui.AutomationProperties(box, "Your drawing instructions");
+        box.LostFocus += (_, _) =>
+        {
+            var typed = box.Text.Trim();
+            if (typed == (OpenClickyConfiguration.Settings.DrawingInstructions ?? "")) return;
+            OpenClickyConfiguration.Update(saved => saved.DrawingInstructions = typed.Length == 0 ? null : typed);
+            ShellSettingsRevision.NoteChanged();
+        };
+        var stack = new StackPanel();
+        stack.Children.Add(Ui.Row(item.Title, item.Detail, query, null));
+        stack.Children.Add(box);
+        return stack;
+    }
 }

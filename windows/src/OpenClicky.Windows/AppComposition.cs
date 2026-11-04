@@ -11,6 +11,7 @@ using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
@@ -23,6 +24,7 @@ using OpenClicky.Windows.Dictation;
 using OpenClicky.Windows.Island;
 using OpenClicky.Windows.Overlay;
 using OpenClicky.Windows.Platform;
+using OpenClicky.Windows.Plugins.DrawStage;
 using OpenClicky.Windows.Plugins.Teacher;
 using OpenClicky.Windows.Tray;
 
@@ -40,6 +42,13 @@ public sealed class AppComposition : ICompanionHost, IDisposable
     private readonly TakeStore? takeStore;
     private readonly CompanionUi companionUi;
     private readonly GlobalShortcutMonitor shortcuts;
+    private readonly MouseTalkMonitor mouseTalk;
+    private readonly Overlay.ScreenMarkerWindow screenMarker;
+    private readonly IDisposable mouseTalkObservation;
+    private readonly IDisposable[] markerKeyObservations;
+    private readonly Action refreshMarkerKeys;
+    private readonly IDisposable pointerColorObservation;
+    private readonly IDisposable pointerStyleObservation;
     private readonly GuidedStepInputSource guidedStepInput;
     private readonly VelopackAppUpdater updater;
     private readonly TrayIcon trayIcon;
@@ -75,6 +84,18 @@ public sealed class AppComposition : ICompanionHost, IDisposable
 
         companionUi = new CompanionUi(platform.Screens, preferences);
         shortcuts = new GlobalShortcutMonitor(platform.KeyboardMonitor, platform.MainThread);
+        // Holding a mouse button to talk (Settings → Clicky); the hook is only installed while a button is chosen.
+        mouseTalk = new MouseTalkMonitor(shortcuts.PublishMouseTalk);
+        void ApplyMouseTalk() => mouseTalk.Button = MouseTalkButtons.FromRawValue(preferences.GetString(MouseTalkButtons.PreferenceKey));
+        ApplyMouseTalk();
+        mouseTalkObservation = preferences.Observe(MouseTalkButtons.PreferenceKey, () => platform.MainThread.Post(ApplyMouseTalk));
+        // The pointer's colour and shape (Settings → Clicky → Pointer), applied now and whenever they change.
+        void ApplyPointerLook() => Overlay.PointerTriangleView.ApplyLook(
+            Theme.DS.Hex(PointerLook.HexFor(preferences.GetString(PointerLook.ColorPreferenceKey))),
+            PointerLook.StyleFrom(preferences.GetString(PointerLook.StylePreferenceKey)));
+        ApplyPointerLook();
+        pointerColorObservation = preferences.Observe(PointerLook.ColorPreferenceKey, () => platform.MainThread.Post(ApplyPointerLook));
+        pointerStyleObservation = preferences.Observe(PointerLook.StylePreferenceKey, () => platform.MainThread.Post(ApplyPointerLook));
         guidedStepInput = new GuidedStepInputSource(platform.KeyboardMonitor);
         var services = new CompanionServices
         {
@@ -106,6 +127,23 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         };
         // The Teacher plugin's board windows (its state is Core's TeacherBoard).
         TeacherBoard.Shared.Surface = new TeacherBoardWindows(platform.Screens);
+        // The drawing stage's window (its state is Core's DrawStageController); WebView2 starts the first time it is shown.
+        // Its drawings are saved to Videos\OpenClicky as a picture and a video.
+        var drawStageWindow = new DrawStageWindow();
+        DrawStageController.Shared.Surface = drawStageWindow;
+        DrawStageController.Shared.Saver = new DrawingRecorder(drawStageWindow, DrawStageController.Shared);
+        // Marking part of the screen to ask about (the island's marker button, Ctrl+Alt+M); its state is Core's ScreenMarker.
+        // Its shortcut is held only while drawn answers are on, and follows the Teacher plugin, the drawing switch and Settings.
+        screenMarker = new Overlay.ScreenMarkerWindow(platform.Screens, () => MarkerShortcuts.Wanted(
+            OpenClickyConfiguration.Settings.MarkerShortcut, DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)));
+        ScreenMarker.Shared.Surface = screenMarker;
+        refreshMarkerKeys = () => platform.MainThread.Post(screenMarker.RefreshHotkey);
+        markerKeyObservations =
+        [
+            preferences.Observe(IslandComponentSettings.PluginsKey, refreshMarkerKeys),
+            preferences.Observe(DrawStageLesson.PreferenceKey, refreshMarkerKeys),
+        ];
+        OpenClickyConfiguration.SettingsChanged += refreshMarkerKeys;
         Companion = new CompanionManager(services,
             new CompanionModels(companionUi.Overlay, companionUi.Island, companionUi.Orb, companionUi.AgentCard), this);
 
@@ -297,6 +335,13 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         memoryWatch.Stop();
         if (lowMemoryNotification != 0) CloseHandle(lowMemoryNotification);
+        mouseTalkObservation.Dispose();
+        foreach (var observation in markerKeyObservations) observation.Dispose();
+        OpenClickyConfiguration.SettingsChanged -= refreshMarkerKeys;
+        pointerColorObservation.Dispose();
+        pointerStyleObservation.Dispose();
+        mouseTalk.Dispose();
+        screenMarker.Dispose();
         try
         {
             Companion.Dispose();

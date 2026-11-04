@@ -31,6 +31,20 @@ public static class Shapes
         return geometry;
     }
 
+    /// <summary>A classic mouse-pointer arrow in a <paramref name="width"/> × <paramref name="height"/> frame, tip at the top left.</summary>
+    public static Geometry Arrow(double width, double height)
+    {
+        Point P(double x, double y) => new(x * width, y * height);
+        var figure = new PathFigure { StartPoint = P(0.12, 0.02), IsClosed = true, IsFilled = true };
+        foreach (var point in new[] { P(0.12, 0.86), P(0.34, 0.66), P(0.5, 0.98), P(0.64, 0.92), P(0.48, 0.6), P(0.78, 0.6) })
+        {
+            figure.Segments.Add(new LineSegment(point, true));
+        }
+        var geometry = new PathGeometry(new[] { figure });
+        geometry.Freeze();
+        return geometry;
+    }
+
     // OpenClickyMark proportions in a unit square, y down, measured off the icon artwork.
     public const double MarkInnerRadius = 0.4125;
     public static readonly Point MarkArrowTip = new(0.3125, 0.3125);
@@ -159,6 +173,11 @@ public static class Shapes
 public static class Icons
 {
     public const string Settings = "";        // gearshape.fill
+    /// <summary>Segoe Fluent "View" and "Hide": the island's pointer quick action.</summary>
+    public const string ShowPointer = "\uE890";
+    public const string HidePointer = "\uED1A";
+    /// <summary>Segoe Fluent "Highlight": the island's marker (mark part of the screen to ask about).</summary>
+    public const string Marker = "\uE7E6";
     public const string Power = "";           // power
     public const string Microphone = "";      // mic.fill
     public const string Stop = "";            // stop.circle.fill (drawn in a circle)

@@ -10,6 +10,8 @@
 //   --openclicky-answer-smoke                      one real question (a red square) through ClaudeAPI
 //   --openclicky-teacher-smoke [sketch | picture:<words> | lesson:<question>] [--shot <png>]
 //                                                  draws a Teacher lesson on the cursor's screen (Plugins/Teacher/TeacherSmoke)
+//   --openclicky-drawstage-smoke [program.js | reply:<file> | lesson:<question>] [--speech] [--voice] [--shot <png>]
+//                                                  streams a drawing program onto the drawing stage (Plugins/DrawStage/DrawStageSmoke)
 //   --openclicky-action-smoke <tool> [<json>] [--after <seconds>]
 //                                                  one fast action through the real executor, e.g. scroll {"direction":"down"}
 
@@ -85,6 +87,8 @@ internal static class SmokeCommands
             return Task.Run(AnswerSmokeAsync).GetAwaiter().GetResult();
         }
         if (args.Contains(Plugins.Teacher.TeacherSmoke.Flag)) return Plugins.Teacher.TeacherSmoke.Run(args);
+        if (args.Contains(Plugins.DrawStage.DrawStageSmoke.Flag)) return Plugins.DrawStage.DrawStageSmoke.Run(args);
+        if (args.Contains(Overlay.ScreenMarkerSmoke.Flag)) return Overlay.ScreenMarkerSmoke.Run();
         if (Argument("--openclicky-action-smoke") is { } toolName)
         {
             ConsoleAttachment.Attach();

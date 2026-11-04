@@ -109,6 +109,15 @@ public interface IDesktopActionExecutor
     /// </summary>
     Actions.ScrollResult ScrollFrontWindow(Actions.ScrollDirection direction, Actions.ScrollAmount amount) => Actions.ScrollResult.NoWindow;
 
+    /// <summary>Presses the chords in order in the window in front, all of it <paramref name="times"/> times.</summary>
+    Actions.KeyInputResult PressKeys(IReadOnlyList<Actions.KeyChord> chords, int times) => Actions.KeyInputResult.NoWindow;
+
+    /// <summary>Types <paramref name="text"/> where the keyboard is; never into a password box.</summary>
+    Task<Actions.KeyInputResult> TypeTextAsync(string text) => Task.FromResult(Actions.KeyInputResult.NoWindow);
+
+    /// <summary>Does <paramref name="command"/> to the window in front, or to the front window of the app called <paramref name="app"/>.</summary>
+    Actions.WindowControlResult ControlWindow(Actions.WindowCommand command, string? app) => new(null);
+
     /// <summary>Ends a continuous scroll; false when none was running.</summary>
     bool StopScrolling() => false;
 

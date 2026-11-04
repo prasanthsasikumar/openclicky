@@ -137,6 +137,10 @@ public abstract record DesktopActionOutcome
     public sealed record NothingToScroll : DesktopActionOutcome;
     public sealed record StoppedScrolling : DesktopActionOutcome;
     public sealed record WasNotScrolling : DesktopActionOutcome;
+    public sealed record PressedKeys(string Keys, int Times) : DesktopActionOutcome;
+    public sealed record TypedText(int Characters) : DesktopActionOutcome;
+    public sealed record WontTypePassword : DesktopActionOutcome;
+    public sealed record WindowControlled(WindowCommand Command, string Window) : DesktopActionOutcome;
     public sealed record NothingInFront : DesktopActionOutcome;
     /// <summary>The window in front runs as administrator, and Windows drops input from this app to it (the Mac's needsAccessibility).</summary>
     public sealed record InputBlocked : DesktopActionOutcome;
@@ -159,7 +163,7 @@ public abstract record DesktopActionOutcome
     /// <summary>True when the action did what was asked (the tour counts it as a task handed over).</summary>
     public bool DidSomething => this is OpenedApp or CreatedFolder or FolderAlreadyExists or Revealed or OpenedUrl or VolumeSet or MediaControlled
         or PlayerControlled or Searched or MinimizedWindows or RestoredWindows or OpenedInbox or DraftedEmail or PlayingTrack or OpenedTrack or OpenedSpotifySearch
-        or Scrolled or StoppedScrolling or OpenedFolder or FoundFiles or SearchedPage or SwitchedTab;
+        or Scrolled or StoppedScrolling or OpenedFolder or FoundFiles or SearchedPage or SwitchedTab or PressedKeys or TypedText or WindowControlled;
 
     /// <summary>
     /// What the Realtime model is told in the tool's output. The same as the sentence unless an outcome
@@ -260,6 +264,11 @@ public abstract record DesktopActionOutcome
         Scrolled { Amount: ScrollAmount.Slow } scrolled => $"Scrolled {scrolled.Direction.RawValue()} slowly.",
         Scrolled { Amount: ScrollAmount.Continuous } scrolled => $"Scrolling {scrolled.Direction.RawValue()}; say stop when you want me to stop.",
         Scrolled scrolled => $"Scrolled {scrolled.Direction.RawValue()}.",
+        PressedKeys { Times: > 1 } pressed => $"Pressed {pressed.Keys} {pressed.Times} times.",
+        PressedKeys pressed => $"Pressed {pressed.Keys}.",
+        TypedText => "Typed it.",
+        WontTypePassword => "That's a password box, so I won't type in it. You type that one.",
+        WindowControlled controlled => controlled.Command.Sentence(controlled.Window),
         NothingToScroll => "There's no window in front for me to scroll.",
         StoppedScrolling => "Stopped.",
         WasNotScrolling => "I wasn't scrolling.",
@@ -394,6 +403,12 @@ public abstract record DesktopAction
     public sealed record Scroll(ScrollDirection Direction, ScrollAmount Amount) : DesktopAction;
     /// <summary>Ends a continuous scroll.</summary>
     public sealed record StopScrolling : DesktopAction;
+    /// <summary>Keys or shortcuts pressed in the window in front, in order, <c>Times</c> times over (KeyChords).</summary>
+    public sealed record PressKeys(IReadOnlyList<KeyChord> Chords, int Times) : DesktopAction;
+    /// <summary>Words typed where the keyboard is (never in a password box).</summary>
+    public sealed record TypeText(string Text) : DesktopAction;
+    /// <summary>The window in front, or the named app's front window: minimized, maximized, restored, closed or brought forward.</summary>
+    public sealed record ControlWindow(WindowCommand Command, string? App) : DesktopAction;
     /// <summary>A whole folder in File Explorer ("open downloads"), or a folder inside it when one is named.</summary>
     public sealed record OpenFolder(string? Name, DesktopActionLocation Location) : DesktopAction;
     /// <summary>Windows Search: files under the home folder whose names hold every word said.</summary>
@@ -423,6 +438,12 @@ public abstract record DesktopAction
     public const string FindFilesToolName = "find_files";
     public const string FindOnPageToolName = "find_on_page";
     public const string SwitchTabToolName = "switch_tab";
+    public const string PressKeysToolName = "press_keys";
+    public const string TypeTextToolName = "type_text";
+    public const string WindowToolName = "window";
+    public const string KeysArgumentMessage = "I can press keys like tab, enter, the arrows, or shortcuts like ctrl+c; not that one";
+    /// <summary>The longest text one type_text call types.</summary>
+    public const int MaximumTypedCharacters = 2000;
 
     public const string VolumeArgumentMessage = "I need a volume between 0 and 100";
     public const string ScrollArgumentMessage = "I need up, down, left or right";
@@ -587,6 +608,38 @@ public abstract record DesktopAction
                          ["name"] = new JsonObject { ["type"] = "string", ["description"] = "For named: the site or title words they said, e.g. 'cars and bids'." },
                      },
                      "which"),
+            Function(PressKeysToolName,
+                     "Press keys or a keyboard shortcut in the window in front, the way the person would: 'press tab', 'hit enter', 'go to the next field' (tab), 'select all' (ctrl+a), 'copy that' (ctrl+c), 'paste' (ctrl+v), 'undo' (ctrl+z), 'new tab' (ctrl+t), 'go back' (alt+left), 'switch windows' (alt+tab). Not for writing words: that is type_text. Do it; never explain the shortcut.",
+                     new JsonObject
+                     {
+                         ["keys"] = new JsonObject
+                         {
+                             ["type"] = "string",
+                             ["description"] = "One key or shortcut, or several in order separated by commas: 'tab', 'shift+tab', 'enter', 'ctrl+c', 'alt+left', 'tab, tab, enter'. Keys: tab, enter, escape, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown, f1-f12, and letters or digits with ctrl or alt.",
+                         },
+                         ["times"] = new JsonObject { ["type"] = "integer", ["description"] = "How many times to press it all, 1 (the default) to 20: 'press tab three times' is 3." },
+                     },
+                     "keys"),
+            Function(TypeTextToolName,
+                     "Type words where the keyboard is in the app in front (where the cursor blinks): 'type hello world', 'write thanks for the update in the message box', 'put my email in that field'. If the box they mean isn't focused yet, click it first. Never in a password box.",
+                     new JsonObject
+                     {
+                         ["text"] = new JsonObject { ["type"] = "string", ["description"] = "Exactly the words to type, as the person said them (fix only obvious mishearings)." },
+                     },
+                     "text"),
+            Function(WindowToolName,
+                     "Control a window: minimize, maximize, restore or close the window in front, or bring an app's window to the front ('switch to chrome', 'go to brave', 'show me claude'). With app, it acts on that app's window instead of the one in front.",
+                     new JsonObject
+                     {
+                         ["action"] = new JsonObject
+                         {
+                             ["type"] = "string",
+                             ["enum"] = new JsonArray(Enum.GetValues<WindowCommand>().Select(command => (JsonNode)command.RawValue()).ToArray()),
+                             ["description"] = "focus brings the app's window to the front (needs app).",
+                         },
+                         ["app"] = new JsonObject { ["type"] = "string", ["description"] = "The app as they named it ('chrome', 'brave', 'claude'); leave out for the window in front." },
+                     },
+                     "action"),
         ];
     }
 
@@ -609,7 +662,7 @@ public abstract record DesktopAction
         OpenAppToolName, OpenUrlToolName, CreateFolderToolName, RevealInExplorerToolName, RevealInFinderToolName,
         SetVolumeToolName, MediaControlToolName, WebSearchToolName, MinimizeAllToolName, CheckEmailToolName, DraftEmailToolName,
         PlayMusicToolName, RestoreWindowsToolName, ScrollToolName, StopScrollingToolName, OpenFolderToolName, FindFilesToolName, FindOnPageToolName,
-        SwitchTabToolName,
+        SwitchTabToolName, PressKeysToolName, TypeTextToolName, WindowToolName,
     };
 
     /// <summary>
@@ -723,6 +776,36 @@ public abstract record DesktopAction
 
             case StopScrollingToolName:
                 return new DesktopActionParseResult.Action(new StopScrolling());
+
+            case PressKeysToolName:
+            {
+                if (KeyChords.ParseSequence(StringArgument("keys")) is not { } chords)
+                {
+                    return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.Failed(KeysArgumentMessage));
+                }
+                var times = arguments?["times"] is JsonValue timesValue && timesValue.TryGetValue<int>(out var whole) ? whole
+                    : arguments?["times"] is JsonValue fractionValue && fractionValue.TryGetValue<double>(out var count) ? (int)count
+                    : int.TryParse(StringArgument("times"), out var parsed) ? parsed : 1;
+                return new DesktopActionParseResult.Action(new PressKeys(chords, Math.Clamp(times, 1, KeyChords.MaximumTimes)));
+            }
+
+            case TypeTextToolName:
+            {
+                var text = arguments?["text"] is JsonValue textValue && textValue.GetValueKind() == JsonValueKind.String ? textValue.GetValue<string>() : "";
+                if (text.Trim().Length == 0) return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.Failed("I need the words to type"));
+                return new DesktopActionParseResult.Action(new TypeText(text.Length > MaximumTypedCharacters ? text[..MaximumTypedCharacters] : text));
+            }
+
+            case WindowToolName:
+            {
+                if (WindowCommands.Named(StringArgument("action")) is not { } command)
+                {
+                    return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.Failed("I need minimize, maximize, restore, close or focus"));
+                }
+                var app = StringArgument("app");
+                if (command == WindowCommand.Focus && app.Length == 0) return new DesktopActionParseResult.BadArguments(new DesktopActionOutcome.Failed("I need the app to switch to"));
+                return new DesktopActionParseResult.Action(new ControlWindow(command, app.Length == 0 ? null : app));
+            }
 
             case OpenFolderToolName:
             {
@@ -900,6 +983,7 @@ public sealed class DesktopActionRunner
         DesktopAction.FindFiles findFiles => FindFilesAsync(findFiles.Query),
         DesktopAction.FindOnPage findOnPage => FindOnPageAsync(findOnPage.Text),
         DesktopAction.SwitchTab switchTab => SwitchTabAsync(switchTab.Target),
+        DesktopAction.TypeText typeText => TypeTextAsync(typeText.Text),
         _ => Task.Run(() => Perform(action)),
     };
 
@@ -910,6 +994,15 @@ public sealed class DesktopActionRunner
             BrowserTabSwitchResult.NoSuchTab => new DesktopActionOutcome.NoSuchTab(),
             BrowserTabSwitchResult.NotAllowed => new DesktopActionOutcome.InputBlocked(),
             _ => new DesktopActionOutcome.NoBrowserOpen(),
+        };
+
+    private async Task<DesktopActionOutcome> TypeTextAsync(string text) =>
+        await executor.TypeTextAsync(text).ConfigureAwait(false) switch
+        {
+            KeyInputResult.Sent => new DesktopActionOutcome.TypedText(text.Length),
+            KeyInputResult.PasswordField => new DesktopActionOutcome.WontTypePassword(),
+            KeyInputResult.NotAllowed => new DesktopActionOutcome.InputBlocked(),
+            _ => new DesktopActionOutcome.NothingInFront(),
         };
 
     private async Task<DesktopActionOutcome> FindFilesAsync(string query)
@@ -1077,6 +1170,22 @@ public sealed class DesktopActionRunner
                     ScrollResult.NotAllowed => new DesktopActionOutcome.InputBlocked(),
                     _ => new DesktopActionOutcome.NothingToScroll(),
                 };
+
+            case DesktopAction.PressKeys pressKeys:
+                return executor.PressKeys(pressKeys.Chords, pressKeys.Times) switch
+                {
+                    KeyInputResult.Sent => new DesktopActionOutcome.PressedKeys(string.Join(", ", pressKeys.Chords.Select(chord => chord.Spoken)), pressKeys.Times),
+                    KeyInputResult.NotAllowed => new DesktopActionOutcome.InputBlocked(),
+                    _ => new DesktopActionOutcome.NothingInFront(),
+                };
+
+            case DesktopAction.ControlWindow controlWindow:
+            {
+                var result = executor.ControlWindow(controlWindow.Command, controlWindow.App);
+                if (result.Done) return new DesktopActionOutcome.WindowControlled(controlWindow.Command, result.Window!);
+                if (result.AppNotRunning && controlWindow.App is { } app) return new DesktopActionOutcome.WindowAppNotRunning(app);
+                return new DesktopActionOutcome.NothingInFront();
+            }
 
             case DesktopAction.StopScrolling:
                 return executor.StopScrolling() ? new DesktopActionOutcome.StoppedScrolling() : new DesktopActionOutcome.WasNotScrolling();

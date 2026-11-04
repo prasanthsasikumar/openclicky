@@ -154,7 +154,8 @@ public static class AskLanePrompts
     {
         var toolsLine = quickActionsOffered ? "\n\n" + AccountToolsInstruction : "";
         var writeInPlaceLine = "\n\n" + (hasWritingTarget ? WriteInPlace.PromptInstruction : WriteInPlace.NoTargetPromptInstruction);
-        return ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt + pluginPromptLines, languageCode) + toolsLine + writeInPlaceLine, skillsBlock);
+        return AssistantName.Introduce(
+            ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt + pluginPromptLines, languageCode) + toolsLine + writeInPlaceLine, skillsBlock));
     }
 
     /// <summary>
@@ -164,13 +165,16 @@ public static class AskLanePrompts
     /// context for "what does this mean". Each line of context sits in its own brackets.
     /// </summary>
     /// <param name="selectedText">The text highlighted in the app in front (the Platform layer reads it); null for none.</param>
+    /// <param name="markedAreaLine">Where the part of the screen they marked before asking is (MarkedArea.PromptLine); null for none.</param>
     public static string AskUserPrompt(string transcript, WritingTarget? writingTarget, string? selectedText = null,
-                                       PointerInCapture? pointer = null, bool isRepeatedQuestion = false)
+                                       PointerInCapture? pointer = null, bool isRepeatedQuestion = false, string? markedAreaLine = null)
     {
         var contextLines = new List<string>();
+        if (markedAreaLine is not null) contextLines.Add(markedAreaLine);
         if (writingTarget is not null) contextLines.Add(writingTarget.ContextLine);
         else if (!string.IsNullOrWhiteSpace(selectedText)) contextLines.Add(SelectedTextContextLine(selectedText));
-        if (pointer is not null) contextLines.Add(pointer.PromptLine);
+        // A marked area is what "this" means; the pointer's place would be a second answer to that.
+        if (pointer is not null && markedAreaLine is null) contextLines.Add(pointer.PromptLine);
         if (isRepeatedQuestion) contextLines.Add(RepeatedQuestion.PromptLine);
         if (contextLines.Count == 0) return transcript;
         return transcript + "\n\n" + string.Join("\n", contextLines.Select(line => "[" + line + "]"));
