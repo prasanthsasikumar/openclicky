@@ -17,6 +17,8 @@ import Testing
         "explain how a transistor works", "how does this work", "what makes a plane fly", "what are the parts of a cell",
         "show me a rotary engine in 3d", "show a jet engine in 3D", "a 3d model of the heart", "can you show me the inside of a turbine",
         "rotary engine cutaway", "show me what a transistor looks like",
+        "can you tell me how an electron microscope works", "I want to know how a jet engine works", "tell me how the heart works",
+        "explain to me how a transistor works", "I'd like to understand why the sky is blue", "so how do volcanoes erupt",
     ])
     func curiousQuestionsPassTheGate(question: String) {
         #expect(DrawStageLesson.wantsADrawing(question), "\(question)")
@@ -32,6 +34,14 @@ import Testing
     ])
     func simpleAndPersonalQuestionsStayOut(question: String) {
         #expect(!DrawStageLesson.wantsADrawing(question), "\(question)")
+    }
+
+    @Test func onlyAQuestionAboutTheScreenCarriesThePointer() {
+        #expect(DrawStageLesson.refersToTheScreen("how does this work?"))
+        #expect(DrawStageLesson.refersToTheScreen("what's inside that"))
+        #expect(DrawStageLesson.refersToTheScreen("explain what is happening here"))
+        #expect(!DrawStageLesson.refersToTheScreen("how does a jet engine work?"))
+        #expect(!DrawStageLesson.refersToTheScreen("can you tell me how an electron microscope works"))
     }
 
     @Test func followUpsAreWiderButNeverActions() {

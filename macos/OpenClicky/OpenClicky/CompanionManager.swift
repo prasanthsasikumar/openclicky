@@ -1828,9 +1828,12 @@ final class CompanionManager: ObservableObject {
                 // what is around it rides along, so "what is this?" is about the thing pointed at
                 // and not the window with focus.
                 let pointer = PointerInCapture.locate(mouse: mouseLocationAtRelease, in: screenCaptures)
+                // Kept for the drawing request too, which attaches it when the question is about the screen.
+                var pointerCloseUpImage: (data: Data, label: String)?
                 if let pointer, let pointedCapture = screenCaptures.first(where: { $0.label == pointer.screenLabel }),
                    let closeUp = PointerCloseUp.jpeg(from: pointedCapture.imageData, around: pointer) {
-                    labeledImages.append((data: closeUp, label: PointerCloseUp.label()))
+                    pointerCloseUpImage = (data: closeUp, label: PointerCloseUp.label())
+                    labeledImages.append(pointerCloseUpImage!)
                 }
                 let secondsSinceLastQuestion = lastAskQuestion.map { Date().timeIntervalSince($0.askedAt) } ?? .infinity
                 let isRepeatedQuestion = RepeatedQuestion.isRepeat(transcript, of: lastAskQuestion?.transcript, secondsSincePrevious: secondsSinceLastQuestion)
@@ -1849,7 +1852,8 @@ final class CompanionManager: ObservableObject {
                 } else if drawingDecision != .notADrawingQuestion,
                           let cursorCapture = screenCaptures.first(where: { $0.isCursorScreen }) ?? screenCaptures.first {
                     drawingWasAttempted = true
-                    if try await tryDrawingAnswer(transcript: transcript, cursorCapture: cursorCapture, decision: drawingDecision) {
+                    if try await tryDrawingAnswer(transcript: transcript, cursorCapture: cursorCapture, decision: drawingDecision,
+                                                  pointer: pointer, pointerCloseUp: pointerCloseUpImage) {
                         await finishAskTurn()
                         return
                     }

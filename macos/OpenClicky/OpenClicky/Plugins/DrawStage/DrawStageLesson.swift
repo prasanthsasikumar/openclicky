@@ -70,8 +70,11 @@ enum DrawStageLesson {
         " app ", " file ", " files ", " code ", " build ", " setting ", " settings ", " window ", " tab ", " button ", " menu ", " folder ",
         " email ", " message ", " page ",
     ]
-    private static let firstPersonWords = [" my ", " mine ", " our ", " i ", " i'm ", " im ", " i've ", " ive "]
-    /// A curious question about how or why the world works: a picture explains it best.
+    /// Ownership words only: "my build", "our code". A bare "I" ("I want to know how a jet engine
+    /// works", "can you tell me…") is how people ask, so it never counts against a question.
+    private static let firstPersonWords = [" my ", " mine ", " our "]
+    /// A curious question about how or why the world works, wherever the asking words fall in the
+    /// sentence ("can you tell me how an electron microscope works"): a picture explains it best.
     private static let curiousOpeners = [
         " how does ", " how do ", " how did ", " how is ", " how are ", " how can a ", " how can an ", " why ", " what happens ", " what makes ",
         " what causes ", " what is inside ", " what's inside ", " what are the parts ",
@@ -93,11 +96,19 @@ enum DrawStageLesson {
     static func wantsADrawing(_ question: String) -> Bool {
         let text = words(question)
         if wordCount(text) < 2 { return false }
-        if containsAny(text, screenActionPhrases) || startsAny(text, smallTalkOpeners) { return false }
+        if containsAny(text, screenActionPhrases) || containsAny(text, smallTalkOpeners) { return false }
         if containsAny(text, troubleWords) || containsAny(text, workWords) || containsAny(text, firstPersonWords) { return false }
-        if startsAny(text, curiousOpeners) || containsAny(text, explicitAsks) { return true }
-        // "explain how a transistor works", "explain what a diode does": a teaching ask in other words.
-        return text.contains(" explain ") && (text.contains(" works ") || text.contains(" work "))
+        if containsAny(text, curiousOpeners) || containsAny(text, explicitAsks) { return true }
+        // "explain how a transistor works", "tell me how the heart works", "I want to know how a jet
+        // engine works": asking how a thing works, in any wording, once the screen and trouble words are out.
+        return (text.contains(" explain ") || text.contains(" how ")) && (text.contains(" works ") || text.contains(" work "))
+    }
+
+    /// Whether the question is about something on the screen ("how does this work?", "what's
+    /// inside that", "what is happening here"), so the pointer's place and a close-up of what is
+    /// under it go with the drawing request; a question about the world at large sends neither.
+    static func refersToTheScreen(_ question: String) -> Bool {
+        containsAny(words(question), [" this ", " that ", " these ", " those ", " here ", " on screen ", " on the screen ", " on my screen "])
     }
 
     private static let followUpActionPhrases = [

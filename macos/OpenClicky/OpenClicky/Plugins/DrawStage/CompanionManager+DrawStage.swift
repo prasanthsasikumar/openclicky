@@ -179,7 +179,13 @@ extension CompanionManager {
     /// the voice has finished, the bubble is up); false when the caller must answer it the
     /// ordinary way, with nothing said or shown. Cancellation (a new question) is rethrown; esc
     /// stops the drawing early and still returns true with what was drawn in its bubble.
-    func tryDrawingAnswer(transcript: String, cursorCapture: CompanionScreenCapture, decision: DrawStageTurn.Decision) async throws -> Bool {
+    /// `pointer` and `pointerCloseUp` are where the mouse was and what is under it (the ordinary
+    /// lane's own); they go with the request only when the question is about the screen ("how does
+    /// this work?"), so the drawing can be tied to what the person is working on. A question about
+    /// the world at large ("how does an electron microscope work?") sends the screen as the canvas
+    /// and nothing more, and the model draws whether or not the thing is on screen.
+    func tryDrawingAnswer(transcript: String, cursorCapture: CompanionScreenCapture, decision: DrawStageTurn.Decision,
+                          pointer: PointerInCapture? = nil, pointerCloseUp: (data: Data, label: String)? = nil) async throws -> Bool {
         let session = DrawStageSession.shared
         let canvasWidth = cursorCapture.screenshotWidthInPixels
         let canvasHeight = cursorCapture.screenshotHeightInPixels
@@ -188,21 +194,26 @@ extension CompanionManager {
         // A follow-up builds on the drawing that is open (or the one a new question interrupted,
         // which stays open with what it had).
         let followUp = (decision == .followUp || decision == .interruptThenFollowUp) && session.state == .open ? session.current : nil
-        let userPrompt: String?
+        var userPrompt: String?
         if let followUp {
             userPrompt = DrawStageLesson.followUpPrompt(question: transcript, drawing: followUp)
         } else {
             userPrompt = DrawStageLesson.questionPrompt(transcript)
         }
+        let aboutTheScreen = DrawStageLesson.refersToTheScreen(transcript)
+        if aboutTheScreen, let pointer, userPrompt != nil {
+            userPrompt! += "\n[\(pointer.promptLine)]"
+        }
         guard let userPrompt else { return false }
-        AppLog.append("draw: \(followUp == nil ? "asking for a drawing" : "asking about the drawing") (\(canvasWidth)×\(canvasHeight))")
+        AppLog.append("draw: \(followUp == nil ? "asking for a drawing" : "asking about the drawing") (\(canvasWidth)×\(canvasHeight)\(aboutTheScreen && pointerCloseUp != nil ? ", with the pointer's close-up" : ""))")
 
         let answerVoiceSession = answerVoicePlayer.makeAnswerSession()
         let speech = SpeechQueue(
             fetchAudio: { pieceText in try await answerVoiceSession.audio(for: pieceText) },
             playAudio: { [answerVoicePlayer] audioData in try await answerVoicePlayer.playToCompletion(audioData) }
         )
-        let images = [Self.imageLabeledWithItsPixelSize(cursorCapture)]
+        var images = [Self.imageLabeledWithItsPixelSize(cursorCapture)]
+        if aboutTheScreen, let pointerCloseUp { images.append(pointerCloseUp) }
         let answers = claudeAPI
         let options = AnswerRequestOptions(maxTokens: DrawStageLesson.outputTokens, purpose: .drawing, thinkingOff: true, timeoutSeconds: 180)
         let writeReply: (@escaping @MainActor (String) -> Void) async throws -> String = { onChunk in
