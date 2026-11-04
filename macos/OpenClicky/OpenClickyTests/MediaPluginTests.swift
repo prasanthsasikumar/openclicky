@@ -130,9 +130,10 @@ struct MediaPluginTests {
         let source = SlowSource()
         let now = self.now
         source.reply = try #require(MediaSnapshot.parse(line(["playing", "T", "A", "", "1", "200", "k1", ""]), player: .spotify, sampledAt: now))
-        let store = MediaStore(source: source, now: { now })
+        // The store's own poll timer is kept out of the way: the reads counted below are the test's.
+        let store = MediaStore(source: source, now: { now }, watchedInterval: 3600, backgroundInterval: 3600)
         store.setEnabled(true)                     // its own first read runs in the background
-        for _ in 0..<100 where store.artwork == nil {   // wait for that read (and its artwork) to finish
+        for _ in 0..<500 where store.artwork == nil {   // wait for that read (and its artwork) to finish
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         #expect(store.artwork != nil)

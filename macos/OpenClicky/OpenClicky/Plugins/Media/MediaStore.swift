@@ -58,9 +58,17 @@ final class MediaStore: ObservableObject {
     private var isRefreshing = false
     private var refreshAgain = false
 
-    init(source: any MediaSourcing, now: @escaping () -> Date = Date.init) {
+    /// How often the player is asked, injectable like the clock: a test of the reads it makes
+    /// itself keeps the timer out of its way (CI's runner stretched one past the 5 s tick, 2026-11-04).
+    private let watchedInterval: TimeInterval
+    private let backgroundInterval: TimeInterval
+
+    init(source: any MediaSourcing, now: @escaping () -> Date = Date.init,
+         watchedInterval: TimeInterval = MediaStore.watchedInterval, backgroundInterval: TimeInterval = MediaStore.backgroundInterval) {
         self.source = source
         self.now = now
+        self.watchedInterval = watchedInterval
+        self.backgroundInterval = backgroundInterval
     }
 
     var isPlaying: Bool { snapshot?.isPlaying ?? false }
@@ -72,7 +80,7 @@ final class MediaStore: ObservableObject {
     }
 
     var isPolling: Bool { timer != nil }
-    var pollInterval: TimeInterval { watchers > 0 ? Self.watchedInterval : Self.backgroundInterval }
+    var pollInterval: TimeInterval { watchers > 0 ? watchedInterval : backgroundInterval }
 
     /// The plugin's switch: off forgets the track and stops asking.
     func setEnabled(_ enabled: Bool) {
