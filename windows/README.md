@@ -1,5 +1,8 @@
 # OpenClicky for Windows
 
+Written and maintained by [Tan Wei Jie (Justin)](https://github.com/weijietan97), who answers Windows
+questions (open an issue and mention `@weijietan97`).
+
 The Windows port of the macOS app (`../macos/OpenClicky`): dictation into any app, the pointer buddy that
 answers questions about your screen and points at things, Realtime voice, the agent lane through the
 `openclicky` CLI. C# / .NET 8 / WPF. How the port is organised and what maps to what: [PORTING.md](PORTING.md).

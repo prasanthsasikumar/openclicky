@@ -69,8 +69,9 @@ Hyprland) and X11. `sh linux/install.sh` from a clone (or with the `.whl` from t
 
 ### On Windows too (new)
 
-A native Windows port, contributed by [Tan Wei Jie (Justin)](https://github.com/weijietan97): dictation,
-ask out loud with the pointer, the agent lane, skills, the island and every settings page, in C# and WPF.
+A native Windows port, written and maintained by [Tan Wei Jie (Justin)](https://github.com/weijietan97):
+dictation, ask out loud with the pointer, the agent lane, skills, the island and every settings page, in C#
+and WPF. Questions about the Windows app go to him: open an issue and mention `@weijietan97`.
 Hold Ctrl + Win to talk and right Ctrl to dictate; private offline dictation is Parakeet. x64 and ARM64,
 Windows 10 (2004 or later) and 11. [Download it for Windows](https://openclicky.org/download/windows/)
 (the Setup.exe on the [latest release](https://github.com/prasanthsasikumar/openclicky/releases/latest); not
@@ -190,8 +191,9 @@ Notion / Sheets / Slack, and Wispr Flow import.
 
 ## Code signing policy
 
-Windows releases are signed. Free code signing is provided by [SignPath.io](https://about.signpath.io),
-with a certificate from the [SignPath Foundation](https://signpath.org). Only binaries built by this
+Windows releases are not code-signed yet, so SmartScreen may warn on first run; the policy below is what
+the signing will follow once the [SignPath Foundation](https://signpath.org) accepts the project into its
+free open-source program (free code signing provided by [SignPath.io](https://about.signpath.io)). Only binaries built by this
 repository's GitHub Actions workflow (`.github/workflows/windows-release.yml`) from its public source are
 signed, and only OpenClicky's own files: the third-party libraries it ships keep their publishers'
 signatures.
