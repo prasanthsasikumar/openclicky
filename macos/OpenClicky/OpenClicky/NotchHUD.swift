@@ -797,6 +797,14 @@ final class NotchHUDManager {
     /// the notch.
     var dockPoint: CGPoint { primaryInstance?.model.dockPoint ?? dockGeometry.dockPoint }
 
+    /// The island's rectangle on `screen` (AppKit coordinates) and its placement, for something
+    /// that sits beside it (a drawing's bubble); nil when no island lives on that screen.
+    func islandFrame(on screen: NSScreen) -> (frame: CGRect, placement: HUDPlacement)? {
+        let screenID = Self.screenID(of: screen)
+        guard let instance = instances.first(where: { $0.screenID == screenID }) ?? primaryInstance else { return nil }
+        return (instance.model.islandFrame, instance.model.placement)
+    }
+
     private var dockGeometry: NotchGeometry {
         if let primaryInstance { return primaryInstance.model.geometry }
         return Self.primaryScreen.map(NotchGeometry.forScreen)
