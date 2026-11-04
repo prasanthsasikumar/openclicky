@@ -210,11 +210,13 @@ signatures.
   repository's GitHub Releases.
 
 Dictation with the offline engine, your history, dictionary and settings stay on your computer.
-Analytics are off unless a build is given a PostHog key.
+The apps send no analytics: the official builds carry no PostHog key, so the analytics code in them
+never sends anything. The website openclicky.org uses PostHog for page analytics.
 
 ## License and contributing
 
-MIT, see `LICENSE` (the Mac app is derived from Farza's MIT-licensed Clicky; HeyClicky is a separate
-product). Everything here runs on your own machine with your own keys; the hosted backend is only a
+MIT, see `LICENSE`. The Mac app under `macos/OpenClicky` is derived from Farza's MIT-licensed Clicky (its
+licence is at `macos/OpenClicky/LICENSE`); HeyClicky is a separate, proprietary product not affiliated with
+this project. Everything here runs on your own machine with your own keys; the hosted backend is only a
 convenience, free while the grant lasts. `CONTRIBUTING.md` has the setup, the test commands, and where help is
 welcome. Pull requests run the TypeScript and Swift test suites in CI.
