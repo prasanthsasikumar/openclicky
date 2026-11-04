@@ -31,7 +31,8 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 - **Draw to explain.** Ask "how does a jet engine work?" and Clicky draws on your screen while it talks: a diagram or a turning 3D model built part by part. Ask again to build on it, drag or resize it, and save it as a picture or a video with its voice. To ask about one part of the screen, press Ctrl+Alt+M and circle it. On by default; the switch is on the island's Teacher row and in Settings. By darkworks (PR #39).
 - **More by voice and mouse.** "Press tab three times", "copy that" and "minimize this window" work by voice, and you can talk by holding a mouse side button. By darkworks (PR #39).
 - **Make it yours.** Give the assistant its own name, and pick the pointer's colour and shape under Settings → Clicky. By darkworks (PR #39).
-- **Answers from your own models.** Ollama, LM Studio or any OpenAI-compatible server (vLLM, llama.cpp, LocalAI…) can answer: give its address under Settings → Clicky → Models, press Turn on to list what it serves, then pick it under Answers come from. No key needed; in Automatic they come after your own keys and before the plans. By darkworks (PR #41).
+- **Clicky's settings in sections.** Settings → Clicky opens in the sidebar into Talking, Hands-free, Pointer, Drawings, Your models and More, one section at a time. By darkworks (PR #42).
+- **Answers from your own models.** Ollama, LM Studio or any OpenAI-compatible server (vLLM, llama.cpp, LocalAI…) can answer: give its address under Settings → Clicky → Your models, press Turn on to list what it serves, then pick it under Answers come from. No key needed; in Automatic they come after your own keys and before the plans. By darkworks (PR #41).
 
 ## 0.10.2
 
