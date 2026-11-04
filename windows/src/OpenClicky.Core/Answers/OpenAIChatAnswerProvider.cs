@@ -2,7 +2,8 @@
 //
 // Answers through an OpenAI-compatible Chat Completions endpoint: OpenAI, OpenRouter, Groq,
 // Mistral and xAI all accept the same streamed request, so one provider serves the five of them
-// (`AnswerSources.ChatCompletionsUrl` says where). The request is built and the stream is read by
+// (`AnswerSources.ChatCompletionsUrl` says where), and the person's own models too (Ollama, LM Studio,
+// any OpenAI-compatible server), at the address they set and with no key unless their server wants one. The request is built and the stream is read by
 // pure static functions, so both are unit-tested without the network (AnswerProviderHttpTests).
 // The key goes straight to the vendor in an `Authorization: Bearer` header and is never logged.
 
@@ -226,17 +227,41 @@ internal static class JsonHelpers
 
 // MARK: - The provider
 
-public sealed class OpenAIChatAnswerProvider(AnswerSource source, string apiKey, string model, AnswerHttpTransport? transport = null) : IAnswerProvider
+/// <param name="chatCompletionsUrl">Where a self-hosted source answers ("http://localhost:11434/v1/chat/completions");
+/// null for the vendors, whose address is fixed.</param>
+public sealed class OpenAIChatAnswerProvider(AnswerSource source, string apiKey, string model, AnswerHttpTransport? transport = null,
+                                             Uri? chatCompletionsUrl = null) : IAnswerProvider
 {
     public AnswerSource Source { get; } = source;
     public string ApiKey { get; } = apiKey;
     public string Model { get; } = model;
+    public Uri? ChatCompletionsUrl { get; } = chatCompletionsUrl;
     private readonly AnswerHttpTransport transport = transport ?? AnswerHttpTransports.Shared;
 
     public async Task<AnswerResult> AnswerAsync(AnswerRequest request, Action<string> onTextChunk, CancellationToken cancellationToken = default)
     {
-        using var httpRequest = MakeHttpRequest(Source, ApiKey, Model, request);
+        var httpRequest = MakeHttpRequest(Source, ApiKey, Model, request, ChatCompletionsUrl);
         var response = await transport(httpRequest, cancellationToken).ConfigureAwait(false);
+
+        // Many local models take no tools (Ollama: "does not support tools"): the same question is asked once without them.
+        // Only a 400 that says so: any other refusal (401, 413, 429…) would fail again, and the screenshot is sent twice.
+        if (response.StatusCode == 400 && Source.IsSelfHosted() && request.Tools.Count > 0)
+        {
+            var refusal = AnswerProviderHttpSupport.VendorErrorMessage(await AnswerProviderHttpSupport.ReadWholeBodyAsync(response.BodyLines, cancellationToken).ConfigureAwait(false));
+            if (!RefusesTools(refusal))
+            {
+                httpRequest.Dispose();
+                AppLog.Write($"answer: {Source.Id()} {Model} refused with 400: {refusal}");
+                throw new AnswerProviderException(Source, 400, refusal);
+            }
+            AppLog.Write($"answer: {Source.Id()} {Model} refused the tools ({refusal}); asking without them");
+            httpRequest.Dispose();
+            var withoutTools = request.Copy();
+            withoutTools.Tools = [];
+            httpRequest = MakeHttpRequest(Source, ApiKey, Model, withoutTools, ChatCompletionsUrl);
+            response = await transport(httpRequest, cancellationToken).ConfigureAwait(false);
+        }
+        using var sentRequest = httpRequest;
 
         if (response.StatusCode is < 200 or > 299)
         {
@@ -330,9 +355,13 @@ public sealed class OpenAIChatAnswerProvider(AnswerSource source, string apiKey,
         return body;
     }
 
-    public static HttpRequestMessage MakeHttpRequest(AnswerSource source, string apiKey, string model, AnswerRequest answerRequest)
+    /// <summary>Whether a server's 400 says it takes no tools ("does not support tools", "tool_choice is not supported").</summary>
+    public static bool RefusesTools(string refusal) => refusal.Contains("tool", StringComparison.OrdinalIgnoreCase);
+
+    public static HttpRequestMessage MakeHttpRequest(AnswerSource source, string apiKey, string model, AnswerRequest answerRequest,
+                                                     Uri? selfHostedUrl = null)
     {
-        if (source.ChatCompletionsUrl() is not { } chatCompletionsUrl)
+        if ((selfHostedUrl ?? source.ChatCompletionsUrl()) is not { } chatCompletionsUrl)
         {
             throw new AnswerProviderException(source, 0, $"{source.DisplayName()} does not offer an OpenAI-compatible chat endpoint");
         }
@@ -341,7 +370,8 @@ public sealed class OpenAIChatAnswerProvider(AnswerSource source, string apiKey,
             Content = DirectProviderRequests.JsonContent(MakeRequestBody(source, model, answerRequest)),
         };
         httpRequest.SetHeader("Accept", "text/event-stream");
-        httpRequest.SetHeader("Authorization", $"Bearer {apiKey}");
+        // Ollama and LM Studio want no key; a server of the person's own may.
+        if (apiKey.Length > 0) httpRequest.SetHeader("Authorization", $"Bearer {apiKey}");
         if (source == AnswerSource.OpenRouter)
         {
             // OpenRouter's app attribution: optional, but it is how the requests show up as
