@@ -33,7 +33,7 @@ public sealed class SettingsCatalog
     /// <summary>Every row as its builder makes it, before the layout gives it a page and a place.</summary>
     private IReadOnlyList<SettingsItem> UnplacedItems() =>
     [
-        .. DictationItems(), .. KeyboardItems(), .. OrbItems(), .. ClickyItems(), .. VoiceItems(), .. PluginsItems(), .. IslandItems(),
+        .. DictationItems(), .. KeyboardItems(), .. OrbItems(), .. ClickyItems(), .. ModelsItems(), .. VoiceItems(), .. PluginsItems(), .. IslandItems(),
         .. AccountItems(), .. KeysItems(), .. PrivacyItems(), .. GeneralItems(), .. AboutItems(), .. NavigationItems(),
     ];
 
@@ -233,6 +233,24 @@ public sealed class SettingsCatalog
         : "Hands-free: just talk, no keys. Clicky answers once you stop talking.";
 
     public const string FastVoiceNeedsKeyDetail = "Instant replies need your own OpenAI or Gemini key. Without one, Clicky answers in the standard voice.";
+
+    /// <summary>Models of the person's own (Ollama, LM Studio, any OpenAI-compatible server).</summary>
+    public IReadOnlyList<SettingsItem> ModelsItems()
+    {
+        SettingsItem Item(string id, string title, string detail, string[] keywords) => new()
+        {
+            Id = id, Title = title, Detail = detail, Keywords = keywords,
+        };
+        return
+        [
+            Item("models.ollama", "Ollama", "Models running on this PC with Ollama. Free, private and offline; pick one that sees images (gemma3, llava, qwen2.5-vl).",
+                ["ollama", "local", "offline", "private", "llama", "gemma", "qwen", "model", "free"]),
+            Item("models.lmStudio", "LM Studio", "Models running on this PC in LM Studio (start its server on port 1234).",
+                ["lm studio", "lmstudio", "local", "offline", "private", "model", "free"]),
+            Item("models.custom", "Your own server", "Any OpenAI-compatible endpoint: vLLM, llama.cpp, LocalAI, DeepSeek, Together, and others, with a key if it needs one.",
+                ["openai compatible", "custom", "server", "endpoint", "vllm", "llama.cpp", "localai", "deepseek", "together", "self-hosted", "api"]),
+        ];
+    }
 
     public IReadOnlyList<SettingsItem> VoiceItems()
     {

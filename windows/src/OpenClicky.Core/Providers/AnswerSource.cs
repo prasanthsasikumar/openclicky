@@ -15,6 +15,11 @@ public enum AnswerSource
     Groq,
     Mistral,
     Xai,
+    /// <summary>Models on this PC or the person's own server (OpenAI-compatible, no key needed): Ollama, LM Studio,
+    /// and any other endpoint the person sets up.</summary>
+    Ollama,
+    [RawValue("lmStudio")] LMStudio,
+    [RawValue("customOpenAI")] CustomOpenAI,
     ClaudeCodePlan,
     CodexPlan,
     OpenClickyAccount,
@@ -40,6 +45,9 @@ public static class AnswerSources
         AnswerSource.Groq => "Groq",
         AnswerSource.Mistral => "Mistral",
         AnswerSource.Xai => "Grok",
+        AnswerSource.Ollama => "Ollama",
+        AnswerSource.LMStudio => "LM Studio",
+        AnswerSource.CustomOpenAI => "your server",
         AnswerSource.ClaudeCodePlan => "Claude Code",
         AnswerSource.CodexPlan => "Codex",
         AnswerSource.OpenClickyAccount => "free credits",
@@ -55,6 +63,9 @@ public static class AnswerSources
         AnswerSource.Groq => "Groq",
         AnswerSource.Mistral => "Mistral",
         AnswerSource.Xai => "xAI (Grok)",
+        AnswerSource.Ollama => "Ollama (on this PC)",
+        AnswerSource.LMStudio => "LM Studio (on this PC)",
+        AnswerSource.CustomOpenAI => "Your OpenAI-compatible server",
         AnswerSource.ClaudeCodePlan => "Claude Code (your Claude plan)",
         AnswerSource.CodexPlan => "Codex (your ChatGPT plan)",
         AnswerSource.OpenClickyAccount => "OpenClicky free credits",
@@ -71,7 +82,19 @@ public static class AnswerSources
         AnswerSource.Groq => "meta-llama/llama-4-scout-17b-16e-instruct",
         AnswerSource.Mistral => "mistral-medium-latest",
         AnswerSource.Xai => "grok-4",
-        _ => null, // the CLI's or backend's own
+        _ => null, // the CLI's or backend's own; a local source's is the first model it serves (LocalModels)
+    };
+
+    /// <summary>Sources reached at a URL the person sets (no fixed vendor host), answering in OpenAI's format.</summary>
+    public static bool IsSelfHosted(this AnswerSource source) =>
+        source is AnswerSource.Ollama or AnswerSource.LMStudio or AnswerSource.CustomOpenAI;
+
+    /// <summary>Where a self-hosted source listens when the person turns it on without changing the address.</summary>
+    public static string? DefaultBaseUrl(this AnswerSource source) => source switch
+    {
+        AnswerSource.Ollama => "http://localhost:11434",
+        AnswerSource.LMStudio => "http://localhost:1234",
+        _ => null,
     };
 
     /// <summary>The OpenAI-compatible chat completions endpoint, for the sources that speak it.</summary>
