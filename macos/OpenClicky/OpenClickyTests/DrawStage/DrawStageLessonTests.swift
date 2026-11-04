@@ -36,6 +36,17 @@ import Testing
         #expect(!DrawStageLesson.wantsADrawing(question), "\(question)")
     }
 
+    /// After a drawing on the fast-voice lane, the fast voice is told what was drawn and said so
+    /// its next turn can build on it; it is told not to repeat it.
+    @Test func theFastVoiceIsToldWhatWasDrawn() {
+        let note = DrawStageLesson.fastVoiceNote(question: "how does a jet engine work?", spokenLines: ["A jet engine is a tube.", "Air is squeezed."])
+        #expect(note.contains("\"how does a jet engine work?\""))
+        #expect(note.contains("A jet engine is a tube. Air is squeezed."))
+        #expect(note.lowercased().contains("do not repeat"))
+        let stopped = DrawStageLesson.fastVoiceNote(question: "q", spokenLines: [])
+        #expect(stopped.contains("stopped") || stopped.contains("before"))
+    }
+
     @Test func onlyAQuestionAboutTheScreenCarriesThePointer() {
         #expect(DrawStageLesson.refersToTheScreen("how does this work?"))
         #expect(DrawStageLesson.refersToTheScreen("what's inside that"))

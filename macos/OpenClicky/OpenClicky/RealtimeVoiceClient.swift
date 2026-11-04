@@ -78,6 +78,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     var onTranscript: ((TranscriptRole, String) -> Void)?
     var onEvent: ((String) -> Void)?
     var onResponseStarted: (() -> Void)?
+    /// The person started speaking (the server's VAD): a drawing being narrated stops for them.
+    var onSpeechStarted: (() -> Void)?
     var onResponseFinished: (() -> Void)?
     /// The socket went away (or a send failed) while it was thought to be connected. Without this
     /// a turn in flight never got its `response.done`, `voiceState` stayed on processing, and that
@@ -852,6 +854,21 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         log("text turn: \(text)")
     }
 
+    /// Whether the session listens on its own (always-on) rather than only while ⌃⌥ is held.
+    var isAlwaysOn: Bool { currentMode == .alwaysOn }
+
+    /// A note in the fast voice's own words of what happened outside it (a drawing made and
+    /// narrated by the answer voice), as an assistant message, with no response requested.
+    func addAssistantNote(_ text: String) {
+        let item: [String: Any] = [
+            "type": "message",
+            "role": "assistant",
+            "content": [["type": "text", "text": text]],
+        ]
+        try? send(["type": "conversation.item.create", "item": item])
+        log("assistant note: \(text.prefix(120))")
+    }
+
     /// Always-on: stream continuously; the server decides the turns.
     func startListeningContinuously() {
         idlePauseTask?.cancel()
@@ -1166,6 +1183,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         switch type {
         case "input_audio_buffer.speech_started":
             log("listening…")
+            onSpeechStarted?()
             flushPlayback()
             turnGeneration += 1
             if responseInProgress { cancelActiveResponse() }

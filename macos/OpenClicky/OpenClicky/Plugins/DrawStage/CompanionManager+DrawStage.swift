@@ -284,6 +284,57 @@ extension CompanionManager {
         return true
     }
 
+    /// Draw to explain on the fast-voice (Realtime) lane. Called with each spoken turn's words;
+    /// true when the question is taken over by a drawing (the fast voice's own reply is cut
+    /// and the drawing is narrated by the answer voice), false when the fast voice keeps it.
+    /// Afterwards the fast voice is told what was drawn and said, so a follow-up builds on it;
+    /// a question the model would not draw for goes back to the fast voice as a typed turn.
+    @discardableResult
+    func tryRealtimeDrawing(transcript: String) -> Bool {
+        let session = DrawStageSession.shared
+        let decision = DrawStageTurn.decide(question: transcript, stageState: session.state,
+                                            drawToExplain: dictationSettings.drawToExplain, isGuidedStepContinuation: false)
+        AppLog.append("draw: fast voice gate \(decision) for a \(transcript.count)-char question (stage \(session.state))")
+        guard decision != .notADrawingQuestion else { return false }
+        if decision == .toBubbleThenOrdinary {
+            Task { @MainActor in await minimiseDrawingToBubble(reason: "a question about something else") }
+            return false
+        }
+        guard let capture = realtimeVoiceClient.lastScreenCapture else {
+            AppLog.append("draw: fast voice has no screen yet; answering in words")
+            return false
+        }
+        // The fast voice steps aside: its reply (which may have begun) is cut, and in always-on
+        // mode the microphone stops feeding it while the answer voice narrates, so the speakers
+        // cannot start a turn of their own. ⌃⌥ and esc still stop the drawing.
+        realtimeVoiceClient.stopSpeaking()
+        let wasAlwaysOn = realtimeVoiceClient.isAlwaysOn
+        if wasAlwaysOn { realtimeVoiceClient.stopListening() }
+        TeacherPlugin.clearBoard(reason: "a drawing")
+        voiceState = .processing
+        isAskInFlight = true
+        currentResponseTask = Task { @MainActor in
+            defer {
+                if wasAlwaysOn { realtimeVoiceClient.startListeningContinuously() }
+            }
+            do {
+                let drew = try await tryDrawingAnswer(transcript: transcript, cursorCapture: capture, decision: decision)
+                if drew {
+                    let lines = session.current?.spokenLines ?? []
+                    realtimeVoiceClient.addAssistantNote(DrawStageLesson.fastVoiceNote(question: transcript, spokenLines: lines))
+                } else {
+                    // Not a drawing after all: the fast voice answers it, in its own voice.
+                    AppLog.append("draw: handing the question back to the fast voice")
+                    await realtimeVoiceClient.sendTextTurn(transcript)
+                }
+            } catch {
+                // Cancelled by a new press or esc: the stage and session already know.
+            }
+            if !Task.isCancelled { await finishAskTurn() }
+        }
+        return true
+    }
+
     /// The finished drawing shrinks into its bubble beside the island; the stage hides and sleeps.
     func minimiseDrawingToBubble(reason: String) async {
         let session = DrawStageSession.shared

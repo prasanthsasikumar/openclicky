@@ -182,6 +182,16 @@ enum DrawStageLesson {
             .replacingOccurrences(of: "{{marked}}", with: "")
     }
 
+    /// What the fast voice is told after a drawing answered a question in its place, so its next
+    /// turn builds on it instead of answering the question again.
+    static func fastVoiceNote(question: String, spokenLines: [String]) -> String {
+        let said = spokenLines.joined(separator: " ")
+        if said.isEmpty {
+            return "To \"\(question)\" OpenClicky started a drawing on the screen, but it was stopped before anything was said. Do not repeat the question's answer unless asked again."
+        }
+        return "To \"\(question)\" OpenClicky answered by drawing on the screen and said: \(said) The drawing is on the screen (or in its bubble). Do not repeat it; the next question may be about it."
+    }
+
     /// The highest step(n) in a program, 0 when it has none.
     private static func lastStep(in program: String) -> Int {
         guard let regex = try? NSRegularExpression(pattern: #"\bstep\(\s*(\d+)\s*\)"#) else { return 0 }

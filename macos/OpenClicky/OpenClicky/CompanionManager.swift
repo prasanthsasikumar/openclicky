@@ -259,7 +259,12 @@ final class CompanionManager: ObservableObject {
                 self.lastTranscript = text
                 print("🗣️ (realtime) \(text)")
                 AppLog.append("talk: you said: \(text.prefix(300))")
-                TeacherPlugin.startLesson(for: text, capture: self.realtimeVoiceClient.lastScreenCapture)
+                // Draw to explain on the fast-voice lane: a question a picture answers is drawn
+                // and narrated by the answer voice while the fast voice steps aside
+                // (CompanionManager+DrawStage.swift); anything else goes on as before.
+                if !self.tryRealtimeDrawing(transcript: text) {
+                    TeacherPlugin.startLesson(for: text, capture: self.realtimeVoiceClient.lastScreenCapture)
+                }
             case .assistant:
                 AppLog.append("talk: openclicky said: \(text.prefix(300))")
                 TeacherPlugin.writeAnswerIfTheyCannotHear(text, questionWasTyped: self.lastQuestionWasTyped, capture: self.realtimeVoiceClient.lastScreenCapture)
@@ -270,6 +275,11 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceClient.onResponseStarted = { [weak self] in
             guard let self, self.usesRealtimeVoice else { return }
             if self.voiceState != .listening { self.voiceState = .responding }
+        }
+        // Speaking over a drawing stops it (as esc does) and sends it to its bubble.
+        realtimeVoiceClient.onSpeechStarted = { [weak self] in
+            guard let self, DrawStageSession.shared.state == .playing else { return }
+            self.escapeStopsTheDrawing()
         }
         realtimeVoiceClient.onResponseFinished = { [weak self] in
             guard let self, self.usesRealtimeVoice, self.voiceState != .listening else { return }
@@ -1032,7 +1042,7 @@ final class CompanionManager: ObservableObject {
                 if state == .listening, self.dictationSettings.answerSimpleRequestsOnThisMac {
                     self.localAskRung?.model.prewarm()
                 }
-                if state == .listening, self.dictationSettings.drawToExplain, !self.usesRealtimeVoice {
+                if state == .listening, self.dictationSettings.drawToExplain {
                     DrawStageController.shared.prepare()
                 }
             }
@@ -2231,7 +2241,7 @@ final class CompanionManager: ObservableObject {
 
     /// From the moment the ask lane takes a question (the pause before sending included) until its
     /// answer has been said, failed, or was stopped. Esc and a click on the island stop it.
-    @Published private(set) var isAskInFlight = false
+    @Published var isAskInFlight = false
     /// What the island's status says instead of the ask lane's state, while set: the pause before
     /// sending the screen, or a reply that was not sure what to point at.
     @Published private(set) var askIslandStatus: String?
