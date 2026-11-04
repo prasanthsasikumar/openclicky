@@ -1,0 +1,97 @@
+//
+//  DrawStageLessonTests.swift
+//  OpenClickyTests
+//
+//  Which questions get a drawing (the rule Prasanth cares most about: never a simple or personal
+//  one), the prompts filled from the shared folder, and how a streamed reply is read.
+//
+
+import Foundation
+import Testing
+@testable import OpenClicky
+
+@Suite struct DrawStageLessonTests {
+    @Test(arguments: [
+        "how does a jet engine work?", "why is the sky blue", "what happens when ice melts", "what's inside this?",
+        "draw a heart for me", "show me how a rocket flies", "teach me how pythagoras works",
+        "explain how a transistor works", "how does this work", "what makes a plane fly", "what are the parts of a cell",
+    ])
+    func curiousQuestionsPassTheGate(question: String) {
+        #expect(DrawStageLesson.wantsADrawing(question), "\(question)")
+    }
+
+    @Test(arguments: [
+        "why is my build failing?", "what time is it", "how do I export this", "how does this app handle login?",
+        "explain this error", "what happens if I click save?", "how are you", "why not", "open spotify",
+        "how does my code reach the server", "why is this slow", "what's the difference between tcp and udp",
+        "python vs rust", "hi", "how does this button work", "why does this file keep crashing", "how do you do",
+        "how does the settings page work", "what happens when I press this", "draw", "",
+    ])
+    func simpleAndPersonalQuestionsStayOut(question: String) {
+        #expect(!DrawStageLesson.wantsADrawing(question), "\(question)")
+    }
+
+    @Test func followUpsAreWiderButNeverActions() {
+        #expect(DrawStageLesson.mayBeAFollowUp("now show it in 3d"))
+        #expect(DrawStageLesson.mayBeAFollowUp("what does the turbine do?"))
+        #expect(DrawStageLesson.mayBeAFollowUp("zoom in on the valve"))
+        #expect(!DrawStageLesson.mayBeAFollowUp("open spotify"))
+        #expect(!DrawStageLesson.mayBeAFollowUp("thanks"))
+        #expect(!DrawStageLesson.mayBeAFollowUp("how do I export this"))
+    }
+
+    @Test func programInReadsAFenceOrBareCode() {
+        #expect(DrawStageLesson.programIn("```js\nstep(1); say(\"hi\")\n```") == "step(1); say(\"hi\")\n")
+        #expect(DrawStageLesson.programIn("```js\nstep(1)\n``") == "step(1)\n")
+        #expect(DrawStageLesson.programIn("```js\nstep(1)\n") == "step(1)\n")
+        #expect(DrawStageLesson.programIn("step(1); say(\"hi\")") == "step(1); say(\"hi\")")
+        #expect(DrawStageLesson.programIn("Sure! Here is") == "")
+        #expect(DrawStageLesson.programIn("```") == "")
+    }
+
+    @Test func keepsTheDrawingWaitsForTheFirstStatement() {
+        #expect(DrawStageLesson.keepsTheDrawing("", done: false) == nil)
+        #expect(DrawStageLesson.keepsTheDrawing("ke", done: false) == nil)
+        #expect(DrawStageLesson.keepsTheDrawing("keep()\nstep(4)", done: false) == true)
+        #expect(DrawStageLesson.keepsTheDrawing("step(1)", done: false) == false)
+        #expect(DrawStageLesson.keepsTheDrawing("// a comment\n", done: true) == false)
+        #expect(DrawStageLesson.keepsTheDrawing("// a comment", done: false) == nil)
+        #expect(DrawStageLesson.keepsTheDrawing("", done: true) == false)
+    }
+
+    @Test func decidesNoneProseOrProgram() {
+        #expect(DrawStageLesson.decide(replySoFar: "", done: false) == .undecided)
+        #expect(DrawStageLesson.decide(replySoFar: "NO", done: false) == .undecided)
+        #expect(DrawStageLesson.decide(replySoFar: "NONE", done: false) == .notADrawing)
+        #expect(DrawStageLesson.decide(replySoFar: "  NONE.\n", done: false) == .notADrawing)
+        #expect(DrawStageLesson.decide(replySoFar: "It is 3 pm.\n", done: false) == .notADrawing)
+        #expect(DrawStageLesson.decide(replySoFar: "It is 3", done: false) == .undecided)
+        #expect(DrawStageLesson.decide(replySoFar: "```js\nstep(1)", done: false) == .program)
+        #expect(DrawStageLesson.decide(replySoFar: "```", done: false) == .program)
+        #expect(DrawStageLesson.decide(replySoFar: "step(1); say(\"a\")", done: false) == .program)
+        #expect(DrawStageLesson.decide(replySoFar: "const c = {x: 1}", done: false) == .program)
+        #expect(DrawStageLesson.decide(replySoFar: "keep()", done: false) == .program)
+        #expect(DrawStageLesson.decide(replySoFar: "Sure", done: true) == .notADrawing)
+        #expect(DrawStageLesson.decide(replySoFar: "", done: true) == .notADrawing)
+    }
+
+    @Test func promptsComeFromTheBundleWithPlaceholdersFilled() throws {
+        let system = try #require(DrawStageLesson.systemPrompt(canvasWidth: 1280, canvasHeight: 800))
+        #expect(system.contains("W = 1280 by H = 800"))
+        #expect(system.contains("below y = 688"))
+        #expect(system.contains("3 to 6 beats"))
+        #expect(!system.contains("{{"))
+
+        let question = try #require(DrawStageLesson.questionPrompt("how does a heart work?"))
+        #expect(question.contains("NONE"))
+        #expect(question.contains("\"how does a heart work?\""))
+
+        let drawing = DrawnAnswer(questions: ["how does a heart work?"], program: "step(1); say(\"a\")\nstep(2); say(\"b\")",
+                                  canvasWidth: 1280, canvasHeight: 800, spokenLines: ["a", "b"])
+        let followUp = try #require(DrawStageLesson.followUpPrompt(question: "what does the valve do?", drawing: drawing))
+        #expect(followUp.contains("step(3)"))
+        #expect(followUp.contains("\"how does a heart work?\""))
+        #expect(followUp.contains("Now they ask: \"what does the valve do?\""))
+        #expect(!followUp.contains("{{"))
+    }
+}
