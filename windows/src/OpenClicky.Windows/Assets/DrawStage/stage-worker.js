@@ -138,7 +138,6 @@ function rewrite(statement) {
 
 function run(statement) {
   // The program sees the drawing language and its own names; `with` keeps the language out of the global scope.
-  // eslint-disable-next-line no-new-func
   const body = new Function('__api', '__scope', 'with (__api) { with (__scope) {\n' + rewrite(statement) + '\n} }');
   body(api, scope);
   // const liftFan = f.cyl(…): the part is named after its variable ("lift fan"), so a click on it asks about that.

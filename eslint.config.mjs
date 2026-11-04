@@ -24,11 +24,13 @@ export default tseslint.config(
       "backend/src/skills-manifest.ts",
       // The Windows build output, and the shared drawing stage's vendored three.js (as shipped) and
       // sample programs (written for the stage's worker, whose drawing language they call, not
-      // scripts of their own).
+      // scripts of their own), in `draw-stage/` and in the Windows app's own copy of the page.
       "windows/**/bin/**",
       "windows/**/obj/**",
       "draw-stage/vendor/**",
       "draw-stage/samples/**",
+      "windows/src/OpenClicky.Windows/Assets/DrawStage/vendor/**",
+      "windows/src/OpenClicky.Windows/Assets/DrawStage/samples/**",
     ],
   },
 
@@ -97,9 +99,10 @@ export default tseslint.config(
   },
 
   {
-    // The drawing stage's page (`draw-stage/`, shared by the Mac's WKWebView and Windows' WebView2):
-    // plain browser scripts and a Web Worker, no tsconfig, so no type-aware rules either.
-    files: ["draw-stage/**/*.js"],
+    // The drawing stage's page (`draw-stage/`, shared by the Mac's WKWebView and Windows' WebView2,
+    // and the Windows app's own copy): plain browser scripts and a Web Worker, no tsconfig, so no
+    // type-aware rules either.
+    files: ["draw-stage/**/*.js", "windows/src/OpenClicky.Windows/Assets/DrawStage/**/*.js"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: { globals: { ...globals.browser, ...globals.worker } },
   },
