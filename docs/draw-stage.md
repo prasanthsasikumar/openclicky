@@ -227,6 +227,8 @@ Explorer opens on the file when it is done.
 
 ## Moving and resizing a drawing
 
+![A drawing's panel: Picture, Video, PiP and close in its corner, a resize grip in each bottom corner](media/draw-stage/drawing-panel.png)
+
 A drawing on a card (or a photo) sits on a board (`#board`) the page moves and scales as one, 3D figures and their
 tags included. Drag the card to move it (a part of it always stays on screen); drag a grip in either bottom corner
 (there from its first stroke), or turn the wheel over it, to make it bigger or smaller (0.35× to 3×). Its PiP button
