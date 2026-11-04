@@ -66,11 +66,12 @@ final class DrawStageController {
         (surface as? DrawStagePreparing)?.load()
     }
 
-    /// A new program on a canvas of that size, drawn on that screen.
-    func begin(displayFrame: CGRect, canvasWidth: Int, canvasHeight: Int) {
+    /// A new program on a canvas of that size, drawn on that screen. The voice paces it unless a
+    /// smoke run asks for the page's own estimate.
+    func begin(displayFrame: CGRect, canvasWidth: Int, canvasHeight: Int, pace: DrawStagePace = .speech) {
         self.displayFrame = displayFrame
         show()
-        send(DrawStageMessages.beginStream(canvasWidth: canvasWidth, canvasHeight: canvasHeight, pace: .speech))
+        send(DrawStageMessages.beginStream(canvasWidth: canvasWidth, canvasHeight: canvasHeight, pace: pace))
     }
 
     /// A follow-up's program, run after the drawing on the stage, which stays.
@@ -192,4 +193,13 @@ final class DrawStageController {
 @MainActor
 protocol DrawStagePreparing: AnyObject {
     func load()
+}
+
+extension DrawStagePhoto {
+    /// A photo the Teacher's Wikimedia search found, as PNG bytes for the page's data URL.
+    init?(picture: TeacherPicture) {
+        guard let tiff = picture.image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
+        self.init(imageData: png, mediaType: "image/png", credit: picture.credit)
+    }
 }

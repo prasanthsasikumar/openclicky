@@ -365,6 +365,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-drawstage-smoke") {
+            // Draws on the stage without a voice turn, then exits (see DrawStageSmoke).
+            let smokeArguments = Array(launchArguments[(argumentIndex + 1)...])
+            Task { @MainActor in await DrawStageSmoke.run(arguments: smokeArguments) }
+            return
+        }
+
         if let argumentIndex = launchArguments.firstIndex(of: "--openclicky-teacher-smoke") {
             // Draws a lesson on the cursor's screen without a voice turn, then exits: the draw
             // tool's own Pythagoras example, a sketch file, or `picture:<search words>`.
