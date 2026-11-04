@@ -43,6 +43,13 @@ struct TeacherIslandView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
+                } else if !isOn {
+                    Text("lessons are off")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text("switch on and ask me to teach you something")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.45))
                 } else {
                     Text("ask me to teach you something")
                         .font(.system(size: 13, weight: .semibold))
@@ -69,14 +76,13 @@ struct TeacherIslandView: View {
                 .pointerCursor()
                 .accessibilityLabel("Clear the board")
             }
-            // The plugin's own switch: off here is off in Settings › Island too (the row then
-            // leaves the island, and Settings brings it back).
+            // The row's own switch pauses lessons; the row stays, so it is here to switch back on.
+            // Settings › Island is where the Teacher leaves the island altogether.
             Toggle("", isOn: Binding(
                 get: { isOn },
                 set: { newValue in
                     isOn = newValue
-                    var settings = IslandComponentSettings(defaults: .standard)
-                    settings.setPlugin(TeacherPlugin.id, enabled: newValue)
+                    TeacherPlugin.setLessonsOn(newValue)
                     if !newValue { board.clear(reason: "the Teacher was switched off") }
                 }
             ))
@@ -84,11 +90,11 @@ struct TeacherIslandView: View {
             .controlSize(.small)
             .labelsHidden()
             .pointerCursor()
-            .help("Teacher on or off")
-            .accessibilityLabel("Teacher")
+            .help(isOn ? "Lessons are on" : "Lessons are off")
+            .accessibilityLabel("Teacher lessons")
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { isOn = TeacherPlugin.isEnabled }
+        .onAppear { isOn = TeacherPlugin.lessonsAreOn() }
     }
 }

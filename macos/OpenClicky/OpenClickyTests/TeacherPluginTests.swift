@@ -12,6 +12,23 @@ import Testing
 @testable import OpenClicky
 
 struct TeacherPluginTests {
+    /// The island row's switch pauses lessons without removing the Teacher from the island (so
+    /// it is there to switch back on); only Settings takes the row away.
+    @MainActor @Test func lessonsCanBePausedFromTheIslandWithoutLosingTheRow() {
+        let defaults = ScratchDefaults.make()
+        var island = IslandComponentSettings(defaults: defaults)
+        island.setPlugin(TeacherPlugin.id, enabled: true)
+        #expect(TeacherPlugin.lessonsAreOn(defaults: defaults), "on by default")
+        #expect(TeacherPlugin.isEnabled(defaults: defaults))
+        TeacherPlugin.setLessonsOn(false, defaults: defaults)
+        #expect(!TeacherPlugin.lessonsAreOn(defaults: defaults))
+        #expect(!TeacherPlugin.isEnabled(defaults: defaults), "no prompt line, no tools, no lessons while paused")
+        #expect(island.isEnabled(TeacherPlugin.id, in: IslandPluginRegistry.all), "the row stays on the island")
+        TeacherPlugin.setLessonsOn(true, defaults: defaults)
+        island.setPlugin(TeacherPlugin.id, enabled: false)
+        #expect(!TeacherPlugin.isEnabled(defaults: defaults), "Settings off is off, whatever the island switch says")
+    }
+
     // MARK: - the drawing language
 
     @Test func theToolsOwnExampleParsesWithoutASkippedLine() throws {

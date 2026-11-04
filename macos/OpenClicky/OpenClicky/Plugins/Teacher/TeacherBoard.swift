@@ -22,8 +22,24 @@ enum TeacherPlugin {
     static let pictureToolName = "show_picture"
     static let toolNames: Set<String> = [drawToolName, pictureToolName]
 
-    static var isEnabled: Bool {
-        IslandComponentSettings(defaults: .standard).enabledPlugins.contains(id)
+    /// Lessons happen only with the plugin on in Settings › Island AND the island row's own
+    /// switch on. The row's switch pauses lessons without taking the row away, so it is there
+    /// to switch back on; only Settings removes the row.
+    static var isEnabled: Bool { isEnabled(defaults: .standard) }
+
+    static func isEnabled(defaults: UserDefaults) -> Bool {
+        IslandComponentSettings(defaults: defaults).enabledPlugins.contains(id) && lessonsAreOn(defaults: defaults)
+    }
+
+    static let lessonsKey = "openclicky.teacher.lessonsOn"
+
+    /// The island row's switch: on unless switched off.
+    static func lessonsAreOn(defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: lessonsKey) as? Bool ?? true
+    }
+
+    static func setLessonsOn(_ on: Bool, defaults: UserDefaults = .standard) {
+        defaults.set(on, forKey: lessonsKey)
     }
 
     static let promptInstruction = """
