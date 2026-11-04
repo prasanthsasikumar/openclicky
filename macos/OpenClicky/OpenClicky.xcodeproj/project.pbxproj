@@ -111,6 +111,7 @@
 				28F22CBD2F56440300A0FC59 /* Resources */,
 				AA00BB0A2F6500100039DA55 /* Embed Kokoro engine */,
 				AA00BB0B2F6500100039DA55 /* Embed app skills */,
+				AA00BB0C2F6500100039DA55 /* Embed draw stage */,
 			);
 			buildRules = (
 			);
@@ -284,6 +285,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "\"$PROJECT_DIR/scripts/embed-app-skills.sh\"\n";
+		};
+		AA00BB0C2F6500100039DA55 /* Embed draw stage */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed draw stage";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"$PROJECT_DIR/scripts/embed-draw-stage.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

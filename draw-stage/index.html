@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- The drawing stage. No network: the program draws with what is here. 'unsafe-eval' is for the program worker,
+     which runs the model's statements (stage-worker.js). -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-eval'; worker-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenClicky drawing</title>
+<link rel="stylesheet" href="stage.css">
+</head>
+<body>
+<div id="paper" hidden></div>
+<div id="board">
+<svg id="stage" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+<div id="figures"></div>
+<svg id="labels3d" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+<div id="caption" hidden></div>
+<div id="tools" hidden>
+<button type="button" data-save="picture" title="Save a picture of this drawing (PNG)"><span class="icon">&#xE8B9;</span>Picture</button>
+<button type="button" data-save="video" title="Save a video of this drawing being drawn, with its voice (MP4)"><span class="icon">&#xE714;</span>Video</button>
+</div>
+<div id="grip" hidden title="Drag to make the drawing bigger or smaller"></div>
+<div id="saving" hidden><span class="spinner"></span><span class="text"></span><span class="bar"><span></span></span></div>
+<script src="stage.js"></script>
+<script type="module" src="figure3d.js"></script>
+</body>
+</html>
