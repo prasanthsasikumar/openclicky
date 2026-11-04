@@ -157,8 +157,10 @@ struct NotchHUDModelTests {
     @Test func aDragOverTheIslandUnfoldsItOnlyWhenTheShelfIsOn() async throws {
         let defaults = UserDefaults(suiteName: "island-model-shelf")!
         defaults.removePersistentDomain(forName: "island-model-shelf")
+        var shelfOff = IslandComponentSettings(defaults: defaults)
+        shelfOff.enabledPlugins = []                  // the shelf is on from a fresh install; this person switched it off
         let registry = IslandComponentSelectorTests().registry + [IslandComponentSelectorTests.Stub(id: "shelf", isPlugin: true) { _ in true }]
-        let model = NotchHUDModel(geometry: notchModel().geometry, registry: registry, componentSettings: IslandComponentSettings(defaults: defaults))
+        let model = NotchHUDModel(geometry: notchModel().geometry, registry: registry, componentSettings: shelfOff)
         model.setDragHovering(true)
         #expect(model.expansion == .collapsed)
         var settings = IslandComponentSettings(defaults: defaults)

@@ -152,9 +152,15 @@ struct IslandComponentSettings {
         set { defaults.set(newValue, forKey: Self.orderKey) }
     }
 
-    /// The plugins the user turned on; unset means none.
+    /// The plugins on from a fresh install (decided with Prasanth 2026-11-04 for 0.11.0): the ones
+    /// that ask nothing of the person. Coding agents (a Keychain prompt for Claude's plan limits),
+    /// Clipboard, Notes and System stay off until switched on.
+    static let onByDefault: [String] = ["media", "shelf", "timer", "mirror"]
+
+    /// The plugins the user turned on; unset means the fresh-install set. A list written once (by
+    /// any switch) is the person's own, so switching everything off stays off.
     var enabledPlugins: [String] {
-        get { defaults.stringArray(forKey: Self.pluginsKey) ?? [] }
+        get { defaults.stringArray(forKey: Self.pluginsKey) ?? Self.onByDefault }
         set { defaults.set(newValue, forKey: Self.pluginsKey) }
     }
 

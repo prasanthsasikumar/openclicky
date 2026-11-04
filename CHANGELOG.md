@@ -15,11 +15,20 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
-## Unreleased
+## 0.11.0
 
 ### Mac
 
 - **Draw to explain.** Ask "how does a jet engine work?", "what's inside this?" or "why is the sky blue?" and Clicky draws on your screen while it talks: a diagram or a turning 3D model built part by part, each part drawn as its sentence is spoken. When it is done the drawing shrinks into a bubble beside the island; click it to bring it back, and ask again while it is open to build on it. Only questions a picture really explains are drawn; everything else is answered in words as before. On by default: Settings → Clicky → Draw to explain. The drawing stage itself (`draw-stage/`) is shared with the Windows app and was written by darkworks for Windows PR #39.
+- **Drawings on fast voice too.** With fast voice on, a question a picture explains is drawn and narrated by the answer voice while the fast voice steps aside, then it carries on with what was drawn in mind. Start talking over a drawing to stop it; it keeps what was drawn and goes to its bubble.
+- **Mirror.** A quick look at yourself before a call: the camera button in the island's toolbar opens a live mirror where now playing sits, and closes it again. Nothing is recorded or sent anywhere. macOS asks for the camera the first time.
+- **The Teacher is built in.** It is always on the island with one switch, on its row and under Settings → Island → Teacher, which turns lessons on and off; nothing to install. Off until you switch it on.
+- **Now playing, Shelf, Timer and Mirror are on from the start.** Coding agents, Clipboard, Notes and System stay off until you switch them on under Settings → Island (Coding agents asks for your Keychain to show Claude's plan limits). Anyone who already chose their own set keeps it.
+- **A sharper island.** The open island no longer shows a faint box behind it (its shadow was being cut off at the window's edge), the agents' running bar stays inside its row, and the busy strip's words cross-fade instead of jumping.
+
+### Windows
+
+- **Answers from your own models.** Ollama, LM Studio or any OpenAI-compatible server (vLLM, llama.cpp, LocalAI…) can answer: give its address under Settings → Clicky → Models, press Turn on to list what it serves, then pick it under Answers come from. No key needed; in Automatic they come after your own keys and before the plans. By darkworks (PR #41).
 
 ## 0.10.2
 

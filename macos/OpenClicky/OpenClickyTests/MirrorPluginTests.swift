@@ -32,6 +32,7 @@ struct MirrorPluginTests {
     @Test func aPluginIsSwitchedOnAndOffInOnePlace() {
         let defaults = ScratchDefaults.make()
         var settings = IslandComponentSettings(defaults: defaults)
+        settings.enabledPlugins = []            // a person who switched the defaults off
         #expect(!settings.enabledPlugins.contains(IslandPluginRegistry.teacherID))
         settings.setPlugin(IslandPluginRegistry.teacherID, enabled: true)
         #expect(settings.enabledPlugins == [IslandPluginRegistry.teacherID])

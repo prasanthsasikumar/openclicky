@@ -150,9 +150,10 @@ struct IslandComponentSelectorTests {
             @MainActor func makeView(companionManager: CompanionManager, model: NotchHUDModel) -> AnyView { AnyView(EmptyView()) }
         }
         let registry: [any IslandComponent] = [Stub(id: "shortcuts") { _ in true }, Optional()]
-        #expect(settings.enabledPlugins == [])
+        #expect(settings.enabledPlugins == IslandComponentSettings.onByDefault, "a fresh install has the default set on")
+        #expect(IslandComponentSettings.onByDefault == ["media", "shelf", "timer", "mirror"])
         #expect(settings.isEnabled("shortcuts", in: registry))
-        #expect(!settings.isEnabled("system", in: registry))
+        #expect(!settings.isEnabled("system", in: registry), "System is not on by default")
         settings.enabledPlugins = ["system"]
         #expect(settings.isEnabled("system", in: registry))
         #expect(IslandComponentSettings.enabledIDs(in: registry, settings: settings) == ["shortcuts", "system"])
