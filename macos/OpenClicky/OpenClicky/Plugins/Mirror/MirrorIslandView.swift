@@ -52,8 +52,22 @@ final class MirrorCamera: ObservableObject {
     let session = AVCaptureSession()
     @Published private(set) var status: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
     @Published private(set) var isRunning = false
+    /// The person asked for the mirror (the band's button): home shows it in now playing's place.
+    /// Cleared by the ✕, the button again, or the picture leaving the screen (the island closing).
+    @Published private(set) var isWanted = false
     private var isConfigured = false
     private let sessionQueue = DispatchQueue(label: "org.openclicky.mirror")
+
+    func toggle() {
+        isWanted.toggle()
+        if !isWanted { stop() }
+    }
+
+    func dismiss() {
+        guard isWanted else { return }
+        isWanted = false
+        stop()
+    }
 
     func start() {
         status = AVCaptureDevice.authorizationStatus(for: .video)
@@ -150,6 +164,54 @@ struct MirrorIslandView: View {
         .padding(.vertical, 12)
         .onAppear { camera.start() }
         .onDisappear { camera.stop() }
+    }
+}
+
+/// The mirror as a home column, in now playing's place: the picture fills the column with an ✕
+/// at its corner. Appearing starts the camera; leaving the screen (the ✕, the island closing,
+/// another component) stops it and lets the mirror go.
+struct MirrorHomeColumn: View {
+    @ObservedObject var camera: MirrorCamera
+    @State private var isHoveringClose = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            if let note = MirrorPermissionNote.text(for: camera.status) {
+                VStack(spacing: 8) {
+                    Image(systemName: "camera.fill").font(.system(size: 16)).foregroundStyle(.white.opacity(0.6))
+                    Text(note).font(.system(size: 11)).foregroundStyle(.white.opacity(0.8)).multilineTextAlignment(.center)
+                    if camera.status == .denied {
+                        Button("Open System Settings") { NSWorkspace.shared.open(MirrorPermissionNote.systemSettingsURL) }
+                            .buttonStyle(IslandPillButtonStyle())
+                            .pointerCursor()
+                    }
+                }
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white.opacity(0.06)))
+            } else {
+                MirrorPreview(session: camera.session)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.12), lineWidth: 1))
+            }
+            Button {
+                camera.dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(.black.opacity(isHoveringClose ? 0.75 : 0.5)))
+            }
+            .buttonStyle(.plain)
+            .onHover { isHoveringClose = $0 }
+            .pointerCursor()
+            .padding(8)
+            .help("Close the mirror")
+            .accessibilityLabel("Close the mirror")
+        }
+        .onAppear { camera.start() }
+        .onDisappear { camera.dismiss() }
     }
 }
 

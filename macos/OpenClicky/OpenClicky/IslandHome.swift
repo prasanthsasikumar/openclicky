@@ -13,6 +13,8 @@ import SwiftUI
 
 /// One column of the home row.
 enum IslandHomeColumn: String, Equatable, CaseIterable {
+    /// The camera's picture (the Mirror tool), in now playing's place while it is open.
+    case mirror
     case media
     case calendar
     case weather
@@ -30,8 +32,9 @@ struct IslandHomeLayout: Equatable {
 
     let columns: [IslandHomeColumn]
 
-    /// From the plugin switches (Now playing, System) and the calendar and weather switches.
-    static func current(defaults: UserDefaults = .standard) -> IslandHomeLayout {
+    /// From the plugin switches (Now playing, System), the calendar and weather switches, and
+    /// whether the Mirror is open (it takes now playing's place on the left while it is).
+    static func current(defaults: UserDefaults = .standard, mirrorOpen: Bool = false) -> IslandHomeLayout {
         let plugins = IslandComponentSettings(defaults: defaults).enabledPlugins
         let calendarOn = defaults.object(forKey: calendarEnabledKey) as? Bool ?? true
         let weatherOn = defaults.object(forKey: weatherEnabledKey) as? Bool ?? false
@@ -39,12 +42,13 @@ struct IslandHomeLayout: Equatable {
             mediaOn: plugins.contains(IslandPluginRegistry.mediaID),
             calendarOn: calendarOn,
             weatherOn: weatherOn,
-            systemOn: plugins.contains(IslandPluginRegistry.systemID))
+            systemOn: plugins.contains(IslandPluginRegistry.systemID),
+            mirrorOpen: mirrorOpen)
     }
 
-    init(mediaOn: Bool, calendarOn: Bool, weatherOn: Bool, systemOn: Bool) {
+    init(mediaOn: Bool, calendarOn: Bool, weatherOn: Bool, systemOn: Bool, mirrorOpen: Bool = false) {
         var columns: [IslandHomeColumn] = []
-        if mediaOn { columns.append(.media) }
+        if mirrorOpen { columns.append(.mirror) } else if mediaOn { columns.append(.media) }
         if calendarOn { columns.append(.calendar) }
         if weatherOn { columns.append(.weather) }
         if systemOn { columns.append(.system) }
@@ -72,7 +76,7 @@ struct IslandHomeLayout: Equatable {
             return count * IslandDash.tileSize + (count - 1) * IslandDash.tileSpacing
         }
         switch group.first {
-        case .media: return IslandDash.mediaWidth
+        case .media, .mirror: return IslandDash.mediaWidth
         case .calendar: return calendarWidth
         default: return 0
         }
@@ -101,8 +105,10 @@ struct HomeIslandComponent: IslandComponent {
     let id = IslandComponentRegistry.homeID
     let title = "Home"
     let symbolName = "square.grid.2x2"
-    var preferredHeight: CGFloat { IslandHomeLayout.current().height }
-    var preferredWidth: CGFloat? { IslandHomeLayout.current().width }
+    var preferredHeight: CGFloat { IslandHomeLayout.current(mirrorOpen: Self.mirrorIsOpen).height }
+    var preferredWidth: CGFloat? { IslandHomeLayout.current(mirrorOpen: Self.mirrorIsOpen).width }
+    /// The island asks on the main actor; the camera's state lives there.
+    private static var mirrorIsOpen: Bool { MainActor.assumeIsolated { MirrorCamera.shared.isWanted } }
     func isAvailable(in context: IslandContext) -> Bool { true }
     @MainActor func makeView(companionManager: CompanionManager, model: NotchHUDModel) -> AnyView {
         AnyView(IslandHomeView(model: model, companionManager: companionManager))
@@ -112,7 +118,8 @@ struct HomeIslandComponent: IslandComponent {
 struct IslandHomeView: View {
     @ObservedObject var model: NotchHUDModel
     @ObservedObject var companionManager: CompanionManager
-    @State private var layout = IslandHomeLayout.current()
+    @ObservedObject private var mirror = MirrorCamera.shared
+    @State private var layout = IslandHomeLayout.current(mirrorOpen: MirrorCamera.shared.isWanted)
 
     var body: some View {
         Group {
@@ -134,10 +141,19 @@ struct IslandHomeView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: DispatchQueue.main)) { _ in
-            let next = IslandHomeLayout.current()
-            if next != layout {
-                withAnimation(IslandDash.columnSpring(reduceMotion: model.reduceMotion)) { layout = next }
-            }
+            followTheSwitches()
+        }
+        // The mirror opening or closing: the column slides in or out, and the island follows if its width changed.
+        .onChange(of: mirror.isWanted) { _, _ in
+            followTheSwitches()
+            model.refreshComponentSettings()
+        }
+    }
+
+    private func followTheSwitches() {
+        let next = IslandHomeLayout.current(mirrorOpen: mirror.isWanted)
+        if next != layout {
+            withAnimation(IslandDash.columnSpring(reduceMotion: model.reduceMotion)) { layout = next }
         }
     }
 
@@ -148,8 +164,15 @@ struct IslandHomeView: View {
             }
         } else if let column = group.first {
             switch column {
+            case .mirror:
+                MirrorHomeColumn(camera: mirror)
+                    .frame(width: IslandDash.mediaWidth, height: IslandDash.tileSize, alignment: .top)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.85, anchor: .leading).combined(with: .opacity).combined(with: .move(edge: .leading)),
+                        removal: .scale(scale: 0.9, anchor: .leading).combined(with: .opacity)))
             case .media:
                 MediaDashboardColumn(media: companionManager.notchHUDManager.media)
+                    .transition(.opacity)
             case .calendar:
                 IslandHomeCalendarColumn()
                     .frame(width: IslandHomeLayout.calendarWidth, alignment: .topLeading)
@@ -163,7 +186,7 @@ struct IslandHomeView: View {
         switch column {
         case .weather: IslandHomeWeatherTile()
         case .system: IslandHomeSystemTile(store: companionManager.notchHUDManager.systemStats)
-        case .media, .calendar: EmptyView()
+        case .media, .calendar, .mirror: EmptyView()
         }
     }
 }

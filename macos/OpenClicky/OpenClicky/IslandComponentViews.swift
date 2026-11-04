@@ -76,7 +76,10 @@ struct IslandSurface: View {
             DS.HUD.island.opacity(hasGlassLayer ? 0 : 1)
         }
         .clipShape(outline)
-        .shadow(color: .black.opacity(look.shadowOpacity(isOpen: isOpen)), radius: 14, y: 6)
+        // The blur must fade out well inside the window's 16 pt margin: at 14 pt it ran to the
+        // window's edge and was cut off hard there, which read as a translucent box around the
+        // open island on a light page (measured 11–19 % black at the margin, 2026-11-04).
+        .shadow(color: .black.opacity(look.shadowOpacity(isOpen: isOpen)), radius: 5, y: 2)
         .shadow(color: .black.opacity(expansion == .collapsed ? 0 : 0.35), radius: 2, y: 1)
     }
 

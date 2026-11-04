@@ -77,8 +77,18 @@ struct NotchBandRow: View {
                 // goes back to where the island was.
                 ForEach(model.toolIDs, id: \.self) { toolID in
                     if let tool = model.registry.first(where: { $0.id == toolID }) {
-                        let isActive = model.selection.active == toolID
-                        Button(action: { model.selectComponent(isActive ? nil : toolID) }) {
+                        // The mirror is not a slot of its own: its button opens home with the
+                        // camera's picture in now playing's place, and closes it again.
+                        let isMirror = toolID == IslandPluginRegistry.mirrorID
+                        let isActive = isMirror ? MirrorCamera.shared.isWanted : model.selection.active == toolID
+                        Button(action: {
+                            if isMirror {
+                                MirrorCamera.shared.toggle()
+                                model.selectComponent(nil)
+                            } else {
+                                model.selectComponent(isActive ? nil : toolID)
+                            }
+                        }) {
                             Image(systemName: tool.symbolName)
                         }
                         .buttonStyle(IslandIconButtonStyle(size: 11, frameScale: 2, isActive: isActive))
