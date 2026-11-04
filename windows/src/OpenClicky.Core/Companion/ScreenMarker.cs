@@ -13,6 +13,7 @@
 //  The drawing window is the platform's (IScreenMarkerSurface); what the mark means is decided here.
 //
 
+using OpenClicky.Core.Answers;
 using OpenClicky.Core.Platform;
 
 namespace OpenClicky.Core.Companion;
@@ -163,6 +164,11 @@ public sealed class ScreenMarker
         Current = null;
         Surface?.HideMark();
     }
+
+    /// <summary>Whether esc takes the mark away: one thing per press, so only when it had nothing else to stop (an answer,
+    /// the fast voice, a take) and took no drawing off the screen; the next press then takes the mark.</summary>
+    public static bool EscClearsTheMark(EscapeTarget target, bool clearedADrawing, bool hasAMark) =>
+        hasAMark && !clearedADrawing && target == EscapeTarget.Nothing;
 
     /// <summary>Takes <paramref name="mark"/> away if it is still the current one (a newer mark stays).</summary>
     public void ClearIfCurrent(MarkedArea? mark)

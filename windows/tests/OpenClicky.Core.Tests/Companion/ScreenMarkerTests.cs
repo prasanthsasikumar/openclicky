@@ -123,6 +123,19 @@ public class ScreenMarkerTests
     }
 
     [Fact]
+    public void EscTakesTheMarkOnlyOnceThereIsNothingElseToStopOrClear()
+    {
+        // First esc: the drawing goes (or the answer stops); the mark stays.
+        Assert.False(ScreenMarker.EscClearsTheMark(EscapeTarget.Nothing, clearedADrawing: true, hasAMark: true));
+        Assert.False(ScreenMarker.EscClearsTheMark(EscapeTarget.AskLane, clearedADrawing: false, hasAMark: true));
+        Assert.False(ScreenMarker.EscClearsTheMark(EscapeTarget.Realtime, clearedADrawing: false, hasAMark: true));
+        Assert.False(ScreenMarker.EscClearsTheMark(EscapeTarget.DictationTake, clearedADrawing: false, hasAMark: true));
+        // The next: nothing else is left, so the mark goes.
+        Assert.True(ScreenMarker.EscClearsTheMark(EscapeTarget.Nothing, clearedADrawing: false, hasAMark: true));
+        Assert.False(ScreenMarker.EscClearsTheMark(EscapeTarget.Nothing, clearedADrawing: false, hasAMark: false));
+    }
+
+    [Fact]
     public void TheShortcutIsHeldOnlyWhileDrawnAnswersAreOnAndNotTurnedOff()
     {
         Assert.Equal(MarkerShortcut.CtrlAltM, MarkerShortcuts.Wanted(null, drawingsOn: true));

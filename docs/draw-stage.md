@@ -242,7 +242,8 @@ a video keeps it where it was moved.
 The island's marker button (or Ctrl+Alt+M) dims the screen under the pointer a little and lets you draw a loop with a
 yellow marker round some code, part of a photo or a chart. The mark stays while the next question is answered: the
 question carries where it is and a close-up of it, and a drawing answer is made on that screen so it can point at it.
-A mark nobody asks about goes after three minutes. `--openclicky-marker-smoke` draws one by itself.
+A mark nobody asks about goes after three minutes. Esc takes one thing at a time: a drawing (or an answer) first, then
+on the next press the mark. `--openclicky-marker-smoke` draws one by itself.
 
 Ctrl+Alt+M is held only while drawn answers are on (the Teacher plugin and its drawing stage), so otherwise the keys
 stay the other apps' (Word inserts a comment with them). Settings → Clicky → Drawings → "Mark the screen with" picks

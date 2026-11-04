@@ -96,7 +96,14 @@ public sealed partial class CompanionManager
                 var escapeTarget = AskLaneEscape.Target(IsTakeInProgress, AskLaneCanBeStopped,
                     realtimeIsBusy: EscStopsFastVoice(IsTakeInProgress, UsesRealtimeVoice, RealtimeVoiceClient.IsBusy));
                 // Whatever else it stops, esc takes a lesson off the screen too (never mid-take).
-                if (TeacherPlugin.EscClearsTheBoard(escapeTarget)) { StopSavingTheDrawing(); TeacherPlugin.ClearBoard("esc"); }
+                var clearedADrawing = false;
+                if (TeacherPlugin.EscClearsTheBoard(escapeTarget)) { StopSavingTheDrawing(); clearedADrawing = TeacherPlugin.ClearBoard("esc"); }
+                // With nothing else to stop or take away, esc takes a mark left on the screen (the drawing goes first).
+                if (ScreenMarker.EscClearsTheMark(escapeTarget, clearedADrawing, ScreenMarker.Shared.Current is not null))
+                {
+                    ScreenMarker.Shared.Clear();
+                    AppLog.Write("marker: mark taken away (esc)");
+                }
                 switch (escapeTarget)
                 {
                     case EscapeTarget.AskLane:
