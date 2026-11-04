@@ -62,7 +62,7 @@ enum SettingsLayout {
     private static let islandGroups: [Group] = [
         Group(page: .island, title: "", itemIDs: ["general.hudPlacement", "appearance.peekDirection", "plugins.islandDefault"]),
         Group(page: .island, title: "Tiles", itemIDs: ["plugins.media", "calendar.enabled", "weather.enabled", "plugins.system"]),
-        Group(page: .island, title: "Tools", itemIDs: ["plugins.shelf", "plugins.clipboard", "plugins.notes", "plugins.timer", "plugins.agents"]),
+        Group(page: .island, title: "Tools", itemIDs: ["plugins.shelf", "plugins.clipboard", "plugins.notes", "plugins.timer", "plugins.mirror", "plugins.agents"]),
         Group(page: .island, title: "More", isAdvanced: true, itemIDs: [
             "appearance.style", "plugins.islandOrder", "calendar.quickAdd", "island.openCalendars", "weather.unit", "weather.location",
             "timer.focusMinutes", "timer.breakMinutes", "timer.longBreakMinutes",

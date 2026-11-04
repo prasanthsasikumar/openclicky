@@ -32,6 +32,7 @@ extension SettingsCatalog {
             pluginItem(IslandPluginRegistry.shelfID, keywords: ["file tray", "files", "drop"]),
             pluginItem(IslandPluginRegistry.agentsID),
             pluginItem(IslandPluginRegistry.teacherID),
+            pluginItem(IslandPluginRegistry.mirrorID, keywords: ["camera", "webcam", "selfie", "call", "face"]),
         ].compactMap { $0 } + [
             SettingsItem(
                 id: "plugins.islandDefault",
@@ -63,6 +64,7 @@ struct IslandPluginRow: View {
         case "timer": return Color(red: 1.0, green: 0.584, blue: 0.0)
         case IslandPluginRegistry.teacherID: return Color(red: 0.204, green: 0.78, blue: 0.349)
         case IslandPluginRegistry.agentsID: return Color(red: 0.11, green: 0.11, blue: 0.118)
+        case IslandPluginRegistry.mirrorID: return Color(red: 0.35, green: 0.34, blue: 0.84)
         default: return Color(red: 0.557, green: 0.557, blue: 0.576)
         }
     }
@@ -74,9 +76,7 @@ struct IslandPluginRow: View {
                 set: { newValue in
                     isOn = newValue
                     var settings = IslandComponentSettings(defaults: .standard)
-                    var enabled = settings.enabledPlugins.filter { $0 != plugin.id }
-                    if newValue { enabled.append(plugin.id) }
-                    settings.enabledPlugins = enabled
+                    settings.setPlugin(plugin.id, enabled: newValue)
                 }
             ))
             .accessibilityLabel(plugin.title)

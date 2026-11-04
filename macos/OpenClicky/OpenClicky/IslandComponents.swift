@@ -158,6 +158,14 @@ struct IslandComponentSettings {
         set { defaults.set(newValue, forKey: Self.pluginsKey) }
     }
 
+    /// Turns one plugin on or off, keeping the list free of repeats. The one place for it, used
+    /// by the Settings switches and by a plugin's own switch on the island (the Teacher's).
+    mutating func setPlugin(_ id: String, enabled: Bool) {
+        var enabled_ = enabledPlugins.filter { $0 != id }
+        if enabled { enabled_.append(id) }
+        enabledPlugins = enabled_
+    }
+
     /// A built-in is always on; a plugin only when the user turned it on. Unknown ids are off.
     func isEnabled(_ id: String, in registry: [any IslandComponent]) -> Bool {
         guard let component = registry.first(where: { $0.id == id }) else { return false }

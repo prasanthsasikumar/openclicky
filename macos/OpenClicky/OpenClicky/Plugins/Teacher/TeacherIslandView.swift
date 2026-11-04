@@ -3,7 +3,9 @@
 //  OpenClicky
 //
 //  The Teacher's row on the island: what is on the board and a button that clears it, or, with
-//  nothing up, a line saying what to ask.
+//  nothing up, a line saying what to ask. A switch on the right turns the Teacher plugin off (and
+//  on again from Settings › Island), the same switch Settings has, so a lesson can be stopped
+//  from happening without opening the window.
 //
 
 import SwiftUI
@@ -25,6 +27,7 @@ struct TeacherIslandComponent: IslandComponent {
 struct TeacherIslandView: View {
     @ObservedObject var board: TeacherBoard
     @State private var isHoveringClear = false
+    @State private var isOn = true
 
     var body: some View {
         HStack(spacing: 12) {
@@ -66,8 +69,26 @@ struct TeacherIslandView: View {
                 .pointerCursor()
                 .accessibilityLabel("Clear the board")
             }
+            // The plugin's own switch: off here is off in Settings › Island too (the row then
+            // leaves the island, and Settings brings it back).
+            Toggle("", isOn: Binding(
+                get: { isOn },
+                set: { newValue in
+                    isOn = newValue
+                    var settings = IslandComponentSettings(defaults: .standard)
+                    settings.setPlugin(TeacherPlugin.id, enabled: newValue)
+                    if !newValue { board.clear(reason: "the Teacher was switched off") }
+                }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .labelsHidden()
+            .pointerCursor()
+            .help("Teacher on or off")
+            .accessibilityLabel("Teacher")
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { isOn = TeacherPlugin.isEnabled }
     }
 }

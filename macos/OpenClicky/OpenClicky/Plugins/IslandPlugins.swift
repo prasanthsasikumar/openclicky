@@ -23,14 +23,15 @@ enum IslandPluginRegistry {
     static let timerID = "timer"
     static let notesID = "notes"
     static let clipboardID = "clipboard"
+    static let mirrorID = "mirror"
 
     /// The tools: each gets a round button in the band's toolbar (in this order) instead of a
     /// place in the capsule.
-    static let toolIDs: [String] = [shelfID, clipboardID, notesID, timerID]
+    static let toolIDs: [String] = [shelfID, clipboardID, notesID, timerID, mirrorID]
 
     /// In the order the capsule and Settings show them.
     @MainActor static var all: [any IslandComponent] {
         [SystemIslandComponent(), ShelfIslandComponent(), AgentsIslandComponent(), MediaIslandComponent(), TeacherIslandComponent(),
-         TimerIslandComponent(), NotesIslandComponent(), ClipboardIslandComponent()]
+         TimerIslandComponent(), NotesIslandComponent(), ClipboardIslandComponent(), MirrorIslandComponent()]
     }
 }
