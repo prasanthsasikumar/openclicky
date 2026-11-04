@@ -10,13 +10,14 @@
 
 import SwiftUI
 
-/// A plugin: lessons drawn on the screen.
+/// A built-in, always on the island: lessons drawn on the screen, behind one switch (this row's,
+/// and the same one in Settings), off until it is flipped.
 struct TeacherIslandComponent: IslandComponent {
     let id = TeacherPlugin.id
     let title = "Teacher"
     let symbolName = "scribble.variable"
     let preferredHeight: CGFloat = 64
-    let isPlugin = true
+    let isPlugin = false
     let settingsDetail: String? = "Ask \"teach me how Pythagoras works\" and Clicky draws it in handwriting in an empty part of your screen while it explains. What a drawing can't show comes up as a picture from Wikimedia Commons (only the search words are sent)."
     func isAvailable(in context: IslandContext) -> Bool { true }
     @MainActor func makeView(companionManager: CompanionManager, model: NotchHUDModel) -> AnyView {

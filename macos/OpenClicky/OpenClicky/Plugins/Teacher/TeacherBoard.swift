@@ -22,20 +22,17 @@ enum TeacherPlugin {
     static let pictureToolName = "show_picture"
     static let toolNames: Set<String> = [drawToolName, pictureToolName]
 
-    /// Lessons happen only with the plugin on in Settings › Island AND the island row's own
-    /// switch on. The row's switch pauses lessons without taking the row away, so it is there
-    /// to switch back on; only Settings removes the row.
+    /// One switch, in two places (the Teacher's island row and Settings › Island): on, the
+    /// lanes get the Teacher's prompt line and tools and lessons are drawn; off, none of it.
+    /// The Teacher is a built-in, so its row is always on the island to flip. Off by default.
     static var isEnabled: Bool { isEnabled(defaults: .standard) }
 
-    static func isEnabled(defaults: UserDefaults) -> Bool {
-        IslandComponentSettings(defaults: defaults).enabledPlugins.contains(id) && lessonsAreOn(defaults: defaults)
-    }
+    static func isEnabled(defaults: UserDefaults) -> Bool { lessonsAreOn(defaults: defaults) }
 
     static let lessonsKey = "openclicky.teacher.lessonsOn"
 
-    /// The island row's switch: on unless switched off.
     static func lessonsAreOn(defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: lessonsKey) as? Bool ?? true
+        defaults.object(forKey: lessonsKey) as? Bool ?? false
     }
 
     static func setLessonsOn(_ on: Bool, defaults: UserDefaults = .standard) {

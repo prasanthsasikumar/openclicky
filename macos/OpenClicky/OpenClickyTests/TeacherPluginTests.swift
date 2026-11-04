@@ -12,21 +12,20 @@ import Testing
 @testable import OpenClicky
 
 struct TeacherPluginTests {
-    /// The island row's switch pauses lessons without removing the Teacher from the island (so
-    /// it is there to switch back on); only Settings takes the row away.
-    @MainActor @Test func lessonsCanBePausedFromTheIslandWithoutLosingTheRow() {
+    /// The Teacher is a built-in: always on the island, so its switch is there to flip. One
+    /// switch, two places (the island row and Settings), off by default; nothing installs it.
+    @MainActor @Test func theTeacherIsAlwaysOnTheIslandAndOneSwitchTurnsLessonsOn() {
         let defaults = ScratchDefaults.make()
-        var island = IslandComponentSettings(defaults: defaults)
-        island.setPlugin(TeacherPlugin.id, enabled: true)
-        #expect(TeacherPlugin.lessonsAreOn(defaults: defaults), "on by default")
-        #expect(TeacherPlugin.isEnabled(defaults: defaults))
-        TeacherPlugin.setLessonsOn(false, defaults: defaults)
-        #expect(!TeacherPlugin.lessonsAreOn(defaults: defaults))
-        #expect(!TeacherPlugin.isEnabled(defaults: defaults), "no prompt line, no tools, no lessons while paused")
-        #expect(island.isEnabled(TeacherPlugin.id, in: IslandPluginRegistry.all), "the row stays on the island")
+        #expect(!TeacherPlugin.lessonsAreOn(defaults: defaults), "off by default")
+        #expect(!TeacherPlugin.isEnabled(defaults: defaults))
         TeacherPlugin.setLessonsOn(true, defaults: defaults)
-        island.setPlugin(TeacherPlugin.id, enabled: false)
-        #expect(!TeacherPlugin.isEnabled(defaults: defaults), "Settings off is off, whatever the island switch says")
+        #expect(TeacherPlugin.isEnabled(defaults: defaults), "the prompt line, the tools and the lessons follow the one switch")
+        TeacherPlugin.setLessonsOn(false, defaults: defaults)
+        #expect(!TeacherPlugin.isEnabled(defaults: defaults))
+        let island = IslandComponentSettings(defaults: defaults)
+        #expect(island.isEnabled(TeacherPlugin.id, in: IslandComponentRegistry.all), "on the island whatever the switch says")
+        #expect(IslandComponentRegistry.builtIns.contains { $0.id == TeacherPlugin.id })
+        #expect(!IslandPluginRegistry.all.contains { $0.id == TeacherPlugin.id })
     }
 
     // MARK: - the drawing language

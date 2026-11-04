@@ -31,9 +31,13 @@ extension SettingsCatalog {
             pluginItem(IslandPluginRegistry.systemID, keywords: ["cpu", "memory", "widget"]),
             pluginItem(IslandPluginRegistry.shelfID, keywords: ["file tray", "files", "drop"]),
             pluginItem(IslandPluginRegistry.agentsID),
-            pluginItem(IslandPluginRegistry.teacherID),
             pluginItem(IslandPluginRegistry.mirrorID, keywords: ["camera", "webcam", "selfie", "call", "face"]),
         ].compactMap { $0 } + [
+            SettingsItem(
+                id: "plugins.teacher",
+                title: TeacherSettingsRow.title, detail: TeacherSettingsRow.detail,
+                keywords: ["plugin", "island", "teacher", "teach", "lesson", "draw", "explain", "whiteboard"],
+                view: AnyView(TeacherSettingsRow())),
             SettingsItem(
                 id: "plugins.islandDefault",
                 title: "Shows first", detail: "What the open island shows when nothing else is going on.",
@@ -51,6 +55,33 @@ extension SettingsCatalog {
 // MARK: - one plugin
 
 /// A plugin's switch, with its name and what it does on the left like every other row.
+/// Settings › Island › Teacher: the same switch as the Teacher's row on the island (the Teacher
+/// is always on the island; this turns lessons on and off, it does not install anything).
+struct TeacherSettingsRow: View {
+    @State private var isOn = TeacherPlugin.lessonsAreOn()
+
+    static let title = "Teacher"
+    static let detail = "Ask \"teach me how Pythagoras works\" and Clicky draws it in handwriting in an empty part of your screen while it explains. What a drawing can't show comes up as a picture from Wikimedia Commons (only the search words are sent). The same switch is on the island's Teacher row."
+
+    var body: some View {
+        SettingsRow(title: Self.title, detail: Self.detail,
+                    icon: SettingsFeatureTile(symbol: "scribble.variable", tint: IslandPluginRow.tint(for: TeacherPlugin.id))) {
+            SettingsSwitch(isOn: Binding(
+                get: { isOn },
+                set: { newValue in
+                    isOn = newValue
+                    TeacherPlugin.setLessonsOn(newValue)
+                    if !newValue { TeacherPlugin.clearBoard(reason: "the Teacher was switched off") }
+                }
+            ))
+            .accessibilityLabel(Self.title)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: DispatchQueue.main)) { _ in
+            isOn = TeacherPlugin.lessonsAreOn()
+        }
+    }
+}
+
 struct IslandPluginRow: View {
     let plugin: any IslandComponent
     @State private var isOn = false

@@ -191,7 +191,7 @@ enum IslandComponentRegistry {
     static let agentID = "agent"
 
     @MainActor static var builtIns: [any IslandComponent] {
-        [HomeIslandComponent(), ShortcutsIslandComponent(), TranscriptIslandComponent(), AgentIslandComponent()]
+        [HomeIslandComponent(), ShortcutsIslandComponent(), TranscriptIslandComponent(), AgentIslandComponent(), TeacherIslandComponent()]
     }
 
     /// The built-ins first, then the plugins (off until turned on in Settings).

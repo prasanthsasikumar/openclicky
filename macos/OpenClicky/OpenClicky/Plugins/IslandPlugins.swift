@@ -31,7 +31,8 @@ enum IslandPluginRegistry {
 
     /// In the order the capsule and Settings show them.
     @MainActor static var all: [any IslandComponent] {
-        [SystemIslandComponent(), ShelfIslandComponent(), AgentsIslandComponent(), MediaIslandComponent(), TeacherIslandComponent(),
+        // The Teacher is a built-in (always on the island, with its own switch), not a plugin.
+        [SystemIslandComponent(), ShelfIslandComponent(), AgentsIslandComponent(), MediaIslandComponent(),
          TimerIslandComponent(), NotesIslandComponent(), ClipboardIslandComponent(), MirrorIslandComponent()]
     }
 }
