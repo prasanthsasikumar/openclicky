@@ -70,8 +70,7 @@ struct IslandSurface: View {
     var body: some View {
         ZStack(alignment: .top) {
             if hasGlassLayer {
-                IslandGlassBackground(isClear: look == .glass)
-                    .transition(.opacity)
+                glass.transition(.opacity)
                 tint.transition(.opacity)
             }
             DS.HUD.island.opacity(hasGlassLayer ? 0 : 1)
@@ -79,6 +78,18 @@ struct IslandSurface: View {
         .clipShape(outline)
         .shadow(color: .black.opacity(look.shadowOpacity(isOpen: isOpen)), radius: 14, y: 6)
         .shadow(color: .black.opacity(expansion == .collapsed ? 0 : 0.35), radius: 2, y: 1)
+    }
+
+    /// The glass, cut to the island's outline. On macOS 26 SwiftUI's own Liquid Glass takes the
+    /// outline as its shape: the system composites glass outside any SwiftUI clip, so an
+    /// `NSGlassEffectView` under `clipShape` showed as a faint rectangle around the island
+    /// (2026-11-04). Before 26 the frosted material view is clipped like any other view.
+    @ViewBuilder private var glass: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear.glassEffect(look == .glass ? .clear : .regular, in: outline)
+        } else {
+            IslandGlassBackground(isClear: look == .glass)
+        }
     }
 
     @ViewBuilder private var tint: some View {
