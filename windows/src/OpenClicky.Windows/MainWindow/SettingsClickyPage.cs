@@ -13,6 +13,7 @@ using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Settings;
 using OpenClicky.Core.Shortcuts;
+using OpenClicky.Core.Speech;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -199,6 +200,7 @@ internal sealed partial class SettingsRowFactory
                 ShellSettingsRevision.NoteChanged();
             }, 200))));
         if (picker.ShowsKokoroRows) foreach (var row in KokoroRows()) stack.Children.Add(row);
+        if (!string.IsNullOrWhiteSpace(OpenClickyConfiguration.Settings.GeminiApiKey)) stack.Children.Add(GeminiVoiceRow());
         if (picker.ShowsSystemVoiceRow) foreach (var row in SystemVoiceRows()) stack.Children.Add(row);
         if (picker.HasMoreVoices)
         {
@@ -209,6 +211,27 @@ internal sealed partial class SettingsRowFactory
                 Ui.Button("Add a Key…", () => actions.ShowSettings(DictationSettingsPage.Account)))));
         }
         return stack;
+    }
+
+    /// <summary>Gemini's voice (with a Gemini key): which of its voices speaks, and a preview of it in the language Clicky speaks.
+    /// The same voice speaks for the fast voice on Gemini.</summary>
+    private UIElement GeminiVoiceRow()
+    {
+        var shell = OpenClickyConfiguration.Settings;
+        var current = CloudVoiceRequests.GeminiVoiceFor(shell);
+        var picker = Ui.Picker(CloudVoiceRequests.GeminiVoices.Select(voice => (voice.Name, $"{voice.Name} · {voice.Trait}")), current, name =>
+        {
+            OpenClickyConfiguration.Update(saved => saved.GeminiVoice = name);
+            ShellSettingsRevision.NoteChanged();
+            _ = services.Services.PreviewVoiceAsync("gemini");
+        }, 200, maxWidth: 240);
+        var language = ReplyLanguage.EnglishName(ReplyLanguage.CurrentCode);
+        var detail = $"Gemini speaks {language} natively, without an English accent. Picking one says a line in it; the fast voice on Gemini uses it too.";
+        if (ReplyLanguage.CurrentCode != "en" && SpeechVoiceChoices.FromStored(shell.SpeechVoice) != SpeechVoiceChoice.Gemini)
+        {
+            detail += $" Pick “{SpeechVoiceChoice.Gemini.Title()}” above for {language} answers in it.";
+        }
+        return Ui.Card(Ui.Row("Gemini voice", detail, "", Ui.HStack(8, picker, Ui.Button("Preview", () => _ = services.Services.PreviewVoiceAsync("gemini")))));
     }
 
     /// <summary>Kokoro's rows: the download (progress, cancel, retry), then which speaker, a preview, and removing the download.</summary>

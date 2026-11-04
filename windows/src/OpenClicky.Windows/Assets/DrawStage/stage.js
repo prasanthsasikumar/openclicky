@@ -95,6 +95,7 @@
   function begin(message) {
     reset();
     wake();
+    useScriptFont(message.scriptFont);
     // A new drawing goes where it is drawn; the app's replay of one for a video keeps it where it was moved to.
     if (!message.keepPlace) { resetPlace(); hideSaving(); }
     W = message.w > 0 ? message.w : W;
@@ -327,6 +328,7 @@
   function showCaption(line) {
     if (!line || recording) { caption.hidden = true; return; }
     if (caption.textContent !== line.text) caption.textContent = line.text;
+    caption.dir = 'auto';
     caption.hidden = false;
   }
 
@@ -435,14 +437,42 @@
     fill.animate([{ opacity: 0 }, { opacity: m.fillOpacity > 0 ? m.fillOpacity : 0.3 }], { duration: 350, delay: delay * 1000, fill: 'forwards' });
   }
 
-  function reveal(group, node, box, seconds) {
+  // Shows a node as if written: a clip that widens over it, from the left, or from the right for words written right to
+  // left (Urdu).
+  function reveal(group, node, box, seconds, fromRight) {
     const id = 'clip' + (++uid);
     const clip = el('clipPath', { id });
-    const rect = el('rect', { x: box.x - 6, y: box.y - 6, width: 0, height: box.height + 12 });
+    const right = box.x + box.width + 6;
+    const rect = el('rect', { x: fromRight ? right : box.x - 6, y: box.y - 6, width: 0, height: box.height + 12 });
     clip.appendChild(rect);
     group.appendChild(clip);
     node.setAttribute('clip-path', `url(#${id})`);
-    rect.animate([{ width: '0px' }, { width: `${box.width + 12}px` }], { duration: seconds * 1000, easing: 'linear', fill: 'forwards' });
+    const frames = fromRight
+      ? [{ x: `${right}px`, width: '0px' }, { x: `${box.x - 6}px`, width: `${box.width + 12}px` }]
+      : [{ width: '0px' }, { width: `${box.width + 12}px` }];
+    rect.animate(frames, { duration: seconds * 1000, easing: 'linear', fill: 'forwards' });
+  }
+
+  // Words in a right-to-left script (Urdu, Arabic, Persian, Hebrew).
+  const RIGHT_TO_LEFT = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+
+  // ------------------------------------------------------------------ the script font
+  // "Clicky Script" covers only Arabic-script letters, so Urdu gets a Nastaliq face while the rest stays handwriting:
+  // the bundled Noto Nastaliq Urdu (OFL), Windows' own (choice "system": no face, Segoe UI's letters), or a font the
+  // person installed, by its name.
+  const SCRIPT_RANGE = 'U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF';
+  let scriptFace = null, scriptFontChoice;
+  function useScriptFont(choice) {
+    choice = typeof choice === 'string' ? choice.trim() : '';
+    if (choice === scriptFontChoice) return;
+    scriptFontChoice = choice;
+    if (scriptFace) document.fonts.delete(scriptFace);
+    scriptFace = null;
+    if (choice === 'system' || typeof FontFace === 'undefined') return;
+    const source = choice ? `local("${choice.replace(/["\\]/g, '')}")` : 'url("vendor/fonts/NotoNastaliqUrdu.ttf")';
+    scriptFace = new FontFace('Clicky Script', source, { unicodeRange: SCRIPT_RANGE });
+    document.fonts.add(scriptFace);
+    scriptFace.load().catch(() => log('the script font "' + (choice || 'Noto Nastaliq Urdu') + '" did not load; Windows\' own is used'));
   }
 
   function paint(m, seconds, index) {
@@ -496,14 +526,19 @@
       }
       case 'text': {
         const size = m.size > 0 ? m.size : 26;
-        const anchor = m.align === 'start' || m.align === 'end' ? m.align : 'middle';
+        // Urdu is laid out right to left, so its phrases and the English words among them read in order; start and end
+        // swap so the words still sit where the program put them (start: from x rightwards).
+        const rtl = RIGHT_TO_LEFT.test(String(m.text));
+        const align = m.align === 'start' || m.align === 'end' ? m.align : 'middle';
+        const anchor = rtl && align !== 'middle' ? (align === 'start' ? 'end' : 'start') : align;
         const text = el('text', {
           x: m.at[0], y: m.at[1], 'font-size': size, 'text-anchor': anchor, 'dominant-baseline': 'middle',
           fill: tone(m.color, TONES.ink), stroke: '#fff', 'stroke-width': Math.max(3, size * 0.2), 'font-weight': m.bold ? 700 : 400
         });
+        if (rtl) text.setAttribute('direction', 'rtl');
         text.textContent = m.text;
         group.appendChild(text);
-        reveal(group, text, text.getBBox(), seconds);
+        reveal(group, text, text.getBBox(), seconds, rtl);
         break;
       }
       case 'highlight': {
@@ -536,6 +571,7 @@
         frame.appendChild(well);
         if (m.caption) {
           const caption = el('text', { x: x + m.w / 2, y: y + m.h - 16, 'font-size': 22, 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: TONES.ink, stroke: 'none' });
+          if (RIGHT_TO_LEFT.test(String(m.caption))) caption.setAttribute('direction', 'rtl');
           caption.textContent = m.caption;
           frame.appendChild(caption);
         }
@@ -553,7 +589,10 @@
         const card = el('g', { filter: 'url(#card-shadow)' });
         card.appendChild(el('rect', { x, y, width: m.w, height: m.h, rx: 14, fill: tone(m.fill, '#FFF8E7'), stroke: '#00000014' }));
         if (m.title) {
-          const title = el('text', { x: x + 22, y: y + 34, 'font-size': 26, 'font-weight': 700, fill: TONES.ink, stroke: 'none' });
+          // An Urdu title starts at the card's right, a little lower: Nastaliq's tall letters would reach over its edge.
+          const rtl = RIGHT_TO_LEFT.test(String(m.title));
+          const title = el('text', { x: rtl ? x + m.w - 22 : x + 22, y: y + (rtl ? 64 : 34), 'font-size': 26, 'font-weight': 700, fill: TONES.ink, stroke: 'none' });
+          if (rtl) title.setAttribute('direction', 'rtl');
           title.textContent = m.title;
           card.appendChild(title);
         }
@@ -898,6 +937,7 @@
   window.addEventListener('unhandledrejection', event => send({ type: 'error', text: 'page: ' + (event.reason && event.reason.message || event.reason) }));
   // For a preview in an ordinary browser: window.drawStage.handle({type: 'beginStream', ...}).
   window.drawStage = { handle, reportHits, place };
+  useScriptFont(null);
   reset();
   send({ type: 'ready' });
 })();

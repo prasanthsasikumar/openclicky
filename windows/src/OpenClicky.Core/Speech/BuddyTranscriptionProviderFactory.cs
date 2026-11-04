@@ -76,4 +76,12 @@ public static class BuddyTranscriptionProviderFactory
         if (openAIProvider.IsConfigured) return openAIProvider;
         return makeOfflineProvider();
     }
+
+    /// <summary>
+    /// The transcriber for the language: this PC's own engines don't hear some languages (Urdu), so a choice that hears on
+    /// this PC gives way to Gemini when there is a key; anything else stays as chosen.
+    /// </summary>
+    public static IBuddyTranscriptionProvider ForLanguage(IBuddyTranscriptionProvider chosen, bool chosenHearsOnDevice, string languageCode,
+        IBuddyTranscriptionProvider gemini) =>
+        chosenHearsOnDevice && !ReplyLanguage.IsHeardOnDevice(languageCode) && gemini.IsConfigured ? gemini : chosen;
 }

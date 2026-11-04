@@ -160,7 +160,8 @@ public sealed class LiveSettingsServices(IModelDownload kokoro, IModelDownload p
             if (choice == SpeechVoiceChoice.Automatic) choice = SpeechVoiceChoices.Current();
             var audio = choice == SpeechVoiceChoice.Account
                 ? await new AnswerVoicePlayer(previewPlayer, () => $"{OpenClickyConfiguration.BackendBaseUrl}/tts").FetchAudioAsync(PreviewSentence)
-                : await CloudVoiceSpeaker.AudioAsync(PreviewSentence, choice);
+                // A cloud voice says its line in the language it will speak (Gemini in Urdu, say).
+                : await CloudVoiceSpeaker.AudioAsync(ReplyLanguage.PreviewSentence(ReplyLanguage.CurrentCode), choice);
             await previewPlayer.PlayToCompletionAsync(audio);
         }
         catch (Exception error)

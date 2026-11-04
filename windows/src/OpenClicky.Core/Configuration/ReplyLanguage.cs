@@ -29,6 +29,7 @@ public static class ReplyLanguage
         new("mr", "मराठी"),
         new("kn", "ಕನ್ನಡ"),
         new("ml", "മലയാളം"),
+        new("ur", "اردو"),
         new("es", "Español"),
         new("fr", "Français"),
         new("de", "Deutsch"),
@@ -68,6 +69,34 @@ public static class ReplyLanguage
             return code;
         }
     }
+
+    /// <summary>The line a voice preview says, in the language it will speak.</summary>
+    public static string PreviewSentence(string code) => code switch
+    {
+        "ur" => "السلام علیکم، میں کلکی ہوں۔ میری آواز ایسی ہے۔",
+        _ => "hi, i'm clicky. this is how i sound.",
+    };
+
+    /// <summary>Whether this PC's own engines hear the language: Parakeet and Moonshine are English, and Windows has no
+    /// recogniser for Urdu. A language they don't hear is sent to a cloud transcriber (Gemini) when there is a key.</summary>
+    public static bool IsHeardOnDevice(string code) => code is not "ur";
+
+    /// <summary>How Gemini's voice is asked to say a line in the language (its speech takes a style in words): a native
+    /// speaker's accent rather than an English reader's. Null for English, which needs none.</summary>
+    public static string? GeminiSpeakingStyle(string code) => code switch
+    {
+        "en" => null,
+        "ur" => "Read this aloud in Urdu as a warm, patient teacher from Pakistan, with a natural Pakistani Urdu accent; say English words the way a Pakistani speaker does:",
+        _ => $"Read this aloud in {EnglishName(code)} as a warm, patient teacher, with a natural native accent:",
+    };
+
+    /// <summary>A line in the style a transcript should come back in, for a language often mixed with English (Urdu with
+    /// English words): the transcriber keeps each word in its own script. Null when none is needed.</summary>
+    public static string? TranscriptionHint(string code) => code switch
+    {
+        "ur" => "Urdu speech, often with English words mixed in; English words stay in English letters: یہ computer کا CPU ہے، اور یہ graphics card ہے۔",
+        _ => null,
+    };
 
     /// <summary>Added to every system prompt, Realtime and Claude alike.</summary>
     public static string Instruction(string code)

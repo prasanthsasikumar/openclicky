@@ -39,8 +39,10 @@ html, body {
   mask-composite: intersect;
 }
 
+/* "Clicky Script" covers only Arabic-script letters (Urdu): the bundled Noto Nastaliq Urdu, or a font picked in Settings
+   (stage.js useScriptFont). Everything else falls through to the handwriting font. */
 #labels3d text {
-  font-family: "Ink Free", "Segoe Print", "Comic Sans MS", cursive;
+  font-family: "Clicky Script", "Ink Free", "Segoe Print", "Comic Sans MS", cursive;
   paint-order: stroke;
   stroke: #ffffff;
   stroke-width: 4px;
@@ -49,7 +51,7 @@ html, body {
 
 /* Handwriting: Ink Free ships with Windows; the others are fallbacks for a preview in another browser. */
 #stage text {
-  font-family: "Ink Free", "Segoe Print", "Comic Sans MS", cursive;
+  font-family: "Clicky Script", "Ink Free", "Segoe Print", "Comic Sans MS", cursive;
   paint-order: stroke;
   stroke-linejoin: round;
 }
@@ -252,7 +254,7 @@ body.pip #tools button { padding: 5px 7px; }
   border-radius: 14px;
   background: rgba(20, 22, 28, 0.78);
   color: #ffffff;
-  font: 500 20px/1.35 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font: 500 20px/1.35 "Clicky Script", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   text-align: center;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
   transition: opacity 0.25s ease;

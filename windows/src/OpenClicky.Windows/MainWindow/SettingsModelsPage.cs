@@ -44,6 +44,8 @@ internal sealed partial class SettingsRowFactory
                 return Ui.Card(DrawingInstructionsRow(item, query));
             case "clicky.markerShortcut":
                 return Ui.Card(MarkerShortcutRow(item, query));
+            case "clicky.drawingScriptFont":
+                return new LiveContent(() => Ui.Card(ScriptFontRow(item, query)), Changes.Shell);
             case "clicky.pieceMaker":
                 return new LiveContent(() => Ui.Card(PieceMakerRow(item, query)), Changes.Shell);
             default:
@@ -227,6 +229,37 @@ internal sealed partial class SettingsRowFactory
             },
             200);
         return Ui.Row(item.Title, item.Detail, query, picker);
+    }
+
+    /// <summary>The font Urdu words are drawn in: the bundled Noto Nastaliq Urdu, Windows' own, or one installed on this PC
+    /// (its name in a box beside the picker).</summary>
+    private static Grid ScriptFontRow(SettingsItem item, string query)
+    {
+        var saved = OpenClickyConfiguration.Settings.DrawingScriptFont?.Trim();
+        var choice = saved switch { null or "" => "noto", "system" => "system", _ => "installed" };
+        var nameField = new WpfUi.TextBox
+        {
+            Width = 190, Text = choice == "installed" ? saved! : "", PlaceholderText = "IndoPak Nastaleeq", VerticalAlignment = VerticalAlignment.Center,
+            Visibility = choice == "installed" ? Visibility.Visible : Visibility.Collapsed,
+        };
+        Ui.AutomationProperties(nameField, "Installed font's name");
+        void SaveName()
+        {
+            var typed = nameField.Text.Trim();
+            if (typed.Length == 0 || typed == OpenClickyConfiguration.Settings.DrawingScriptFont) return;
+            OpenClickyConfiguration.Update(shell => shell.DrawingScriptFont = typed);
+            ShellSettingsRevision.NoteChanged();
+        }
+        nameField.LostFocus += (_, _) => SaveName();
+        nameField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) SaveName(); };
+        var picker = Ui.Picker([("noto", "Noto Nastaliq Urdu"), ("system", "Windows' own (Segoe UI)"), ("installed", "A font on this PC")], choice, picked =>
+        {
+            nameField.Visibility = picked == "installed" ? Visibility.Visible : Visibility.Collapsed;
+            if (picked == "installed") { nameField.Focus(); return; }
+            OpenClickyConfiguration.Update(shell => shell.DrawingScriptFont = picked == "system" ? "system" : null);
+            ShellSettingsRevision.NoteChanged();
+        }, 200);
+        return Ui.Row(item.Title, item.Detail, query, Ui.HStack(8, picker, nameField));
     }
 
     /// <summary>The keys that start a mark from anywhere, or none (the island's marker button always works).</summary>

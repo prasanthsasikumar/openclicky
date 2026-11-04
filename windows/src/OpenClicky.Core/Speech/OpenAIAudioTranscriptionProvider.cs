@@ -65,13 +65,16 @@ public sealed class OpenAIAudioTranscriptionProvider : IBuddyTranscriptionProvid
         return sharedWordCount / (double)transcriptWords.Count >= 0.8;
     }
 
-    /// <summary>The prompt that tells the model which words to expect; null without keyterms.</summary>
-    public static string? TranscriptionPromptText(IReadOnlyList<string> keyterms)
+    /// <summary>The prompt that tells the model which words to expect, and for a language often mixed with English (Urdu)
+    /// how the transcript is written (ReplyLanguage.TranscriptionHint); null with neither.</summary>
+    public static string? TranscriptionPromptText(IReadOnlyList<string> keyterms, string? language = null)
     {
+        var hint = language is null ? null : ReplyLanguage.TranscriptionHint(language);
         var normalizedKeyterms = keyterms.Select(keyterm => keyterm.Trim()).Where(keyterm => keyterm.Length > 0).ToList();
-        if (normalizedKeyterms.Count == 0) return null;
-        return "This is a short push-to-talk transcript for a coding and product app. Expect product names, technical terms, and app-specific vocabulary such as: "
+        if (normalizedKeyterms.Count == 0) return hint;
+        var terms = "This is a short push-to-talk transcript for a coding and product app. Expect product names, technical terms, and app-specific vocabulary such as: "
             + string.Join(", ", normalizedKeyterms) + ".";
+        return hint is null ? terms : $"{hint} {terms}";
     }
 
     /// <summary>The backend's /agent/transcribe body: base64 WAV, mime, and the language and prompt when there are any.</summary>
@@ -103,12 +106,15 @@ public sealed class OpenAIAudioTranscriptionProvider : IBuddyTranscriptionProvid
     }
 }
 
+/// <param name="transcribe">Who turns the take into words (the WAV, its language and prompt): another transcriber's
+/// request (Gemini's); null sends it to OpenAI or the backend.</param>
 internal sealed class OpenAIAudioTranscriptionSession(
     IReadOnlyList<string> keyterms,
     string? language,
     Action<string> onTranscriptUpdate,
     Action<string> onFinalTranscriptReady,
-    Action<Exception> onError) : IBuddyStreamingTranscriptionSession
+    Action<Exception> onError,
+    Func<byte[], string?, string?, CancellationToken, Task<string>>? transcribe = null) : IBuddyStreamingTranscriptionSession
 {
     private const int TargetSampleRate = 16_000;
 
@@ -188,9 +194,11 @@ internal sealed class OpenAIAudioTranscriptionSession(
         var wavAudioData = BuddyWAVFileBuilder.BuildWavData(bufferedAudio, TargetSampleRate);
         try
         {
-            var transcriptText = await RequestTranscriptionAsync(wavAudioData).ConfigureAwait(false);
+            var transcriptText = transcribe is null
+                ? await RequestTranscriptionAsync(wavAudioData).ConfigureAwait(false)
+                : await transcribe(wavAudioData, language, OpenAIAudioTranscriptionProvider.TranscriptionPromptText(keyterms, language), uploadCancellation.Token).ConfigureAwait(false);
             if (IsCancelled) return;
-            if (OpenAIAudioTranscriptionProvider.LooksLikeEchoedPrompt(transcriptText, OpenAIAudioTranscriptionProvider.TranscriptionPromptText(keyterms)))
+            if (OpenAIAudioTranscriptionProvider.LooksLikeEchoedPrompt(transcriptText, OpenAIAudioTranscriptionProvider.TranscriptionPromptText(keyterms, language)))
             {
                 AppLog.Write("transcription (openclicky): the model echoed its prompt instead of transcribing; treating as silence");
                 transcriptText = "";
@@ -210,7 +218,7 @@ internal sealed class OpenAIAudioTranscriptionSession(
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(uploadCancellation.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(90));
-        var prompt = OpenAIAudioTranscriptionProvider.TranscriptionPromptText(keyterms);
+        var prompt = OpenAIAudioTranscriptionProvider.TranscriptionPromptText(keyterms, language);
         HttpResponseMessage response;
         var route = ProviderRouter.Current(ProviderCapability.Transcription);
         switch (route.Kind)
