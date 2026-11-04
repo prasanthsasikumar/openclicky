@@ -309,7 +309,8 @@ extension CompanionManager {
 
     /// Esc (or the island's stop button) with a drawing: one playing with a line already heard
     /// stops its voice and goes to its bubble; one whose first line hasn't come yet is a plain
-    /// stop of the ask lane (nothing is said or shown); a finished one, open or in its bubble, is cleared.
+    /// stop of the ask lane (nothing is said or shown); a finished drawing that is open (brought
+    /// back from its bubble, or just done) goes back to its bubble; esc on the bubble alone clears it.
     func escapeStopsTheDrawing() {
         let session = DrawStageSession.shared
         switch session.state {
@@ -321,7 +322,9 @@ extension CompanionManager {
                 session.stopPlaying(reason: "esc before anything was drawn")
                 _ = stopAskLane(from: "esc")
             }
-        case .open, .bubble:
+        case .open:
+            Task { @MainActor in await minimiseDrawingToBubble(reason: "esc") }
+        case .bubble:
             discardDrawing(reason: "esc")
         case .none:
             break
