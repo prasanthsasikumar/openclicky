@@ -7,7 +7,14 @@ import { reserveOr402, type AccountContext } from "./account.js";
 import type { SpendLedger } from "./ledger.js";
 
 const MAX_TOKENS_CAP = 1024;
+/** A drawn answer (the Mac's draw-and-explain) is a program of up to 8k tokens; only a request that says so gets the room. */
+const DRAWING_TOKENS_CAP = 8192;
 const MAX_IMAGES = 2;
+
+/** The output cap for a request, from its X-OpenClicky-Purpose header ("drawing" or nothing). */
+export function outputTokenCap(purposeHeader: string | undefined): number {
+  return purposeHeader?.trim().toLowerCase() === "drawing" ? DRAWING_TOKENS_CAP : MAX_TOKENS_CAP;
+}
 const MAX_INPUT_TOKENS = 60_000;
 /** An upstream call that has not finished in five minutes is abandoned (and settled like any failure). */
 export const UPSTREAM_TIMEOUT_MS = 300_000;
@@ -51,7 +58,7 @@ export function noThinkingFor(model: string): { type: string } | undefined {
   return undefined;
 }
 
-export function prepareGrantBody(body: Record<string, unknown>, model: string): Record<string, unknown> | { error: string } {
+export function prepareGrantBody(body: Record<string, unknown>, model: string, maxTokensCap: number = MAX_TOKENS_CAP): Record<string, unknown> | { error: string } {
   const messages: Block[] = [];
   for (const m of (Array.isArray(body.messages) ? body.messages : []) as Block[]) {
     const content = grantContent(m?.content);
@@ -69,7 +76,7 @@ export function prepareGrantBody(body: Record<string, unknown>, model: string): 
   }
   if (Array.isArray(system)) system[system.length - 1] = { ...(system[system.length - 1] as Block), cache_control: { type: "ephemeral" } };
   const requested = Number(body.max_tokens);
-  const maxTokens = Number.isFinite(requested) && requested >= 1 ? Math.min(Math.floor(requested), MAX_TOKENS_CAP) : MAX_TOKENS_CAP;
+  const maxTokens = Number.isFinite(requested) && requested >= 1 ? Math.min(Math.floor(requested), maxTokensCap) : maxTokensCap;
   const prepared: Record<string, unknown> = { ...body, model, max_tokens: maxTokens, messages };
   if (system) prepared.system = system;
   else delete prepared.system;
@@ -124,7 +131,7 @@ export async function proxyAnthropicOnGrant(c: Context, ledger: SpendLedger, pur
   if (!isGrantModel(model)) return c.json({ error: "model is not priced" }, 500);
   let raw: Record<string, unknown> = {};
   try { raw = JSON.parse((await c.req.text()) || "{}"); } catch { return c.json({ error: "body must be JSON" }, 400); }
-  const prepared = prepareGrantBody(raw, model);
+  const prepared = prepareGrantBody(raw, model, outputTokenCap(c.req.header("x-openclicky-purpose")));
   if ("error" in prepared) return c.json(prepared, 400);
   if (estimateInputTokens(prepared) > MAX_INPUT_TOKENS) return c.json({ error: "request too large" }, 413);
   const estimate = estimateMicroUsd(model, prepared)!;

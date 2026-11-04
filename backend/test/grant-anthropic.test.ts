@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { Hono } from "hono";
-import { prepareGrantBody, proxyAnthropicOnGrant } from "../src/anthropicGrant.js";
+import { prepareGrantBody, proxyAnthropicOnGrant, outputTokenCap } from "../src/anthropicGrant.js";
 import { requireAccount } from "../src/account.js";
 import { MemorySpendLedger } from "../src/ledger.js";
 import { estimateMicroUsd } from "../src/prices.js";
@@ -9,6 +9,16 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("prepareGrantBody", () => {
   const msgs = [{ role: "user", content: "hi" }];
+  it("caps max_tokens at 1,024, and at 8,192 for a drawing (the X-OpenClicky-Purpose header)", () => {
+    const capped = (max_tokens: number, purposeHeader?: string) =>
+      (prepareGrantBody({ max_tokens, messages: msgs }, "claude-sonnet-5-5", outputTokenCap(purposeHeader)) as Record<string, unknown>).max_tokens;
+    expect(capped(8192)).toBe(1024);
+    expect(capped(8192, "drawing")).toBe(8192);
+    expect(capped(20000, "drawing")).toBe(8192);
+    expect(capped(500, "drawing")).toBe(500);
+    expect(capped(8192, "something else")).toBe(1024);
+    expect(outputTokenCap(undefined)).toBe(1024);
+  });
   it("keeps only custom tools and drops hosted tools, mcp_servers and container", () => {
     const custom = { name: "t", input_schema: { type: "object" } };
     const explicit = { type: "custom", name: "u", input_schema: { type: "object" } };

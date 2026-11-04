@@ -105,6 +105,36 @@ nonisolated struct AnswerRequest: Sendable {
     var userPrompt: String
     var tools: [Tool]
     var maxTokens: Int = 1024
+    /// What the answer is for; a drawing may take longer and says so to the backend.
+    var purpose: AnswerPurpose = .answer
+    /// A provider that runs a command (a plan's CLI) waits this long instead of its default.
+    var timeoutSeconds: TimeInterval?
+}
+
+/// What an answer request is for: an ordinary spoken answer, or a drawing (a program of up to
+/// 8k tokens, drawn on the stage while it is spoken).
+nonisolated enum AnswerPurpose: String, Sendable {
+    case answer
+    case drawing
+}
+
+/// How big and what kind of answer `ClaudeAPI.analyzeImageStreaming` asks for. The default is
+/// what every ordinary answer sends; a drawing asks for 8,192 tokens, no thinking and names itself.
+nonisolated struct AnswerRequestOptions: Sendable, Equatable {
+    var maxTokens: Int = 1024
+    var purpose: AnswerPurpose = .answer
+    /// Ask the models that think by default (Sonnet 5, Opus 5) not to: a drawing spends its whole
+    /// budget on the program.
+    var thinkingOff: Bool = false
+    /// For the plan CLIs, which have no token cap but a wall-clock one.
+    var timeoutSeconds: TimeInterval?
+
+    init(maxTokens: Int = 1024, purpose: AnswerPurpose = .answer, thinkingOff: Bool = false, timeoutSeconds: TimeInterval? = nil) {
+        self.maxTokens = maxTokens
+        self.purpose = purpose
+        self.thinkingOff = thinkingOff
+        self.timeoutSeconds = timeoutSeconds
+    }
 }
 
 nonisolated struct AnswerResult: Sendable, Equatable {

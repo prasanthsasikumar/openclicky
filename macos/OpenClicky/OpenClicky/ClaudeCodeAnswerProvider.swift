@@ -66,6 +66,8 @@ nonisolated struct ClaudeCodeAnswerProvider: AnswerProvider {
             let safeText = actionLineFilter.consume(textDelta)
             if !safeText.isEmpty { onTextChunk(safeText) }
         }
+        // A drawing (an 8k-token program) asks for longer than an ordinary answer's 90 s.
+        let timeoutSeconds = request.timeoutSeconds ?? self.timeoutSeconds
         let output: PlanCLIProcessOutput
         do {
             output = try await processRunner.run(

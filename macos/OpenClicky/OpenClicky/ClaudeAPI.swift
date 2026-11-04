@@ -182,6 +182,7 @@ class ClaudeAPI {
         conversationHistory: [(userPlaceholder: String, assistantResponse: String)] = [],
         userPrompt: String,
         tools: [[String: Any]] = [],
+        options: AnswerRequestOptions = AnswerRequestOptions(),
         onTextChunk: @MainActor @Sendable (String) -> Void
     ) async throws -> (text: String, toolCalls: [ClaudeToolCall], duration: TimeInterval) {
         let startTime = Date()
@@ -191,12 +192,13 @@ class ClaudeAPI {
         if case .answerProvider(let source) = ProviderRouter.current(for: .claude) {
             let result = try await answerThroughProvider(
                 source: source, images: images, systemPrompt: systemPrompt, conversationHistory: conversationHistory,
-                userPrompt: userPrompt, tools: tools, maxTokens: 1024, onTextChunk: onTextChunk)
+                userPrompt: userPrompt, tools: tools, options: options, onTextChunk: onTextChunk)
             return (text: result.text, toolCalls: result.toolCalls, duration: Date().timeIntervalSince(startTime))
         }
 
         let apiRequest = try makeAPIRequest()
         var request = apiRequest.request
+        for (headerName, headerValue) in Self.extraHeaders(for: options) { request.setValue(headerValue, forHTTPHeaderField: headerName) }
         let goesToBackend = apiRequest.goesToBackend
 
         // Build messages array
@@ -229,14 +231,7 @@ class ClaudeAPI {
         ])
         messages.append(["role": "user", "content": contentBlocks])
 
-        var body: [String: Any] = [
-            "model": model,
-            "max_tokens": 1024,
-            "stream": true,
-            "system": systemPrompt,
-            "messages": messages
-        ]
-        if !tools.isEmpty { body["tools"] = tools }
+        let body = Self.anthropicRequestBody(model: model, systemPrompt: systemPrompt, messages: messages, tools: tools, options: options)
 
         let bodyData = try JSONSerialization.data(withJSONObject: body)
         request.httpBody = bodyData
@@ -309,6 +304,30 @@ class ClaudeAPI {
     /// Gemini, a Claude Code or Codex plan). The pieces come through a stream this call reads to the
     /// end, in order; each is handed on as the whole answer so far, like the Anthropic path.
     /// Cancelling the question cancels the provider (a CLI process is ended).
+    /// The Anthropic Messages body for a streamed answer. Pure, so a test can read what a drawing
+    /// asks for: its token budget, and no thinking on the models that think by default (Sonnet 5
+    /// and Opus 5 take `between_tools`; Haiku and the 4.x models would refuse it).
+    static func anthropicRequestBody(model: String, systemPrompt: String, messages: [[String: Any]], tools: [[String: Any]],
+                                     options: AnswerRequestOptions) -> [String: Any] {
+        var body: [String: Any] = [
+            "model": model,
+            "max_tokens": options.maxTokens,
+            "stream": true,
+            "system": systemPrompt,
+            "messages": messages
+        ]
+        if !tools.isEmpty { body["tools"] = tools }
+        if options.thinkingOff, model.hasPrefix("claude-sonnet-5") || model.hasPrefix("claude-opus-5") {
+            body["thinking"] = ["type": "between_tools"]
+        }
+        return body
+    }
+
+    /// Request headers beyond the usual: a drawing names itself so the backend allows its budget.
+    static func extraHeaders(for options: AnswerRequestOptions) -> [String: String] {
+        options.purpose == .drawing ? ["X-OpenClicky-Purpose": "drawing"] : [:]
+    }
+
     private func answerThroughProvider(
         source: AnswerSource,
         images: [(data: Data, label: String)],
@@ -316,7 +335,7 @@ class ClaudeAPI {
         conversationHistory: [(userPlaceholder: String, assistantResponse: String)],
         userPrompt: String,
         tools: [[String: Any]],
-        maxTokens: Int,
+        options: AnswerRequestOptions,
         onTextChunk: @MainActor @Sendable (String) -> Void
     ) async throws -> AnswerResult {
         let provider = try await AnswerProviderFactory.make(for: source, credentials: ProviderRouter.currentCredentials(),
@@ -327,7 +346,9 @@ class ClaudeAPI {
             history: conversationHistory.map { AnswerRequest.Turn(user: $0.userPlaceholder, assistant: $0.assistantResponse) },
             userPrompt: userPrompt,
             tools: tools.compactMap(Self.answerTool(fromAnthropicTool:)))
-        answerRequest.maxTokens = maxTokens
+        answerRequest.maxTokens = options.maxTokens
+        answerRequest.purpose = options.purpose
+        answerRequest.timeoutSeconds = options.timeoutSeconds
         let (pieces, piecesContinuation) = AsyncStream<String>.makeStream()
         let answerTask = Task<AnswerResult, Error> {
             defer { piecesContinuation.finish() }
@@ -363,7 +384,7 @@ class ClaudeAPI {
                 source: source, images: images, systemPrompt: systemPrompt, conversationHistory: conversationHistory,
                 // Not the 256 Anthropic gets below: a reasoning model (a Gemini 3, an OpenAI
                 // reasoning model) spends part of its limit thinking before the short answer.
-                userPrompt: userPrompt, tools: [], maxTokens: 1024, onTextChunk: { _ in })
+                userPrompt: userPrompt, tools: [], options: AnswerRequestOptions(), onTextChunk: { _ in })
             return (text: result.text, duration: Date().timeIntervalSince(startTime))
         }
 
