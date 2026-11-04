@@ -1675,6 +1675,11 @@ struct NotchCompactStatusView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    // The live words arrive a partial at a time; a short cross-fade instead of a
+                    // hard swap keeps the line from flickering as each one lands.
+                    .contentTransition(.opacity)
+                    .animation(.easeOut(duration: 0.16), value: detailLine)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
             Spacer(minLength: 0)
         }

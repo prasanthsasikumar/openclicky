@@ -232,11 +232,15 @@ struct IslandIndeterminateBar: View {
                     .fill(DS.HUD.pointer)
                     .frame(width: proxy.size.width * 0.3)
                     .offset(x: phase * proxy.size.width * 0.7)
+                    // Only the highlight's travel animates. A repeat-forever `withAnimation` also
+                    // animated the bar's own layout as the island sprang open, so the highlight
+                    // overshot the row's left edge (2026-11-04).
+                    .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: phase)
             }
+            // Whatever the layout does mid-spring, nothing draws outside the bar.
+            .clipShape(Capsule())
         }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { phase = 1 }
-        }
+        .onAppear { phase = 1 }
     }
 }
 
