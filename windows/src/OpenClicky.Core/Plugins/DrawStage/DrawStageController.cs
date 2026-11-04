@@ -117,6 +117,17 @@ public sealed class DrawStageController
     /// <summary>The page has loaded and takes messages straight away.</summary>
     public bool IsReady { get; private set; }
 
+    private readonly TaskCompletionSource pageReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>True once the page has loaded; false when it hasn't within <paramref name="timeout"/> (it never will, most
+    /// likely) or <paramref name="cancellationToken"/> stops the wait.</summary>
+    public async Task<bool> WhenReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        if (IsReady) return true;
+        await Task.WhenAny(pageReady.Task, Task.Delay(timeout, cancellationToken)).ConfigureAwait(false);
+        return IsReady;
+    }
+
     /// <summary>A program is being drawn (from <see cref="Begin"/> until it is cleared).</summary>
     public bool IsShowing { get; private set; }
 
@@ -279,6 +290,7 @@ public sealed class DrawStageController
         {
             case "ready":
                 IsReady = true;
+                pageReady.TrySetResult();
                 var queued = waiting.ToArray();
                 waiting.Clear();
                 foreach (var each in queued) Surface?.Post(each);

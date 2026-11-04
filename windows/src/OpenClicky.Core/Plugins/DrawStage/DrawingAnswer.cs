@@ -66,6 +66,10 @@ public static class DrawingAnswer
 
     public static readonly TimeSpan HoldLineAfter = TimeSpan.FromSeconds(2);
 
+    /// <summary>The longest the page may still take to load once the program is written; past it the question is answered
+    /// in words.</summary>
+    public static readonly TimeSpan ReadyLimit = TimeSpan.FromSeconds(10);
+
     /// <summary>
     /// Draws the answer <paramref name="writeReply"/> streams (it calls its argument with the whole reply so far and returns the
     /// whole reply) on <paramref name="capture"/>'s screen, speaking it through <paramref name="speech"/>. Stage calls go
@@ -85,7 +89,8 @@ public static class DrawingAnswer
         CancellationToken cancellationToken,
         string? holdLine = null,
         TimeSpan? holdLineAfter = null,
-        DrawnAnswer? followUp = null)
+        DrawnAnswer? followUp = null,
+        TimeSpan? readyLimit = null)
     {
         var spokenLines = new List<string>();
         var clock = Stopwatch.StartNew();
@@ -198,6 +203,10 @@ public static class DrawingAnswer
                 Open(keeps.Value);
             }
             log($"program written ({program.Length} chars)");
+            // A page that never loaded would leave the person waiting out the whole limit in silence.
+            var ready = await stage.WhenReadyAsync(readyLimit ?? ReadyLimit, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ready || stageFailed) return NotDrawn("the stage did not load");
             onMainThread(() => stage.Feed(program, done: true));
 
             // The drawing ends with its last line; the voice failing or being stopped ends it sooner.
@@ -219,6 +228,8 @@ public static class DrawingAnswer
             }
             cancellationToken.ThrowIfCancellationRequested();
             if (stageFailed && LinesSoFar() == 0) return NotDrawn("the stage did not start");
+            // A drawing that said nothing answered nothing: the question is answered in words.
+            if (LinesSoFar() == 0) return NotDrawn("the program said nothing");
             List<string> lines;
             lock (spokenLines) lines = [.. spokenLines];
             List<(double? Start, double? End)> times;

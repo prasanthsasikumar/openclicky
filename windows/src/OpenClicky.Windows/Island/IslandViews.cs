@@ -828,7 +828,10 @@ internal sealed class FullPanelView : Grid, IIslandContent
         eye.Margin = new Thickness(6, 0, 0, 0);
         controls.Children.Add(eye);
         // Quick action: mark part of the screen, then ask about it.
-        var marker = new IslandIconButton(Icons.Marker, 12, "Mark part of the screen to ask about (Ctrl+Alt+M)", () =>
+        var markKeys = MarkerShortcuts.Wanted(OpenClicky.Core.Configuration.OpenClickyConfiguration.Settings.MarkerShortcut,
+            OpenClicky.Core.Plugins.DrawStage.DrawStageLesson.IsEnabled(OpenClicky.Core.Configuration.Preferences.Shared, OpenClicky.Core.Plugins.Teacher.TeacherPlugin.IsEnabled));
+        var marker = new IslandIconButton(Icons.Marker, 12,
+            "Mark part of the screen to ask about" + (markKeys is { } keys ? $" ({MarkerShortcuts.Title(keys)})" : ""), () =>
         {
             model.Dismiss();
             hub.MarkAreaCommand.Execute(null);

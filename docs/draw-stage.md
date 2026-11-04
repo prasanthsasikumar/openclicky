@@ -236,14 +236,27 @@ yellow marker round some code, part of a photo or a chart. The mark stays while 
 question carries where it is and a close-up of it, and a drawing answer is made on that screen so it can point at it.
 A mark nobody asks about goes after three minutes. `--openclicky-marker-smoke` draws one by itself.
 
+Ctrl+Alt+M is held only while drawn answers are on (the Teacher plugin and its drawing stage), so otherwise the keys
+stay the other apps' (Word inserts a comment with them). Settings → Clicky → Drawings → "Mark the screen with" picks
+Ctrl+Alt+M, Ctrl+Alt+Shift+M or none (`markerShortcut` in shell.json); the island's marker button always works.
+
 ## Safety
 
 The program is model-written code, so:
 
-- It runs in a **Web Worker**, never in the page. The worker has no DOM, and `fetch`, `XMLHttpRequest`,
-  `WebSocket`, `importScripts` and similar are removed before any program runs.
-- The page's Content-Security-Policy allows no network at all (`connect-src 'none'`). The page is served from
-  the app folder through a WebView2 virtual host and cannot navigate anywhere else or open windows.
+- It runs in a **Web Worker**, never in the page. The worker has no DOM. Before any program runs, `fetch`,
+  `XMLHttpRequest`, `WebSocket`, `importScripts`, `Worker`, `SharedWorker`, `Blob`, `URL.createObjectURL` and similar
+  are fixed to `undefined` so they can't be put back (a nested worker would otherwise get a fresh global with `fetch`);
+  if any of them can't be, the worker runs no program at all.
+- The worker's script is served with its own Content-Security-Policy (`default-src 'none'; script-src 'unsafe-eval';
+  worker-src 'none'; connect-src 'none'`): a worker follows its own response's policy, not the page's `<meta>`. That
+  also stops `import()` of an address.
+- The page's Content-Security-Policy allows no network at all (`connect-src 'none'`). Its files (the html, scripts
+  and styles under `Assets/DrawStage`, nothing else) are served from the app folder by the window's own request
+  handler, and it cannot navigate anywhere else or open windows.
+- If the page never loads (no WebView2, a failed navigation), the question is answered in words within 10 seconds
+  of the program being written; a program that says nothing is not drawn either.
+- A hidden stage gets no frames, and the page asks for none while nothing is drawn.
 - Each statement has 2 seconds to run, or the program is stopped. A program may draw at most 2000 marks.
   `random()` is fixed, so a program draws the same picture every time.
 - The stage is click-through and kept out of screenshots, so the next question's screenshot sees the screen,

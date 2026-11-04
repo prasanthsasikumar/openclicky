@@ -117,4 +117,14 @@ public class ScreenMarkerTests
         Assert.Contains("[" + line + "]", DrawStageLesson.UserPrompt("how does this work?", line));
         Assert.DoesNotContain("marked", DrawStageLesson.UserPrompt("how does this work?"));
     }
+
+    [Fact]
+    public void TheShortcutIsHeldOnlyWhileDrawnAnswersAreOnAndNotTurnedOff()
+    {
+        Assert.Equal(MarkerShortcut.CtrlAltM, MarkerShortcuts.Wanted(null, drawingsOn: true));
+        Assert.Null(MarkerShortcuts.Wanted(null, drawingsOn: false));
+        Assert.Equal(MarkerShortcut.CtrlAltShiftM, MarkerShortcuts.Wanted("ctrlAltShiftM", drawingsOn: true));
+        Assert.Null(MarkerShortcuts.Wanted("off", drawingsOn: true));
+        foreach (var (shortcut, _) in MarkerShortcuts.Choices) Assert.Equal(shortcut, MarkerShortcuts.From(MarkerShortcuts.RawValue(shortcut)));
+    }
 }

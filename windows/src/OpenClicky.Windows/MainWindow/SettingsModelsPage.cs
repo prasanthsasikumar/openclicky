@@ -5,6 +5,7 @@
 
 using System.Windows;
 using System.Windows.Controls;
+using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Providers;
@@ -41,6 +42,8 @@ internal sealed partial class SettingsRowFactory
                 return Ui.Card(DrawingDetailRow(item, query));
             case "clicky.drawingInstructions":
                 return Ui.Card(DrawingInstructionsRow(item, query));
+            case "clicky.markerShortcut":
+                return Ui.Card(MarkerShortcutRow(item, query));
             case "clicky.pieceMaker":
                 return new LiveContent(() => Ui.Card(PieceMakerRow(item, query)), Changes.Shell);
             default:
@@ -220,6 +223,20 @@ internal sealed partial class SettingsRowFactory
             choice =>
             {
                 OpenClickyConfiguration.Update(saved => saved.DrawingDetail = choice == DrawingDetail.Detailed ? null : DrawStageLesson.RawValue(choice));
+                ShellSettingsRevision.NoteChanged();
+            },
+            200);
+        return Ui.Row(item.Title, item.Detail, query, picker);
+    }
+
+    /// <summary>The keys that start a mark from anywhere, or none (the island's marker button always works).</summary>
+    private static Grid MarkerShortcutRow(SettingsItem item, string query)
+    {
+        var picker = Ui.Picker(MarkerShortcuts.Choices.Select(each => (each.Shortcut, each.Title)),
+            MarkerShortcuts.From(OpenClickyConfiguration.Settings.MarkerShortcut),
+            choice =>
+            {
+                OpenClickyConfiguration.Update(saved => saved.MarkerShortcut = MarkerShortcuts.RawValue(choice));
                 ShellSettingsRevision.NoteChanged();
             },
             200);

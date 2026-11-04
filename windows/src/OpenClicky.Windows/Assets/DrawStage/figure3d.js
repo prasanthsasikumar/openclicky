@@ -585,6 +585,7 @@ function createFigure(m, rect, seconds) {
     held: new THREE.Quaternion(), right: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0),
   };
   figures.set(m.id, figure);
+  wakeFrames();
   canvas.animate([{ opacity: 0 }, { opacity: 1 }], { duration: Math.max(150, seconds * 1000), fill: 'forwards' });
   interact(figure);
   reportFigures();
@@ -1238,13 +1239,22 @@ function placeLabels(figure, dt) {
   }
 }
 
+// Frames are asked for only while there are figures: an empty stage asks for none.
+let framing = false;
 function frame(nowMs) {
   const now = nowMs / 1000, dt = Math.min(0.1, Math.max(0, now - clock.last));
   clock.last = now;
   for (const figure of figures.values()) updateFigure(figure, dt);
+  if (!figures.size) { framing = false; return; }
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+
+function wakeFrames() {
+  if (framing) return;
+  framing = true;
+  clock.last = performance.now() / 1000;
+  requestAnimationFrame(frame);
+}
 
 // ------------------------------------------------------------------ what stage.js calls
 window.Figure3D = {

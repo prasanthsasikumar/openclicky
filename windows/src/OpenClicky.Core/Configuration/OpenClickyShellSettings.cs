@@ -81,6 +81,10 @@ public sealed class OpenClickyShellSettings
     /// <summary>The person's own instructions for drawings, added to the drawing prompt (null: none).</summary>
     [JsonPropertyName("drawingInstructions")] public string? DrawingInstructions { get; set; }
 
+    /// <summary>The keys that start a mark from anywhere while drawn answers are on: unset is Ctrl+Alt+M, "ctrlAltShiftM",
+    /// "off" (MarkerShortcuts).</summary>
+    [JsonPropertyName("markerShortcut")] public string? MarkerShortcut { get; set; }
+
     /// <summary>Who makes a drawing's 3D pieces (PieceMakers.KindFrom: "drawingModel" when null, "llamaMeshOllama",
     /// "llamaMeshLmStudio", "hunyuan3d"), at `pieceMakerUrl` with `pieceMakerModel` (LLaMA-Mesh's name there).</summary>
     [JsonPropertyName("pieceMaker")] public string? PieceMaker { get; set; }

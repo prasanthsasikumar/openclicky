@@ -2,7 +2,8 @@
 //  ScreenMarker.cs
 //  OpenClicky (Windows; no Swift twin yet)
 //
-//  Marking part of the screen before asking: the island's marker button (or Ctrl+Alt+M) lets the
+//  Marking part of the screen before asking: the island's marker button (or its shortcut, Ctrl+Alt+M
+//  unless Settings pick another, only while drawn answers are on) lets the
 //  person draw a loop with a yellow marker round a few lines of code, part of a photo, a chart. The
 //  next question is about that part: the screenshot goes with a close-up of it, and the question
 //  says where it is, so "how does this work?" is answered about what was marked and not the whole
@@ -15,6 +16,42 @@
 using OpenClicky.Core.Platform;
 
 namespace OpenClicky.Core.Companion;
+
+/// <summary>The keys that start a mark from anywhere (Settings → Clicky → Drawings).</summary>
+public enum MarkerShortcut
+{
+    CtrlAltM,
+    CtrlAltShiftM,
+    Off,
+}
+
+public static class MarkerShortcuts
+{
+    public static IReadOnlyList<(MarkerShortcut Shortcut, string Title)> Choices { get; } =
+        [(MarkerShortcut.CtrlAltM, "Ctrl+Alt+M"), (MarkerShortcut.CtrlAltShiftM, "Ctrl+Alt+Shift+M"), (MarkerShortcut.Off, "None")];
+
+    /// <summary>shell.json's `markerShortcut` ("ctrlAltShiftM", "off"); Ctrl+Alt+M when unset.</summary>
+    public static MarkerShortcut From(string? raw) => raw switch
+    {
+        "ctrlAltShiftM" => MarkerShortcut.CtrlAltShiftM,
+        "off" => MarkerShortcut.Off,
+        _ => MarkerShortcut.CtrlAltM,
+    };
+
+    public static string? RawValue(MarkerShortcut shortcut) => shortcut switch
+    {
+        MarkerShortcut.CtrlAltShiftM => "ctrlAltShiftM",
+        MarkerShortcut.Off => "off",
+        _ => null,
+    };
+
+    public static string Title(MarkerShortcut shortcut) => Choices.First(choice => choice.Shortcut == shortcut).Title;
+
+    /// <summary>The shortcut to hold now: none while drawn answers are off (the Teacher plugin or its drawing stage), so the
+    /// keys stay the other apps' (Word's Ctrl+Alt+M inserts a comment), and none when Settings say so.</summary>
+    public static MarkerShortcut? Wanted(string? raw, bool drawingsOn) =>
+        drawingsOn && From(raw) is var shortcut && shortcut != MarkerShortcut.Off ? shortcut : null;
+}
 
 /// <summary>The window the person marks the screen in (the Windows app's ScreenMarkerWindow).</summary>
 public interface IScreenMarkerSurface

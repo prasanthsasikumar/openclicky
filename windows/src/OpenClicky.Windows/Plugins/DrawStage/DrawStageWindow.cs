@@ -34,6 +34,12 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
     /// <summary>The page's origin: the app's Assets/DrawStage folder, mapped by WebView2 (never on the network).</summary>
     public const string PageHost = "drawstage.openclicky";
     private const string PageUrl = "https://" + PageHost + "/index.html";
+    private static string PageFolder => Path.Combine(AppContext.BaseDirectory, "Assets", "DrawStage");
+
+    /// <summary>The program worker's policy: no network, no scripts or workers of its own (so no import() of an address
+    /// either), eval for the program's statements.</summary>
+    private const string WorkerPolicy = "default-src 'none'; script-src 'unsafe-eval'; worker-src 'none'; connect-src 'none'";
+    private bool workerPolicyLogged;
 
     private readonly NativeMethods.WndProc windowProcedure;
     private nint windowHandle;
@@ -71,6 +77,8 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
 
     public void Hide()
     {
+        // Hidden, the page gets no frames (its loops and the 3D figures stop) until it is shown again.
+        if (webView is not null) webView.IsVisible = false;
         if (windowHandle != 0) ShowWindow(windowHandle, SW_HIDE);
     }
 
@@ -107,7 +115,8 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
             await CreateWebViewAsync();
             Place();
         }
-        catch (Exception exception) when (exception is COMException or WebView2RuntimeNotFoundException or InvalidOperationException or FileNotFoundException)
+        // Nothing awaits this task: any failure is said here, so a question waiting on the stage hears it and answers in words.
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             StartFailure = exception.Message;
             MessageReceived?.Invoke(DrawStageMessages.Error("the stage did not start: " + exception.Message));
@@ -182,7 +191,26 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
         settings.IsSwipeNavigationEnabled = false;
         settings.IsGeneralAutofillEnabled = false;
         settings.IsPasswordAutosaveEnabled = false;
-        page.SetVirtualHostNameToFolderMapping(PageHost, Path.Combine(AppContext.BaseDirectory, "Assets", "DrawStage"), CoreWebView2HostResourceAccessKind.DenyCors);
+        // The page's files are served from the app folder by this handler (never the network): the html, scripts and
+        // styles under Assets/DrawStage, nothing else. A virtual host folder mapping would be simpler, but its responses
+        // can't carry headers and don't pass through here, and the program worker needs a CSP of its own: a worker is
+        // governed by its own response's policy, not the page's <meta>.
+        page.AddWebResourceRequestedFilter($"https://{PageHost}/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+        page.WebResourceRequested += (_, args) =>
+        {
+            var (status, reason, body, headers) = PageFile(args.Request.Uri);
+            args.Response = environment.CreateWebResourceResponse(body, status, reason, headers);
+            if (status == 200 && headers.Contains(WorkerPolicy, StringComparison.Ordinal) && !workerPolicyLogged)
+            {
+                workerPolicyLogged = true;
+                AppLog.Write("draw: the program worker is served with its own policy (no network, no scripts, no workers)");
+            }
+        };
+        // A page that fails to load says so, as a start failure does, instead of never saying ready.
+        page.NavigationCompleted += (_, args) =>
+        {
+            if (!args.IsSuccess) MessageReceived?.Invoke(DrawStageMessages.Error($"the stage did not start: its page did not load ({args.WebErrorStatus})"));
+        };
         page.NavigationStarting += (_, args) =>
         {
             if (!args.Uri.StartsWith("https://" + PageHost + "/", StringComparison.OrdinalIgnoreCase)) args.Cancel = true;
@@ -196,6 +224,31 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
         };
         webView = controller;
         page.Navigate(PageUrl);
+    }
+
+    /// <summary>The response for a request to the page's host: a file under Assets/DrawStage with its type (the worker's with its
+    /// own policy), or 404 for anything else (another type, a path that leaves the folder, a file that isn't there).</summary>
+    private static (int Status, string Reason, Stream? Body, string Headers) PageFile(string uri)
+    {
+        const string NotFound = "Content-Type: text/plain; charset=utf-8";
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed) || !string.Equals(parsed.Host, PageHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return (404, "Not Found", null, NotFound);
+        }
+        var relative = Uri.UnescapeDataString(parsed.AbsolutePath).TrimStart('/');
+        var type = Path.GetExtension(relative).ToLowerInvariant() switch
+        {
+            ".html" => "text/html; charset=utf-8",
+            ".js" => "text/javascript; charset=utf-8",
+            ".css" => "text/css; charset=utf-8",
+            _ => null,
+        };
+        var folder = Path.GetFullPath(PageFolder) + Path.DirectorySeparatorChar;
+        var path = Path.GetFullPath(Path.Combine(folder, relative));
+        if (type is null || !path.StartsWith(folder, StringComparison.OrdinalIgnoreCase) || !File.Exists(path)) return (404, "Not Found", null, NotFound);
+        var headers = $"Content-Type: {type}\r\nCache-Control: no-store";
+        if (string.Equals(relative, "stage-worker.js", StringComparison.OrdinalIgnoreCase)) headers += $"\r\nContent-Security-Policy: {WorkerPolicy}";
+        return (200, "OK", new MemoryStream(File.ReadAllBytes(path)), headers);
     }
 
     private void Place()

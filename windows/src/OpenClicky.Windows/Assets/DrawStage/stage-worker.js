@@ -147,10 +147,17 @@ function run(statement) {
   if (part) part.params.name = named[1].replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_$]+/g, ' ').trim().toLowerCase();
 }
 
-// Nothing the program writes can reach the network or load more code.
-for (const name of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts', 'indexedDB', 'caches', 'BroadcastChannel']) {
-  try { self[name] = undefined; } catch (_) { /* read-only in some builds */ }
+// Nothing the program writes can reach the network, load more code or start a worker of its own: a nested worker (from
+// a Blob URL) would have a fresh global with fetch in it. Each name is fixed to undefined for good; if any can't be, no
+// program runs at all. The app also serves this script with its own CSP (no network, no scripts, no workers), which
+// covers what no name can: import() of an address.
+const FENCED = ['fetch', 'XMLHttpRequest', 'WebSocket', 'WebTransport', 'EventSource', 'importScripts', 'indexedDB', 'caches',
+  'BroadcastChannel', 'Worker', 'SharedWorker', 'Blob', 'File', 'FileReader', 'Request', 'Response'];
+for (const name of FENCED) {
+  try { Object.defineProperty(self, name, { value: undefined, writable: false, configurable: false }); } catch (_) { /* checked below */ }
 }
+try { Object.defineProperty(URL, 'createObjectURL', { value: undefined, writable: false, configurable: false }); } catch (_) { /* checked below */ }
+const fenced = FENCED.every(name => self[name] === undefined) && URL.createObjectURL === undefined;
 
 self.onmessage = event => {
   const message = event.data || {};
@@ -167,6 +174,7 @@ self.onmessage = event => {
   warnings = [];
   let error = null;
   try {
+    if (!fenced) throw new Error('the stage could not shut the program off from the network, so it runs nothing');
     run(String(message.code));
   } catch (e) {
     error = (e && e.message) || String(e);

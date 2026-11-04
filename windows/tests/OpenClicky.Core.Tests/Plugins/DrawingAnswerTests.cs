@@ -95,7 +95,7 @@ public partial class DrawingAnswerTests
 
     /// <summary>The page's part: ready on Present, a "line" for each new say() in the program, finished once the program is
     /// done and its last line has been heard (or at once without lines, or on finishNow).</summary>
-    private sealed partial class FakePage(bool startFails = false) : IDrawStageSurface
+    private sealed partial class FakePage(bool startFails = false, bool neverReady = false) : IDrawStageSurface
     {
         private readonly object gate = new();
         private readonly List<string> lines = [];
@@ -106,8 +106,10 @@ public partial class DrawingAnswerTests
         public int Hides;
         public Action<string>? MessageReceived { get; set; }
 
-        public void Present(PixelRect frame, double scale) =>
-            MessageReceived?.Invoke(startFails ? DrawStageMessages.Error("the stage did not start: no runtime") : """{"type":"ready"}""");
+        public void Present(PixelRect frame, double scale)
+        {
+            if (!neverReady) MessageReceived?.Invoke(startFails ? DrawStageMessages.Error("the stage did not start: no runtime") : """{"type":"ready"}""");
+        }
 
         public void Hide() => Interlocked.Increment(ref Hides);
 
@@ -171,7 +173,7 @@ public partial class DrawingAnswerTests
 
     private static async Task<(DrawingAnswerResult Result, FakePage Page, List<string> Played)> DrawAsync(
         Func<Action<string>, CancellationToken, Task<string>> writeReply, FakePage? page = null, string? failingLine = null,
-        string? holdLine = null, TimeSpan? holdLineAfter = null, DrawnAnswer? followUp = null)
+        string? holdLine = null, TimeSpan? holdLineAfter = null, DrawnAnswer? followUp = null, TimeSpan? readyLimit = null)
     {
         page ??= new FakePage();
         var stage = new DrawStageController { Surface = page };
@@ -181,7 +183,7 @@ public partial class DrawingAnswerTests
             (audio, _) => { lock (played) played.Add(Encoding.UTF8.GetString(audio)); return Task.CompletedTask; });
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var result = await DrawingAnswer.RunAsync(stage, Capture, writeReply, speech, action => action(), () => { }, _ => { }, timeout.Token,
-            holdLine, holdLineAfter, followUp);
+            holdLine, holdLineAfter, followUp, readyLimit);
         return (result, page, played);
     }
 
@@ -223,6 +225,25 @@ public partial class DrawingAnswerTests
         var (result, _, played) = await DrawAsync(Streams(TwoBeats), new FakePage(startFails: true));
         Assert.False(result.Drew);
         Assert.Empty(played);
+    }
+
+    [Fact]
+    public async Task AStageThatNeverLoadsIsNotDrawnWithoutWaitingOutTheLimit()
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var (result, page, played) = await DrawAsync(Streams(TwoBeats), new FakePage(neverReady: true), readyLimit: TimeSpan.FromMilliseconds(100));
+        Assert.False(result.Drew);
+        Assert.Empty(played);
+        Assert.Equal(1, page.Hides);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task AProgramThatSaysNothingIsNotDrawn()
+    {
+        var (result, page, _) = await DrawAsync(Streams("```js\ndot(1, 1)\ncircle(5, 5, 3)\n```"));
+        Assert.False(result.Drew);
+        Assert.Contains("clear", page.Received);
     }
 
     [Fact]

@@ -90,6 +90,7 @@
 
   function begin(message) {
     reset();
+    wake();
     // A new drawing goes where it is drawn; the app's replay of one for a video keeps it where it was moved to.
     if (!message.keepPlace) { resetPlace(); hideSaving(); }
     W = message.w > 0 ? message.w : W;
@@ -106,6 +107,7 @@
   // program made (its card, its figure and parts) are still there.
   function continueStream(message) {
     restartStream();
+    wake();
     pace = message.pace === 'speech' ? 'speech' : 'estimate';
     if (!worker) {
       log('continue: the program worker had stopped; the follow-up runs without the earlier names');
@@ -289,6 +291,16 @@
     checkFinished(t);
     // While it is drawn the card grows: where the page takes the mouse follows it.
     if (t - hitsCheckedAt > 0.3 && !gesture) { hitsCheckedAt = t; showTools(); }
+    // Nothing drawn and nothing to draw (cleared): no more frames until the next program.
+    if (!worker && released >= items.length) { ticking = false; return; }
+    requestAnimationFrame(tick);
+  }
+
+  // The page asks for frames only while a program is drawn or up (an idle stage must not run at 60 fps all session).
+  let ticking = false;
+  function wake() {
+    if (ticking) return;
+    ticking = true;
     requestAnimationFrame(tick);
   }
 
@@ -809,6 +821,5 @@
   // For a preview in an ordinary browser: window.drawStage.handle({type: 'beginStream', ...}).
   window.drawStage = { handle, reportHits, place };
   reset();
-  requestAnimationFrame(tick);
   send({ type: 'ready' });
 })();

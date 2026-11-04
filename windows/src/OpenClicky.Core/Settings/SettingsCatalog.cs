@@ -263,6 +263,8 @@ public sealed class SettingsCatalog
                 ["3d", "generator", "pieces", "model", "mesh", "hunyuan", "llama-mesh", "ollama", "lm studio", "gpu", "graphics card", "realistic"]),
             Item("clicky.drawingInstructions", "Your drawing instructions", "Added to every drawing's instructions: a style, a level, what to show more of.",
                 ["drawing", "prompt", "instructions", "style", "custom", "realistic", "kids", "colours", "language", "3d", "2d"]),
+            Item("clicky.markerShortcut", "Mark the screen with", "Keys that let you circle part of the screen to ask about it, while drawn answers are on. Word uses Ctrl+Alt+M for comments.",
+                ["marker", "mark", "circle", "highlight", "shortcut", "hotkey", "keys", "ctrl+alt+m", "screen", "ask about"]),
         ];
     }
 

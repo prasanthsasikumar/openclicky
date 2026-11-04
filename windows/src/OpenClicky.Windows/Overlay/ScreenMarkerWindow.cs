@@ -6,7 +6,8 @@
 //  little while the person draws a loop with a yellow marker round what they want to ask about
 //  (Esc or a right click gives up). When the marker lifts, the mark stays on the screen, the dim
 //  goes and the window lets every click through, until the question about it has been answered.
-//  Ctrl+Alt+M starts a mark from anywhere, like the island's marker button. The window is left out
+//  Its shortcut (Ctrl+Alt+M unless Settings pick another) starts a mark from anywhere, like the
+//  island's marker button; it is held only while drawn answers are on. The window is left out
 //  of screenshots like OpenClicky's other windows, so the model sees the screen and a close-up of
 //  the marked part, never the marker over it.
 //
@@ -39,11 +40,17 @@ public sealed class ScreenMarkerWindow : IScreenMarkerSurface, IDisposable
     private Action<PixelRect?>? done;
     private nint previousForeground;
     private HwndSource? hotkeyWindow;
+    private readonly Func<MarkerShortcut?> wantedShortcut;
+    private bool hotkeyApplied, hotkeyRegistered;
+    private MarkerShortcut? appliedShortcut;
 
-    public ScreenMarkerWindow(IScreens screens)
+    /// <param name="wantedShortcut">The shortcut to hold now, or null for none (MarkerShortcuts.Wanted); asked again by
+    /// <see cref="RefreshHotkey"/>. Without it there is none.</param>
+    public ScreenMarkerWindow(IScreens screens, Func<MarkerShortcut?>? wantedShortcut = null)
     {
         this.screens = screens;
-        RegisterHotkey();
+        this.wantedShortcut = wantedShortcut ?? (() => null);
+        RefreshHotkey();
     }
 
     // MARK: - IScreenMarkerSurface
@@ -183,30 +190,50 @@ public sealed class ScreenMarkerWindow : IScreenMarkerSurface, IDisposable
         report?.Invoke(null);
     }
 
-    // MARK: - Ctrl+Alt+M
+    // MARK: - The shortcut
 
     private const int HotkeyId = 0x4D4B;
     private const int WM_HOTKEY = 0x0312;
-    private const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_NOREPEAT = 0x4000;
+    private const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_NOREPEAT = 0x4000;
     private const uint VK_M = 0x4D;
 
-    private void RegisterHotkey()
+    /// <summary>Holds the shortcut Settings pick while drawn answers are on, and lets it go otherwise (the keys are then the
+    /// other apps'). Called when the Teacher plugin, the drawing stage or the setting changes.</summary>
+    public void RefreshHotkey()
     {
-        // A message-only window to receive WM_HOTKEY on the UI thread.
-        hotkeyWindow = new HwndSource(new HwndSourceParameters("OpenClicky marker hotkey") { ParentWindow = new nint(-3), WindowStyle = 0 });
-        hotkeyWindow.AddHook((nint hwnd, int message, nint wParam, nint lParam, ref bool handled) =>
+        var wanted = wantedShortcut();
+        if (hotkeyApplied && wanted == appliedShortcut) return;
+        hotkeyApplied = true;
+        appliedShortcut = wanted;
+        if (hotkeyWindow is null)
         {
-            if (message == WM_HOTKEY && wParam == HotkeyId)
+            // A message-only window to receive WM_HOTKEY on the UI thread.
+            hotkeyWindow = new HwndSource(new HwndSourceParameters("OpenClicky marker hotkey") { ParentWindow = new nint(-3), WindowStyle = 0 });
+            hotkeyWindow.AddHook((nint hwnd, int message, nint wParam, nint lParam, ref bool handled) =>
             {
-                handled = true;
-                ScreenMarker.Shared.Begin();
-            }
-            return 0;
-        });
-        if (!RegisterHotKey(hotkeyWindow.Handle, HotkeyId, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_M))
-        {
-            AppLog.Write($"marker: Ctrl+Alt+M is taken by another app (error {Marshal.GetLastWin32Error()}); the island's marker button still works");
+                if (message == WM_HOTKEY && wParam == HotkeyId)
+                {
+                    handled = true;
+                    ScreenMarker.Shared.Begin();
+                }
+                return 0;
+            });
         }
+        if (hotkeyRegistered)
+        {
+            UnregisterHotKey(hotkeyWindow.Handle, HotkeyId);
+            hotkeyRegistered = false;
+        }
+        if (wanted is not { } shortcut)
+        {
+            AppLog.Write("marker: no shortcut (drawn answers are off, or Settings say none); the island's marker button still works");
+            return;
+        }
+        var modifiers = MOD_CONTROL | MOD_ALT | (shortcut == MarkerShortcut.CtrlAltShiftM ? MOD_SHIFT : 0);
+        hotkeyRegistered = RegisterHotKey(hotkeyWindow.Handle, HotkeyId, modifiers | MOD_NOREPEAT, VK_M);
+        AppLog.Write(hotkeyRegistered
+            ? $"marker: {MarkerShortcuts.Title(shortcut)} marks the screen"
+            : $"marker: {MarkerShortcuts.Title(shortcut)} is taken by another app (error {Marshal.GetLastWin32Error()}); the island's marker button still works");
     }
 
     public void Dispose()
@@ -214,7 +241,8 @@ public sealed class ScreenMarkerWindow : IScreenMarkerSurface, IDisposable
         Close(reportGiveUp: false);
         if (hotkeyWindow is not null)
         {
-            UnregisterHotKey(hotkeyWindow.Handle, HotkeyId);
+            if (hotkeyRegistered) UnregisterHotKey(hotkeyWindow.Handle, HotkeyId);
+            hotkeyRegistered = false;
             hotkeyWindow.Dispose();
             hotkeyWindow = null;
         }

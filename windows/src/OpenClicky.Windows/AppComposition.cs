@@ -45,6 +45,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
     private readonly MouseTalkMonitor mouseTalk;
     private readonly Overlay.ScreenMarkerWindow screenMarker;
     private readonly IDisposable mouseTalkObservation;
+    private readonly IDisposable[] markerKeyObservations;
+    private readonly Action refreshMarkerKeys;
     private readonly IDisposable pointerColorObservation;
     private readonly IDisposable pointerStyleObservation;
     private readonly GuidedStepInputSource guidedStepInput;
@@ -131,8 +133,17 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         DrawStageController.Shared.Surface = drawStageWindow;
         DrawStageController.Shared.Saver = new DrawingRecorder(drawStageWindow, DrawStageController.Shared);
         // Marking part of the screen to ask about (the island's marker button, Ctrl+Alt+M); its state is Core's ScreenMarker.
-        screenMarker = new Overlay.ScreenMarkerWindow(platform.Screens);
+        // Its shortcut is held only while drawn answers are on, and follows the Teacher plugin, the drawing switch and Settings.
+        screenMarker = new Overlay.ScreenMarkerWindow(platform.Screens, () => MarkerShortcuts.Wanted(
+            OpenClickyConfiguration.Settings.MarkerShortcut, DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)));
         ScreenMarker.Shared.Surface = screenMarker;
+        refreshMarkerKeys = () => platform.MainThread.Post(screenMarker.RefreshHotkey);
+        markerKeyObservations =
+        [
+            preferences.Observe(IslandComponentSettings.PluginsKey, refreshMarkerKeys),
+            preferences.Observe(DrawStageLesson.PreferenceKey, refreshMarkerKeys),
+        ];
+        OpenClickyConfiguration.SettingsChanged += refreshMarkerKeys;
         Companion = new CompanionManager(services,
             new CompanionModels(companionUi.Overlay, companionUi.Island, companionUi.Orb, companionUi.AgentCard), this);
 
@@ -325,6 +336,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         memoryWatch.Stop();
         if (lowMemoryNotification != 0) CloseHandle(lowMemoryNotification);
         mouseTalkObservation.Dispose();
+        foreach (var observation in markerKeyObservations) observation.Dispose();
+        OpenClickyConfiguration.SettingsChanged -= refreshMarkerKeys;
         pointerColorObservation.Dispose();
         pointerStyleObservation.Dispose();
         mouseTalk.Dispose();

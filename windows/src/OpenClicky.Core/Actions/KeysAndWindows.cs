@@ -1,6 +1,7 @@
 // The keyboard and window actions (2026-11-01): "press tab", "hit enter twice", "copy that" (ctrl+c), "type hello
 // in the prompt", "maximize this", "switch to brave". Their pure parts: which keys and shortcuts a spoken request
-// may press (a closed set, so a mishearing can't reach the Windows key, Alt+F4 or Ctrl+Alt+Del), how a chord is
+// may press (a closed set, so a mishearing can't reach the Windows key, or anything that closes, quits, deletes or
+// opens system UI), how a chord is
 // read ("ctrl+shift+t", "shift tab"), and the window commands. The Windows side sends them (DesktopActionExecutor.Keys).
 
 namespace OpenClicky.Core.Actions;
@@ -38,9 +39,21 @@ public static class KeyChords
     }
 
     /// <summary>
+    /// Chords left to the person, also with more modifiers held (Ctrl+W covers Ctrl+Shift+W): what closes or quits (Alt+F4,
+    /// Ctrl+F4, Ctrl+W, Ctrl+Q; the window tool closes windows), deletes for good (Shift+Delete, Ctrl+D in Explorer and
+    /// Outlook), or opens system UI (Ctrl+Alt+Delete, Ctrl+Esc and Ctrl+Shift+Esc, Alt+Esc, Alt+Space, Alt+Tab).
+    /// </summary>
+    private static readonly (int[] Modifiers, int Key)[] LeftToThePerson =
+    [
+        ([Alt], 0x73), ([Control], 0x73), ([Control], 'W'), ([Control], 'Q'),
+        ([Shift], 0x2E), ([Control], 'D'),
+        ([Control, Alt], 0x2E), ([Control], 0x1B), ([Alt], 0x1B), ([Alt], 0x20), ([Alt], 0x09),
+    ];
+
+    /// <summary>
     /// One chord: "tab", "shift+tab", "ctrl+shift+t", "alt+left" (also "ctrl c", "ctrl-c"). Null when it names a key
     /// outside the set, a letter or digit with no Ctrl or Alt (words are typed with type_text, not pressed), or a
-    /// combination left to the person: Alt+F4 (the window tool closes windows) and Ctrl+Alt+Delete.
+    /// combination left to the person (<see cref="LeftToThePerson"/>).
     /// </summary>
     public static KeyChord? Parse(string text)
     {
@@ -56,8 +69,7 @@ public static class KeyChords
         if (!NamedKeys.TryGetValue(parts[^1], out var key)) return null;
         var isCharacter = parts[^1].Length == 1;
         if (isCharacter && !modifiers.Contains(Control) && !modifiers.Contains(Alt)) return null;
-        if (modifiers.Contains(Alt) && key == 0x73) return null;                                                  // Alt+F4
-        if (modifiers.Contains(Control) && modifiers.Contains(Alt) && key == 0x2E) return null;                  // Ctrl+Alt+Del
+        if (LeftToThePerson.Any(chord => chord.Key == key && chord.Modifiers.All(modifiers.Contains))) return null;
         modifiers.Sort((a, b) => Order(a).CompareTo(Order(b)));
         var spoken = string.Join("+", modifiers.Select(Name).Append(parts[^1]));
         return new KeyChord(modifiers, key, spoken);

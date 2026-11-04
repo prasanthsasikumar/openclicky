@@ -26,7 +26,20 @@ public class KeysAndWindowsTests
     [InlineData("shift+a")]
     [InlineData("win+r")]          // never the Windows key
     [InlineData("alt+f4")]         // closing goes through the window tool
-    [InlineData("ctrl+alt+delete")]
+    [InlineData("ctrl+f4")]
+    [InlineData("ctrl+w")]
+    [InlineData("ctrl+shift+w")]
+    [InlineData("ctrl+q")]
+    [InlineData("shift+delete")]   // deleting for good
+    [InlineData("ctrl+shift+delete")]
+    [InlineData("ctrl+d")]
+    [InlineData("ctrl+alt+delete")] // system UI
+    [InlineData("ctrl+shift+esc")]
+    [InlineData("ctrl+escape")]
+    [InlineData("alt+esc")]
+    [InlineData("alt+space")]
+    [InlineData("alt+tab")]
+    [InlineData("alt+shift+tab")]
     [InlineData("hyper+x")]
     [InlineData("")]
     public void OthersAreRefused(string text) => Assert.Null(KeyChords.Parse(text));
