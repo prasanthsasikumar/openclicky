@@ -181,7 +181,8 @@ internal static class DrawStageSmoke
                 null,
                 onReplySoFar,
                 token,
-                DrawStageLesson.OutputTokens(DrawStageLesson.DetailFrom(OpenClickyConfiguration.Settings.DrawingDetail)))).Text;
+                DrawStageLesson.OutputTokens(DrawStageLesson.DetailFrom(OpenClickyConfiguration.Settings.DrawingDetail)),
+                forDrawing: true)).Text;
         }
 
         // This PC's voice, or a silent one that takes as long as reading the line at 2.6 words a second. The voice's audio

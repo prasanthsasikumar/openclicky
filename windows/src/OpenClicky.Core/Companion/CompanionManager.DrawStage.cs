@@ -175,7 +175,8 @@ public sealed partial class CompanionManager
                     tools: null,
                     onReplySoFar,
                     token,
-                    DrawStageLesson.OutputTokens(detail))).Text,
+                    DrawStageLesson.OutputTokens(detail),
+                    forDrawing: true)).Text,
                 speech,
                 services.MainThread.Post,
                 onFirstAudio: () => services.MainThread.Post(() =>

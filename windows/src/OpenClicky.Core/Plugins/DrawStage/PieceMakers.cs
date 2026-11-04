@@ -258,7 +258,7 @@ public sealed class DrawingModelPieceMaker(ClaudeAPI model) : IPieceMaker
     {
         var ask = $"Build: {request.Make.Trim()}." + (request.PartOf is { Length: > 0 } of ? $" It is a piece of {of.Trim()}." : "")
             + $" Its box: {PieceMakers.Size(request)}.";
-        var (text, _, _) = await model.AnalyzeImageStreamingAsync([], SystemPrompt, null, ask, null, _ => { }, cancellationToken, 8000).ConfigureAwait(false);
+        var (text, _, _) = await model.AnalyzeImageStreamingAsync([], SystemPrompt, null, ask, null, _ => { }, cancellationToken, 8000, forDrawing: true).ConfigureAwait(false);
         return PieceMakers.PartsIn(text) is { } parts ? new DrawStagePiece(DrawStagePieceKind.Parts, null, parts, Name) : null;
     }
 }
