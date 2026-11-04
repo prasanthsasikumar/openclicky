@@ -15,6 +15,12 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
+## Unreleased
+
+### Mac
+
+- **Draw to explain.** Ask "how does a jet engine work?", "what's inside this?" or "why is the sky blue?" and Clicky draws on your screen while it talks: a diagram or a turning 3D model built part by part, each part drawn as its sentence is spoken. When it is done the drawing shrinks into a bubble beside the island; click it to bring it back, and ask again while it is open to build on it. Only questions a picture really explains are drawn; everything else is answered in words as before. On by default: Settings → Clicky → Draw to explain. The drawing stage itself (`draw-stage/`) is shared with the Windows app and was written by darkworks for Windows PR #39.
+
 ## 0.10.2
 
 ### Mac

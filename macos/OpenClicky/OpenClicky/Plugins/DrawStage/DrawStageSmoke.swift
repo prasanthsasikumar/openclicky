@@ -125,7 +125,7 @@ enum DrawStageSmoke {
                 return false
             }
             let answers = ClaudeAPI(currentProxyURL: { "\(OpenClickyConfiguration.backendBaseURL)/chat" })
-            let images: [(data: Data, label: String)] = capture.map { [(data: $0.imageData, label: "Screenshot: \($0.label), \($0.screenshotWidthInPixels)×\($0.screenshotHeightInPixels) pixels")] } ?? []
+            let images: [(data: Data, label: String)] = capture.map { [CompanionManager.imageLabeledWithItsPixelSize($0)] } ?? []
             writeReply = { onChunk in
                 let result = try await answers.analyzeImageStreaming(
                     images: images, systemPrompt: systemPrompt, userPrompt: userPrompt, tools: [],

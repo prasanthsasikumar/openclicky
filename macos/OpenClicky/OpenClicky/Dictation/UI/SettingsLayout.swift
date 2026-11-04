@@ -48,7 +48,7 @@ enum SettingsLayout {
     ]
 
     private static let clickyGroups: [Group] = [
-        Group(page: .clicky, title: "", itemIDs: ["keyboard.talk", "clicky.speechVoice", "clicky.language", "clicky.answerSource"]),
+        Group(page: .clicky, title: "", itemIDs: ["keyboard.talk", "clicky.speechVoice", "clicky.language", "clicky.answerSource", "clicky.drawToExplain"]),
         Group(page: .clicky, title: "Hands-free", itemIDs: [
             "clicky.fastVoice", "clicky.realtimeProvider", "clicky.fastVoiceNeedsKey", "clicky.alwaysListening",
         ]),

@@ -44,6 +44,7 @@ Codex's environment and only ever presents the user's token; the shell does the 
 | `scripts/upstream-watch.mjs`, `reference/upstream/` | HeyClicky release watcher and its recorded versions / changelog mirror |
 | `.github/workflows/upstream-watch.yml` | daily run of the watcher; opens an `upstream` issue per new HeyClicky version |
 | `skills/` | `ModelInstructions.md` + 15 skills; regenerate with `npm run port-skills` |
+| `draw-stage/` | the drawing stage shared by the apps: the page, its sandboxed worker, three.js, the samples and the prompts (`README.md` has the protocol and the drawing language); the Mac bundles it with `scripts/embed-draw-stage.sh` |
 | `macos/OpenClicky/` | primary native shell, renamed fork of the original open-source Clicky app + OpenClicky integration (`OPENCLICKY.md`); `SkillLibraryStore`, `AppSkillMatcher`, `SkillPromptBuilder`, `FrontmostAppObserver` are the skills side |
 | `macos/OpenClickyShell/` | minimal SwiftPM menu-bar panel used as a headless smoke harness |
 | `reference/`, `docs/superpowers/plans/` | reverse-engineering notes and the plans for each cut |

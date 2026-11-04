@@ -23,6 +23,11 @@ extension SettingsCatalog {
                 keywords: ["provider", "model", "openai", "anthropic", "claude", "openrouter", "gemini", "groq", "mistral", "grok", "codex", "subscription", "plan", "answers"],
                 view: AnyView(AnswerSourceRow())),
             SettingsItem(
+                id: "clicky.drawToExplain",
+                title: DrawToExplainRow.title, detail: DrawToExplainRow.detail,
+                keywords: ["draw", "drawing", "3d", "diagram", "explain", "teach", "stage", "picture", "sketch", "model"],
+                view: AnyView(DrawToExplainRow(settings: settings))),
+            SettingsItem(
                 id: "clicky.model",
                 title: "Claude model", detail: "When Claude answers: Sonnet is quicker, Opus thinks harder.",
                 keywords: ["model", "claude", "sonnet", "opus", "smarter", "quicker"],
@@ -315,6 +320,21 @@ private struct PointerShowsRow: View {
 }
 
 /// Who answers questions: automatic, or one source that is set up. Shows who is answering now.
+/// Settings → Clicky: draw to explain. A question a picture or a 3D model answers is drawn on the
+/// screen while Clicky talks (the drawing stage); off, every question is answered in words.
+struct DrawToExplainRow: View {
+    @ObservedObject var settings: DictationSettings
+
+    static let title = "Draw to explain"
+    static let detail = "When a picture or a 3D model explains it better, Clicky draws on your screen while it talks. Ask \"how does a jet engine work?\" to see it."
+
+    var body: some View {
+        SettingsRow(title: Self.title, detail: Self.detail) {
+            SettingsToggle(settings: settings, keyPath: \.drawToExplain)
+        }
+    }
+}
+
 /// Settings → Clicky → Answers: the local ask rung's switch. The detail says what the rung does and,
 /// when Apple's model is not available on this Mac, why not (the switch is then disabled); a
 /// person whose ⌃⌥ goes to the Realtime lane is told it does not apply to them. Read when drawn,
