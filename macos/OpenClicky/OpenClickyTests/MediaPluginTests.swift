@@ -105,11 +105,22 @@ struct MediaPluginTests {
         final class SlowSource: MediaSourcing, @unchecked Sendable {
             var reply: MediaSnapshot?
             var reads = 0
+            /// With this on, the next read holds until `releaseHeldRead()`: the test makes the
+            /// refreshes overlap for certain instead of hoping three calls land inside a 40 ms read
+            /// (CI's stalled runner saw them land one after another, 2026-11-04).
+            var holdsTheNextRead = false
+            private var heldRead: CheckedContinuation<Void, Never>?
             func readNowPlaying() async -> MediaReading {
                 reads += 1
-                try? await Task.sleep(nanoseconds: 40_000_000)
+                if holdsTheNextRead {
+                    holdsTheNextRead = false
+                    await withCheckedContinuation { heldRead = $0 }
+                } else {
+                    try? await Task.sleep(nanoseconds: 40_000_000)
+                }
                 return reply.map { .track($0) } ?? .nothing
             }
+            func releaseHeldRead() { heldRead?.resume(); heldRead = nil }
             func perform(_ command: MediaCommand, on player: MediaPlayer) async {}
             func loadArtwork(for snapshot: MediaSnapshot) async -> NSImage? {
                 try? await Task.sleep(nanoseconds: 40_000_000)
@@ -127,10 +138,17 @@ struct MediaPluginTests {
         #expect(store.artwork != nil)
         source.reply = try #require(MediaSnapshot.parse(line(["playing", "T2", "A", "", "1", "200", "k2", ""]), player: .spotify, sampledAt: now))
         source.reads = 0
+        source.holdsTheNextRead = true
         async let first: Void = store.refreshNow()
+        for _ in 0..<500 where source.reads == 0 {     // the first refresh is in its read, held
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        #expect(source.reads == 1)
         async let second: Void = store.refreshNow()
         async let third: Void = store.refreshNow()
-        _ = await (first, second, third)
+        _ = await (second, third)                  // both return at once: one is in flight
+        source.releaseHeldRead()
+        await first
         #expect(source.reads == 2)                 // one in flight, one more after it, never three
         #expect(store.artwork != nil)              // the artwork load was not thrown away
         store.setEnabled(false)

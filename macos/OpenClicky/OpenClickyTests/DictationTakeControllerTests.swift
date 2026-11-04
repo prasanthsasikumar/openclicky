@@ -88,12 +88,28 @@ private struct SlowPolisher: TakePolisher {
     }
 }
 
+/// Every phase the orb went through, in order. A failure line is on the orb for 2.5 s before it
+/// goes back to idle (`scheduleIdle`), and CI's runner has stalled a test for longer than that
+/// (2026-11-04: three failure-path tests waited 15 s for a line that had come and gone), so a test
+/// asks whether the line was shown, not whether it is up right now.
+@MainActor private final class OrbPhaseLog {
+    private(set) var seen: [OrbPhase] = []
+    private var subscription: AnyCancellable?
+
+    init(orb: OrbModel) {
+        subscription = orb.$phase.sink { [weak self] phase in self?.seen.append(phase) }
+    }
+
+    func saw(_ phase: OrbPhase) -> Bool { seen.contains(phase) }
+}
+
 @MainActor
 private struct Harness {
     let settings: DictationSettings
     let capture = FakeCapture()
     let store: TakeStore
     let orb = OrbModel()
+    let phases: OrbPhaseLog
     let controller: DictationTakeController
     let pasted: Pasted
 
@@ -121,6 +137,7 @@ private struct Harness {
     init(polisher: (any TakePolisher)? = nil, field: FocusedFieldSnapshot? = nil) throws {
         let defaults = ScratchDefaults.make()
         settings = DictationSettings(defaults: defaults)
+        phases = OrbPhaseLog(orb: orb)
         settings.sounds = false
         settings.haptics = false
         settings.engine = .offline
@@ -382,9 +399,9 @@ struct DictationTakeControllerTests {
         h.controller.handle(.dictationPressed)
         await h.waitUntil(1) { h.controller.state == .listening || h.controller.state == .idle }
         h.controller.handle(.dictationReleased(wasTap: false))
-        await h.waitUntil(15) { h.controller.state == .idle && h.orb.phase == .failed("couldn't open the microphone") }
+        await h.waitUntil(15) { h.controller.state == .idle && h.phases.saw(.failed("couldn't open the microphone")) }
         #expect(h.controller.state == .idle)
-        #expect(h.orb.phase == .failed("couldn't open the microphone"))
+        #expect(h.phases.saw(.failed("couldn't open the microphone")))
         #expect(h.pasted.texts.isEmpty)
 
         h.controller.handle(.dictationPressed)
@@ -398,9 +415,9 @@ struct DictationTakeControllerTests {
         let h = try Harness()
         h.capture.nextStartFailsWith = "microphone permission is required for push to talk."
         h.controller.handle(.dictationPressed)
-        await h.waitUntil(15) { h.orb.phase == .failed("microphone permission is required for push to talk.") }
+        await h.waitUntil(15) { h.phases.saw(.failed("microphone permission is required for push to talk.")) }
         #expect(h.controller.state == .idle)
-        #expect(h.orb.phase == .failed("microphone permission is required for push to talk."))
+        #expect(h.phases.saw(.failed("microphone permission is required for push to talk.")))
     }
 
     @Test @MainActor func theWordsAreCopiedWhenTheAppChanged() async throws {
@@ -930,10 +947,10 @@ struct DictationTakeControllerTests {
         let h = try Harness(polisher: CountingPolisher())
         h.settings.polishWithModel = false
         h.controller.handle(.dictationEditPressed)
-        await h.waitUntil(15) { h.orb.phase == .failed(DictationTakeController.heyClickyNeedsCleanUpMessage) }
+        await h.waitUntil(15) { h.phases.saw(.failed(DictationTakeController.heyClickyNeedsCleanUpMessage)) }
         #expect(h.capture.starts == 0)
         #expect(h.controller.state == .idle)
-        #expect(h.orb.phase == .failed(DictationTakeController.heyClickyNeedsCleanUpMessage))
+        #expect(h.phases.saw(.failed(DictationTakeController.heyClickyNeedsCleanUpMessage)))
     }
 
     @Test @MainActor func withTheCleanUpOnAHeyClickyEditStillGoesToTheModel() async throws {
