@@ -86,7 +86,13 @@ public sealed class SettingsTourTargets
     public void RequestScroll(string targetId) => ScrollRequested?.Invoke(targetId);
 
     /// <summary>"sidebar.page.clicky"; a page opened from a row names its sidebar page (Your words: "sidebar.page.dictation").</summary>
-    public static string SidebarTargetId(DictationDestination destination) => $"sidebar.page.{destination.SidebarPage.RawValue()}";
+    public static string SidebarTargetId(DictationDestination destination) => destination.PageSection is { } pageSection
+        ? $"sidebar.page.{destination.SidebarPage.RawValue()}.{SectionSlug(pageSection)}"
+        : $"sidebar.page.{destination.SidebarPage.RawValue()}";
+
+    /// <summary>"Your models" → "your-models": a section's part of its sidebar target id.</summary>
+    public static string SectionSlug(string pageSection) =>
+        string.Join('-', pageSection.ToLowerInvariant().Split([' ', '&', '-'], StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>Where on a row the pointer rests: a little in from its left edge (30 %, at most 120), at mid height.</summary>
     public static ScreenPoint PointerSpot(ScreenRect target) =>
@@ -102,8 +108,9 @@ public sealed class SettingsTourTargets
 
 public sealed record SettingsTourStep(DictationDestination Destination, string? TargetId, string Bubble, string Line)
 {
-    /// <summary>The page's name in the sidebar, for the bubble while the pointer goes to "click" it (Your words is under Dictation).</summary>
-    public string DestinationTitle => Destination.SidebarPage.Title();
+    /// <summary>The page's name in the sidebar, for the bubble while the pointer goes to "click" it (Your words is under Dictation;
+    /// a section's own name for a page shown one section at a time).</summary>
+    public string DestinationTitle => Destination.PageSection ?? Destination.SidebarPage.Title();
 
     /// <summary>About a minute in all: what someone needs to find their way, in sidebar order where it can be.</summary>
     public static IReadOnlyList<SettingsTourStep> All { get; } =
@@ -112,9 +119,10 @@ public sealed record SettingsTourStep(DictationDestination Destination, string? 
         new(DictationDestination.Of(DictationSettingsPage.Dictation), "keyboard.dictationKey", "the key you hold", "settings-tour-dictation"),
         new(DictationDestination.Of(DictationSettingsPage.Dictation), "dictation.language", "your language", "settings-tour-language"),
         new(DictationDestination.Of(DictationSection.Words), null, "everything you said", "settings-tour-words"),
-        new(DictationDestination.Of(DictationSettingsPage.Clicky), "clicky.speechVoice", "how i sound", "settings-tour-voice"),
-        new(DictationDestination.Of(DictationSettingsPage.Clicky), "clicky.pointer", "when i show up", "settings-tour-pointer"),
-        new(DictationDestination.Of(DictationSettingsPage.Clicky), "keyboard.talk", "every shortcut", "settings-tour-shortcuts"),
+        // Clicky's two Talking rows together, then Pointer: one section after the other, not back again.
+        new(SettingsLayout.DestinationOf("clicky.speechVoice"), "clicky.speechVoice", "how i sound", "settings-tour-voice"),
+        new(SettingsLayout.DestinationOf("keyboard.talk"), "keyboard.talk", "every shortcut", "settings-tour-shortcuts"),
+        new(SettingsLayout.DestinationOf("clicky.pointer"), "clicky.pointer", "when i show up", "settings-tour-pointer"),
         new(DictationDestination.Of(DictationSettingsPage.Account), "account.keys", "your own keys", "settings-tour-keys"),
         new(DictationDestination.Of(DictationSettingsPage.General), "general.settingsTour", "watch it again here", "settings-tour-done"),
     ];
@@ -206,7 +214,9 @@ public sealed class SettingsTourController
             if (model.Destination != step.Destination || model.IsSearching)
             {
                 var sidebarId = SettingsTourTargets.SidebarTargetId(step.Destination);
-                if (targets.ScreenRectFor(sidebarId) is { } sidebarRect)
+                // A section's row shows in the sidebar only while its page is open: the page's row is clicked then.
+                if ((targets.ScreenRectFor(sidebarId)
+                     ?? targets.ScreenRectFor(SettingsTourTargets.SidebarTargetId(DictationDestination.Of(step.Destination.SidebarPage)))) is { } sidebarRect)
                 {
                     Observe(pointer.FlyTo(sidebarRect, step.DestinationTitle));
                     await PauseAsync(1.0, cancellationToken);

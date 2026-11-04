@@ -132,8 +132,9 @@ public sealed class SettingsTourTests
         Assert.Equal("end", pointer.Events[^1]);
         Assert.Contains("fly Dictation", pointer.Events);
         Assert.Contains("fly the key you hold", pointer.Events);
-        // Dictation, Your words (through Dictation), Clicky, Keys & Account, then back to General.
-        Assert.Equal(5, pointer.Events.Count(eventName => eventName == "click"));
+        // Dictation, Your words (through Dictation), Clicky's Talking, its Pointer, Keys & Account, then back to General.
+        Assert.Equal(6, pointer.Events.Count(eventName => eventName == "click"));
+        Assert.Contains(DictationDestination.Of(DictationSettingsPage.Clicky, "Pointer"), visited);
         Assert.Equal(DictationDestination.Of(DictationSettingsPage.General), visited[^1]);
     }
 

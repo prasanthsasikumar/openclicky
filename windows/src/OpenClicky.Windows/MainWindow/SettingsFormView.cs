@@ -61,18 +61,26 @@ internal static class TourTarget
 
 internal sealed class SettingsFormView : ScrollViewer
 {
+    /// <summary>One section of a page shown one at a time: its title and line, where it is among them, and the next one (its title,
+    /// and what opens it) for the button at the foot; null after the last.</summary>
+    public sealed record SectionLook(string Title, string Intro, string Position, string? NextTitle, Action? OpenNext);
+
     private readonly Dictionary<string, FrameworkElement> rowsById = new(StringComparer.Ordinal);
     /// <summary>For a row inside a folded group: opens that group (the tour asks for rows by id).</summary>
     private readonly Dictionary<string, Action> openFoldFor = new(StringComparer.Ordinal);
 
     /// <param name="page">The page drawn, for its header card; null for search results, which show <paramref name="title"/> and never fold.</param>
+    /// <param name="section">One section of <paramref name="page"/> (a page shown one at a time): its header instead of the page's,
+    /// and its Next button at the foot.</param>
     public SettingsFormView(string title, IReadOnlyList<SettingsSectionGroup> groups, Func<SettingsItem, UIElement> buildRow, string? emptySentence = null,
-        DictationSettingsPage? page = null)
+        DictationSettingsPage? page = null, SectionLook? section = null)
     {
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         Focusable = false;
-        var column = page is { } shownPage ? PageColumn(PageHeader(shownPage)) : PageColumn(title);
+        var column = page is { } shownPage
+            ? PageColumn(section is null ? PageHeader(shownPage) : SectionHeaderCard(shownPage, section))
+            : PageColumn(title);
         if (groups.Count == 0 && emptySentence is not null)
         {
             var empty = Ui.Text(emptySentence, SettingsLook.RowTitleSize, SettingsLook.TextSecondary);
@@ -105,6 +113,7 @@ internal sealed class SettingsFormView : ScrollViewer
             }
             foreach (var footer in group.Footers) rows.Children.Add(buildRow(footer));
         }
+        if (section is not null) column.Children.Add(SectionFoot(section));
         Content = column;
         void OnScrollRequested(string targetId) => Dispatcher.BeginInvoke(() => ScrollIntoView(targetId));
         Loaded += (_, _) => SettingsTourTargets.Shared.ScrollRequested += OnScrollRequested;
@@ -136,6 +145,36 @@ internal sealed class SettingsFormView : ScrollViewer
         var header = Ui.HStack(14, icon, text);
         header.Margin = new Thickness(0, 0, 0, 10);
         return header;
+    }
+
+    /// <summary>A section's header: the page's icon, "Clicky › Drawings" above the section's own title, and its line.</summary>
+    private static UIElement SectionHeaderCard(DictationSettingsPage page, SectionLook section)
+    {
+        var icon = new Image { Source = DictationWindow.SidebarIcon(page.Glyph(), page.TintHex()), Width = 40, Height = 40 };
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(Ui.Text($"{page.Title()} › {section.Title}", SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false));
+        text.Children.Add(Ui.Text(section.Title, SettingsLook.PageTitleSize, SettingsLook.TextPrimary, FontWeights.SemiBold, wrap: false));
+        if (section.Intro.Length > 0) text.Children.Add(Ui.Text(section.Intro, SettingsLook.CaptionSize, SettingsLook.TextSecondary));
+        var header = Ui.HStack(14, icon, text);
+        header.Margin = new Thickness(0, 0, 0, 14);
+        return header;
+    }
+
+    /// <summary>Under a section: where it is among its page's ("Section 4 of 6") and a button to the next one.</summary>
+    private static UIElement SectionFoot(SectionLook section)
+    {
+        var foot = new DockPanel { Margin = new Thickness(2, 22, 0, 0), LastChildFill = false };
+        var position = Ui.Text(section.Position, SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false);
+        position.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(position, Dock.Left);
+        foot.Children.Add(position);
+        if (section is { NextTitle: { } nextTitle, OpenNext: { } openNext })
+        {
+            var next = Ui.Button($"Next: {nextTitle}", openNext, Wpf.Ui.Controls.ControlAppearance.Secondary, toolTip: $"Go on to {nextTitle}");
+            DockPanel.SetDock(next, Dock.Right);
+            foot.Children.Add(next);
+        }
+        return foot;
     }
 
     /// <summary>

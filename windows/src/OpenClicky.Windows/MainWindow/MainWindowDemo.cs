@@ -140,6 +140,14 @@ public static class MainWindowDemo
     private const int ExtendedFrameBounds = 9;
 
     [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
+
+    [DllImport("user32.dll")]
+    private static extern bool PrintWindow(IntPtr window, IntPtr deviceContext, uint flags);
+
+    private const uint RenderFullContent = 2;
+
+    [DllImport("user32.dll")]
     private static extern bool SetCursorPos(int x, int y);
 
     /// <summary>Every page in sidebar order, then the pages opened from rows, light then dark, plus the search results and the page ends.</summary>
@@ -159,11 +167,14 @@ public static class MainWindowDemo
             [
                 .. DictationDestination.SidebarOrder,
                 .. DictationSettingsPages.AllCases.Where(page => page.SidebarPage() != page).Select(DictationDestination.Of),
+                .. DictationSettingsPages.SidebarPages.SelectMany(page => SettingsLayout.SectionsOf(page).Select(section => DictationDestination.Of(page, section.Title!))),
                 .. DictationSections.AllCases.Select(DictationDestination.Of),
             ];
             foreach (var destination in destinations)
             {
-                var name = destination.Page is { } page ? page.RawValue() : destination.Section!.Value.RawValue();
+                var name = destination.Page is { } page
+                    ? destination.PageSection is { } pageSection ? $"{page.RawValue()}-{SettingsTourTargets.SectionSlug(pageSection)}" : page.RawValue()
+                    : destination.Section!.Value.RawValue();
                 if (onlyPage is not null && onlyPage != name) continue;
                 window.Model.Select(destination);
                 await Delay(700);
@@ -217,13 +228,19 @@ public static class MainWindowDemo
         window.UpdateLayout();
         var handle = new WindowInteropHelper(window).Handle;
         if (DwmGetWindowAttribute(handle, ExtendedFrameBounds, out var bounds, Marshal.SizeOf<NativeRect>()) != 0) return;
+        // The window draws itself (PrintWindow), so an always-on-top window in front of it never ends up in the picture
+        // (a running OpenClicky's own did, leaving the shots blank); cut to its visible frame.
+        if (!GetWindowRect(handle, out var outer)) return;
         var width = bounds.Right - bounds.Left;
         var height = bounds.Bottom - bounds.Top;
-        using var bitmap = new System.Drawing.Bitmap(width, height);
-        using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+        using var whole = new System.Drawing.Bitmap(outer.Right - outer.Left, outer.Bottom - outer.Top);
+        using (var graphics = System.Drawing.Graphics.FromImage(whole))
         {
-            graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, new System.Drawing.Size(width, height));
+            var deviceContext = graphics.GetHdc();
+            try { PrintWindow(handle, deviceContext, RenderFullContent); }
+            finally { graphics.ReleaseHdc(deviceContext); }
         }
+        using var bitmap = whole.Clone(new System.Drawing.Rectangle(bounds.Left - outer.Left, bounds.Top - outer.Top, width, height), whole.PixelFormat);
         bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
     }
 }
