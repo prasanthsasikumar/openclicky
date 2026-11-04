@@ -147,7 +147,8 @@ struct DrawingAnswerTests {
         var replyWasCancelled = false
         let slowReply: (@escaping @MainActor (String) -> Void) async throws -> String = { onChunk in
             onChunk("```js\nstep(1); say(\"a\")\n")
-            do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { replyWasCancelled = true; throw error }
+            // A reply far longer than any runner stall: giving up "at once" means not waiting for it.
+            do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { replyWasCancelled = true; throw error }
             return twoBeats
         }
         let startedAt = Date()
@@ -156,7 +157,9 @@ struct DrawingAnswerTests {
         #expect(!result.drew)
         #expect(played.isEmpty)
         #expect(replyWasCancelled)
-        #expect(Date().timeIntervalSince(startedAt) < 1.5)
+        // Loose on purpose: CI's runner has stalled whole tests for 9 s (2026-11-04); the bound only
+        // has to sit well under the reply's 30 s.
+        #expect(Date().timeIntervalSince(startedAt) < 12)
     }
 
     @Test func noneLetsTheReplyEndOnItsOwn() async throws {
@@ -234,7 +237,9 @@ struct DrawingAnswerTests {
         let result = try await run(page: page, reply: streamed(twoBeats), speech: FakeSpeech.make(played: { played.append($0) }), readinessTimeout: 0.2)
         #expect(!result.drew)
         #expect(played.isEmpty)
-        #expect(Date().timeIntervalSince(startedAt) < 1.5)
+        // Well under the 3-minute limit a never-ready stage would otherwise wait out; loose because
+        // CI's runner has stalled whole tests for 9 s (2026-11-04).
+        #expect(Date().timeIntervalSince(startedAt) < 12)
     }
 
     @Test func aVoiceFailureFinishesTheDrawingAndHandsBackTheRest() async throws {
