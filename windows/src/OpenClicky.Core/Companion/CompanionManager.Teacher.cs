@@ -46,17 +46,17 @@ public sealed partial class CompanionManager
             Plugins.DrawStage.DrawStageLesson.WriterFor(Configuration.OpenClickyConfiguration.Settings, claudeAPI),
             () => Providers.ProviderRouter.CurrentCredentials().OpenAIKey));
         Plugins.DrawStage.DrawStageController.Shared.MakePiece = pieceWorkshop.MakeAsync;
-        teacherSwitchObservation = preferences.Observe(IslandComponentSettings.PluginsKey, () => services.MainThread.Post(TeacherSwitchMayHaveChanged));
+        teacherSwitchObservation = preferences.Observe(TeacherPlugin.LessonsKey, () => services.MainThread.Post(TeacherSwitchMayHaveChanged));
     }
 
-    /// <summary>The plugin switch flipped: the lesson goes, and an idle fast-voice session reconnects so its tools follow
+    /// <summary>The Teacher's switch flipped: the lesson goes, and an idle fast-voice session reconnects so its tools follow
     /// (OpenAI takes new tools with the next instructions update, but a Gemini Live session's are fixed at setup).</summary>
     private void TeacherSwitchMayHaveChanged()
     {
         var isEnabled = TeacherPlugin.IsEnabled;
         if (isEnabled == teacherWasEnabled) return;
         teacherWasEnabled = isEnabled;
-        AppLog.Write($"teacher: plugin {(isEnabled ? "on" : "off")}");
+        AppLog.Write($"teacher: lessons {(isEnabled ? "on" : "off")}");
         if (!isEnabled) TeacherPlugin.ClearBoard("switched off");
         if (isStarted && UsesRealtimeVoice && VoiceState == CompanionVoiceState.Idle) WarmUpRealtimeVoice();
     }

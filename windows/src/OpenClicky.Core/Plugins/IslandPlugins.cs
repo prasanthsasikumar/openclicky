@@ -8,9 +8,8 @@
 //  depends on it. A plugin is an IslandComponent whose IsPlugin is true; the registry below is the
 //  only place that lists them.
 //
-//  Ported: System, Shelf, Coding agents, Now playing, Teacher, Timer, Notes and Clipboard, as on
-//  the Mac. The Teacher also changes what the voice lanes can do, so they call its one facade,
-//  TeacherPlugin, and nothing else of it. The tools (Shelf, Clipboard, Notes, Timer) get a round
+//  Ported: System, Shelf, Coding agents, Now playing, Timer, Notes and Clipboard, as on the Mac.
+//  The Teacher is a built-in with its own switch (IslandComponentRegistry, TeacherPlugin). The tools (Shelf, Clipboard, Notes, Timer) get a round
 //  button each in the open island's band instead of a place in the capsule. Home's calendar and
 //  weather are not plugins but switches of their own (Plugins/Calendar, Plugins/Weather).
 //
@@ -23,7 +22,6 @@ using OpenClicky.Core.Plugins.Media;
 using OpenClicky.Core.Plugins.Notes;
 using OpenClicky.Core.Plugins.Shelf;
 using OpenClicky.Core.Plugins.SystemStats;
-using OpenClicky.Core.Plugins.Teacher;
 
 namespace OpenClicky.Core.Plugins;
 
@@ -43,6 +41,6 @@ public static class IslandPluginRegistry
 
     /// <summary>In the order the capsule and Settings show them.</summary>
     public static IReadOnlyList<IslandComponent> All { get; } =
-        [SystemStatsPlugin.Component, ShelfPlugin.Component, CodingAgentsPlugin.Component, MediaPlugin.Component, TeacherPlugin.Component,
+        [SystemStatsPlugin.Component, ShelfPlugin.Component, CodingAgentsPlugin.Component, MediaPlugin.Component,
          TimerPlugin.Component, NotesPlugin.Component, ClipboardPlugin.Component];
 }

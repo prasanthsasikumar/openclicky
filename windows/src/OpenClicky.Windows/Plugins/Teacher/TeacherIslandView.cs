@@ -3,12 +3,16 @@
 //  OpenClicky (Windows port of Plugins/Teacher/TeacherIslandView.swift)
 //
 //  The Teacher's row on the island: what is on the board and a button that clears it, or, with
-//  nothing up, a line saying what to ask. Follows the app's one board (TeacherBoard.Shared).
+//  nothing up, a line saying what to ask. A switch on the right turns lessons and drawn answers on
+//  and off, the same switch Settings has; the row stays, so it is here to switch back on. Follows
+//  the app's one board (TeacherBoard.Shared).
 //
 
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Shapes;
+using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Windows.Island;
 using OpenClicky.Windows.Theme;
@@ -22,11 +26,17 @@ internal sealed class TeacherIslandView : Grid, IIslandContent
     private readonly TextBlock firstLine;
     private readonly TextBlock secondLine;
     private readonly Border clearButton;
+    private readonly Border switchTrack;
+    private readonly Ellipse switchThumb;
+    private IDisposable? switchObservation;
+
+    private static Preferences Preferences => TeacherPlugin.Preferences();
 
     public TeacherIslandView()
     {
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         VerticalAlignment = VerticalAlignment.Center;
         Margin = new Thickness(4, 0, 4, 0);
@@ -55,17 +65,39 @@ internal sealed class TeacherIslandView : Grid, IIslandContent
         SetColumn(clearButton, 2);
         Children.Add(clearButton);
 
+        // The row's switch. The hit area is taller than the track so it is easy to press.
+        switchThumb = new Ellipse { Width = 14, Height = 14, Fill = System.Windows.Media.Brushes.White, VerticalAlignment = VerticalAlignment.Center };
+        switchTrack = new Border { Width = 34, Height = 18, CornerRadius = new CornerRadius(9), Padding = new Thickness(2), Child = switchThumb };
+        var switchButton = Clickable(switchTrack, () => TeacherPlugin.SetLessonsOn(!TeacherPlugin.IsEnabled, Preferences), "Teacher lessons");
+        switchButton.Padding = new Thickness(0, 8, 0, 8);
+        switchButton.Margin = new Thickness(12, 0, 0, 0);
+        switchButton.VerticalAlignment = VerticalAlignment.Center;
+        SetColumn(switchButton, 3);
+        Children.Add(switchButton);
+
         Loaded += (_, _) =>
         {
             board.Changed += Refresh;
+            switchObservation = Preferences.Observe(TeacherPlugin.LessonsKey, () => Dispatcher.BeginInvoke(Refresh));
             Refresh();
         };
-        Unloaded += (_, _) => board.Changed -= Refresh;
+        Unloaded += (_, _) =>
+        {
+            board.Changed -= Refresh;
+            switchObservation?.Dispose();
+            switchObservation = null;
+        };
         Refresh();
     }
 
     public void Refresh()
     {
+        var isOn = TeacherPlugin.IsEnabled;
+        switchTrack.Background = isOn ? DS.HUD.GoodBrush : DS.HUD.BandControlBrush;
+        switchThumb.HorizontalAlignment = isOn ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        switchTrack.ToolTip = isOn ? "Lessons are on" : "Lessons are off";
+        AutomationProperties.SetName(switchTrack, switchTrack.ToolTip as string ?? "");
+
         if (board.Lesson is { } lesson)
         {
             // "on the board" over the lesson's title.
@@ -73,6 +105,13 @@ internal sealed class TeacherIslandView : Grid, IIslandContent
             secondLine.Text = lesson.Title;
             Swap(firstLine, secondLine);
             clearButton.Visibility = Visibility.Visible;
+        }
+        else if (!isOn)
+        {
+            firstLine.Text = "lessons are off";
+            secondLine.Text = "switch on and ask me to teach you something";
+            Swap(secondLine, firstLine);
+            clearButton.Visibility = Visibility.Collapsed;
         }
         else
         {
