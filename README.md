@@ -48,6 +48,18 @@ Hold **⌃ control + ⌥ option** and ask about anything on screen, tap **⌃ tw
 
 [![Watch the OpenClicky demo](https://img.youtube.com/vi/bWsjCIrmoKA/maxresdefault.jpg)](https://youtu.be/bWsjCIrmoKA)
 
+### Draw to explain (new)
+
+Ask "how does a jet engine work?", "what's inside this?" or "why is the sky blue?" and Clicky draws on
+your screen while it talks: a hand-drawn diagram, or a turning 3D model built part by part, each part
+drawn as its sentence is spoken. Ask again while the drawing is up and the answer builds on it; when it
+is done it shrinks into a bubble beside the island. Only questions a picture really explains are drawn.
+It works on the ask lane and on fast voice, on the Mac and on Windows, with whichever answer model you
+use. The drawing stage, the see-through page both apps draw on, was written by
+[darkworks](https://github.com/darkworks), who also brought the Windows app its 3D figures, own-model
+answers (Ollama, LM Studio, any OpenAI-compatible server), voice control of keys and windows, and more.
+Design notes: [docs/draw-stage.md](docs/draw-stage.md).
+
 ### Dictation that stays on your Mac
 
 Nothing leaves your Mac until you choose an engine that needs the network (Settings → engine):
@@ -71,7 +83,9 @@ Hyprland) and X11. `sh linux/install.sh` from a clone (or with the `.whl` from t
 
 A native Windows port, written and maintained by [Tan Wei Jie (Justin)](https://github.com/weijietan97):
 dictation, ask out loud with the pointer, the agent lane, skills, the island and every settings page, in C#
-and WPF. Questions about the Windows app go to him: open an issue and mention `@weijietan97`.
+and WPF. Questions about the Windows app go to him: open an issue and mention `@weijietan97`. Its
+drawing stage, 3D figures, own-model answers and voice control of keys and windows are by
+[darkworks](https://github.com/darkworks).
 Hold Ctrl + Win to talk and right Ctrl to dictate; private offline dictation is Parakeet. x64 and ARM64,
 Windows 10 (2004 or later) and 11. [Download it for Windows](https://openclicky.org/download/windows/)
 (the Setup.exe on the [latest release](https://github.com/prasanthsasikumar/openclicky/releases/latest); not
