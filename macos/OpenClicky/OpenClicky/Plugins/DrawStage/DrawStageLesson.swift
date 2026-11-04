@@ -229,6 +229,13 @@ enum DrawStageLesson {
 
     private static let codeStarts = ["step(", "const ", "let ", "var ", "keep(", "say(", "//", "```"]
 
+    /// Whether the reply's first word is NONE (the model's "not a drawing"), as opposed to prose.
+    static func isNone(_ replySoFar: String) -> Bool {
+        let firstLine = replySoFar.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
+        return firstLine.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: .punctuationCharacters).uppercased() == notAFollowUp
+    }
+
     /// What the reply is, from its first non-blank line: NONE or a line of prose means the question
     /// is not answered by a drawing; a fence or a line that starts like code means a program.
     static func decide(replySoFar: String, done: Bool) -> ReplyDecision {

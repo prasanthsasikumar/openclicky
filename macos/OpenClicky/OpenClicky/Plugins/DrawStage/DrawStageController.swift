@@ -129,11 +129,19 @@ final class DrawStageController {
         }
     }
 
-    /// A display was added, removed or resized: the stage's frame no longer fits, so it is cleared.
-    func displaysChanged() {
-        guard isShowing || displayFrame != nil else { return }
-        clear(reason: "displays changed")
-        displayFrame = nil
+    /// Told after `displaysChanged` cleared the stage because its screen went away, so whoever
+    /// owns the drawing (its voice, its bubble) lets go of it too.
+    var displayGone: (() -> Void)?
+
+    /// The screens changed (one added or removed, a resolution change, the display waking, the
+    /// Dock moving: macOS sends the same notice for all of them). Only a drawing whose own screen
+    /// is no longer there is cleared; otherwise nothing happens, so a display waking from sleep
+    /// never wipes a drawing parked in its bubble.
+    func displaysChanged(screenFrames: [CGRect] = NSScreen.screens.map(\.frame)) {
+        guard let displayFrame, !screenFrames.contains(displayFrame) else { return }
+        clear(reason: "the drawing's display went away")
+        self.displayFrame = nil
+        displayGone?()
     }
 
     private func send(_ json: String) {

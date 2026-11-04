@@ -42,8 +42,16 @@ enum DrawStageBubblePlacement {
     }
 }
 
+/// What the session needs of the bubble (a fake stands in for tests).
 @MainActor
-final class DrawStageBubble {
+protocol DrawStageBubbling: AnyObject {
+    func show(thumbnail: NSImage, islandFrame: CGRect?, placement: HUDPlacement, screen: NSScreen)
+    func dismiss()
+    var isShowing: Bool { get }
+}
+
+@MainActor
+final class DrawStageBubble: DrawStageBubbling {
     static let shared = DrawStageBubble()
 
     /// A click on the thumbnail: the drawing comes back.

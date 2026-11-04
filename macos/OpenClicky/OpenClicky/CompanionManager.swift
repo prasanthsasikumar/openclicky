@@ -645,6 +645,12 @@ final class CompanionManager: ObservableObject {
 
     /// The island's stop button: silence whatever Clicky is saying. Agent work keeps going.
     func stopSpeaking() {
+        // The island's stop button while a drawing plays does what esc does: the voice stops now
+        // and what was drawn goes to its bubble, rather than the drawing being wiped.
+        if DrawStageSession.shared.state == .playing {
+            escapeStopsTheDrawing()
+            return
+        }
         guard voiceState == .responding else { return }
         AppLog.append("ask: stopped speaking from the island")
         interruptCurrentAnswer(includingAgentWork: false)

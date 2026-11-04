@@ -121,11 +121,19 @@ struct DrawStageControllerTests {
 
     @Test func aDisplayChangeHidesTheStage() {
         let (controller, fake) = makeController()
+        var goneCount = 0
+        controller.displayGone = { goneCount += 1 }
         controller.receive(#"{"type":"ready"}"#)
         controller.begin(displayFrame: screen, canvasWidth: 1280, canvasHeight: 800)
-        controller.displaysChanged()
+        // The drawing's screen is still there (the display woke, the Dock moved): nothing happens.
+        controller.displaysChanged(screenFrames: [screen, CGRect(x: 1440, y: 0, width: 1000, height: 600)])
+        #expect(fake.hideCount == 0)
+        #expect(goneCount == 0)
+        // The drawing's screen is gone: the stage is cleared and whoever owns the drawing is told.
+        controller.displaysChanged(screenFrames: [CGRect(x: 1440, y: 0, width: 1000, height: 600)])
         #expect(fake.hideCount == 1)
         #expect(fake.postedTypes.last == "clear")
+        #expect(goneCount == 1)
     }
 
     private func waitUntil(timeoutSeconds: Double = 2, _ condition: @MainActor () -> Bool) async throws {
