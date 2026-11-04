@@ -8,13 +8,14 @@
 //  OpenClicky.Windows/Island (the built-ins) and OpenClicky.Windows/Plugins (the plugins), looked up
 //  by the component's id.
 //
-//  Ported: the built-ins (home, shortcuts, transcript, agent) and every Mac plugin (System, Shelf,
-//  Coding agents, Now playing, Teacher, Timer, Notes, Clipboard). Home is the default: the
+//  Ported: the built-ins (home, shortcuts, transcript, agent, Teacher) and every Mac plugin (System,
+//  Shelf, Coding agents, Now playing, Timer, Notes, Clipboard). Home is the default: the
 //  dashboard row of IslandHome.cs, or the shortcuts row when none of its columns is on.
 //
 
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Plugins;
+using OpenClicky.Core.Plugins.Teacher;
 
 namespace OpenClicky.Core.Companion;
 
@@ -204,7 +205,8 @@ public static class IslandComponentRegistry
         IsAvailable = context => context.AgentActivityText is not null || context.IsResultCardUp,
     };
 
-    public static IReadOnlyList<IslandComponent> BuiltIns { get; } = [Home, Shortcuts, Transcript, Agent];
+    /// <summary>The Teacher is always here, with the switch that turns lessons on and off.</summary>
+    public static IReadOnlyList<IslandComponent> BuiltIns { get; } = [Home, Shortcuts, Transcript, Agent, TeacherPlugin.Component];
 
     /// <summary>The built-ins first, then the plugins (off until turned on in Settings).</summary>
     public static IReadOnlyList<IslandComponent> All { get; } = [.. BuiltIns, .. IslandPluginRegistry.All];

@@ -133,14 +133,14 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         DrawStageController.Shared.Surface = drawStageWindow;
         DrawStageController.Shared.Saver = new DrawingRecorder(drawStageWindow, DrawStageController.Shared);
         // Marking part of the screen to ask about (the island's marker button, Ctrl+Alt+M); its state is Core's ScreenMarker.
-        // Its shortcut is held only while drawn answers are on, and follows the Teacher plugin, the drawing switch and Settings.
+        // Its shortcut is held only while drawn answers are on, and follows the Teacher's switch, the drawing switch and Settings.
         screenMarker = new Overlay.ScreenMarkerWindow(platform.Screens, () => MarkerShortcuts.Wanted(
             OpenClickyConfiguration.Settings.MarkerShortcut, DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)));
         ScreenMarker.Shared.Surface = screenMarker;
         refreshMarkerKeys = () => platform.MainThread.Post(screenMarker.RefreshHotkey);
         markerKeyObservations =
         [
-            preferences.Observe(IslandComponentSettings.PluginsKey, refreshMarkerKeys),
+            preferences.Observe(TeacherPlugin.LessonsKey, refreshMarkerKeys),
             preferences.Observe(DrawStageLesson.PreferenceKey, refreshMarkerKeys),
         ];
         OpenClickyConfiguration.SettingsChanged += refreshMarkerKeys;

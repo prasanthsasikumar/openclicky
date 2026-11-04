@@ -571,14 +571,32 @@ public class TeacherPluginTests
     }
 
     [Fact]
-    public void TheTeacherIsAPluginWithASettingsRow()
+    public void TheTeacherIsABuiltInAlwaysOnTheIsland()
     {
-        Assert.True(TeacherPlugin.Component.IsPlugin);
+        Assert.False(TeacherPlugin.Component.IsPlugin);
         Assert.Equal(IslandPluginRegistry.TeacherId, TeacherPlugin.Component.Id);
         Assert.Contains("only the search words are sent", TeacherPlugin.Component.SettingsDetail);
-        var settings = new IslandComponentSettings(Preferences.InMemory());
-        Assert.False(settings.IsEnabled(TeacherPlugin.Id, IslandComponentRegistry.All));
-        settings.SetPluginEnabled(TeacherPlugin.Id, true);
+        var preferences = Preferences.InMemory();
+        var settings = new IslandComponentSettings(preferences);
         Assert.True(settings.IsEnabled(TeacherPlugin.Id, IslandComponentRegistry.All));
+        // Its row stays with lessons off, so the switch is there to turn them back on.
+        TeacherPlugin.SetLessonsOn(false, preferences);
+        Assert.True(settings.IsEnabled(TeacherPlugin.Id, IslandComponentRegistry.All));
+    }
+
+    [Fact]
+    public void LessonsAreOnUnlessSwitchedOffAndTheOldPluginSwitchNoLongerCounts()
+    {
+        var preferences = Preferences.InMemory();
+        Assert.True(TeacherPlugin.LessonsAreOn(preferences));
+        // Someone who never found the old plugin switch still gets drawings, and it can't turn them off either.
+        new IslandComponentSettings(preferences).EnabledPlugins = ["system"];
+        Assert.True(TeacherPlugin.LessonsAreOn(preferences));
+        TeacherPlugin.SetLessonsOn(false, preferences);
+        Assert.False(TeacherPlugin.LessonsAreOn(preferences));
+        new IslandComponentSettings(preferences).SetPluginEnabled(TeacherPlugin.Id, true);
+        Assert.False(TeacherPlugin.LessonsAreOn(preferences));
+        TeacherPlugin.SetLessonsOn(true, preferences);
+        Assert.True(TeacherPlugin.LessonsAreOn(preferences));
     }
 }

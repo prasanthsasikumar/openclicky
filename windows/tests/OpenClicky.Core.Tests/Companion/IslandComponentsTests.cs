@@ -68,7 +68,7 @@ public class IslandComponentsTests
         settings.SetPluginEnabled(IslandPluginRegistry.SystemId, true);
         Assert.True(settings.IsEnabled(IslandPluginRegistry.SystemId, registry));
         Assert.Equal(IslandPluginRegistry.SystemId, settings.ResolvedDefaultId(registry));
-        Assert.Equal(new HashSet<string> { "home", "shortcuts", "transcript", "agent", "system" }, settings.EnabledIds(registry));
+        Assert.Equal(new HashSet<string> { "home", "shortcuts", "transcript", "agent", "teacher", "system" }, settings.EnabledIds(registry));
         settings.SetPluginEnabled(IslandPluginRegistry.SystemId, false);
         Assert.Empty(settings.EnabledPlugins);
     }
@@ -87,19 +87,19 @@ public class IslandComponentsTests
     public void TheOrderDropsUnknownIdsAndAppendsMissingOnes()
     {
         var settings = new IslandComponentSettings(Preferences.InMemory()) { Order = ["system", "gone"] };
-        Assert.Equal(["system", "home", "shortcuts", "transcript", "agent", "shelf", "agents", "media", "teacher", "timer", "notes", "clipboard"],
+        Assert.Equal(["system", "home", "shortcuts", "transcript", "agent", "teacher", "shelf", "agents", "media", "timer", "notes", "clipboard"],
             settings.ResolvedOrder(IslandComponentRegistry.All));
     }
 
     [Fact]
     public void TheRealRegistryListsTheBuiltInsThenThePlugins()
     {
-        Assert.Equal(["home", "shortcuts", "transcript", "agent", "system", "shelf", "agents", "media", "teacher", "timer", "notes", "clipboard"],
+        Assert.Equal(["home", "shortcuts", "transcript", "agent", "teacher", "system", "shelf", "agents", "media", "timer", "notes", "clipboard"],
             IslandComponentRegistry.All.Select(component => component.Id));
         // Home's height follows what is on (IslandHomeLayoutTests).
-        Assert.Equal([45, 52, 52, 84, 84, 76, 84, 64, 110, 120, 130], IslandComponentRegistry.All.Skip(1).Select(component => component.PreferredHeight));
-        Assert.Equal([false, false, false, false, true, true, true, true, true, true, true, true], IslandComponentRegistry.All.Select(component => component.IsPlugin));
-        Assert.Equal(["system", "shelf", "agents", "media", "teacher", "timer", "notes", "clipboard"], IslandPluginRegistry.All.Select(plugin => plugin.Id));
+        Assert.Equal([45, 52, 52, 64, 84, 84, 76, 84, 110, 120, 130], IslandComponentRegistry.All.Skip(1).Select(component => component.PreferredHeight));
+        Assert.Equal([false, false, false, false, false, true, true, true, true, true, true, true], IslandComponentRegistry.All.Select(component => component.IsPlugin));
+        Assert.Equal(["system", "shelf", "agents", "media", "timer", "notes", "clipboard"], IslandPluginRegistry.All.Select(plugin => plugin.Id));
         Assert.Equal([false, false, false, false, true, true, true, true, true, true, true, true],
             IslandComponentRegistry.All.Select(component => component.SettingsDetail is not null));
         Assert.All(IslandComponentRegistry.All, component => Assert.NotEqual("", component.Glyph));
@@ -135,11 +135,11 @@ public class IslandComponentsTests
         var geometry = IslandGeometry.VirtualNotch(new ScreenRect(0, 0, 1920, 1080), new ScreenRect(0, 0, 1920, 1040));
         var model = new IslandModel(geometry);
         model.SetContext(IslandContext.Idle with { Now = Now, IsTakeLive = true, LiveTranscript = "hello" });
-        Assert.Equal(new IslandComponentSelection("transcript", ["home", "shortcuts", "transcript"]), model.Selection);
+        Assert.Equal(new IslandComponentSelection("transcript", ["home", "shortcuts", "transcript", "teacher"]), model.Selection);
         model.SetContext(IslandContext.Idle with { Now = Now, AgentActivityText = "ran: dir" });
-        Assert.Equal(new IslandComponentSelection("agent", ["home", "shortcuts", "agent"]), model.Selection);
+        Assert.Equal(new IslandComponentSelection("agent", ["home", "shortcuts", "agent", "teacher"]), model.Selection);
         model.SetContext(IslandContext.Idle with { Now = Now });
-        Assert.Equal(new IslandComponentSelection("home", ["home", "shortcuts"]), model.Selection);
+        Assert.Equal(new IslandComponentSelection("home", ["home", "shortcuts", "teacher"]), model.Selection);
     }
 
     /// <summary>The tools get buttons of their own in the band, and Now playing and System are on home, so the capsule

@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Plugins;
+using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Settings;
 
 namespace OpenClicky.Windows.AppWindow;
@@ -34,6 +35,10 @@ internal sealed partial class SettingsRowFactory
                     Ui.Picker(choices, settings.ResolvedDefaultId(registry), id => IslandSettings.DefaultId = id));
             }),
             "plugins.islandOrder" => IslandSettingsCard(() => Ui.Row(item.Title, item.Detail, query, ComponentOrderList())),
+            // The same switch as the Teacher's row on the island.
+            "plugins.teacher" => new LiveContent(() => Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                Ui.Toggle(TeacherPlugin.LessonsAreOn(services.Preferences), isOn => TeacherPlugin.SetLessonsOn(isOn, services.Preferences)))),
+                changed => PreferenceObservations.ObserveAll(services.Preferences, [TeacherPlugin.LessonsKey], changed)),
             _ => null,
         };
     }

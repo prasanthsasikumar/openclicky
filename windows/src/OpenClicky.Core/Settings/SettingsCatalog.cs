@@ -342,6 +342,12 @@ public sealed class SettingsCatalog
             .. pluginRows,
             new SettingsItem
             {
+                Id = "plugins.teacher", Section = "",
+                Title = Plugins.Teacher.TeacherPlugin.Component.Title, Detail = Plugins.Teacher.TeacherPlugin.Component.SettingsDetail ?? "",
+                Keywords = ["island", "teacher", "teach", "lesson", "draw", "drawing", "explain", "3d", "whiteboard"],
+            },
+            new SettingsItem
+            {
                 Id = "plugins.islandDefault", Section = "On the island",
                 Title = "Default component", Detail = "What the open island shows when nothing else is going on.",
                 Keywords = ["island", "component", "panel", "shortcuts", "default", "slot"],

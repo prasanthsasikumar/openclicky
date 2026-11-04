@@ -2,9 +2,10 @@
 //  TeacherPlugin.cs
 //  OpenClicky (Windows port of Plugins/Teacher/TeacherBoard.swift's TeacherPlugin, and TeacherIslandView.swift's component)
 //
-//  The Teacher plugin: "teach me how Pythagoras works" draws the lesson on the screen, in the
+//  The Teacher, a built-in with one switch (its island row and Settings), on unless switched off:
+//  "teach me how Pythagoras works" draws the lesson on the screen, in the
 //  largest empty space, while Clicky explains it; what a drawing cannot show comes up as a real
-//  picture. Both voice lanes get two tools while the plugin is on (draw_on_screen, show_picture);
+//  picture. Both voice lanes get two tools while the switch is on (draw_on_screen, show_picture);
 //  TeacherPlugin is the only thing the rest of the app calls. The board itself (TeacherBoard) is
 //  a click-through window under the pointer's overlay, with a small close button beside it; it
 //  goes away on esc, the close button, the island's "clear", or the next question.
@@ -29,13 +30,21 @@ public static class TeacherPlugin
 
     /// <summary>The Teacher's row on the island: what is on the board and "clear", or what to ask.</summary>
     public static IslandComponent Component { get; } = new(
-        Id, "Teacher", "", 64, IsPlugin: true,
-        SettingsDetail: "Ask \"teach me how Pythagoras works\" and Clicky draws it in handwriting in an empty part of your screen while it explains. What a drawing can't show comes up as a picture from Wikimedia Commons (only the search words are sent).");
+        Id, "Teacher", "", 64,
+        SettingsDetail: "Ask \"teach me how a jet engine works\" and Clicky draws it on your screen, as a diagram or a turning 3D model, while it explains. What a drawing can't show comes up as a picture from Wikimedia Commons (only the search words are sent). The same switch is on the island's Teacher row.");
 
-    /// <summary>The preferences the plugin switch is read from (tests swap in their own).</summary>
+    /// <summary>The preferences the switch is read from (tests swap in their own).</summary>
     public static Func<Preferences> Preferences { get; set; } = () => Configuration.Preferences.Shared;
 
-    public static bool IsEnabled => new IslandComponentSettings(Preferences()).EnabledPlugins.Contains(Id);
+    /// <summary>One switch, in two places: the Teacher's island row and its Settings row.</summary>
+    public const string LessonsKey = "openclicky.teacher.lessonsOn";
+
+    public static bool IsEnabled => LessonsAreOn(Preferences());
+
+    /// <summary>On unless switched off. The old plugin switch no longer counts, so drawings reach people who never found it.</summary>
+    public static bool LessonsAreOn(Preferences preferences) => preferences.GetBool(LessonsKey, defaultValue: true);
+
+    public static void SetLessonsOn(bool isOn, Preferences preferences) => preferences.Set(LessonsKey, isOn);
 
     public const string PromptInstruction =
         "teaching: when they ask you to teach or explain an idea that a picture makes clearer (a theorem, a shape, a graph, how light bends, a cycle, forces, a circuit), draw it on their screen with "
