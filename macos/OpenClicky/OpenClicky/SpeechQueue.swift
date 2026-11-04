@@ -25,6 +25,8 @@ final class SpeechQueue {
     private let playAudio: (Data) async throws -> Void
 
     private var pieceTexts: [String] = []
+    /// What the caller named each piece (the drawing stage's line number); its index when it gave none.
+    private var pieceTags: [Int] = []
     /// The fetches started so far, in piece order (a prefix of `pieceTexts`).
     private var pieceFetches: [Task<Data, Error>] = []
     /// The piece `run` is waiting for or playing; fetches reach `piecesFetchedAhead` beyond it.
@@ -45,7 +47,14 @@ final class SpeechQueue {
     }
 
     func enqueue(_ pieceText: String) {
+        enqueue(pieceText, tag: nil)
+    }
+
+    /// `tag` names the piece to the start/end hooks of `run` (the drawing stage passes its line
+    /// number); without one the piece is known by its index.
+    func enqueue(_ pieceText: String, tag: Int?) {
         guard !isFinished else { return }
+        pieceTags.append(tag ?? pieceTexts.count)
         pieceTexts.append(pieceText)
         startFetchesWithinReach()
         wakeRunLoop()
@@ -58,8 +67,10 @@ final class SpeechQueue {
     }
 
     /// Plays every piece in order until `finish()` and the last piece are done. `onFirstAudio` runs
-    /// once, right before the first piece starts playing.
-    func run(onFirstAudio: () -> Void) async throws {
+    /// once, right before the first piece starts playing. `onPieceStarted` and `onPieceEnded` get
+    /// each piece's tag just before its audio starts and right after it ends normally (the drawing
+    /// stage draws a line's beat between the two).
+    func run(onFirstAudio: () -> Void, onPieceStarted: ((Int) -> Void)? = nil, onPieceEnded: ((Int) -> Void)? = nil) async throws {
         // However playback ends (done, failed, interrupted), no fetch is left running.
         defer { cancelPendingFetches() }
         var nextPieceIndex = 0
@@ -72,7 +83,10 @@ final class SpeechQueue {
                     let audioData = try await pieceFetches[nextPieceIndex].value
                     try checkNotCancelled()
                     if nextPieceIndex == 0 { onFirstAudio() }
+                    let pieceTag = pieceTags[nextPieceIndex]
+                    onPieceStarted?(pieceTag)
                     try await playAudio(audioData)
+                    onPieceEnded?(pieceTag)
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch where isCancelled || Task.isCancelled {

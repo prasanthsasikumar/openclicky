@@ -26,6 +26,28 @@ struct SpeechQueueTests {
         #expect(firstAudioCount == 1)
     }
 
+    @Test func pieceHooksFireInOrderWithTheirTags() async throws {
+        var events: [String] = []
+        let queue = SpeechQueue(fetchAudio: { Data($0.utf8) }, playAudio: { data in events.append("play \(String(decoding: data, as: UTF8.self))") })
+        queue.enqueue("a", tag: 10)
+        queue.enqueue("b", tag: 11)
+        queue.finish()
+        try await queue.run(onFirstAudio: { events.append("first") },
+                            onPieceStarted: { events.append("start \($0)") },
+                            onPieceEnded: { events.append("end \($0)") })
+        #expect(events == ["first", "start 10", "play a", "end 10", "start 11", "play b", "end 11"])
+    }
+
+    @Test func untaggedPiecesReportTheirIndex() async throws {
+        var events: [String] = []
+        let queue = SpeechQueue(fetchAudio: { Data($0.utf8) }, playAudio: { _ in })
+        queue.enqueue("a")
+        queue.enqueue("b")
+        queue.finish()
+        try await queue.run(onFirstAudio: {}, onPieceStarted: { events.append("start \($0)") }, onPieceEnded: { events.append("end \($0)") })
+        #expect(events == ["start 0", "end 0", "start 1", "end 1"])
+    }
+
     @Test func runWaitsForPiecesThatArriveLater() async throws {
         var played: [String] = []
         let queue = SpeechQueue(fetchAudio: { Data($0.utf8) }, playAudio: { played.append(String(decoding: $0, as: UTF8.self)) })
