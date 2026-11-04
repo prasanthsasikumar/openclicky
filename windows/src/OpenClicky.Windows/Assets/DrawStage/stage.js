@@ -7,10 +7,12 @@
 // The page answers ready, line (each say() as it runs), programRan (all of it ran), lineDue, finished, log and error.
 //
 // continueStream runs a follow-up's program after the one drawn (the drawing and its names stay). Once the app has
-// remembered a finished drawing, Picture and Video buttons sit in its corner (they say save) with a resize grip in the
-// other; measure answers with the drawing's box (bounds), recording hides the caption and the buttons while the app
-// records the drawing, and saving shows what the app is doing just outside it. A drawing on a card can be dragged
-// about by the card (and the wheel over it resizes it): the page then takes the mouse over the card (reportHits).
+// remembered a finished drawing, Picture and Video buttons sit in its corner (they say save); a close button (it says
+// close) is there from the first stroke, and for a drawing on a card a PiP button (shrinks it into the screen's corner
+// and back) and resize grips in both bottom corners. measure answers with the drawing's box (bounds), recording hides
+// the caption and the buttons while the app records the drawing, and saving shows what the app is doing just outside
+// it. A drawing on a card can be dragged about by the card (and the wheel over it resizes it): the page then takes the
+// mouse over the card (reportHits).
 'use strict';
 
 (function () {
@@ -21,6 +23,8 @@
   const paper = document.getElementById('paper');
   const board = document.getElementById('board');
   const grip = document.getElementById('grip');
+  const gripLeft = document.getElementById('grip-left');
+  const pipButton = tools.querySelector('.pip');
   const saving = document.getElementById('saving');
 
   const WORDS_PER_SECOND = 2.6;
@@ -617,20 +621,27 @@
     return !recording && !!svg.querySelector('[data-kind="card"], [data-kind="photo"]');
   }
 
-  // The buttons show in the drawing's top-right corner, and the grip in its bottom-right one, once the drawing has
-  // finished and the app remembers it.
+  // The buttons sit in the drawing's top-right corner from its first stroke: close always, PiP for a drawing on a card,
+  // Picture and Video once it has finished and the app remembers it. A drawing on a card has a resize grip in each
+  // bottom corner from the start.
   let dragArea = null, hitsCheckedAt = 0, lastHits = '';
   function showTools() {
-    const show = remembered && finishedSent && !recording;
+    const finished = remembered && finishedSent && !recording;
     const canMove = movable();
-    const box = show || canMove ? contentBounds() : null;
-    tools.hidden = grip.hidden = !(show && box);
-    if (show && box) {
+    const box = recording ? null : contentBounds();
+    for (const button of tools.querySelectorAll('[data-save]')) button.hidden = !finished;
+    pipButton.hidden = !canMove;
+    pipButton.title = pip ? 'Bring it back' : 'Shrink it into the corner of the screen';
+    pipButton.querySelector('.icon').textContent = pip ? '\uE740' : '\uE73F';
+    tools.hidden = !box;
+    grip.hidden = gripLeft.hidden = !(box && canMove);
+    if (box) {
       tools.style.left = Math.max(0, box.x + box.w - tools.offsetWidth - 16) + 'px';
       tools.style.top = (box.y + 16) + 'px';
-      // In the card's corner (the box has BOX_PAD round it).
+      // In the card's corners (the box has BOX_PAD round it).
       grip.style.left = (box.x + box.w - BOX_PAD - grip.offsetWidth) + 'px';
-      grip.style.top = (box.y + box.h - BOX_PAD - grip.offsetHeight) + 'px';
+      gripLeft.style.left = (box.x + BOX_PAD) + 'px';
+      grip.style.top = gripLeft.style.top = (box.y + box.h - BOX_PAD - grip.offsetHeight) + 'px';
     }
     dragArea = canMove ? box : null;
     svg.style.cursor = canMove ? 'move' : '';
@@ -642,7 +653,7 @@
   function reportHits() {
     const rects = window.Figure3D && !recording ? window.Figure3D.rects() : [];
     if (dragArea && !recording) rects.push(dragArea);
-    for (const node of [tools, grip]) {
+    for (const node of [tools, grip, gripLeft]) {
       if (node.hidden || recording) continue;
       const box = node.getBoundingClientRect();
       rects.push({ x: box.left, y: box.top, w: box.width, h: box.height });
@@ -655,7 +666,12 @@
   }
 
   for (const button of tools.querySelectorAll('button')) {
-    button.addEventListener('click', () => { if (!button.disabled) send({ type: 'save', text: button.dataset.save }); });
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      if (button.dataset.save) send({ type: 'save', text: button.dataset.save });
+      else if (button.dataset.act === 'close') send({ type: 'close' });
+      else if (button.dataset.act === 'pip') togglePip();
+    });
   }
 
   // ------------------------------------------------------------------ moving and resizing the drawing
@@ -676,6 +692,9 @@
     place.x = place.y = 0;
     place.s = 1;
     gesture = null;
+    pip = null;
+    pipWhileRecording = null;
+    document.body.classList.remove('pip');
     applyPlace(true);
   }
 
@@ -703,9 +722,12 @@
       // A part of it always stays on the screen.
       place.x = from.x + clamp(dx, KEEP_SHOWING - b.x - b.w, window.innerWidth - KEEP_SHOWING - b.x);
       place.y = from.y + clamp(dy, KEEP_SHOWING - b.y - b.h, window.innerHeight - KEEP_SHOWING - b.y);
-    } else {
-      // The grip follows the pointer along the diagonal; the drawing's top-left corner stays put.
+    } else if (gesture.kind === 'size') {
+      // The right grip follows the pointer along the diagonal; the drawing's top-left corner stays put.
       scaleAbout(b.x, b.y, from, from.s * Math.max(0.05, (b.w + dx + b.h + dy) / (b.w + b.h)));
+    } else {
+      // The left grip mirrors it: the top-right corner stays put.
+      scaleAbout(b.x + b.w, b.y, from, from.s * Math.max(0.05, (b.w - dx + b.h + dy) / (b.w + b.h)));
     }
     applyPlace(false);
   }
@@ -718,7 +740,8 @@
 
   svg.addEventListener('pointerdown', event => { if (movable()) startGesture(event, 'move'); });
   grip.addEventListener('pointerdown', event => startGesture(event, 'size'));
-  for (const node of [svg, grip]) {
+  gripLeft.addEventListener('pointerdown', event => startGesture(event, 'size-left'));
+  for (const node of [svg, grip, gripLeft]) {
     node.addEventListener('pointermove', moveGesture);
     node.addEventListener('pointerup', endGesture);
     node.addEventListener('pointercancel', endGesture);
@@ -730,6 +753,44 @@
     applyPlace(true);
   }, { passive: false });
 
+  // ------------------------------------------------------------------ picture in picture
+  // The PiP button shrinks the drawing into the screen's bottom-right corner, like a video player's, out of the way of
+  // what is under it; pressed again it comes back where it was. A save records it at the size it was (pipWhileRecording).
+  const PIP_WIDTH = 0.26, PIP_HEIGHT = 0.42, PIP_MARGIN = 24, PIP_BOTTOM = 72; // the bottom margin clears the taskbar
+  let pip = null, pipWhileRecording = null, glideTimer = 0;
+
+  function togglePip() {
+    if (pip) {
+      Object.assign(place, pip);
+      pip = null;
+    } else {
+      const box = contentBounds();
+      if (!box) return;
+      pip = { ...place };
+      const k = Math.min(Math.max(240, window.innerWidth * PIP_WIDTH) / box.w, window.innerHeight * PIP_HEIGHT / box.h);
+      const ux = (box.x - place.x) / place.s, uy = (box.y - place.y) / place.s;
+      place.s = Math.max(0.15, place.s * k);
+      const scaled = place.s / pip.s;
+      place.x = window.innerWidth - PIP_MARGIN - box.w * scaled - place.s * ux;
+      place.y = window.innerHeight - PIP_BOTTOM - box.h * scaled - place.s * uy;
+    }
+    document.body.classList.toggle('pip', !!pip);
+    glide();
+    applyPlace(true);
+  }
+
+  // The board glides to its new place; the buttons and grips come back when it has arrived.
+  function glide() {
+    board.classList.add('gliding');
+    document.body.classList.add('gliding');
+    clearTimeout(glideTimer);
+    glideTimer = setTimeout(() => {
+      board.classList.remove('gliding');
+      document.body.classList.remove('gliding');
+      showTools();
+    }, 380);
+  }
+
   // ------------------------------------------------------------------ saving: what the app is doing
   // A pill with a bar (or a spinner while it can't say how far it is), just outside the drawing's box: below it, above
   // it or beside it, so the video's frames (cut to the box) never have it in.
@@ -737,7 +798,7 @@
   function showSaving(message) {
     clearTimeout(savingTimer);
     const busy = message.state !== 'done' && message.state !== 'failed';
-    for (const button of tools.querySelectorAll('button')) button.disabled = busy;
+    for (const button of tools.querySelectorAll('[data-save]')) button.disabled = busy;
     if (saving.hidden || !savingBox) savingBox = contentBounds();
     const known = typeof message.fraction === 'number' && isFinite(message.fraction);
     saving.className = busy ? (known ? '' : 'indeterminate') : message.state;
@@ -752,7 +813,7 @@
     clearTimeout(savingTimer);
     saving.hidden = true;
     savingBox = null;
-    for (const button of tools.querySelectorAll('button')) button.disabled = false;
+    for (const button of tools.querySelectorAll('[data-save]')) button.disabled = false;
   }
 
   function placeSaving() {
@@ -781,6 +842,16 @@
       case 'recording': {
         recording = !!message.on;
         document.body.classList.toggle('recording', recording);
+        // Shrunk into the corner (PiP), it is recorded at the size it was, then goes back.
+        if (recording && pip && !pipWhileRecording) {
+          pipWhileRecording = { ...place };
+          Object.assign(place, pip);
+          applyPlace(true);
+        } else if (!recording && pipWhileRecording) {
+          Object.assign(place, pipWhileRecording);
+          pipWhileRecording = null;
+          applyPlace(true);
+        }
         // Paper behind the drawing's box, so its frames never show the screen under the stage.
         const box = recording ? contentBounds() : null;
         paper.hidden = !box;

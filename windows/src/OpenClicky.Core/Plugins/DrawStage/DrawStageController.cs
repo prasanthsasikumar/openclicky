@@ -100,6 +100,9 @@ public sealed class DrawStageController
     /// <summary>The page's Picture or Video button was clicked.</summary>
     public event Action<DrawingSaveKind>? SaveRequested;
 
+    /// <summary>The drawing's close button was clicked: it goes, as with esc.</summary>
+    public event Action? CloseRequested;
+
     /// <summary>Saves a drawing to disk; set by the composition root. Without one, drawings can't be saved.</summary>
     public IDrawingSaver? Saver { get; set; }
 
@@ -309,6 +312,9 @@ public sealed class DrawStageController
                 break;
             case "save":
                 SaveRequested?.Invoke(message.Text switch { "picture" => DrawingSaveKind.Picture, "video" => DrawingSaveKind.Video, _ => DrawingSaveKind.Both });
+                break;
+            case "close":
+                CloseRequested?.Invoke();
                 break;
             case "bounds" when message.Bounds is { } bounds:
                 measuring?.TrySetResult(bounds);

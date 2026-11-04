@@ -19,10 +19,13 @@
 </div>
 <div id="caption" hidden></div>
 <div id="tools" hidden>
-<button type="button" data-save="picture" title="Save a picture of this drawing (PNG)"><span class="icon">&#xE8B9;</span>Picture</button>
-<button type="button" data-save="video" title="Save a video of this drawing being drawn, with its voice (MP4)"><span class="icon">&#xE714;</span>Video</button>
+<button type="button" class="picture" data-save="picture" title="Save a picture of this drawing (PNG)"><span class="icon">&#xE8B9;</span><span class="label">Picture</span></button>
+<button type="button" class="video" data-save="video" title="Save a video of this drawing being drawn, with its voice (MP4)"><span class="icon">&#xE714;</span><span class="label">Video</span></button>
+<button type="button" class="pip" data-act="pip" title="Shrink it into the corner of the screen"><span class="icon">&#xE73F;</span></button>
+<button type="button" class="close" data-act="close" title="Close the drawing (Esc)"><span class="icon">&#xE711;</span></button>
 </div>
-<div id="grip" hidden title="Drag to make the drawing bigger or smaller"></div>
+<div id="grip" class="grip right" hidden title="Drag to make the drawing bigger or smaller"></div>
+<div id="grip-left" class="grip left" hidden title="Drag to make the drawing bigger or smaller"></div>
 <div id="saving" hidden><span class="spinner"></span><span class="text"></span><span class="bar"><span></span></span></div>
 <script src="stage.js"></script>
 <script type="module" src="figure3d.js"></script>

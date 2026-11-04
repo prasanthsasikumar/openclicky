@@ -39,6 +39,8 @@ public sealed partial class CompanionManager
         Plugins.DrawStage.DrawStageController.Shared.FigurePartClicked += part => services.MainThread.Post(() => AskAboutFigurePart(part));
         // The drawing's Save button.
         Plugins.DrawStage.DrawStageController.Shared.SaveRequested += what => services.MainThread.Post(() => SaveDrawing(what));
+        // The drawing's close button.
+        Plugins.DrawStage.DrawStageController.Shared.CloseRequested += () => services.MainThread.Post(CloseDrawing);
         // 3D pieces a drawing asks for (f.piece), made by the maker Settings picks, the drawing model when it fails.
         var pieceWorkshop = new Plugins.DrawStage.PieceWorkshop(() => Plugins.DrawStage.PieceMakers.For(Configuration.OpenClickyConfiguration.Settings,
             Plugins.DrawStage.DrawStageLesson.WriterFor(Configuration.OpenClickyConfiguration.Settings, claudeAPI),

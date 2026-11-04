@@ -5,7 +5,7 @@
 //  The messages between the app and the drawing stage's page (Assets/DrawStage/stage.js), as JSON
 //  objects with a "type". The app sends beginStream, continueStream, feed, lineStarted, lineEnded,
 //  finishNow, clear, measure, recording, saving, photo and piece; the page sends ready, line, programRan,
-//  lineDue, finished, bounds, save, photoWanted, pieceWanted, log and error.
+//  lineDue, finished, bounds, save, close, photoWanted, pieceWanted, log and error.
 //
 
 using System.Text.Json;

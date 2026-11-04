@@ -90,8 +90,17 @@ html, body {
   pointer-events: auto;
 }
 
-#tools[hidden], #grip[hidden], body.recording #tools, body.recording #grip, body.recording #caption {
+#tools[hidden], #tools button[hidden], .grip[hidden], body.recording #tools, body.recording .grip, body.recording #caption {
   display: none;
+}
+
+/* While the drawing glides into the corner (PiP) or back, its buttons wait for it. */
+body.gliding #tools, body.gliding .grip {
+  visibility: hidden;
+}
+
+#board.gliding {
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 #tools button:disabled {
@@ -99,19 +108,29 @@ html, body {
   cursor: default;
 }
 
-/* The grip in the drawing's bottom-right corner: drag it to make the drawing bigger or smaller. */
-#grip {
+/* The grips in the drawing's bottom corners: drag one to make the drawing bigger or smaller. */
+.grip {
   position: absolute;
   width: 20px;
   height: 20px;
   pointer-events: auto;
+}
+
+.grip.right {
   cursor: nwse-resize;
   border-radius: 0 0 8px 0;
   background: linear-gradient(135deg, transparent 0 46%, rgba(30, 34, 48, 0.4) 46% 52%, transparent 52% 64%,
     rgba(30, 34, 48, 0.4) 64% 70%, transparent 70% 82%, rgba(30, 34, 48, 0.4) 82% 88%, transparent 88%);
 }
 
-#grip:hover {
+.grip.left {
+  cursor: nesw-resize;
+  border-radius: 0 0 0 8px;
+  background: linear-gradient(225deg, transparent 0 46%, rgba(30, 34, 48, 0.4) 46% 52%, transparent 52% 64%,
+    rgba(30, 34, 48, 0.4) 64% 70%, transparent 70% 82%, rgba(30, 34, 48, 0.4) 82% 88%, transparent 88%);
+}
+
+.grip:hover {
   background-color: rgba(47, 107, 255, 0.12);
 }
 
@@ -202,6 +221,21 @@ html, body {
   border-color: #2F6BFF;
   color: #2F6BFF;
 }
+
+/* Each button its own colour: Picture blue, Video red, PiP teal; the close button turns red under the pointer. */
+#tools button.picture { background: #E8F0FF; border-color: rgba(47, 107, 255, 0.35); color: #1F56D6; }
+#tools button.picture:hover { background: #D3E2FF; border-color: #2F6BFF; color: #1A47B3; }
+#tools button.video { background: #FDECEC; border-color: rgba(229, 72, 77, 0.35); color: #C3343A; }
+#tools button.video:hover { background: #FAD7D8; border-color: #E5484D; color: #A3282D; }
+#tools button.pip { background: #E3F6F4; border-color: rgba(20, 163, 163, 0.35); color: #0E7F7A; padding: 6px 9px; }
+#tools button.pip:hover { background: #CDEFEC; border-color: #14A3A3; color: #0A6662; }
+#tools button.close { padding: 6px 9px; color: #5A606C; }
+#tools button.close:hover { background: #E5484D; border-color: #E5484D; color: #FFFFFF; }
+
+/* Shrunk into the corner (PiP): icons only. */
+body.pip #tools { gap: 4px; }
+body.pip #tools .label { display: none; }
+body.pip #tools button { padding: 5px 7px; }
 
 #tools .icon {
   font: 15px/1 "Segoe Fluent Icons", "Segoe MDL2 Assets";

@@ -251,6 +251,17 @@ public partial class DrawingAnswerTests
     }
 
     [Fact]
+    public void TheCloseButtonAsksTheAppToCloseTheDrawing()
+    {
+        var page = new FakePage();
+        var stage = new DrawStageController { Surface = page };
+        var closed = 0;
+        stage.CloseRequested += () => closed++;
+        page.MessageReceived!("""{"type":"close"}""");
+        Assert.Equal(1, closed);
+    }
+
+    [Fact]
     public void SavingShowsOnThePageAndAReplayKeepsWhereTheDrawingWasMoved()
     {
         var working = JsonNode.Parse(DrawStageMessages.Saving("Recording the video…", 0.42, "working"))!;

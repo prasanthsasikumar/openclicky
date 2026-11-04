@@ -65,6 +65,18 @@ public sealed partial class CompanionManager
         return true;
     }
 
+    /// <summary>The drawing's close button: the drawing goes, and so does what it was doing (its answer still being drawn
+    /// and said, on the ask lane or the fast voice, and a save), as with esc.</summary>
+    private void CloseDrawing()
+    {
+        AppLog.Write("draw: closed with its close button");
+        StopSavingTheDrawing();
+        StopRealtimeDrawing("the drawing was closed");
+        var stage = DrawStageController.Shared;
+        if (stage.IsShowing && stage.Current is null && AskLaneCanBeStopped) StopAskLane("the drawing was closed");
+        TeacherPlugin.ClearBoard("its close button");
+    }
+
     /// <summary>Stops the fast-voice question being answered by drawing, its narration with it.</summary>
     private void StopRealtimeDrawing(string reason)
     {

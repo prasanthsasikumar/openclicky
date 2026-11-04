@@ -81,6 +81,7 @@ running up to about 3× faster or 2× slower than its natural speed so they fini
 | `finished` | the program is done and everything is drawn |
 | `figures {rects}` | where the window takes the mouse: a card it can be dragged by, the 3D figures, the buttons and the grip |
 | `figurePart {text}` / `save {text}` | a part of a figure was clicked / the Picture or Video button was (`text`: `picture`, `video`) |
+| `close` | the drawing's close button was clicked: it goes, with its answer and any save, as with esc |
 | `bounds {x, y, w, h, pageWidth, pageHeight}` | the drawing's box: its cards, photos, figures and their tags |
 | `log {text}` / `error {text}` | warnings, statement errors, a stopped program |
 
@@ -224,8 +225,10 @@ Explorer opens on the file when it is done.
 ## Moving and resizing a drawing
 
 A drawing on a card (or a photo) sits on a board (`#board`) the page moves and scales as one, 3D figures and their
-tags included. Drag the card to move it (a part of it always stays on screen); drag the grip in its bottom-right corner,
-or turn the wheel over it, to make it bigger or smaller (0.35× to 3×). The 3D figures render with more pixels when it
+tags included. Drag the card to move it (a part of it always stays on screen); drag a grip in either bottom corner
+(there from its first stroke), or turn the wheel over it, to make it bigger or smaller (0.35× to 3×). Its PiP button
+shrinks it into the screen's bottom-right corner, like a video player's, and brings it back; a save records it at the
+size it was. The close button (there from the first stroke, on any drawing) takes it away as esc does. The 3D figures render with more pixels when it
 is bigger, so they stay sharp. While there is a card the stage window takes the mouse over it (the page reports the
 card's box with the figures'), so the card can be grabbed even while it is still being drawn; marks drawn straight
 over the screen (pointing at what is under them) are never movable. A new drawing goes where it is drawn; a replay for
