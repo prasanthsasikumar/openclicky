@@ -260,11 +260,14 @@ enum DrawStageLesson {
             return done ? .notADrawing : .undecided
         }
         let line = lines[firstIndex].trimmingCharacters(in: .whitespaces)
-        let isComplete = done || firstIndex < lines.count - 1
         if line.trimmingCharacters(in: .punctuationCharacters).uppercased() == notAFollowUp { return .notADrawing }
         if codeStarts.contains(where: { line.hasPrefix($0) }) { return .program }
-        // "ke", "NO", "It is 3": a line still being written could yet become keep(), NONE, or a
-        // sentence; only a whole line of prose settles it.
-        return isComplete ? .notADrawing : .undecided
+        if done { return .notADrawing }
+        // Prose. One short line may be a preface before the fence ("Here's a drawing of the heart:"),
+        // which some models write despite being told not to, so it waits; a second complete line, or
+        // a long first one, is a spoken answer and settles it without waiting for the whole reply.
+        let completeProseLines = lines.dropFirst(firstIndex).dropLast().filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        let proseCharacters = text.count
+        return completeProseLines >= 2 || proseCharacters >= 160 ? .notADrawing : .undecided
     }
 }

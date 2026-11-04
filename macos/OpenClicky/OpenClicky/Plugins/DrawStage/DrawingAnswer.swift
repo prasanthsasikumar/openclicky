@@ -227,7 +227,7 @@ enum DrawingAnswer {
                 return try interrupted(state: state, stage: stage, speech: speech, playback: playback, log: log, onInterrupted: onInterrupted)
             }
             if state.stageFailed { return notDrawn("the stage did not start") }
-            if state.decision == .notADrawing { return notDrawn("the model answered in words") }
+            if state.decision == .notADrawing { return notDrawn("the model answered in words: \(replyHead(state.latestReply))") }
             if state.stopped, state.linesHeard.isEmpty, state.fedProgram.isEmpty {
                 return notDrawn("stopped before anything was drawn", stoppedByThePerson: true)
             }
@@ -240,7 +240,7 @@ enum DrawingAnswer {
         }
 
         if state.decision == .notADrawing || DrawStageLesson.decide(replySoFar: reply, done: true) == .notADrawing {
-            return notDrawn("the model answered in words")
+            return notDrawn("the model answered in words: \(replyHead(reply.isEmpty ? state.latestReply : reply))")
         }
         let program = DrawStageLesson.programIn(reply)
         if state.stageFailed { return notDrawn("the stage did not start") }
@@ -295,6 +295,12 @@ enum DrawingAnswer {
         }
         return DrawingAnswerResult(drew: true, spokenLines: state.linesHeard, unspokenAfterVoiceFailure: unspoken,
                                    program: program, keptTheDrawing: state.keeps == true, stoppedByThePerson: state.stopped)
+    }
+
+    /// The first words of a reply, one line, for the log when the model declined to draw.
+    private static func replyHead(_ reply: String) -> String {
+        let oneLine = reply.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return oneLine.count > 120 ? String(oneLine.prefix(120)) + "…" : oneLine
     }
 
     /// The task was cancelled (a new question): a drawing with a line already drawn stays on the

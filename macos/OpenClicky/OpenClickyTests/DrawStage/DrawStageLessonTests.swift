@@ -77,7 +77,8 @@ import Testing
         #expect(DrawStageLesson.decide(replySoFar: "NO", done: false) == .undecided)
         #expect(DrawStageLesson.decide(replySoFar: "NONE", done: false) == .notADrawing)
         #expect(DrawStageLesson.decide(replySoFar: "  NONE.\n", done: false) == .notADrawing)
-        #expect(DrawStageLesson.decide(replySoFar: "It is 3 pm.\n", done: false) == .notADrawing)
+        #expect(DrawStageLesson.decide(replySoFar: "It is 3 pm.\n", done: false) == .undecided)
+        #expect(DrawStageLesson.decide(replySoFar: "It is 3 pm.\nNothing more.\n", done: false) == .notADrawing)
         #expect(DrawStageLesson.decide(replySoFar: "It is 3", done: false) == .undecided)
         #expect(DrawStageLesson.decide(replySoFar: "```js\nstep(1)", done: false) == .program)
         #expect(DrawStageLesson.decide(replySoFar: "```", done: false) == .program)
@@ -86,6 +87,18 @@ import Testing
         #expect(DrawStageLesson.decide(replySoFar: "keep()", done: false) == .program)
         #expect(DrawStageLesson.decide(replySoFar: "Sure", done: true) == .notADrawing)
         #expect(DrawStageLesson.decide(replySoFar: "", done: true) == .notADrawing)
+    }
+
+    /// A model that prefaces its program with a line of prose ("Here's a drawing of the heart:")
+    /// must not be cut off at that line: the fence a moment later makes it a program.
+    @Test func aShortPrefaceBeforeTheFenceIsStillAProgram() {
+        #expect(DrawStageLesson.decide(replySoFar: "Here's a drawing of the heart:\n", done: false) == .undecided)
+        #expect(DrawStageLesson.decide(replySoFar: "Here's a drawing of the heart:\n```js\nstep(1)", done: false) == .program)
+        #expect(DrawStageLesson.decide(replySoFar: "Here's a drawing of the heart:\n", done: true) == .notADrawing)
+        // Prose that goes on (a spoken answer) settles it without waiting for the whole reply.
+        let longProse = String(repeating: "An electron microscope uses a beam of electrons instead of light. ", count: 5)
+        #expect(DrawStageLesson.decide(replySoFar: longProse, done: false) == .notADrawing)
+        #expect(DrawStageLesson.decide(replySoFar: "It is 3 pm.\nNothing more.\nThat is all.\n", done: false) == .notADrawing)
     }
 
     @Test func promptsComeFromTheBundleWithPlaceholdersFilled() throws {
