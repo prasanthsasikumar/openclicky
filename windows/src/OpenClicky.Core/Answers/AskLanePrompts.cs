@@ -173,7 +173,8 @@ public static class AskLanePrompts
         if (markedAreaLine is not null) contextLines.Add(markedAreaLine);
         if (writingTarget is not null) contextLines.Add(writingTarget.ContextLine);
         else if (!string.IsNullOrWhiteSpace(selectedText)) contextLines.Add(SelectedTextContextLine(selectedText));
-        if (pointer is not null) contextLines.Add(pointer.PromptLine);
+        // A marked area is what "this" means; the pointer's place would be a second answer to that.
+        if (pointer is not null && markedAreaLine is null) contextLines.Add(pointer.PromptLine);
         if (isRepeatedQuestion) contextLines.Add(RepeatedQuestion.PromptLine);
         if (contextLines.Count == 0) return transcript;
         return transcript + "\n\n" + string.Join("\n", contextLines.Select(line => "[" + line + "]"));

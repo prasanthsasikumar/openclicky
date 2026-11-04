@@ -114,6 +114,10 @@ public class ScreenMarkerTests
         Assert.Contains("screen 2 of 2", line);
         var asked = AskLanePrompts.AskUserPrompt("how does this work?", null, markedAreaLine: line);
         Assert.StartsWith("how does this work?\n\n[Before asking, the user marked", asked);
+        // The pointer's place is left out then: the mark is what "this" means.
+        var pointer = new PointerInCapture(640, 360, "screen1");
+        Assert.DoesNotContain(pointer.PromptLine, AskLanePrompts.AskUserPrompt("how does this work?", null, pointer: pointer, markedAreaLine: line));
+        Assert.Contains(pointer.PromptLine, AskLanePrompts.AskUserPrompt("how does this work?", null, pointer: pointer));
         Assert.Contains("[" + line + "]", DrawStageLesson.UserPrompt("how does this work?", line));
         Assert.DoesNotContain("marked", DrawStageLesson.UserPrompt("how does this work?"));
     }

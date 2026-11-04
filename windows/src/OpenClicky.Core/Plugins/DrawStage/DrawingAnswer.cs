@@ -116,6 +116,14 @@ public static class DrawingAnswer
                 speech.Enqueue(text);
             }
         }
+        // The hold line waits for the reply to be a program as well as for the time: one that turns out to be NONE (a
+        // picture doesn't answer it) must not have promised a drawing first.
+        var holdLineDue = false;
+        var replyIsAProgram = false;
+        void SayHoldLineIfDue()
+        {
+            if (holdLineDue && replyIsAProgram) SayHoldLine();
+        }
         void SayHoldLine()
         {
             lock (spokenLines)
@@ -170,7 +178,12 @@ public static class DrawingAnswer
             if (holdLine is not null)
             {
                 _ = Task.Delay(holdLineAfter ?? HoldLineAfter, playbackCancellation.Token).ContinueWith(
-                    task => { if (task.IsCompletedSuccessfully) SayHoldLine(); }, TaskScheduler.Default);
+                    task =>
+                    {
+                        if (!task.IsCompletedSuccessfully) return;
+                        holdLineDue = true;
+                        SayHoldLineIfDue();
+                    }, TaskScheduler.Default);
             }
 
             string reply;
@@ -179,6 +192,11 @@ public static class DrawingAnswer
                 reply = await writeReply(replySoFar =>
                 {
                     var program = DrawStageLesson.ProgramIn(replySoFar);
+                    if (!replyIsAProgram && program.Length > 0)
+                    {
+                        replyIsAProgram = true;
+                        SayHoldLineIfDue();
+                    }
                     if (keeps is null)
                     {
                         keeps = DrawStageLesson.KeepsTheDrawing(program, done: false);

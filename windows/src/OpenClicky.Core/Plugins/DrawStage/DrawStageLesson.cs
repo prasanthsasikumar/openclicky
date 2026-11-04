@@ -349,10 +349,14 @@ public static partial class DrawStageLesson
     /// <summary>The question as the model reads it.</summary>
     public static string UserPrompt(string question, string? markedAreaLine = null) =>
         $"They asked: \"{question.Trim()}\"\n" + (markedAreaLine is null ? "" : $"[{markedAreaLine}]\n")
-        + "Answer it by drawing on their screen, as one ```js program.";
+        + "Answer it by drawing on their screen, as one ```js program. If a picture wouldn't help answer it (an error message, "
+        + $"a failing build, what to type or click), reply with only the word {NoDrawing} instead: it is answered in words then.";
+
+    /// <summary>The reply that says a picture doesn't answer the question (it is answered in words instead).</summary>
+    public const string NoDrawing = "NONE";
 
     /// <summary>The reply that says a question asked while a drawing is up isn't about it (it is answered another way).</summary>
-    public const string NotAFollowUp = "NONE";
+    public const string NotAFollowUp = NoDrawing;
 
     /// <summary>A question asked while <paramref name="drawing"/> is on their screen: the model reads its program and adds to it
     /// (keep()), draws it again another way, or answers <see cref="NotAFollowUp"/>.</summary>

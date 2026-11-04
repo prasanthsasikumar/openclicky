@@ -87,7 +87,8 @@ public static partial class PieceMakers
         new(PieceMakerKind.LlamaMeshLMStudio, "LLaMA-Mesh in LM Studio",
             "The same model in LM Studio: search for LLaMA-Mesh and load it.", GraphicsGrade.Medium),
         new(PieceMakerKind.Hunyuan3D, "Hunyuan3D-2 server",
-            "Realistic textured pieces from Tencent's Hunyuan3D-2 (python api_server.py). Shape alone about 6 GB, with textures about 16-24 GB.", GraphicsGrade.High),
+            "Realistic textured pieces from Tencent's Hunyuan3D-2 (python api_server.py). Shape alone about 6 GB, with textures about 16-24 GB. "
+            + "With an OpenAI key, a picture of each piece is made first with OpenAI's image model, charged to that key.", GraphicsGrade.High),
     ];
 
     /// <summary>The grade of a graphics card with <paramref name="videoMemoryGB"/> of its own memory (null: none found).</summary>

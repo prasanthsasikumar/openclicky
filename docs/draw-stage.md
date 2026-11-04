@@ -101,8 +101,10 @@ with pointing.
    `PieceStarted` / `PieceEnded` events become `lineStarted` / `lineEnded` (pace `speech`), so each beat is drawn
    while its sentence is heard. `programRan` finishes the queue after the last line.
 4. If the reply holds no program, or the stage cannot start, the question goes back to the normal ask lane
-   before anything is said. If the voice fails partway, the stage draws the rest at once and the system voice
-   reads what was left.
+   before anything is said. The words that send a question here are only a first guess: the model may reply `NONE`
+   when a picture wouldn't help ("explain this error"), and the hold line ("One moment, let me draw that for you")
+   waits until the reply is a program, so it never promises a drawing that doesn't come. If the voice fails partway,
+   the stage draws the rest at once and the system voice reads what was left.
 5. Esc and the next question clear the stage (`TeacherPlugin.ClearBoard`). The stage's browser starts as soon as
    the talk key goes down (`DrawStageController.Prepare`), so the first drawing does not wait for it.
 

@@ -50,16 +50,29 @@ public sealed partial class CompanionManager
     {
         if (!IsForTheStage(transcript, capture))
         {
+            // Hands-free moved on: a drawing still being narrated stops with its stage, and the fast voice answers this one
+            // (its reply would otherwise be cut for the drawing's sake).
+            StopRealtimeDrawing("a question that isn't about the drawing");
             DrawStageController.Shared.ClearIfShowing("a question that isn't about the drawing");
             return false;
         }
-        realtimeDrawing?.Cancel();
+        StopRealtimeDrawing("a new question for the stage");
         var cancellation = new CancellationTokenSource();
         realtimeDrawing = cancellation;
         RealtimeVoiceClient.StopSpeaking();
         AppLog.Write("talk: answering by drawing; the fast voice steps aside");
         _ = RunRealtimeDrawingAsync(transcript, capture, cancellation);
         return true;
+    }
+
+    /// <summary>Stops the fast-voice question being answered by drawing, its narration with it.</summary>
+    private void StopRealtimeDrawing(string reason)
+    {
+        if (realtimeDrawing is not { } drawing) return;
+        realtimeDrawing = null;
+        AppLog.Write($"talk: the drawing being narrated stops ({reason})");
+        try { drawing.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task RunRealtimeDrawingAsync(string transcript, CompanionScreenCapture capture, CancellationTokenSource cancellation)

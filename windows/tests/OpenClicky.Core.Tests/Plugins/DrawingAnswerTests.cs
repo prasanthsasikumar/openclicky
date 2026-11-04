@@ -274,6 +274,20 @@ public partial class DrawingAnswerTests
     }
 
     [Fact]
+    public async Task ASlowNoneIsNotDrawnAndPromisesNoDrawingFirst()
+    {
+        static async Task<string> SlowNone(Action<string> onReplySoFar, CancellationToken token)
+        {
+            await Task.Delay(300, token);
+            onReplySoFar(DrawStageLesson.NoDrawing);
+            return DrawStageLesson.NoDrawing;
+        }
+        var (result, _, played) = await DrawAsync(SlowNone, holdLine: DrawingAnswer.HoldLine, holdLineAfter: TimeSpan.FromMilliseconds(50));
+        Assert.False(result.Drew);
+        Assert.Empty(played);
+    }
+
+    [Fact]
     public async Task AQuickFirstLineHasNoHoldLine()
     {
         var (_, _, played) = await DrawAsync(Streams(TwoBeats), holdLine: DrawingAnswer.HoldLine, holdLineAfter: TimeSpan.FromSeconds(5));
