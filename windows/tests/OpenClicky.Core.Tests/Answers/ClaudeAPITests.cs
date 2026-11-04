@@ -199,6 +199,60 @@ public class ClaudeApiRequestTests : IDisposable
     }
 
     [Fact]
+    public async Task ADrawingOnTheAccountNamesItselfAndAsksForNoThinking()
+    {
+        recorder.Answer = (_, _) => Sse(AnswerEvents);
+        await Api(Account).AnalyzeImageStreamingAsync(OneImage, "s", null, "q", null, _ => { }, default, 8192, forDrawing: true);
+
+        var (request, bodyText) = Assert.Single(recorder.Requests);
+        Assert.Equal("drawing", request.HeaderValue("X-OpenClicky-Purpose"));
+        var body = JsonNode.Parse(bodyText)!;
+        Assert.Equal(8192, body["max_tokens"]!.GetValue<int>());
+        Assert.Equal("between_tools", body["thinking"]!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task ADrawingKeepsItsNameWhenTheSignInIsRenewed()
+    {
+        recorder.Answer = (_, count) => count == 1
+            ? new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("""{"error":"sign in again"}""") }
+            : Sse(AnswerEvents);
+        var signIn = new BackendSignIn.SignInRejectionHandling(
+            _ => Task.FromResult(OpenClickyAuthSession.RejectionOutcome.TryAgain),
+            () => Task.FromResult<string?>("renewed-token"),
+            () => Task.CompletedTask);
+        await Api(Account, signIn).AnalyzeImageStreamingAsync(OneImage, "s", null, "q", null, _ => { }, default, 8192, forDrawing: true);
+
+        Assert.Equal(2, recorder.Requests.Count);
+        Assert.Equal("drawing", recorder.Requests[1].Request.HeaderValue("X-OpenClicky-Purpose"));
+    }
+
+    [Fact]
+    public async Task AnOrdinaryAnswerNeitherNamesItselfNorAsksForNoThinking()
+    {
+        recorder.Answer = (_, _) => Sse(AnswerEvents);
+        await Api(Account).AnalyzeImageStreamingAsync(OneImage, "s", null, "q", null, _ => { });
+
+        var (request, bodyText) = Assert.Single(recorder.Requests);
+        Assert.Null(request.HeaderValue("X-OpenClicky-Purpose"));
+        Assert.Null(JsonNode.Parse(bodyText)!["thinking"]);
+    }
+
+    [Fact]
+    public async Task ADrawingOnAnOwnKeySendsNoBackendHeaderAndOnlyAThinkingModelIsToldNotTo()
+    {
+        recorder.Answer = (_, _) => Sse(AnswerEvents);
+        await Api(OwnKey).AnalyzeImageStreamingAsync(OneImage, "s", null, "q", null, _ => { }, default, 8192, forDrawing: true);
+        var thinkingModel = new ClaudeAPI(() => "https://backend.example/chat", "claude-sonnet-5-5", () => OwnKey, warmUpConnection: false);
+        await thinkingModel.AnalyzeImageStreamingAsync(OneImage, "s", null, "q", null, _ => { }, default, 8192, forDrawing: true);
+
+        Assert.Null(recorder.Requests[0].Request.HeaderValue("X-OpenClicky-Purpose"));
+        Assert.Null(JsonNode.Parse(recorder.Requests[0].Body)!["thinking"]);
+        Assert.Null(recorder.Requests[1].Request.HeaderValue("X-OpenClicky-Purpose"));
+        Assert.Equal("between_tools", JsonNode.Parse(recorder.Requests[1].Body)!["thinking"]!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task NoToolsMeansNoToolsField()
     {
         recorder.Answer = (_, _) => Sse(AnswerEvents);

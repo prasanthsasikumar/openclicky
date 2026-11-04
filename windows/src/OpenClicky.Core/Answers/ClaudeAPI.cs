@@ -262,7 +262,8 @@ public sealed class ClaudeAPI
         IReadOnlyList<JsonObject>? tools,
         Action<string> onTextChunk,
         CancellationToken cancellationToken = default,
-        int maxTokens = 1024)
+        int maxTokens = 1024,
+        bool forDrawing = false)
     {
         var stopwatch = Stopwatch.StartNew();
         conversationHistory ??= [];
@@ -287,9 +288,19 @@ public sealed class ClaudeAPI
             ["messages"] = MessagesBody(images, conversationHistory, userPrompt),
         };
         if (tools.Count > 0) body["tools"] = new JsonArray(tools.Select(tool => (JsonNode)tool.DeepClone()).ToArray());
+        // A drawing spends its whole budget on the program, so it asks for no thinking. The backend picks its own model and
+        // turns this into the form that model takes; directly, only the models that think by default accept it.
+        if (forDrawing && (route.Kind != ProviderRouteKind.AnthropicDirect
+                           || Model.StartsWith("claude-sonnet-5", StringComparison.Ordinal)
+                           || Model.StartsWith("claude-opus-5", StringComparison.Ordinal)))
+        {
+            body["thinking"] = new JsonObject { ["type"] = "between_tools" };
+        }
 
         var (request, goesToBackend) = MakeApiRequest(route, Credentials(), body);
         using var _ = request;
+        // Only a request that names itself a drawing gets the backend's larger output cap.
+        if (forDrawing && goesToBackend) request.Headers.TryAddWithoutValidation("X-OpenClicky-Purpose", "drawing");
         Debug.WriteLine($"🌐 Claude streaming request: {PayloadMegabytes(body)}MB, {images.Count} image(s)");
 
         // On the account's token a refused sign-in is renewed once and the question sent again,
