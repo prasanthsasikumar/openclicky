@@ -81,7 +81,8 @@ public sealed partial class CompanionManager
                     return;
                 }
                 // A question a picture answers is drawn and narrated on the stage; the fast voice steps aside for it.
-                if (!StartRealtimeDrawing(text, client.LastScreenCapture)) TeacherPlugin.StartLesson(text, client.LastScreenCapture);
+                // The Teacher's own board only teaches while the drawing stage is off.
+                if (!StartRealtimeDrawing(text, client.LastScreenCapture) && !DrawingStageIsOn) TeacherPlugin.StartLesson(text, client.LastScreenCapture);
             }
             else
             {
@@ -133,8 +134,10 @@ public sealed partial class CompanionManager
         client.InstructionsProvider = () =>
             AskLanePrompts.ComposeTalkInstructions(AskLanePrompts.WithReplyLanguage(client.BaseInstructions + PluginPromptLines()), TalkSkillsBlock());
         client.PluginToolDefinitions = () => TeacherPlugin.IsEnabled ? TeacherPlugin.RealtimeToolDefinitions() : [];
-        client.OnPluginToolCall = (toolName, arguments, capture) =>
-            Task.FromResult(TeacherPlugin.Perform(toolName, TeacherPlugin.StringArguments(arguments), capture));
+        // With the drawing stage on, the Teacher's draw and picture tools are drawn on the stage instead of its board.
+        client.OnPluginToolCall = (toolName, arguments, capture) => Task.FromResult(DrawingStageIsOn
+            ? DrawOnTheStageInstead(toolName, capture)
+            : TeacherPlugin.Perform(toolName, TeacherPlugin.StringArguments(arguments), capture));
         client.OnPointAt = (screenshotPoint, label, capture) => PointAt(screenshotPoint, label, capture);
         client.OnClick = async (point, inNewTab) =>
         {

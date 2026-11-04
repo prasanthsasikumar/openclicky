@@ -164,7 +164,7 @@ public sealed partial class CompanionManager
         {
             await RealtimeVoiceClient.ConnectIfNeededAsync(IsAlwaysListening ? RealtimeTurnMode.AlwaysOn : RealtimeTurnMode.PushToTalk);
             await RealtimeVoiceClient.SendTextTurnAsync(text);
-            TeacherPlugin.StartLesson(text, RealtimeVoiceClient.LastScreenCapture);
+            if (!DrawingStageIsOn) TeacherPlugin.StartLesson(text, RealtimeVoiceClient.LastScreenCapture);
         }
         catch (Exception error)
         {

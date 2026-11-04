@@ -46,9 +46,10 @@ public sealed partial class CompanionManager
     /// as on the ask lane, while the fast voice's own reply is cut so two voices never talk over each other. False when
     /// the question isn't one for a drawing; when the drawing can't be made, the fast voice answers it in words.
     /// </summary>
-    private bool StartRealtimeDrawing(string transcript, CompanionScreenCapture? capture)
+    private bool StartRealtimeDrawing(string transcript, CompanionScreenCapture? capture, bool asked = false)
     {
-        if (!IsForTheStage(transcript, capture))
+        // asked: the fast voice itself asked for a drawing (the Teacher's draw tool), whatever the question's words.
+        if (asked ? capture is null || !DrawingStageIsOn : !IsForTheStage(transcript, capture))
         {
             // Hands-free moved on: a drawing still being narrated stops with its stage, and the fast voice answers this one
             // (its reply would otherwise be cut for the drawing's sake).
@@ -75,6 +76,19 @@ public sealed partial class CompanionManager
         var stage = DrawStageController.Shared;
         if (stage.IsShowing && stage.Current is null && AskLaneCanBeStopped) StopAskLane("the drawing was closed");
         TeacherPlugin.ClearBoard("its close button");
+    }
+
+    /// <summary>The fast voice called the Teacher's draw or picture tool while the drawing stage is on: the stage draws the
+    /// question instead (its words weren't ones the stage knew), so the drawing can be moved, saved and closed like any
+    /// other; null for a tool that isn't the Teacher's.</summary>
+    private string? DrawOnTheStageInstead(string toolName, CompanionScreenCapture? capture)
+    {
+        if (!TeacherPlugin.ToolNames.Contains(toolName)) return null;
+        const string LeaveItToTheDrawing = "the drawing is appearing on their screen and its own voice explains it; say nothing more";
+        if (realtimeDrawing is not null) return LeaveItToTheDrawing;
+        if (LastTranscript is not { Length: > 0 } question || !StartRealtimeDrawing(question, capture, asked: true)) return "explain it in words";
+        AppLog.Write($"talk: the fast voice asked for {toolName}; the drawing stage draws it");
+        return LeaveItToTheDrawing;
     }
 
     /// <summary>Stops the fast-voice question being answered by drawing, its narration with it.</summary>
@@ -128,7 +142,7 @@ public sealed partial class CompanionManager
         }
         // The drawing still up, when the question is asked on its screen: the question may be about it.
         var drawingUp = DrawingUpOn(capture);
-        var wantsADrawing = DrawStageLesson.WantsADrawing(transcript);
+        var wantsADrawing = DrawStageLesson.WantsADrawing(transcript) || TeacherQuestion.IsTeachingQuestion(transcript);
         AppLog.Write($"draw: answering by drawing ({capture.ScreenshotWidthInPixels}×{capture.ScreenshotHeightInPixels} canvas"
             + (drawingUp is null ? ")" : $", a follow-up to the drawing up ({drawingUp.Lines.Count} lines))"));
         // One lesson per question: the Teacher's own board stays away from this one.
@@ -204,11 +218,18 @@ public sealed partial class CompanionManager
         }
     }
 
-    /// <summary>Whether the stage answers <paramref name="transcript"/>: one a picture answers, or one that may be about the
-    /// drawing still up on <paramref name="capture"/>'s screen.</summary>
+    /// <summary>The drawing stage answers what a picture answers (Teacher on, its drawing stage on); the Teacher's own board
+    /// is left for when it is off, so every drawing can be moved, saved, shrunk and closed the same way.</summary>
+    private bool DrawingStageIsOn =>
+        DrawStageController.Shared.Surface is not null && DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled);
+
+    /// <summary>Whether the stage answers <paramref name="transcript"/>: one a picture answers (the stage's words, or a
+    /// question the Teacher would teach on its board), or one that may be about the drawing still up on
+    /// <paramref name="capture"/>'s screen.</summary>
     private bool IsForTheStage(string transcript, CompanionScreenCapture? capture) =>
-        capture is not null && DrawStageController.Shared.Surface is not null && DrawStageLesson.IsEnabled(preferences, TeacherPlugin.IsEnabled)
-        && (DrawStageLesson.WantsADrawing(transcript) || (DrawingUpOn(capture) is not null && DrawStageLesson.MayBeAFollowUp(transcript)));
+        capture is not null && DrawingStageIsOn
+        && (DrawStageLesson.WantsADrawing(transcript) || TeacherQuestion.IsTeachingQuestion(transcript)
+            || (DrawingUpOn(capture) is not null && DrawStageLesson.MayBeAFollowUp(transcript)));
 
     /// <summary>The finished drawing on the stage, when it is on <paramref name="capture"/>'s screen.</summary>
     private static DrawnAnswer? DrawingUpOn(CompanionScreenCapture capture) =>

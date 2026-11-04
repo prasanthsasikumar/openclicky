@@ -102,7 +102,10 @@ with pointing.
    `PieceStarted` / `PieceEnded` events become `lineStarted` / `lineEnded` (pace `speech`), so each beat is drawn
    while its sentence is heard. `programRan` finishes the queue after the last line.
 4. If the reply holds no program, or the stage cannot start, the question goes back to the normal ask lane
-   before anything is said. The words that send a question here are only a first guess: the model may reply `NONE`
+   before anything is said. With the stage on, the Teacher's own handwriting board is not used: the questions it would
+   teach go to the stage, the ask lane doesn't offer its tools, and a fast-voice call to its draw tool is drawn on the
+   stage instead, so every drawing can be moved, saved, shrunk and closed the same way. The words that send a question
+   here are only a first guess: the model may reply `NONE`
    when a picture wouldn't help ("explain this error"), and the hold line ("One moment, let me draw that for you")
    waits until the reply is a program, so it never promises a drawing that doesn't come. If the voice fails partway,
    the stage draws the rest at once and the system voice reads what was left.

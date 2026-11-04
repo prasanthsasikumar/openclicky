@@ -216,7 +216,8 @@ public sealed partial class CompanionManager
         {
             return;
         }
-        if (!isGuidedStepContinuation) TeacherPlugin.StartLesson(transcript, cursorCapture);
+        // The Teacher's own board only teaches while the drawing stage is off (the stage took this question if it wanted it).
+        if (!isGuidedStepContinuation && !DrawingStageIsOn) TeacherPlugin.StartLesson(transcript, cursorCapture);
         var labeledImages = screenCaptures.Select(ImageLabeledWithItsPixelSize).ToList();
         // The pointer's place in its screenshot goes into the question, and a close-up of what is
         // around it rides along, so "what is this?" is about the thing pointed at and not the
@@ -248,7 +249,8 @@ public sealed partial class CompanionManager
         var claudeRoute = ProviderRouter.Route(ProviderCapability.Claude, ProviderRouter.CurrentCredentials());
         // Offered wherever the agent lane doesn't run, and to a plan through PlanToolProtocol's [ACTION: …] lines.
         var offersQuickActions = AskLanePrompts.OffersQuickActionsToAskLane(agentLaneRuns, claudeRoute.AnsweringSource);
-        var teacherIsOn = TeacherPlugin.IsEnabled;
+        // The Teacher's board tools only while the drawing stage is off: with it on, drawings are the stage's.
+        var teacherIsOn = TeacherPlugin.IsEnabled && !DrawingStageIsOn;
         IReadOnlyList<System.Text.Json.Nodes.JsonObject> askTools =
         [
             .. AskLanePrompts.AskTools(offersQuickActions, writingTarget is not null, DesktopAction.AnthropicToolDefinitions()),

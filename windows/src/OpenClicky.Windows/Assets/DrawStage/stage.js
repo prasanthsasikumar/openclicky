@@ -629,7 +629,12 @@
     const finished = remembered && finishedSent && !recording;
     const canMove = movable();
     const box = recording ? null : contentBounds();
-    for (const button of tools.querySelectorAll('[data-save]')) button.hidden = !finished;
+    // Picture and Video show from the start too, waiting (dimmed) until the drawing has finished and while a save runs.
+    for (const button of tools.querySelectorAll('[data-save]')) {
+      button.dataset.title = button.dataset.title || button.title;
+      button.disabled = !finished || savingBusy;
+      button.title = finished ? button.dataset.title : 'Ready when the drawing has finished';
+    }
     pipButton.hidden = !canMove;
     pipButton.title = pip ? 'Bring it back' : 'Shrink it into the corner of the screen';
     pipButton.querySelector('.icon').textContent = pip ? '\uE740' : '\uE73F';
@@ -794,11 +799,12 @@
   // ------------------------------------------------------------------ saving: what the app is doing
   // A pill with a bar (or a spinner while it can't say how far it is), just outside the drawing's box: below it, above
   // it or beside it, so the video's frames (cut to the box) never have it in.
-  let savingBox = null, savingTimer = 0;
+  let savingBox = null, savingTimer = 0, savingBusy = false;
   function showSaving(message) {
     clearTimeout(savingTimer);
     const busy = message.state !== 'done' && message.state !== 'failed';
-    for (const button of tools.querySelectorAll('[data-save]')) button.disabled = busy;
+    savingBusy = busy;
+    showTools();
     if (saving.hidden || !savingBox) savingBox = contentBounds();
     const known = typeof message.fraction === 'number' && isFinite(message.fraction);
     saving.className = busy ? (known ? '' : 'indeterminate') : message.state;
@@ -813,7 +819,8 @@
     clearTimeout(savingTimer);
     saving.hidden = true;
     savingBox = null;
-    for (const button of tools.querySelectorAll('[data-save]')) button.disabled = false;
+    savingBusy = false;
+    showTools();
   }
 
   function placeSaving() {
