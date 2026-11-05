@@ -68,19 +68,7 @@ public sealed partial class DesktopActionExecutor : IDesktopActionExecutor
         _ => null,
     };
 
-    public bool RevealInExplorer(string path)
-    {
-        if (!File.Exists(path) && !Directory.Exists(path)) return false;
-        try
-        {
-            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = false });
-            return true;
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return false;
-        }
-    }
+    public bool RevealInExplorer(string path) => ExplorerReveal.Select(path);
 
     public bool SetVolume(int percent)
     {

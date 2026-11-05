@@ -8,6 +8,7 @@
 //   --openclicky-mic-smoke <seconds> [engine]      records the microphone, prints its level, saves a WAV and transcribes it
 //   --openclicky-check-source <source>             Settings' Test button for one answer source
 //   --openclicky-answer-smoke                      one real question (a red square) through ClaudeAPI
+//   --openclicky-reveal-smoke <file> [<file>…]     selects each file in Explorer in turn, in the window already on its folder
 //   --openclicky-teacher-smoke [sketch | picture:<words> | lesson:<question>] [--shot <png>]
 //                                                  draws a Teacher lesson on the cursor's screen (Plugins/Teacher/TeacherSmoke)
 //   --openclicky-drawstage-smoke [program.js | reply:<file> | lesson:<question>] [--speech] [--voice] [--shot <png>]
@@ -80,6 +81,24 @@ internal static class SmokeCommands
         {
             ConsoleAttachment.Attach();
             return Task.Run(() => CheckSourceAsync(sourceName)).GetAwaiter().GetResult();
+        }
+        if (Argument("--openclicky-reveal-smoke") is not null)
+        {
+            ConsoleAttachment.Attach();
+            // Each file in turn, from a pool thread like a save: files in one folder share one Explorer window.
+            var paths = args.SkipWhile(argument => argument != "--openclicky-reveal-smoke").Skip(1).ToList();
+            return Task.Run(async () =>
+            {
+                var failed = 0;
+                foreach (var path in paths)
+                {
+                    var shown = ExplorerReveal.Select(path);
+                    Console.WriteLine($"smoke: reveal {Path.GetFileName(path)}: {(shown ? "shown" : "not shown")}");
+                    if (!shown) failed++;
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+                }
+                return failed == 0 ? 0 : 1;
+            }).GetAwaiter().GetResult();
         }
         if (args.Contains("--openclicky-answer-smoke"))
         {
