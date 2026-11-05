@@ -56,8 +56,8 @@ struct ProviderRouteTests {
         #expect(ProviderRouter.route(for: .assemblyAIStreaming, credentials: bothKeys) == .unavailable(ProviderRouter.assemblyAINeedsAccountSentence))
     }
 
-    /// Automatic order: own keys (Anthropic, then OpenRouter, OpenAI, Gemini, xAI, Mistral, Groq),
-    /// then the plans switched on, then OpenClicky's credits.
+    /// Automatic order: own keys (Anthropic, then OpenRouter, OpenAI, Gemini, xAI, Mistral, Groq,
+    /// OpenCode Zen), then the plans switched on, then OpenClicky's credits.
     @Test func automaticAnswersWithTheFirstSourceThatCan() {
         let account = "acct"
         #expect(ProviderRouter.route(for: .claude, credentials: ProviderCredentials(openAIKey: nil, anthropicKey: nil, accountToken: account, geminiKey: "g")) == .answerProvider(.gemini))
@@ -76,6 +76,16 @@ struct ProviderRouteTests {
         #expect(ProviderRouter.route(for: .claude, credentials: pickedCreditsSignedIn) == .backend)
         let pickedMissing = ProviderCredentials(openAIKey: nil, anthropicKey: "a", accountToken: nil, preferredAnswerSource: .mistral)
         #expect(ProviderRouter.route(for: .claude, credentials: pickedMissing) == .anthropicDirect)
+    }
+
+    /// An OpenCode Zen key sits after the other own keys and before the plans.
+    @Test func anOpenCodeZenKeyAnswersAfterTheOtherOwnKeysAndBeforeThePlans() {
+        let credentials = ProviderCredentials(openAIKey: nil, anthropicKey: nil, accountToken: "t", groqKey: "q", openCodeKey: " sk-zen ",
+                                              codexPlanOn: true)
+        #expect(credentials.answerSourcesInOrder == [.groq, .openCode, .codexPlan, .openClickyAccount])
+        #expect(credentials.key(for: .openCode) == "sk-zen")
+        let onlyZen = ProviderCredentials(openAIKey: nil, anthropicKey: nil, accountToken: nil, openCodeKey: "sk-zen")
+        #expect(ProviderRouter.route(for: .claude, credentials: onlyZen) == .answerProvider(.openCode))
     }
 
     /// Only questions move: speech, dictation clean-up and the rest still need OpenAI or the account.

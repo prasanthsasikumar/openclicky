@@ -50,12 +50,14 @@ struct OpenClickyShellSettings: Codable {
     /// them, straight from this Mac. Never sent to the OpenClicky backend.
     var sarvamKey: String? = nil
     /// More keys that can answer questions (AnswerProvider.swift), each straight to its vendor:
-    /// OpenRouter (one key for Claude, GPT, Gemini, Llama…), Google Gemini, Groq, Mistral, xAI.
+    /// OpenRouter (one key for Claude, GPT, Gemini, Llama…), Google Gemini, Groq, Mistral, xAI,
+    /// OpenCode Zen (opencode.ai/zen).
     var openRouterApiKey: String? = nil
     var geminiApiKey: String? = nil
     var groqApiKey: String? = nil
     var mistralApiKey: String? = nil
     var xaiApiKey: String? = nil
+    var openCodeApiKey: String? = nil
     /// Answer questions through a plan the person already pays for: the Claude Code CLI signed in
     /// to their Claude plan, or Codex signed in with ChatGPT. Off until switched on in Settings.
     var useClaudeCodePlan: Bool? = nil
@@ -125,6 +127,7 @@ extension OpenClickyShellSettings {
         groqApiKey = try container.decodeIfPresent(String.self, forKey: .groqApiKey)
         mistralApiKey = try container.decodeIfPresent(String.self, forKey: .mistralApiKey)
         xaiApiKey = try container.decodeIfPresent(String.self, forKey: .xaiApiKey)
+        openCodeApiKey = try container.decodeIfPresent(String.self, forKey: .openCodeApiKey)
         useClaudeCodePlan = try container.decodeIfPresent(Bool.self, forKey: .useClaudeCodePlan)
         useCodexPlan = try container.decodeIfPresent(Bool.self, forKey: .useCodexPlan)
         answerSource = try container.decodeIfPresent(String.self, forKey: .answerSource)
