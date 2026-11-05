@@ -24,6 +24,7 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 - **A clear note when your free trial ends.** If you tried OpenClicky without an email, it used to ask for "the code from the email" when your free days ran out, in a robotic voice, and then go quiet. It now says your trial has ended, opens Keys & Account so you can add your email, and shows the note beside the pointer every time you ask.
 - **Hands-free works with the lid closed.** With the lid closed (or with a microphone you chose in Settings), hands-free failed to start at all. It now records from that microphone and finishes its answers: since only the Mac's own microphone can cancel Clicky's voice, the microphone pauses while Clicky speaks, so press esc to interrupt it there.
 - **Account notes in your voice.** Notes about your free allowance now play in the voice you picked (Kokoro, or a key's voice) instead of the Mac's built-in voice.
+- **Answers with your OpenCode Zen key.** Paste a key from [opencode.ai/zen](https://opencode.ai/zen) in Settings → Account → Your keys and Clicky answers through Zen, straight from your Mac. It asks Kimi K2.6, which can see your screen; set another Zen model under `answerModels` → `openCode` in `~/.openclicky/shell.json`, as long as it reads images. Dictation clean-up on that key uses the quicker GLM 5.3 Flash.
 
 ## 0.11.0
 

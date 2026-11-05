@@ -138,11 +138,20 @@ struct AnswerProviderHTTPTests {
         #expect(GeminiAnswerProvider.makeRequestBody(model: "gemini-2.5-flash", answerRequest: withoutTools)["tools"] == nil)
     }
 
+    @Test func openCodeZenGoesToItsOwnChatEndpointWithAModelThatSeesImages() throws {
+        let urlRequest = try OpenAIChatAnswerProvider.makeURLRequest(source: .openCode, apiKey: "sk-zen", model: AnswerSource.openCode.defaultModel ?? "",
+                                                                     answerRequest: sampleRequest)
+        #expect(urlRequest.url?.absoluteString == "https://opencode.ai/inference/openai/v1/chat/completions")
+        #expect(urlRequest.value(forHTTPHeaderField: "Authorization") == "Bearer sk-zen")
+        #expect(AnswerSource.openCode.defaultModel == "kimi-k2.6")
+        #expect(OpenAIChatAnswerProvider.tokenLimitFieldName(for: .openCode) == "max_tokens")
+    }
+
     @Test func openAIItselfGetsMaxCompletionTokens() {
         let body = OpenAIChatAnswerProvider.makeRequestBody(source: .openAI, model: "gpt-5", answerRequest: sampleRequest)
         #expect(body["max_completion_tokens"] as? Int == 512)
         #expect(body["max_tokens"] == nil)
-        for compatibleSource in [AnswerSource.openRouter, .groq, .mistral, .xai] {
+        for compatibleSource in [AnswerSource.openRouter, .groq, .mistral, .xai, .openCode] {
             #expect(OpenAIChatAnswerProvider.tokenLimitFieldName(for: compatibleSource) == "max_tokens")
         }
     }

@@ -198,7 +198,7 @@ struct AnthropicTakePolisher: TakePolisher {
 }
 
 /// Polish and edits on any other answer key the person added (OpenRouter, Gemini, Groq, Mistral,
-/// xAI), straight to that vendor through the ask lane's own provider. A quick model where the
+/// xAI, OpenCode Zen), straight to that vendor through the ask lane's own provider. A quick model where the
 /// default answer model is a slow one: the clean-up gives up after `TakeFormatter.modelTimeoutSeconds`.
 /// The two plans are left out: starting their CLI alone takes longer than that.
 struct AnswerKeyTakePolisher: TakePolisher {
@@ -206,13 +206,14 @@ struct AnswerKeyTakePolisher: TakePolisher {
     let credentials: ProviderCredentials
 
     /// The keys that can polish, in the order they are tried; the fast ones first.
-    static let sourcesInOrder: [AnswerSource] = [.groq, .gemini, .mistral, .openRouter, .xai]
+    static let sourcesInOrder: [AnswerSource] = [.groq, .gemini, .mistral, .openRouter, .xai, .openCode]
 
     /// The model asked to tidy a take, where it differs from the answer model.
     static func polishModel(for source: AnswerSource) -> String? {
         switch source {
         case .openRouter: return "openai/gpt-4.1-mini"
         case .mistral: return "mistral-small-latest"
+        case .openCode: return "glm-5.3-flash"
         default: return nil
         }
     }
