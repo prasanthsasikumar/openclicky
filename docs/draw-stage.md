@@ -169,6 +169,31 @@ and lighter lines on its sharp edges, and labels as small tags on leader lines
 that keep to their side and their order while the figure sways. The camera fits the figure's box.
 When the first spoken line is slow to come, "One moment, let me draw that for you." is said first.
 
+### Molecules
+
+`molecule(x, y, w, h, o)` builds a ball-and-stick model in a 3D figure (`stage-worker.js`, from `f.sphere` and
+`f.cyl` parts, so nothing new on the page). The program says only which atoms there are and how they are bonded; the
+shape is worked out in the worker:
+
+| Input | |
+|---|---|
+| `{name: 'water'}` | a known molecule, by name or formula: water, carbon dioxide, carbon monoxide, oxygen, ozone, nitrogen, hydrogen, methane, ammonia, ethanol, ethylene, acetic acid, hydrogen peroxide, sulfuric acid, sodium chloride, benzene, glucose, caffeine, aspirin |
+| `{smiles: 'CC(=O)Oc1ccccc1C(=O)O'}` | any other, as SMILES: atoms (lowercase in an aromatic ring, `[Na+]` `[NH4+]` `[nH]` in brackets), bonds `- = # :`, branches, ring closures (`1`, `%12`) |
+| `{atoms: ['C', 'C', 'O'], bonds: [[0, 1], [1, 2]]}` | or as lists, `[a, b, 2]` for a double bond |
+
+Hydrogens left out are added up to each atom's usual valence. Options: `style: 'space'` (space-filling), `labels`
+(`false`, or `'all'` on a small molecule; by default each element's name is tagged once, on its outermost atom),
+`spin`, `tilt`, `turn`. It hands back `m.label(atom, words)`, `m.atom(atom)` and `m.view({...})`; an atom is a number
+(its place in the SMILES) or a name: `'N'`, `'O#2'`, `'ring'`. Models count a SMILES string's atoms badly and name
+them well.
+
+The shape: bond lengths from covalent radii (shorter for double and triple bonds, halfway for aromatic ones); the angle
+at each atom from its bonds and lone pairs (VSEPR: 180°, 120°, 117°, 109.5°, 107°, 104.5°), or a small ring's own angle
+(108° in a five-ring); atoms around a double bond kept in one plane; a push between atoms not bonded. It starts from
+the flattest ring laid out as a ring and chains zigzagging out of it, relaxes for up to 1500 rounds (aspirin takes
+about 0.15 s; a statement may run 2 s), then turns the molecule so its longest axis lies across and a flat one faces
+the viewer. Samples: `molecule-water-co2.js`, `molecule-glucose.js`.
+
 ## 3D pieces made apart
 
 A complex real thing (a plane, a car, an animal) is built from pieces, like a model kit: the drawing model lays it out

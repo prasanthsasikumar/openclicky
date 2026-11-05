@@ -99,6 +99,14 @@ enum DrawStageLesson {
         if containsAny(text, screenActionPhrases) || containsAny(text, smallTalkOpeners) { return false }
         if containsAny(text, troubleWords) || containsAny(text, workWords) || containsAny(text, firstPersonWords) { return false }
         if containsAny(text, curiousOpeners) || containsAny(text, explicitAsks) { return true }
+        // What a thing is made of or looks like, and chemistry ("what is aspirin made of", "what does
+        // caffeine look like", "what is dopamine"): a molecule or a cutaway shows it.
+        if containsAny(text, whatItIsMadeOf) { return true }
+        // Numbers over time and history ("how has world population grown over 300 years", "the
+        // history of computers"): a graph or a timeline.
+        if containsAny(text, overTime) { return true }
+        if startsAny(text, [" how has ", " how have "]) && containsAny(text, changed) { return true }
+        if startsAny(text, [" what is ", " what's ", " what are ", " tell me about "]) && containsAny(text, chemicals) { return true }
         // "explain how a transistor works", "tell me how the heart works", "I want to know how a jet
         // engine works": asking how a thing works, in any wording, once the screen and trouble words are out.
         return (text.contains(" explain ") || text.contains(" how ")) && (text.contains(" works ") || text.contains(" work "))
@@ -110,6 +118,26 @@ enum DrawStageLesson {
     static func refersToTheScreen(_ question: String) -> Bool {
         containsAny(words(question), [" this ", " that ", " these ", " those ", " here ", " on screen ", " on the screen ", " on my screen "])
     }
+
+    /// Words that ask what a thing is made of, what it looks like or how its atoms sit.
+    private static let whatItIsMadeOf = [
+        " made of ", " made from ", " look like ", " looks like ", " molecule ", " molecules ", " atom ", " atoms ",
+        " chemical formula ", " chemical structure ", " structure of ", " formula of ", " formula for ",
+    ]
+    /// Words that ask for numbers over time or a stretch of history: a graph or a timeline answers.
+    private static let overTime = [
+        " graph ", " chart ", " plot ", " timeline ", " history of ", " over time ", " over the years ", " over the last ", " over the past ",
+        " through history ", " through the ages ",
+    ]
+    /// What a "how has …" question asks happened to a thing ("how has the population grown").
+    private static let changed = [" grown ", " grow ", " changed ", " change ", " increased ", " decreased ", " risen ", " fallen ", " dropped ", " evolved ",]
+    /// Everyday chemicals a "what is …" question is about: their molecule answers it.
+    private static let chemicals = [
+        " aspirin ", " caffeine ", " dopamine ", " serotonin ", " adrenaline ", " melatonin ", " histamine ", " oxytocin ", " cortisol ",
+        " glucose ", " fructose ", " sucrose ", " nicotine ", " paracetamol ", " acetaminophen ", " ibuprofen ", " penicillin ", " ethanol ",
+        " methane ", " ammonia ", " ozone ", " benzene ", " carbon dioxide ", " carbon monoxide ", " hydrogen peroxide ", " sulfuric acid ",
+        " sulphuric acid ", " acetic acid ", " cholesterol ", " vitamin c ", " capsaicin ", " chlorophyll ", " dna ",
+    ]
 
     private static let followUpActionPhrases = [
         " how do i ", " how can i ", " where is ", " where do i ", " click ", " open ", " close ", " minimize ", " press ", " type ",

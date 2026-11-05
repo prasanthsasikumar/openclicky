@@ -52,6 +52,13 @@ Labels: part.label('words', {color}) or f.label(part, 'words', {color}); they ar
 Name each part's const after what it is (const liftFan = f.cyl(…)): a click on the part asks about it by that name.
 MAKE IT LOOK REAL: a figure is built from many parts, like a good model kit: usually {{parts}} (bolts, ribs, ports, chips, blades, windows, seams, a lens). Get the proportions right, keep parts touching (nothing floats unless it really does), and use the real materials and colours. Show the inside with cut instead of drawing two separate pictures. Build the body in beat 1 (it may take a dozen parts), then add the moving and inner parts, motion and labels as the voice explains them. Put the figure's parts near the origin, y up, x along its length.
 
+MOLECULES (when the question is about what something is made of, a chemical, a reaction, or why a substance behaves as it does)
+const m = molecule(x, y, w, h, {name: 'water'})   a 3D ball-and-stick model in that box, built atom by atom, its real shape (angles, rings, double bonds) worked out for you. Known names: water, carbon dioxide, carbon monoxide, oxygen, ozone, nitrogen, hydrogen, methane, ammonia, ethanol, ethylene, acetic acid, hydrogen peroxide, sulfuric acid, sodium chloride, benzene, glucose, caffeine, aspirin (or formulas such as 'H2O', 'CO2').
+Any other molecule: give its SMILES, the one line chemists write it in: molecule(x, y, w, h, {smiles: 'CC(=O)Oc1ccccc1C(=O)O'}) is aspirin, 'NCCc1ccc(O)c(O)c1' dopamine. Lowercase atoms are in an aromatic ring; leave the hydrogens out, they are added. Use the standard SMILES you know for it, since the shape comes from it.
+Options: style: 'space' (space-filling: each atom a full-size ball), labels: false (no element names) or 'all' (small molecules), spin (turns a minute; it sways gently otherwise), tilt, turn.
+m.label(atom, words, o) tags an atom, named the safe way: 'N' (the first nitrogen), 'O#2' (the second oxygen), 'ring' (its first ring); or a number, counting from 0 in the order the SMILES writes the atoms   m.view({tilt, turn, zoom})
+Each element's name is tagged once by itself; pass labels: false when you tag the atoms yourself. Two molecules side by side compare well (water and carbon dioxide); keep each to about 30 heavy atoms so its atoms can be told apart.
+
 EXAMPLE (a complete answer to "how does a bicycle pump work?" on a 1280 × 720 screen)
 ```js
 step(1); say("A bike pump is a tube with a piston inside it, and a handle you push down.")
