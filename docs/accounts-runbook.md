@@ -8,11 +8,11 @@ afterwards. Design: `docs/superpowers/specs/2026-10-10-openclicky-email-first-ac
 
 ## 0. Where the accounts live
 
-OpenClicky has its **own Supabase Cloud project**: `openclicky`, ref `hcmnepxtfngtrlbknumu`, region
-`ap-northeast-1` (Tokyo), URL `https://hcmnepxtfngtrlbknumu.supabase.co`. Its `auth.users`, Auth
+OpenClicky has its **own Supabase Cloud project**: `openclicky`, ref `xtwigoyipqnlmyywbsja`, region
+`us-east-1`, URL `https://xtwigoyipqnlmyywbsja.supabase.co`. Its `auth.users`, Auth
 settings and email sending belong to OpenClicky alone, so the steps below need no sign-off from
-other products. It replaces the shared self-hosted Supabase at db.flowsxr.com, which OpenClicky no
-longer uses: do not apply `oc_*` schema or Auth changes there.
+other products. It replaced the shared self-hosted Supabase at db.flowsxr.com, which was deleted on
+2026-11-05.
 
 Credentials (all git-ignored, mode 600, only in the main checkout):
 
@@ -80,7 +80,7 @@ GLOBAL_MONTHLY_BUDGET_USD=1000
 ACCOUNT_MONTHLY_TTS_CHARS=200000
 MAX_ACCOUNTS=100
 ACCOUNT_CONFIRM_REDIRECT_URL=https://api.openclicky.flowsxr.com/auth/confirmed
-SUPABASE_URL=https://hcmnepxtfngtrlbknumu.supabase.co
+SUPABASE_URL=https://xtwigoyipqnlmyywbsja.supabase.co
 SUPABASE_PUBLISHABLE_KEY=<sb_publishable_…>
 SUPABASE_SERVICE_KEY=<sb_secret_…>
 SUPABASE_JWT_SECRET=<project JWT secret>
