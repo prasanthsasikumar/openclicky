@@ -65,8 +65,9 @@ nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
         case .groq: return "meta-llama/llama-4-scout-17b-16e-instruct"
         case .mistral: return "mistral-medium-latest"
         case .xai: return "grok-4"
-        // Kimi K2.6 reads screenshots on Zen's chat completions endpoint (opencode.ai/inference/v1/models).
-        case .openCode: return "kimi-k2.6"
+        // Kimi K3 reads screenshots on Zen's chat completions endpoint (opencode.ai/inference/v1/models);
+        // K2.5 and K2.6 answered "Model access is disabled" on 2026-11-05.
+        case .openCode: return "kimi-k3"
         case .claudeCodePlan, .codexPlan, .openClickyAccount: return nil // the CLI's or backend's own
         }
     }

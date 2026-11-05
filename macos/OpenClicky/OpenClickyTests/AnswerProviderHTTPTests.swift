@@ -143,7 +143,7 @@ struct AnswerProviderHTTPTests {
                                                                      answerRequest: sampleRequest)
         #expect(urlRequest.url?.absoluteString == "https://opencode.ai/inference/openai/v1/chat/completions")
         #expect(urlRequest.value(forHTTPHeaderField: "Authorization") == "Bearer sk-zen")
-        #expect(AnswerSource.openCode.defaultModel == "kimi-k2.6")
+        #expect(AnswerSource.openCode.defaultModel == "kimi-k3")
         #expect(OpenAIChatAnswerProvider.tokenLimitFieldName(for: .openCode) == "max_tokens")
     }
 
