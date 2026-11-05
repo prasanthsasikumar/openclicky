@@ -51,6 +51,12 @@ onto the monitor.
 rest of the answer. A statement ends at `;`, a line break or `}` outside brackets, strings and comments,
 unless the next text continues it (`.then`, `+ 1`, `else`) or it ends mid-expression (`=`, `,`, `(`).
 
+**Labels keep apart.** A `text()` label that would land on another label (or a card's title) moves the
+least it can, up or down before sideways, to a free spot inside its card or the canvas, off the strokes drawn
+so far when it can be. It keeps its place above or below the label it met, so a two-line label still reads in
+order, and an `arrow()` with an end at it moves that end too. Labels draw over every stroke, so a later stroke
+never covers one. `samples/labels-crowded.js` is a drawing whose labels crowd each other.
+
 **Pacing.** Every mark belongs to the `say()` line before it. The pen draws a line's marks within that line's
 time, running up to about 3× faster or 2× slower than its natural speed so they finish as the line does. Two
 clocks:
