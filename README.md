@@ -50,6 +50,8 @@ Hold **⌃ control + ⌥ option** and ask about anything on screen, tap **⌃ tw
 
 ### Draw to explain (new)
 
+<p align="center"><img src="docs/media/draw-to-explain.gif" width="600" alt="Clicky drawing a jet engine cut open, part by part, as it explains: fan, compressor, combustion, turbine"></p>
+
 Ask "how does a jet engine work?", "what's inside this?" or "why is the sky blue?" and Clicky draws on
 your screen while it talks: a hand-drawn diagram, or a turning 3D model built part by part, each part
 drawn as its sentence is spoken. Ask again while the drawing is up and the answer builds on it; when it
@@ -95,21 +97,27 @@ code-signed yet, so SmartScreen may warn), or build it from [`windows/`](windows
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img src="docs/media/dictation-record.png" width="420" alt="The record page: a greeting, the engine banner, the take box, recent takes, words this week"><br><b>record.</b> The engine banner says where your voice goes; takes land in the box when this window is in front.</td>
-    <td width="50%" valign="top"><img src="docs/media/dictation-history.png" width="420" alt="History: takes grouped by day, searchable, with a question box"><br><b>history.</b> Every take with what you said and what was written; type a question and press enter to ask across them.</td>
+    <td width="50%" valign="top"><img src="docs/media/settings-dictation.png" width="420" alt="Settings, the Dictation page: the dictation key, who hears you (this Mac, Parakeet, OpenAI, AssemblyAI), language and clean-up"><br><b>dictation.</b> Pick who hears you: Apple's recogniser or Parakeet on this Mac, or a cloud engine; the language, and whether a model tidies your words.</td>
+    <td width="50%" valign="top"><img src="docs/media/settings-clicky.png" width="420" alt="Settings, the Clicky page: the talk shortcut, the voice, language, where answers come from, draw to explain"><br><b>clicky.</b> The talk shortcut, the voice it answers in, where answers come from, and the switch for drawing to explain.</td>
   </tr>
   <tr>
-    <td width="50%" valign="top"><img src="docs/media/dictation-styles.png" width="420" alt="Styles: language and script, then one style per group of apps"><br><b>styles.</b> Auto-detect or pin a language, native or roman script, and the apps written in each style.</td>
-    <td width="50%" valign="top"><img src="docs/media/dictation-settings.png" width="420" alt="Settings: the General page inside the same window, below the word pages in the sidebar"><br><b>settings.</b> In the same window: General, Dictation, Keyboard, Clicky, The Orb, Privacy &amp; Security, Account, About, with a search over every setting.</td>
+    <td width="50%" valign="top"><img src="docs/media/your-words.png" width="420" alt="Your words: try dictation here, this week's count, every take grouped by day with a question box"><br><b>your words.</b> Every take with what you said and where it went; type a question and press Return to ask across them.</td>
+    <td width="50%" valign="top"><img src="docs/media/settings-island.png" width="420" alt="Settings, the Island page: where it lives, what it shows first, the tiles and tools you can switch on"><br><b>island.</b> Where it lives, what the open island shows first, and the tiles and tools: now playing, calendar, weather, system, shelf, clipboard, notes, timer, mirror.</td>
   </tr>
 </table>
 
-<p align="center"><img src="docs/media/dictation-orb.png" width="120" alt="The orb: a small dark pill with two dashes"></p>
+The island hangs from the notch. Hover to peek, click to open: your week and today's events, what's
+playing, and a button per tool.
+
+<p align="center"><img src="docs/media/island-home.png" width="542" alt="The open island: the calendar week strip and today's events, with the tool buttons on the band"></p>
+<p align="center"><img src="docs/media/island-now-playing.png" width="542" alt="The open island showing the track playing, with artwork, a scrubber and transport buttons"></p>
+
+<p align="center"><img src="docs/media/dictation-orb.png" width="100" alt="The orb: a small dark pill with two dashes"></p>
 
 The orb rests at the bottom of the screen and shows each take: bars while listening, "moving your
 words", "moved to text box". The first run happens on the island under the notch: one card per permission, then a short tour that waits for you to try each thing (dictate, ask, hand over a task):
 
-<p align="center"><img src="docs/media/dictation-onboarding.png" width="560" alt="The first-run tour on the island: your turn, ask me something, with the control and option keycaps"></p>
+<p align="center"><img src="docs/media/dictation-onboarding.png" width="542" alt="The first-run tour on the island: you can ask me things too, with the control and option keycaps"></p>
 
 ### What dictation gives you
 
