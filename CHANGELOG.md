@@ -15,6 +15,12 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
+## Unreleased
+
+### Mac
+
+- **Answers with your OpenCode Zen key.** Paste a key from [opencode.ai/zen](https://opencode.ai/zen) in Settings → Account → Your keys and Clicky answers through Zen, straight from your Mac. It asks Kimi K2.6, which can see your screen; set another Zen model under `answerModels` → `openCode` in `~/.openclicky/shell.json`, as long as it reads images. Dictation clean-up on that key uses the quicker GLM 5.3 Flash.
+
 ## 0.11.0
 
 With thanks to [darkworks](https://github.com/darkworks), who wrote the drawing stage both apps draw on and brought the Windows app its 3D figures, own-model answers, voice control and more, and to [Tan Wei Jie (Justin)](https://github.com/weijietan97), who maintains the Windows app.

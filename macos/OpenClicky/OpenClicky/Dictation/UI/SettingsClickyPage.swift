@@ -20,7 +20,7 @@ extension SettingsCatalog {
             SettingsItem(
                 id: "clicky.answerSource",
                 title: "Answers come from", detail: "Automatic uses your own keys first, then plans you switched on, then the free credits.",
-                keywords: ["provider", "model", "openai", "anthropic", "claude", "openrouter", "gemini", "groq", "mistral", "grok", "codex", "subscription", "plan", "answers"],
+                keywords: ["provider", "model", "openai", "anthropic", "claude", "openrouter", "gemini", "groq", "mistral", "grok", "opencode", "codex", "subscription", "plan", "answers"],
                 view: AnyView(AnswerSourceRow())),
             SettingsItem(
                 id: "clicky.drawToExplain",

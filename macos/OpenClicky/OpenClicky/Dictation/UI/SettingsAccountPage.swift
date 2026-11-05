@@ -60,7 +60,7 @@ extension SettingsCatalog {
                 title: "Your keys", detail: "Keys from AI providers (they answer, clean up and speak) and voice services.",
                 keywords: ["api key", "byok", "own key", "provider", "add key", "openai", "openaiApiKey", "anthropic", "claude",
                            "anthropicApiKey", "openrouter", "llama", "deepseek", "gemini", "google", "ai studio", "groq",
-                           "mistral", "xai", "grok", "sarvam", "saaras", "elevenlabs", "polly", "google cloud", "voice", "test"],
+                           "mistral", "xai", "grok", "opencode", "zen", "kimi", "sarvam", "saaras", "elevenlabs", "polly", "google cloud", "voice", "test"],
                 view: AnyView(ProviderKeysList())),
             SettingsItem(
                 id: "account.keysNote",
@@ -271,7 +271,7 @@ private struct BackendEngineUsageRow: View {
 /// A provider a key can be saved for: where it lives in shell.json and how its row reads.
 /// Not private: the Spotify row's mapping is unit-tested.
 enum KeyProvider: String, CaseIterable, Identifiable {
-    case openAI, anthropic, openRouter, gemini, groq, mistral, xai, sarvam, elevenLabs, googleCloud, amazonPolly, spotify
+    case openAI, anthropic, openRouter, gemini, groq, mistral, xai, openCode, sarvam, elevenLabs, googleCloud, amazonPolly, spotify
 
     var id: String { rawValue }
 
@@ -284,6 +284,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return "Groq"
         case .mistral: return "Mistral"
         case .xai: return "xAI (Grok)"
+        case .openCode: return "OpenCode Zen"
         case .sarvam: return "Sarvam"
         case .elevenLabs: return "ElevenLabs"
         case .googleCloud: return "Google Cloud voice"
@@ -301,6 +302,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return "Very fast answers on open models."
         case .mistral: return "Mistral’s own models."
         case .xai: return "Grok, from xAI."
+        case .openCode: return "Your OpenCode Zen key: Kimi, GLM, DeepSeek and more. From opencode.ai/zen."
         case .sarvam: return "Speaks answers in a natural voice (Bulbul), and the Sarvam dictation engine for Indian languages."
         case .elevenLabs: return "Speaks answers in ElevenLabs’ voice, on your own ElevenLabs account."
         case .googleCloud: return "Speaks answers. A Google Cloud API key with the Text-to-Speech API switched on; an AI Studio key won’t do."
@@ -318,6 +320,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return "gsk_…"
         case .mistral: return "Mistral key"
         case .xai: return "xai-…"
+        case .openCode: return "sk-…"
         case .sarvam: return "Sarvam key"
         case .elevenLabs: return "sk_…"
         case .googleCloud: return "AIza…"
@@ -335,6 +338,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return \.groqApiKey
         case .mistral: return \.mistralApiKey
         case .xai: return \.xaiApiKey
+        case .openCode: return \.openCodeApiKey
         case .sarvam: return \.sarvamKey
         case .elevenLabs: return \.elevenLabsApiKey
         case .googleCloud: return \.googleCloudApiKey
@@ -353,6 +357,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return .groq
         case .mistral: return .mistral
         case .xai: return .xai
+        case .openCode: return .openCode
         case .sarvam, .elevenLabs, .googleCloud, .amazonPolly, .spotify: return nil
         }
     }
