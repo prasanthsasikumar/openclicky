@@ -266,8 +266,29 @@ public static partial class DrawStageLesson
         highlight(x, y, w, h, o)                 a marker sweep behind words
         photo(x, y, w, h, {query, caption})      a real photo from Wikimedia Commons in a polaroid frame: for real things a drawing can't show well (an animal, an organ, a place, a real machine). query is a short English search ('human heart anatomy'); use at most one or two, beside the drawing, never instead of it
         Options o: {color, width, fill, fillOpacity, dashed, size, align, bold}. Colors: ink, blue, red, green, orange, purple, pink, yellow, teal, brown, grey, white, or '#rrggbb'. Default stroke width 3.2, text size 26.
-        Also available: W, H, PI, sin, cos, tan, atan2, sqrt, abs, min, max, round, floor, ceil, hypot, lerp(a, b, t), mid(p, q), along(p, q, t), polar(cx, cy, r, angle), range(n).
+        Also available: W, H, PI, sin, cos, tan, atan2, sqrt, exp, log, abs, min, max, round, floor, ceil, hypot, lerp(a, b, t), mid(p, q), along(p, q, t), polar(cx, cy, r, angle), range(n).
         Plain JavaScript works too (const, let, arithmetic, for loops, arrays). Nothing else exists: no DOM, no network, no other functions. Never use Math.random. At most about {{calls}} drawing calls, plus up to {{partsAtMost}} parts for a 3D figure.
+
+        GRAPHS AND TIMELINES (when the answer has numbers that change or compare, or things that happened in order over time: they place everything by value, so the scale is right, and they keep their own labels clear)
+        const g = chart(x, y, w, h, {x: {from, to, step, label}, y: {from, to, step, label}, grid: true})   axes with numbered ticks filling that box (step is optional). x: {labels: ['Mon', 'Tue', …]} names the columns instead of numbering them; format: v => v + '°C' writes the numbers your way
+          g.line(data, o) a line through [[x, y], …], through numbers (one per column), or along a function such as t => 9.8 * t; {dots: true} marks each point
+          g.bars(values, o) a bar per value ({colors: ['blue', 'teal', …], values: true} writes each value on its bar)   g.area(data, o) the space under a line, shaded
+          g.dot(x, y, {label, color})   g.label(x, y, words, o)   g.hline(y, words, o) / g.vline(x, words, o) a dashed line across at a value (freezing point, a speed limit, today)
+          g.at(x, y) the canvas point of a value, for your own arrows and notes
+        const t = timeline(x, y, w, {from, to, step, label})   a line of years (or any numbers) across at height y; leave about 150 units free above it and below it, and keep event labels to 1-3 words
+          t.event(when, words, o) a dot on the line with its label on a stem; labels take turns above and below and never collide ({side: 'above' | 'below'} chooses)
+          t.span(from, to, words, o) a coloured band for a stretch of time (a war, an age, a life)   t.at(when) the canvas point of a time
+        Use real numbers: a graph is only worth drawing if its values are right. Put the chart or timeline inside your card, below its title, and add its lines, bars and events beat by beat as the voice explains them.
+        GRAPH EXAMPLE (two beats of "why does hot tea cool slower and slower?", inside a card c)
+        ```js
+        step(2); say("The tea starts near ninety degrees and loses heat fast at first, then slower and slower.")
+        const g = chart(c.x + 30, c.y + 70, c.w - 60, c.h - 120, {x: {from: 0, to: 60, step: 10, label: 'minutes'}, y: {from: 0, to: 100, label: 'temperature (°C)'}, grid: true})
+        g.line(m => 22 + 68 * exp(-m / 18), {color: 'red'})
+        g.dot(10, 61, {label: '61° after 10 min', color: 'red'})
+
+        step(3); say("It can never get colder than the room around it, so the line flattens out at room temperature.")
+        g.hline(22, 'room temperature', {color: 'blue'})
+        ```
 
         3D FIGURES (use one when the thing has a real shape or is a machine: an engine, a plane, a rocket, a circuit board, a 3D printer, a planet, the heart, a gear train; stay 2D for processes, cycles, graphs and comparisons)
         const f = figure(x, y, w, h, {tilt, turn, zoom, spin, ground})   a turning 3D stage in that box, usually filling your card below its title. The camera frames the parts by itself; ground: false for things that float (planets, atoms).

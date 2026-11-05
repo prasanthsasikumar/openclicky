@@ -91,6 +91,21 @@ public partial class DrawingAnswerTests
         Assert.Contains("\"how does this work\"", DrawStageLesson.UserPrompt("  how does this work  "));
     }
 
+    [Fact]
+    public void ThePromptOffersGraphsAndTimelinesPlacedByValue()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const g = chart(x, y, w, h, {x: {from, to, step, label}", prompt);
+        Assert.Contains("g.line(data, o)", prompt);
+        Assert.Contains("g.bars(values, o)", prompt);
+        Assert.Contains("const t = timeline(x, y, w, {from, to, step, label})", prompt);
+        Assert.Contains("t.event(when, words, o)", prompt);
+        Assert.Contains("exp, log", prompt);
+        // The example is still ordinary prose around one fenced program, with the °C written as it is.
+        Assert.Contains("g.line(m => 22 + 68 * exp(-m / 18), {color: 'red'})", prompt);
+        Assert.Contains("'temperature (°C)'", prompt);
+    }
+
     // MARK: - DrawingAnswer end to end
 
     /// <summary>The page's part: ready on Present, a "line" for each new say() in the program, finished once the program is
