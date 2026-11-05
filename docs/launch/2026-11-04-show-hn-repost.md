@@ -80,8 +80,8 @@ First comment, posted right after submitting:
 > Hold fn and talk, and the words are typed where your cursor is, cleaned up in the style of the app in
 > front, with the recogniser running on the machine.
 >
-> It's MIT. Mac app in Swift, a Windows port in C#/WPF by a contributor, a Linux client in Python/GTK by
-> another, all sharing one backend (Hono, runs on Node or Workers) and the same ~/.openclicky files.
+> It's MIT. Mac app in Swift, a Windows port in C#/WPF by Tan Wei Jie (with the drawing stage and the 3D
+> figures by darkworks), a Linux client in Python/GTK by another contributor, all sharing one backend (Hono, runs on Node or Workers) and the same ~/.openclicky files.
 > Pointing works by asking the model for coordinates and then snapping to OCR'd on-screen text, because
 > the raw guess is 30–100 px off. On macOS 26, simple requests ("open Safari", "set the volume to thirty")
 > are handled by Apple's on-device model with no screenshot leaving the machine.
