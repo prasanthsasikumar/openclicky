@@ -207,6 +207,24 @@ asks for more of the drawing, another view, a part of it), the model gets the dr
 
 A question that can't be about it (opening an app, small talk, a question for the agent) clears it first.
 
+### Cells
+
+`cell(x, y, w, h, {type, show, labels, colors})` builds a cut-open cell in a 3D figure (`stage-worker.js`, from the
+figure's own parts: a blob, spheres, capsules, tubes, an extruded Golgi stack). The front half is cut away: the cell,
+its nucleus and a plant's vacuole are sliced open, and every other part is packed behind the cut where it fits without
+touching another (spots from a Halton sequence, so a cell is drawn the same every time).
+
+| Type | Parts |
+|---|---|
+| `animal` (default) | membrane, nucleus with nucleolus, rough and smooth ER wrapped round it, Golgi body beside it, mitochondria, lysosomes, vesicles, ribosomes, centrioles |
+| `plant` | a cell wall and membrane, a big central vacuole, nucleus pushed to the side, chloroplasts towards the wall, mitochondria, Golgi, ER, ribosomes |
+| `bacterium` | a capsule with its wall, no nucleus: a nucleoid (a tangled loop of DNA), plasmids, ribosomes, a turning flagellum, pili |
+
+Each kind of part is named once (`labels: false` for none); `show: ['nucleus', …]` keeps only those (and the outside);
+the names a model is likely to use (mitochondria, ER, Golgi apparatus, …) are understood. It hands back `c.point(part)`
+(every piece of that part swells gently while it is talked about), `c.label(part, words)`, `c.parts` and `c.view({...})`.
+Samples: `cell-animal.js`, `cell-plant-animal.js`, `cell-bacterium.js`.
+
 ## Saving a drawing
 
 "Save it" (`DrawStageLesson.SaveRequestKind`) or the Picture and Video buttons in the drawing's corner save the

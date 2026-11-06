@@ -102,6 +102,19 @@ const burner = f.torus({r: 0.55, tube: 0.16, axis: 'x', at: [0.25, 0, 0], mat: '
 burner.label('burn fuel', {color: 'orange'})
 ```
 
+CELLS (what is inside a cell, how plant and animal cells differ, what a bacterium is)
+const c = cell(x, y, w, h, {type: 'animal'})   a cut-open 3D cell with its parts in their places and sizes, each named once. type 'animal' (nucleus and nucleolus, rough and smooth ER, Golgi body, mitochondria, lysosomes, vesicles, ribosomes, centrioles), 'plant' (adds a cell wall, a big vacuole and chloroplasts) or 'bacterium' (no nucleus: a nucleoid of loose DNA, plasmids, ribosomes, a cell wall, a turning flagellum and pili). show: ['nucleus', 'mitochondria'] draws only those parts (and the outside); labels: false names none.
+  c.point('mitochondria') makes every one of them swell gently while your line talks about it   c.label(part, words) tags a part   c.parts lists the parts drawn
+Use cell() for cells instead of building one from parts. Two side by side compare well (an animal cell and a plant cell, each in half the card).
+CELL EXAMPLE (two beats of "what is inside a cell?", inside a card c)
+```js
+step(1); say("Every living thing is made of cells. Here is an animal cell, cut open so you can see inside it.")
+const a = cell(c.x + 20, c.y + 60, c.w - 40, c.h - 110, {type: 'animal'})
+step(2); say("The nucleus in the middle holds the DNA, and the mitochondria turn food into energy for the cell.")
+a.point('nucleus')
+a.point('mitochondria')
+```
+
 ORGANIC EXAMPLE (one beat of "how does the heart pump blood?": a blob for the muscle, blobs for the big vessels)
 ```js
 const heart = f.blob({balls: [[0.35, -0.35, 0, 0.85, 1.1, 0.8], [-0.35, -0.2, 0.15, 0.75, 0.95, 0.7], [0.2, -1.25, 0.05, 0.3]], smooth: 0.45, mat: 'tissue'}).pulse({amount: 0.035, period: 1})

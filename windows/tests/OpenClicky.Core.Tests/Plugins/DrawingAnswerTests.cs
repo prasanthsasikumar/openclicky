@@ -68,6 +68,15 @@ public partial class DrawingAnswerTests
         Assert.Equal("step(1); say(\"hi\")\ndot(1, 2)\n", DrawStageLesson.ProgramIn(reply));
     }
 
+    [Fact]
+    public void ThePromptOffersCellsCutOpenWithTheirParts()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const c = cell(x, y, w, h, {type: 'animal'})", prompt);
+        Assert.Contains("'plant' (adds a cell wall, a big vacuole and chloroplasts)", prompt);
+        Assert.Contains("c.point('mitochondria')", prompt);
+    }
+
     [Theory]
     [InlineData("Sure", "")]
     [InlineData("Sure:\n```", "")]
