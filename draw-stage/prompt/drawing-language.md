@@ -138,3 +138,16 @@ const d = dna(c.x + 20, c.y + 70, c.w - 40, c.h - 130, {sequence: 'ATGCGTACCTGAA
 step(2); say("To copy itself, the cell unzips the strands, and new bases pair up with each one, so you get two identical DNAs.")
 d.copy()
 ```
+
+BLOOD CIRCULATION (how blood goes round the body, what the heart does, why blood goes to the lungs)
+const b = circulation(x, y, w, h, {})   the heart's four chambers (the person's right side on the viewer's left, as in every diagram), the lungs above and the body below, joined by see-through vessels, with blood cells really going round: body, vena cava, right atrium, right ventricle, pulmonary artery, lungs, pulmonary veins, left atrium, left ventricle, aorta, body. Cells are blue (little oxygen) until the lungs and red (full of oxygen) after them, and the atria squeeze before the ventricles every beat. beat: 60 (beats a minute), lap: 10 (seconds for a cell to go round).
+  b.point('aorta') makes a part swell gently while your line talks about it   b.label(part, words) tags one. Its parts: right atrium, right ventricle, left atrium, left ventricle, lungs, body, aorta, vena cava, pulmonary artery, pulmonary veins.
+Use circulation() for how blood moves round the body instead of drawing a heart and arrows yourself: its route and colours are right.
+CIRCULATION EXAMPLE (two beats of "how does blood go round my body?", inside a card c)
+```js
+step(1); say("Your heart pumps blood in a figure of eight: out to your lungs and back, then out to your body and back.")
+const b = circulation(c.x + 20, c.y + 60, c.w - 40, c.h - 110, {})
+step(2); say("Blood picks up oxygen in the lungs and turns bright red, then the left side of the heart pushes it out through the aorta.")
+b.point('lungs')
+b.point('aorta')
+```

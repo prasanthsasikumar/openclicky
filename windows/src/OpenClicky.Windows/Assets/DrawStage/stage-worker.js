@@ -23,6 +23,8 @@
 //                                           a rack, a crank with a piston or a rocker → m.label(name, words), m.speed(name)
 //   dna(x, y, w, h, {sequence, form})       a double helix (or ladder) from one strand's letters → d.unzip(), d.copy(),
 //                                           d.transcribe({from, to}), d.label(which, words), d.complement, d.mrna()
+//   circulation(x, y, w, h, {beat, lap})    the heart, lungs and body with blood going round, blue to red →
+//                                           b.point(part), b.label(part, words)
 'use strict';
 
 const LIMIT_MARKS = 2000;
@@ -621,6 +623,145 @@ function dna(x, y, w, h, o) {
 // What dna() hands back when it couldn't build one: calls on it do nothing.
 const noDna = () => new Proxy({}, { get: () => () => null });
 api.dna = dna;
+
+// Blood circulation: circulation(x, y, w, h, {speed, labels}) draws the heart, the lungs and the body as a flat
+// diagram in a 3D figure, the way a textbook does (the person's right on the viewer's left), with see-through vessels
+// and blood cells that really go round: body → vena cava → right atrium → right ventricle → pulmonary artery →
+// lungs → pulmonary veins → left atrium → left ventricle → aorta → body. A cell is blue (little oxygen) from the body's
+// capillaries to the lungs' and red (full of oxygen) from the lungs' to the body's, changing colour in the
+// capillaries. The atria squeeze, then the ventricles, every beat.
+const CIRC = {
+  oxygenPoor: 'tissue:#4A6FB5', oxygenRich: 'tissue:#C9302C', lung: 'tissue:#F2A7A7', body: 'tissue:#E8C4A0', capillary: 'tissue:#9B6FA8',
+};
+// The route, as named stretches of [x, y, z] (z: arteries in front, veins behind, so they cross cleanly).
+const CIRC_HEART = { ra: [-1.0, 0.8, 0.35], rv: [-0.8, -0.75, 0.35], la: [1.0, 0.8, 0.35], lv: [0.85, -0.85, 0.35] };
+const CIRC_ROUTE = {
+  bodyCapillaries: [[2.2, -4.4, 0.2], [1.3, -4.95, 0.2], [0.4, -4.4, 0.2], [-0.5, -4.95, 0.2], [-1.4, -4.4, 0.2], [-2.2, -4.7, 0.2]],
+  venaCava: [[-2.6, -3.7, 0.2], [-2.65, -1.6, 0.2], [-2.35, 0.4, 0.25], [-1.55, 0.85, 0.3]],
+  rightHeart: [CIRC_HEART.ra, [-0.95, 0.05, 0.35], CIRC_HEART.rv],
+  pulmonaryTrunk: [[-0.45, -0.45, 0.45], [-0.15, 0.6, 0.6], [0, 1.9, 0.55], [0, 2.6, 0.45]],
+  arteryTo: { left: [[-1.2, 3.05, 0.35], [-2.3, 3.55, 0.25]], right: [[1.2, 3.05, 0.35], [2.3, 3.55, 0.25]] },
+  lungCapillaries: {
+    left: [[-2.8, 4.3, 0.2], [-3.55, 4.15, 0.2], [-3.7, 3.5, 0.2], [-3.1, 3.2, 0.2]],
+    right: [[2.8, 4.3, 0.2], [3.55, 4.15, 0.2], [3.7, 3.5, 0.2], [3.1, 3.2, 0.2]],
+  },
+  veinFrom: { left: [[-2.4, 2.9, -0.3], [-1.0, 2.1, -0.35], [0.4, 1.35, -0.2]], right: [[2.4, 2.9, -0.3], [1.8, 2.0, -0.35], [1.2, 1.35, -0.2]] },
+  leftHeart: [CIRC_HEART.la, [0.95, 0.0, 0.35], CIRC_HEART.lv],
+  aorta: [[0.55, -0.3, 0.5], [0.35, 1.2, 0.65], [0.55, 2.85, 0.65], [1.55, 3.15, 0.55], [2.4, 2.3, 0.35], [2.65, 0.4, 0.2], [2.65, -2.0, 0.2], [2.6, -3.6, 0.2]],
+};
+
+// One whole lap through the given lung: its points, and where in it the cell is blue (between the two capillary beds).
+function circulationLap(side) {
+  const R = CIRC_ROUTE, stretches = [
+    ['body', R.bodyCapillaries], ['poor', R.venaCava], ['poor', R.rightHeart], ['poor', R.pulmonaryTrunk], ['poor', R.arteryTo[side]],
+    ['lung', R.lungCapillaries[side]], ['rich', R.veinFrom[side]], ['rich', R.leftHeart], ['rich', R.aorta],
+  ];
+  const pts = [], kinds = [];
+  for (const [kind, list] of stretches) for (const p of list) { pts.push(p); kinds.push(kind); }
+  return { pts, kinds };
+}
+
+function circulation(x, y, w, h, o) {
+  const opts = options(o);
+  if (![x, y, w, h].every(finite) || w < 60 || h < 60) { warn('circulation() needs x, y, width and height (at least 60 each); skipped'); return noCirculation(); }
+  const bpm = finite(opts.beat) ? Math.max(30, Math.min(150, opts.beat)) : 60, beat = 60 / bpm;
+  const lapSeconds = finite(opts.lap) ? Math.max(4, Math.min(40, opts.lap)) : 10; // a blood cell's lap (really about a minute)
+  const f = api.figure(x, y, w, h, { tilt: finite(opts.tilt) ? opts.tilt : 6, turn: finite(opts.turn) ? opts.turn : -12, zoom: opts.zoom, ground: false });
+  const handles = new Map();
+  const keep = (name, handle) => { if (!handles.has(name)) handles.set(name, []); handles.get(name).push(handle); return handle; };
+  const R = CIRC_ROUTE, H = CIRC_HEART;
+
+  // The lungs and the body's organs, see-through so the blood shows inside.
+  for (const side of [-1, 1]) {
+    keep('lungs', f.blob({ balls: [[side * 3.15, 3.8, -0.2, 1.05, 1.25, 0.7], [side * 2.75, 3.1, -0.2, 0.75, 0.8, 0.6]], smooth: 0.5, mat: CIRC.lung, opacity: 0.45, quick: true }));
+  }
+  keep('body', f.box({ w: 5.6, h: 1.6, d: 1.2, round: 0.5, at: [0, -4.65, -0.1], mat: CIRC.body, opacity: 0.4, quick: true }));
+
+  // The heart: four chambers, the person's right side (oxygen-poor, blue) on the viewer's left, and the wall between.
+  const chamber = (name, at, size, mat) => keep(name, f.blob({ balls: [[0, 0, 0, size[0], size[1], size[2]]], at, mat, opacity: 0.6, quick: true }));
+  const ra = chamber('right atrium', H.ra, [0.62, 0.55, 0.5], CIRC.oxygenPoor), rv = chamber('right ventricle', H.rv, [0.72, 0.85, 0.55], CIRC.oxygenPoor);
+  const la = chamber('left atrium', H.la, [0.62, 0.55, 0.5], CIRC.oxygenRich), lv = chamber('left ventricle', H.lv, [0.8, 0.95, 0.6], CIRC.oxygenRich);
+  keep('septum', f.box({ w: 0.12, h: 2.6, d: 0.9, round: 0.05, at: [0.05, 0.0, 0.35], mat: 'tissue:#B05A60', quick: true }));
+  // Each beat the atria squeeze first, then the ventricles: sizes over one beat, as path frames that stay put.
+  const squeeze = (handle, at, from, to) => handle.path({ frames: Array.from({ length: 24 }, (_, i) => {
+    const u = i / 24, k = u >= from && u <= to ? Math.sin(Math.PI * (u - from) / (to - from)) : 0;
+    return [at[0], at[1], at[2], 0, 0, 0, 1 - 0.13 * k];
+  }), period: beat, sync: true });
+  squeeze(ra, H.ra, 0, 0.18); squeeze(la, H.la, 0, 0.18); squeeze(rv, H.rv, 0.22, 0.55); squeeze(lv, H.lv, 0.22, 0.55);
+
+  // The vessels, see-through, and the capillary beds as fine tubes.
+  const vessel = (name, points, mat, r = 0.17) => keep(name, f.tube({ points, r, mat, opacity: 0.4, quick: true }));
+  vessel('vena cava', [R.bodyCapillaries[R.bodyCapillaries.length - 1], ...R.venaCava, H.ra], CIRC.oxygenPoor);
+  vessel('pulmonary artery', [H.rv, ...R.pulmonaryTrunk], CIRC.oxygenPoor);
+  for (const side of ['left', 'right']) {
+    vessel('pulmonary artery', [R.pulmonaryTrunk[R.pulmonaryTrunk.length - 1], ...R.arteryTo[side], R.lungCapillaries[side][0]], CIRC.oxygenPoor, 0.14);
+    vessel('lung capillaries', R.lungCapillaries[side], CIRC.capillary, 0.07);
+    vessel('pulmonary veins', [R.lungCapillaries[side][R.lungCapillaries[side].length - 1], ...R.veinFrom[side], H.la], CIRC.oxygenRich, 0.14);
+  }
+  vessel('aorta', [H.lv, ...R.aorta, R.bodyCapillaries[0]], CIRC.oxygenRich, 0.19);
+  vessel('body capillaries', R.bodyCapillaries, CIRC.capillary, 0.07);
+
+  // Blood cells: each a red and a blue disc on the same lap, one of them sized 0 where the cell is the other colour,
+  // trading over a few frames in the capillaries. Cells take turns through the left and the right lung.
+  const count = finite(opts.cells) ? Math.max(4, Math.min(24, Math.round(opts.cells))) : 12, FRAMES = 120;
+  for (let c = 0; c < count; c++) {
+    const lap = circulationLap(c % 2 ? 'right' : 'left');
+    // Spread evenly along the lap by distance: the points' running lengths, then FRAMES samples.
+    const cum = [0];
+    for (let i = 1; i < lap.pts.length; i++) cum.push(cum[i - 1] + Math.hypot(...lap.pts[i].map((v, k) => v - lap.pts[i - 1][k])));
+    const L = cum[cum.length - 1] + Math.hypot(...lap.pts[0].map((v, k) => v - lap.pts[lap.pts.length - 1][k]));
+    const sample = s => {
+      const t = ((s % L) + L) % L;
+      let i = 0;
+      while (i < cum.length - 1 && cum[i + 1] < t) i++;
+      const a = lap.pts[i], b = lap.pts[(i + 1) % lap.pts.length], seg = (i + 1 < cum.length ? cum[i + 1] : L) - cum[i];
+      const k = seg > 0 ? (t - cum[i]) / seg : 0;
+      // How blue it is: 1 on the oxygen-poor stretches, 0 on the rich ones, easing across the capillary beds.
+      const blueAt = j => ({ poor: 1, rich: 0 }[lap.kinds[j]] ?? null);
+      let blue = blueAt(i);
+      if (blue === null) { // in a capillary bed: from what it was to what it becomes, across the bed
+        const bed = lap.kinds[i];
+        const first = lap.kinds.indexOf(bed), last = lap.kinds.lastIndexOf(bed);
+        const along = Math.min(1, Math.max(0, (t - cum[first]) / Math.max(1e-6, cum[last] - cum[first])));
+        blue = bed === 'lung' ? 1 - along : along;
+      }
+      return { at: a.map((v, j) => v + (b[j] - v) * k), blue };
+    };
+    const start = (c / count) * L;
+    for (const colour of ['blue', 'red']) {
+      const frames = Array.from({ length: FRAMES }, (_, i) => {
+        const { at, blue } = sample(start + (i / FRAMES) * L);
+        const size = colour === 'blue' ? blue : 1 - blue;
+        return [at[0], at[1], at[2] + 0.02, Math.PI / 2, 0, 0, Math.max(0, Math.min(1, size))];
+      });
+      keep(colour === 'blue' ? 'oxygen-poor blood' : 'oxygen-rich blood',
+        f.torus({ r: 0.1, tube: 0.06, at: frames[0].slice(0, 3), mat: colour === 'blue' ? 'tissue:#3D5FA8' : 'tissue:#D7262B', quick: true }))
+        .path({ frames, period: lapSeconds, sync: true });
+    }
+  }
+
+  const NAMES = ['right atrium', 'right ventricle', 'left atrium', 'left ventricle', 'lungs', 'body', 'aorta', 'vena cava', 'pulmonary artery', 'pulmonary veins'];
+  const nameOf = which => {
+    const k = String(which).trim().toLowerCase().replace(/s$/, '');
+    return [...handles.keys()].find(n => n.toLowerCase().replace(/s$/, '') === k) || null;
+  };
+  // A vessel's name points at a spot on it (its box's middle is empty space for a curve); the rest at their middles.
+  const ON = { 'vena cava': R.venaCava[1], 'pulmonary artery': R.pulmonaryTrunk[2], 'pulmonary veins': R.veinFrom.left[1],
+    aorta: R.aorta[6], lungs: [-3.15, 3.8, -0.2] };
+  const tag = (name, words, o2) => handles.get(name)[0].label(words, Object.assign(ON[name] ? { at: ON[name] } : {}, options(o2)));
+  if (opts.labels !== false) for (const name of NAMES) if (handles.has(name)) tag(name, name);
+  return {
+    figure: f,
+    label: (which, words, o2) => (nameOf(which) ? tag(nameOf(which), String(words), o2) : (warn('circulation label: no ' + which), null)),
+    // Points a part out while it is talked about: it swells gently (the chambers already beat, so a vessel or organ).
+    point: which => { const n = nameOf(which); if (!n) { warn('circulation point: no ' + which); return null; } handles.get(n).forEach(p => p.pulse({ amount: 0.06, period: 1.2 })); return handles.get(n)[0]; },
+    parts: NAMES.filter(n => handles.has(n)),
+    view: o2 => f.view(o2),
+  };
+}
+// What circulation() hands back when it couldn't draw: calls on it do nothing.
+const noCirculation = () => new Proxy({}, { get: () => () => null });
+api.circulation = circulation;
 
 // const x = ..., let x = ..., var x = ... (each name of `const a = 1, b = 2`) and function f() {...} at the start of a
 // statement are kept in `scope`, so later statements see them; everything else runs as written.
