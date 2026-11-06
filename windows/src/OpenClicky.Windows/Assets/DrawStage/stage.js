@@ -64,10 +64,15 @@
     worker = null;
     restartStream();
     markCount = 0;
+    labels = [];
+    cards = [];
+    strokes = [];
     while (svg.lastChild) svg.removeChild(svg.lastChild);
     if (window.Figure3D) window.Figure3D.clear();
     if (typeof photos !== 'undefined') photos.clear();
     svg.appendChild(defs());
+    labelLayer = el('g', { class: 'labels' });
+    svg.appendChild(labelLayer);
   }
 
   // A new stream of statements: nothing pending, no lines, no button (what is drawn stays).
@@ -243,6 +248,9 @@
 
   function addItem(mark) {
     markCount++;
+    if (mark.do === 'text') placeLabel(mark);
+    else if (mark.do === 'card') addCard(mark);
+    else { followLabels(mark); addStroke(mark); }
     // A 3D piece the app makes: asked for as soon as its statement runs, so it is being made while the voice talks.
     if (mark.do === 'part3d' && mark.kind === 'piece') {
       const p = mark.params || {};
@@ -328,6 +336,135 @@
     if (!line || recording) { caption.hidden = true; return; }
     if (caption.textContent !== line.text) caption.textContent = line.text;
     caption.hidden = false;
+  }
+
+  // ------------------------------------------------------------------ labels kept apart
+  // A model places its labels by guesswork, and two of them often land on each other ("cloud" and "condensation" a
+  // few units apart). Each label is measured before it is drawn: one that would cover a label already there (or a
+  // card's title) moves the least it can, up or down before sideways, to a free spot inside its card (or the canvas),
+  // off the strokes drawn so far when it can be, and an arrow with an end at it moves that end along with it. Labels
+  // are drawn in a layer of their own over every stroke, so a stroke drawn after one never covers it.
+  const LABEL_PAD = 3;    // around a label's letters and their white edge
+  const LABEL_REACH = 30; // an arrow's end this close to a label's box (where the model put it) is at the label
+  let labels = [];        // labels placed so far: {from: the box the model gave it, box: where it is, dx, dy}
+  let cards = [];         // the cards' boxes: a label put on a card stays on it
+  let strokes = [];       // the pen strokes so far, as straight pieces: {box, pieces: [[x1, y1, x2, y2], …]}
+  let labelLayer = null;  // the <g> the labels are drawn in, last in the SVG
+
+  const labelAttributes = m => ({
+    x: m.at[0], y: m.at[1], 'font-size': m.size > 0 ? m.size : 26, 'dominant-baseline': 'middle',
+    'text-anchor': m.align === 'start' || m.align === 'end' ? m.align : 'middle', 'font-weight': m.bold ? 700 : 400
+  });
+  const titleAttributes = (x, y) => ({ x: x + 22, y: y + 34, 'font-size': 26, 'font-weight': 700 });
+  const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const inside = (a, frame) => a.x >= frame.x && a.y >= frame.y && a.x + a.w <= frame.x + frame.w && a.y + a.h <= frame.y + frame.h;
+  const distanceTo = (p, b) => Math.hypot(Math.max(b.x - p[0], 0, p[0] - b.x - b.w), Math.max(b.y - p[1], 0, p[1] - b.y - b.h));
+
+  // The box words take on the canvas (the SVG's viewBox units), from a hidden copy of them.
+  function measure(attributes, words) {
+    const probe = el('text', Object.assign({ visibility: 'hidden' }, attributes));
+    probe.textContent = words;
+    svg.appendChild(probe);
+    const b = probe.getBBox();
+    probe.remove();
+    return { x: b.x - LABEL_PAD, y: b.y - LABEL_PAD, w: b.width + 2 * LABEL_PAD, h: b.height + 2 * LABEL_PAD };
+  }
+
+  // A stroke's straight pieces (an ellipse goes round in 24 of them), so a moved label can keep off it.
+  const range24 = Array.from({ length: 24 }, (_, k) => k);
+  function addStroke(m) {
+    let pts = null, closed = false;
+    if (m.do === 'line' || m.do === 'arrow') pts = m.pts;
+    else if (m.do === 'poly') { pts = m.pts; closed = true; }
+    else if (m.do === 'rect') { const [x, y] = m.at; pts = [[x, y], [x + m.w, y], [x + m.w, y + m.h], [x, y + m.h]]; closed = true; }
+    else if (m.do === 'ellipse') { pts = range24.map(k => [m.at[0] + m.rx * Math.cos(k * Math.PI / 12), m.at[1] + m.ry * Math.sin(k * Math.PI / 12)]); closed = true; }
+    if (!pts || pts.length < 2) return;
+    const pieces = [];
+    for (let i = 1; i < pts.length + (closed ? 1 : 0); i++) {
+      const a = pts[i - 1], b = pts[i % pts.length];
+      pieces.push([a[0], a[1], b[0], b[1]]);
+    }
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    strokes.push({ box: { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }, pieces });
+  }
+
+  // Whether a straight piece crosses a box (Liang-Barsky clipping).
+  function crosses(piece, box) {
+    const [x1, y1, x2, y2] = piece, dx = x2 - x1, dy = y2 - y1;
+    let t0 = 0, t1 = 1;
+    for (const [p, q] of [[-dx, x1 - box.x], [dx, box.x + box.w - x1], [-dy, y1 - box.y], [dy, box.y + box.h - y1]]) {
+      if (p === 0) { if (q < 0) return false; continue; }
+      const t = q / p;
+      if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+    }
+    return true;
+  }
+  const strokesUnder = box => strokes.filter(s => overlaps(s.box, box) && s.pieces.some(piece => crosses(piece, box))).length;
+
+  function addCard(m) {
+    cards.push({ x: m.at[0], y: m.at[1], w: m.w, h: m.h });
+    if (!m.title) return;
+    const title = measure(titleAttributes(m.at[0], m.at[1]), m.title);
+    labels.push({ from: title, box: title, dx: 0, dy: 0 });
+  }
+
+  function placeLabel(m) {
+    const from = measure(labelAttributes(m), m.text);
+    if (!(from.w > 0 && from.h > 0)) return;
+    const centre = [from.x + from.w / 2, from.y + from.h / 2];
+    const frame = cards.slice().reverse().find(card => distanceTo(centre, card) === 0) || { x: 0, y: 0, w: W, h: H };
+    const fits = box => inside(box, frame) && !labels.some(other => overlaps(box, other.box));
+    let dx = 0, dy = 0;
+    if (!fits(from)) {
+      // Spots on a grid of half a line around it, nearest first: a step sideways costs more than one up or down, one
+      // towards the labels it covers more than one away from them, and a spot on a stroke more than a short way on.
+      // A label below (or above) one it covers stays below (or above) it: "runs back" / "to the sea" still read in order.
+      const covered = labels.filter(other => overlaps(from, other.box));
+      const theirMiddle = covered.reduce((sum, other) => sum + other.box.y + other.box.h / 2, 0) / (covered.length || 1);
+      const away = covered.length && centre[1] < theirMiddle ? -1 : 1;
+      const inOrder = spot => covered.every(other => {
+        const side = Math.sign(centre[1] - (other.box.y + other.box.h / 2));
+        return !side || Math.sign(spot.y + spot.h / 2 - (other.box.y + other.box.h / 2)) === side;
+      });
+      const step = Math.max(6, from.h / 2), steps = Math.ceil(Math.max(120, from.h * 4) / step);
+      let best = Infinity;
+      for (let j = -steps; j <= steps; j++) {
+        for (let i = -steps; i <= steps; i++) {
+          let cost = Math.hypot(i * step * 1.6, j * step) + (j && Math.sign(j) !== away ? step / 2 : 0);
+          if (cost >= best) continue;
+          const spot = { x: from.x + i * step, y: from.y + j * step, w: from.w, h: from.h };
+          if (!fits(spot) || !inOrder(spot)) continue;
+          cost += strokesUnder(spot) * step * 4;
+          if (cost >= best) continue;
+          best = cost; dx = i * step; dy = j * step;
+        }
+      }
+    }
+    labels.push({ from, box: { x: from.x + dx, y: from.y + dy, w: from.w, h: from.h }, dx, dy });
+    if (!dx && !dy) return;
+    log(`label "${m.text}" moved by ${Math.round(dx)}, ${Math.round(dy)} to keep off another`);
+    m.at = [m.at[0] + dx, m.at[1] + dy];
+    // Arrows not drawn yet that end at it go with it.
+    for (let k = released; k < items.length; k++) followLabels(items[k].mark);
+  }
+
+  // An arrow with one end at a moved label (the nearest label, where the model put it) moves that end with it. Only
+  // arrows: the prompt points a label at its thing with one, and a plain line by a label is more often a shape (rain).
+  function followLabels(mark) {
+    if (mark.followed || mark.do !== 'arrow') return;
+    const ends = [0, mark.pts.length - 1].map(i => {
+      let nearest = null, gap = Infinity;
+      for (const label of labels) {
+        const d = distanceTo(mark.pts[i], label.from);
+        if (d < gap) { gap = d; nearest = label; }
+      }
+      return gap <= LABEL_REACH && (nearest.dx || nearest.dy) ? { i, label: nearest } : null;
+    }).filter(Boolean);
+    if (ends.length !== 1) return; // neither end, or both (an arrow between two moved labels): it stays as drawn
+    const { i, label } = ends[0];
+    mark.pts[i] = [mark.pts[i][0] + label.dx, mark.pts[i][1] + label.dy];
+    mark.followed = true;
   }
 
   // ------------------------------------------------------------------ painting
@@ -447,7 +584,7 @@
 
   function paint(m, seconds, index) {
     const group = el('g');
-    svg.appendChild(group);
+    if (m.do === 'text') labelLayer.appendChild(group); else svg.insertBefore(group, labelLayer);
     const rnd = random(index + 1);
     switch (m.do) {
       case 'line': {
@@ -495,12 +632,10 @@
         break;
       }
       case 'text': {
-        const size = m.size > 0 ? m.size : 26;
-        const anchor = m.align === 'start' || m.align === 'end' ? m.align : 'middle';
-        const text = el('text', {
-          x: m.at[0], y: m.at[1], 'font-size': size, 'text-anchor': anchor, 'dominant-baseline': 'middle',
-          fill: tone(m.color, TONES.ink), stroke: '#fff', 'stroke-width': Math.max(3, size * 0.2), 'font-weight': m.bold ? 700 : 400
-        });
+        const attributes = labelAttributes(m);
+        const text = el('text', Object.assign(attributes, {
+          fill: tone(m.color, TONES.ink), stroke: '#fff', 'stroke-width': Math.max(3, attributes['font-size'] * 0.2)
+        }));
         text.textContent = m.text;
         group.appendChild(text);
         reveal(group, text, text.getBBox(), seconds);
@@ -553,7 +688,7 @@
         const card = el('g', { filter: 'url(#card-shadow)' });
         card.appendChild(el('rect', { x, y, width: m.w, height: m.h, rx: 14, fill: tone(m.fill, '#FFF8E7'), stroke: '#00000014' }));
         if (m.title) {
-          const title = el('text', { x: x + 22, y: y + 34, 'font-size': 26, 'font-weight': 700, fill: TONES.ink, stroke: 'none' });
+          const title = el('text', Object.assign(titleAttributes(x, y), { fill: TONES.ink, stroke: 'none' }));
           title.textContent = m.title;
           card.appendChild(title);
         }

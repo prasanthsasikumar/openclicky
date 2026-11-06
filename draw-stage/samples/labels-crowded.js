@@ -1,0 +1,26 @@
+// A sample answer whose labels crowd each other, the way models often place them: "how does rain happen?"
+step(1); say("The sun warms the sea, and water rises as invisible vapour.")
+const c = card(W * 0.22, H * 0.1, 760, 560, {title: 'The water cycle'})
+const sx = W * 0.22 + 90, sy = H * 0.1 + 120
+circle(sx, sy, 38, {color: 'orange', fill: 'yellow'})
+text(sx + 50, sy, 'sun', {align: 'start', color: 'orange'})
+curve([[W * 0.22 + 40, H * 0.1 + 480], [W * 0.22 + 300, H * 0.1 + 460], [W * 0.22 + 720, H * 0.1 + 490]], {color: 'blue', width: 4})
+text(W * 0.22 + 200, H * 0.1 + 500, 'sea', {color: 'blue'})
+text(W * 0.22 + 230, H * 0.1 + 505, 'warm water', {color: 'blue', size: 22})
+arrow([[W * 0.22 + 260, H * 0.1 + 440], [W * 0.22 + 260, H * 0.1 + 300]], {color: 'teal', dashed: true})
+text(W * 0.22 + 270, H * 0.1 + 370, 'vapour rises', {align: 'start', color: 'teal'})
+text(W * 0.22 + 280, H * 0.1 + 385, 'evaporation', {align: 'start', color: 'teal', size: 22})
+
+step(2); say("High up it cools and turns into tiny drops: a cloud.")
+ellipse(W * 0.22 + 430, H * 0.1 + 170, 120, 55, {color: 'grey', fill: 'white'})
+text(W * 0.22 + 430, H * 0.1 + 170, 'cloud', {color: 'grey'})
+text(W * 0.22 + 440, H * 0.1 + 180, 'condensation', {color: 'purple', size: 22})
+text(W * 0.22 + 300, H * 0.1 + 300, 'cools', {color: 'teal'})
+
+step(3); say("When the drops get heavy they fall as rain, and flow back to the sea.")
+for (const i of range(5)) line([[W * 0.22 + 380 + i * 22, H * 0.1 + 240], [W * 0.22 + 370 + i * 22, H * 0.1 + 300]], {color: 'blue'})
+text(W * 0.22 + 430, H * 0.1 + 320, 'rain', {color: 'blue', bold: true})
+text(W * 0.22 + 435, H * 0.1 + 330, 'precipitation', {color: 'blue', size: 22})
+arrow([[W * 0.22 + 600, H * 0.1 + 330], [W * 0.22 + 640, H * 0.1 + 450]], {color: 'green'})
+text(W * 0.22 + 610, H * 0.1 + 390, 'runs back', {align: 'start', color: 'green'})
+text(W * 0.22 + 620, H * 0.1 + 400, 'to the sea', {align: 'start', color: 'green'})
