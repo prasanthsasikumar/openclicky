@@ -21,6 +21,8 @@
 //   W, H (the canvas: the screenshot's size), math (sin, cos, PI, ...) and point helpers (mid, along, polar, lerp)
 //   mechanism(x, y, w, h, {parts, speed})  a working machine in 3D: gears, pulleys and sprockets with belts and chains,
 //                                           a rack, a crank with a piston or a rocker → m.label(name, words), m.speed(name)
+//   dna(x, y, w, h, {sequence, form})       a double helix (or ladder) from one strand's letters → d.unzip(), d.copy(),
+//                                           d.transcribe({from, to}), d.label(which, words), d.complement, d.mrna()
 'use strict';
 
 const LIMIT_MARKS = 2000;
@@ -419,6 +421,206 @@ function mechanism(x, y, w, h, o) {
 // What mechanism() hands back when it couldn't build one: calls on it do nothing.
 const noMechanism = () => new Proxy({}, { get: () => () => null });
 api.mechanism = mechanism;
+
+// DNA: dna(x, y, w, h, {sequence, form}) builds a double helix (or a flat ladder) in a 3D figure from the letters of
+// one strand. The other strand is worked out here (A pairs with T, G with C), the helix has its real shape (ten base
+// pairs a turn, 0.34 nm apart, the two backbones offset so the grooves show), and d.unzip(), d.copy() and
+// d.transcribe() animate what a cell does with it: it untwists, the strands part, new nucleotides pair up base by
+// base (two copies, each half old and half new), or an mRNA copy forms against one strand and leaves.
+const DNA_R = 1, DNA_RISE = 0.34, DNA_TWIST = Math.PI / 5, DNA_OFFSET = 150 * Math.PI / 180; // nm, radians
+const DNA_BASE_COLORS = { A: '#E5484D', T: '#F2B33D', G: '#3DAE6B', C: '#3B82D6', U: '#9B59D0' };
+const DNA_BASE_NAMES = { A: 'adenine', T: 'thymine', G: 'guanine', C: 'cytosine', U: 'uracil' };
+const DNA_PAIR = { A: 'T', T: 'A', G: 'C', C: 'G' };
+const DNA_STRANDS = { one: '#5B6C8F', two: '#A0607F', newOne: '#AFC0E3', newTwo: '#E3B0CB', mrna: '#9B59D0' };
+
+const v3add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const v3sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const v3mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const v3len = a => Math.hypot(a[0], a[1], a[2]);
+const v3unit = a => v3mul(a, 1 / (v3len(a) || 1));
+const v3lerp = (a, b, k) => v3add(a, v3mul(v3sub(b, a), k));
+// The rotation (Euler XYZ, radians, as three.js keeps it) that turns a part built along y to point along d.
+function eulerFromY(d0) {
+  const d = v3unit(d0);
+  let x, y, z, w;
+  if (d[1] < -0.999999) { x = 1; y = 0; z = 0; w = 0; } else {
+    // From y to d: w = 1 + y·d, (x, y, z) = y × d, normalised.
+    w = 1 + d[1]; x = d[2]; y = 0; z = -d[0];
+    const n = Math.hypot(x, y, z, w); x /= n; y /= n; z /= n; w /= n;
+  }
+  const m11 = 1 - 2 * (y * y + z * z), m12 = 2 * (x * y - w * z), m13 = 2 * (x * z + w * y);
+  const m22 = 1 - 2 * (x * x + z * z), m23 = 2 * (y * z - w * x), m32 = 2 * (y * z + w * x), m33 = 1 - 2 * (x * x + y * y);
+  const ry = Math.asin(Math.max(-1, Math.min(1, m13)));
+  return Math.abs(m13) < 0.9999999 ? [Math.atan2(-m23, m33), ry, Math.atan2(-m12, m11)] : [Math.atan2(m32, m22), ry, 0];
+}
+
+function dna(x, y, w, h, o) {
+  const opts = options(o);
+  if (![x, y, w, h].every(finite) || w < 60 || h < 60) { warn('dna() needs x, y, width and height (at least 60 each); skipped'); return noDna(); }
+  let letters = String(opts.sequence || 'ATGCGTACCTGAATGC').toUpperCase().replace(/U/g, 'T').replace(/[^ACGT]/g, '');
+  if (letters.length < 4) { warn('dna() needs a sequence of at least 4 letters (A, T, G, C); using a short one'); letters = 'ATGCGTACCTGA'; }
+  if (letters.length > 30) { warn('dna() shows up to 30 base pairs; the sequence was cut there'); letters = letters.slice(0, 30); }
+  const n = letters.length, partner = Array.from(letters, b => DNA_PAIR[b]).join('');
+  const f = api.figure(x, y, w, h, { tilt: finite(opts.tilt) ? opts.tilt : 12, turn: finite(opts.turn) ? opts.turn : -22, zoom: opts.zoom, ground: false });
+
+  // Where things sit. In the helix, strand one's i-th backbone point turns 36° a step, strand two's 150° further on;
+  // each base reaches from its backbone to the middle of the pair. In the ladder, the same pieces lie flat in rows,
+  // as far apart as in the helix, so nothing changes length when it untwists: only where it sits.
+  const bp = (s, i) => { const t = i * DNA_TWIST + (s === 2 ? DNA_OFFSET : 0); return [(i - (n - 1) / 2) * DNA_RISE, DNA_R * Math.cos(t), DNA_R * Math.sin(t)]; };
+  const chord = v3len(v3sub(bp(1, 1), bp(1, 0))), baseHalf = v3len(v3sub(bp(1, 0), v3mul(v3add(bp(1, 0), bp(2, 0)), 0.5)));
+  const baseLen = baseHalf - 0.06;
+  const helixPose = (kind, s, i) => {
+    if (kind === 'seg') { const a = bp(s, i), b = bp(s, i + 1); return { c: v3lerp(a, b, 0.5), d: v3sub(b, a) }; }
+    const p = bp(s, i), m = v3mul(v3add(bp(1, i), bp(2, i)), 0.5), d = v3sub(m, p);
+    return { c: v3add(p, v3mul(v3unit(d), baseLen / 2)), d };
+  };
+  // A strand in the ladder: its backbone at height yb (z deep), its bases pointing up (dir 1) or down (-1).
+  const ladderX = i => (i - (n - 1) / 2) * chord;
+  const ladderPose = (kind, i, yb, dir, z = 0) => (kind === 'seg'
+    ? { c: [ladderX(i) + chord / 2, yb, z], d: [1, 0, 0] }
+    : { c: [ladderX(i), yb + dir * baseLen / 2, z], d: [0, dir, 0] });
+  const OPEN = 2 * baseHalf + 0.7; // an opened strand's backbone, from the middle: room for a new strand by each
+
+  const parts = []; // {kind: 'base' | 'seg', s (1, 2, or a new strand's name), i, handle, pose}
+  const make = (kind, s, i, pose, letter, backbone) => {
+    const rot = eulerFromY(pose.d).map(r => r * 180 / Math.PI);
+    const handle = kind === 'base'
+      ? f.cyl({ r: 0.13, h: baseLen, at: pose.c, rot, mat: 'plastic:' + DNA_BASE_COLORS[letter], quick: true })
+      : f.cyl({ r: 0.12, h: chord, at: pose.c, rot, mat: 'plastic:' + backbone, quick: true });
+    const part = { kind, s, i, handle, pose, letter };
+    parts.push(part);
+    return part;
+  };
+  let form = opts.form === 'ladder' ? 'ladder' : 'helix', state = 'closed';
+  for (let i = 0; i < n; i++) {
+    for (const s of [1, 2]) {
+      const letter = s === 1 ? letters[i] : partner[i], color = s === 1 ? DNA_STRANDS.one : DNA_STRANDS.two;
+      const pose = k => (form === 'helix' ? helixPose(k, s, i) : ladderPose(k, i, s === 1 ? -baseHalf : baseHalf, s === 1 ? 1 : -1));
+      make('base', s, i, pose('base'), letter);
+      if (i < n - 1) make('seg', s, i, pose('seg'), null, color);
+    }
+  }
+
+  // Moving parts: each part plays its own steps once, [[seconds, pose(part) or null to stay], …], arriving at each
+  // pose by its time (eased), every time shifted by lag(part) seconds so a strand moves like a zip. One path per part
+  // per call: a later path takes over a part, so a call plans the whole of its part's moves.
+  const FRAMES = 72;
+  const ease = k => k * k * (3 - 2 * k);
+  const blend = (a, b, k) => ({ c: v3lerp(a.c, b.c, k), d: v3lerp(v3unit(a.d), v3unit(b.d), k) });
+  function play(list, stepsOf, lag = () => 0) {
+    for (const part of list) {
+      const keys = [[0, part.pose]];
+      for (const [t, to] of stepsOf(part)) keys.push([t + lag(part), to ? to(part) : keys[keys.length - 1][1]]);
+      if (keys.length < 2) continue;
+      const total = Math.max(0.2, keys[keys.length - 1][0]);
+      const frames = Array.from({ length: FRAMES }, (_, k) => {
+        const t = (k / (FRAMES - 1)) * total;
+        let j = 0;
+        while (j < keys.length - 2 && keys[j + 1][0] < t) j++;
+        const [t0, a] = keys[j], [t1, b] = keys[j + 1];
+        const pose = blend(a, b, ease(Math.min(1, Math.max(0, (t - t0) / Math.max(1e-6, t1 - t0)))));
+        return [...pose.c, ...eulerFromY(pose.d)];
+      });
+      part.handle.path({ frames, period: total, once: true });
+      part.pose = keys[keys.length - 1][1];
+    }
+  }
+  const strandOf = s => parts.filter(p => p.s === s);
+  const flatClosed = p => ladderPose(p.kind, p.i, p.s === 1 ? -baseHalf : baseHalf, p.s === 1 ? 1 : -1);
+  const ZIP = 1.5; // seconds from the first nucleotide to the last: they move like a zip, left to right
+  const zip = p => (p.i / Math.max(1, n - 1)) * ZIP;
+  // Untwisting first, when it's still a helix: the seconds that takes (the zip included).
+  const untwist = () => (form === 'helix' ? 1.6 + ZIP : 0);
+
+  function unzip() {
+    if (state !== 'closed') return handle;
+    const open = p => ladderPose(p.kind, p.i, p.s === 1 ? -OPEN : OPEN, p.s === 1 ? 1 : -1);
+    const twisted = form === 'helix';
+    play([...strandOf(1), ...strandOf(2)], () => (twisted ? [[1.6, flatClosed], [3, open]] : [[1.4, open]]), zip);
+    form = 'ladder';
+    state = 'open';
+    return handle;
+  }
+
+  // Each old strand gets a new partner: free nucleotides float in from the front and pair up, base by base. Two DNAs,
+  // each one old strand and one new.
+  function copy() {
+    if (state === 'copied') return handle;
+    let wait = 0.3;
+    if (state !== 'open') { wait = (form === 'helix' ? 3 : 1.4) + ZIP; unzip(); }
+    const gap = OPEN - 2 * baseHalf; // the new strands' backbones, either side of the middle
+    const fresh = [];
+    for (let i = 0; i < n; i++) {
+      for (const [s, yb, dir, letter, color] of [['newOne', -gap, -1, partner[i], DNA_STRANDS.newOne], ['newTwo', gap, 1, letters[i], DNA_STRANDS.newTwo]]) {
+        for (const kind of i < n - 1 ? ['base', 'seg'] : ['base']) {
+          const target = ladderPose(kind, i, yb, dir);
+          const part = make(kind, s, i, { c: v3add(target.c, [0, dir * -0.4, 2.6 + (i % 3) * 0.5]), d: target.d }, kind === 'base' ? letter : null, color);
+          part.target = target;
+          fresh.push(part);
+        }
+      }
+    }
+    play(fresh, () => [[wait, null], [wait + 1.3, q => q.target]], zip);
+    state = 'copied';
+    return handle;
+  }
+
+  // RNA polymerase reads a stretch: strand one steps forward out of the way, an mRNA (strand one's letters, U for T)
+  // floats in and pairs with strand two, holds, then drops away below, and strand one steps back.
+  function transcribe(o2) {
+    if (state !== 'closed') { warn('dna transcribe(): only a closed DNA can be read; call it before unzip() or copy()'); return handle; }
+    const oo = options(o2), from = Math.max(0, Math.min(n - 2, finite(oo.from) ? Math.round(oo.from) : Math.floor(n * 0.25)));
+    const to = Math.max(from + 1, Math.min(n - 1, finite(oo.to) ? Math.round(oo.to) : Math.ceil(n * 0.75)));
+    const inStretch = p => p.i >= from && p.i <= to;
+    const t1 = untwist(), formed = t1 + 1.2 + 1.4 + ZIP, gone = formed + 1.6 + 1.4;
+    const forward = p => ladderPose(p.kind, p.i, -baseHalf, 1, 1.9);
+    const flatFirst = form === 'helix' ? [[1.6, flatClosed]] : [];
+    play(strandOf(2), () => flatFirst, zip);
+    play(strandOf(1), p => (inStretch(p) ? [...flatFirst, [t1, null], [t1 + 1.2, forward], [gone + ZIP + 0.1, null], [gone + ZIP + 1.3, flatClosed]] : flatFirst), p => (inStretch(p) ? 0 : zip(p)));
+    form = 'ladder';
+    const mrna = [];
+    for (let i = from; i <= to; i++) {
+      const letter = letters[i] === 'T' ? 'U' : letters[i];
+      for (const kind of i < to ? ['base', 'seg'] : ['base']) {
+        const target = ladderPose(kind, i, -baseHalf, 1);
+        const part = make(kind, 'mrna', i, { c: v3add(target.c, [0, -2.2, 2.4]), d: target.d }, kind === 'base' ? letter : null, DNA_STRANDS.mrna);
+        part.target = target;
+        mrna.push(part);
+      }
+    }
+    const away = p => ladderPose(p.kind, p.i, -baseHalf - 3.4, 1);
+    play(mrna, () => [[t1 + 1.2, null], [t1 + 2.6, p => p.target], [formed + 1.6, null], [gone, away]], p => ((p.i - from) / Math.max(1, to - from)) * ZIP);
+    return handle;
+  }
+
+  // A label on a part: a base pair's number (strand one's base), a letter (its first such base), 'backbone', 'new'
+  // (a new strand, after copy) or 'mrna'.
+  const find = which => {
+    if (Number.isInteger(which)) return parts.find(p => p.kind === 'base' && p.s === 1 && p.i === which);
+    const key = String(which).trim();
+    if (/^backbone$/i.test(key)) return parts.find(p => p.kind === 'seg' && p.s === 1 && p.i === Math.floor((n - 1) / 2));
+    if (/^new$/i.test(key)) return parts.find(p => p.kind === 'seg' && p.s === 'newOne' && p.i === Math.floor((n - 1) / 2));
+    if (/^mrna$/i.test(key)) return parts.find(p => p.kind === 'seg' && p.s === 'mrna') || parts.find(p => p.s === 'mrna');
+    const letter = key.toUpperCase();
+    return parts.find(p => p.kind === 'base' && p.letter === letter && (p.s === 1 || p.s === 'mrna')) || parts.find(p => p.kind === 'base' && p.letter === letter);
+  };
+  const label = (which, words, o2) => { const p = find(which); return p ? p.handle.label(String(words), o2) : (warn('dna label: nothing called ' + JSON.stringify(which)), null); };
+  // By default each base's name is tagged once, and the backbone.
+  if (opts.labels !== false) {
+    for (const b of ['A', 'T', 'G', 'C']) { const p = find(b); if (p) p.handle.label(b + ' ' + DNA_BASE_NAMES[b], { color: DNA_BASE_COLORS[b] }); }
+    label('backbone', 'backbone');
+  }
+  const handle = {
+    figure: f, sequence: letters, complement: partner, pairs: n,
+    // The mRNA a stretch (or the whole) makes: strand one's letters with U for T.
+    mrna: (a, b) => letters.slice(finite(a) ? a : 0, finite(b) ? b + 1 : n).replace(/T/g, 'U'),
+    unzip, copy, transcribe, label, view: o2 => f.view(o2),
+  };
+  return handle;
+}
+// What dna() hands back when it couldn't build one: calls on it do nothing.
+const noDna = () => new Proxy({}, { get: () => () => null });
+api.dna = dna;
 
 // const x = ..., let x = ..., var x = ... (each name of `const a = 1, b = 2`) and function f() {...} at the start of a
 // statement are kept in `scope`, so later statements see them; everything else runs as written.

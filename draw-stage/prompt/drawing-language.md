@@ -125,3 +125,16 @@ const m = mechanism(c.x + 20, c.y + 70, c.w - 40, c.h - 130, {speed: 30, parts: 
 step(2); say('The small gear turns ' + m.speed('small') + ' times a minute, but the big one only ' + m.speed('big') + ', and ' + m.direction('big') + '.')
 text(c.x + c.w / 2, c.y + c.h - 40, 'the big gear turns ' + m.speed('big') + ' times a minute', {size: 22})
 ```
+
+DNA (what DNA is, how it copies itself, how a gene is read into RNA)
+const d = dna(x, y, w, h, {sequence: 'ATGCGTACCTGAATGC'})   a 3D double helix built from one strand's letters (4 to 30 of A, T, G, C). The partner strand is worked out (A with T, G with C), it turns once every ten base pairs, each base has its colour (A red, T yellow, G green, C blue) and each name is tagged once. form: 'ladder' draws it flat and untwisted.
+  d.unzip() untwists it and pulls the strands apart like a zip   d.copy() unzips it if it needs to, then free nucleotides pair up with each old strand: two DNAs, each one old strand and one new (lighter)   d.transcribe({from, to}) reads that stretch of base pairs: an mRNA (purple, U instead of T) forms against one strand, then leaves
+  Call each in the beat whose line says it happens; each takes a few seconds. d.complement and d.mrna(from, to) are the letters, for your words; d.label(which, words) tags a base pair (its number), a letter ('G'), 'backbone', 'new' (after copy) or 'mrna' (after transcribe).
+Use dna() for DNA instead of building a helix from parts: its pairs and its turns are right.
+DNA EXAMPLE (two beats of "how does DNA copy itself?", inside a card c)
+```js
+step(1); say("DNA is two strands twisted together, joined by pairs of bases: A always with T, and G always with C.")
+const d = dna(c.x + 20, c.y + 70, c.w - 40, c.h - 130, {sequence: 'ATGCGTACCTGAATGC'})
+step(2); say("To copy itself, the cell unzips the strands, and new bases pair up with each one, so you get two identical DNAs.")
+d.copy()
+```

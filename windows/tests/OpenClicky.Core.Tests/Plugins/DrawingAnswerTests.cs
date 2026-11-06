@@ -69,6 +69,17 @@ public partial class DrawingAnswerTests
         Assert.Contains("m.speed('B') turns a minute", prompt);
     }
 
+    [Fact]
+    public void ThePromptOffersDnaThatPairsAndAnimatesItself()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const d = dna(x, y, w, h, {sequence: 'ATGCGTACCTGAATGC'})", prompt);
+        Assert.Contains("d.unzip()", prompt);
+        Assert.Contains("d.copy()", prompt);
+        Assert.Contains("d.transcribe({from, to})", prompt);
+        Assert.Contains("(A with T, G with C)", prompt);
+    }
+
     // MARK: - the program in a reply
 
     [Fact]
