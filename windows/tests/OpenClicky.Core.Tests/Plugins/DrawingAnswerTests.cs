@@ -89,6 +89,30 @@ public partial class DrawingAnswerTests
         Assert.Contains("b.point('aorta')", prompt);
     }
 
+    [Fact]
+    public void ThePromptOffersACellDividingPhaseByPhase()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const m = mitosis(x, y, w, h, {pairs: 2})", prompt);
+        Assert.Contains("m.next() plays the next phase", prompt);
+        Assert.Contains("cytokinesis (it pinches in two: two cells with the same chromosomes)", prompt);
+    }
+
+    [Theory]
+    [InlineData("what is a cell?")]
+    [InlineData("what is mitosis")]
+    [InlineData("explain cell division")]
+    [InlineData("what are chromosomes")]
+    [InlineData("tell me about bacteria")]
+    public void WhatAPartOfLifeIsGetsADrawing(string question) => Assert.True(DrawStageLesson.WantsADrawing(question));
+
+    [Theory]
+    [InlineData("what is a cell phone")]
+    [InlineData("what is a cell in excel")]
+    [InlineData("what's my cell number")]
+    [InlineData("what is a solar cell")]
+    public void OtherCellsStayOut(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
+
     // MARK: - the program in a reply
 
     [Fact]

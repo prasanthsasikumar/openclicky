@@ -251,6 +251,25 @@ same thing to beat: the atria squeeze at the start of each beat, the ventricles 
 minute). A lap takes `lap` seconds (10; really about a minute). `b.point(part)` makes a part swell gently while it is
 talked about; `b.label(part, words)` tags one. Sample: `circulation-blood.js`.
 
+### Cell division
+
+`mitosis(x, y, w, h, {pairs})` draws an animal cell about to divide, in a 3D figure (`stage-worker.js`), and
+`m.next()` plays one phase at a time while the voice talks about it: prophase (each chromosome, already copied, coils
+up as two sister chromatids joined at a centromere; the nucleus breaks down; the centrosomes go to the poles),
+metaphase (the chromosomes line up across the middle, a spindle fibre from each pole holding each chromatid),
+anaphase (the sisters are pulled to opposite poles, centromere first, and the cell stretches), telophase (a nucleus
+forms round each set, the chromosomes uncoil, the cell starts to pinch) and cytokinesis (two cells, each with one
+chromatid of every chromosome). `m.to(phase)` plays every phase up to that one at once. Chromosomes come in `pairs`
+(2; 1 to 4), one from each parent in warm and cool colours, each pair its own length. The metaphase plate is laid out
+so that, from where the figure is first seen, no chromosome hides another.
+
+Every part is made when `mitosis()` runs, the later ones hidden, and a call sends every moving part's whole move as a
+single mark, so they all start together. That needed three small additions to `figure3d.js`: a part made with
+`hidden: true` stays out of sight until a path sizes it up; a `paths` motion carries many parts' paths in one mark
+(each still a `path`: a new path takes a part over from the old one); and a label goes when its part has been shrunk
+away (the nucleus's in prophase). The cell's outline is a flip-book of nine blobs, from round to two, one shown at a
+time. Sample: `mitosis-cell-division.js`.
+
 ## Follow-up questions
 
 A finished drawing stays up, and the stage remembers it (`DrawStageController.Current`: its questions, its whole

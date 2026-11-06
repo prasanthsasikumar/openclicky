@@ -724,6 +724,8 @@ function addPart(m, seconds) {
   (parent ? parent.object : figure.root).add(placed);
   const part = { id: m.id, kind: m.kind, name: typeof o.name === 'string' ? o.name : null, figure, object: placed, base: { position: placed.position.clone(), scale, rotation: placed.rotation.clone() }, motions: [], grow: { start: figure.age, seconds: Math.max(0.15, seconds) } };
   placed.scale.setScalar(1e-3);
+  // hidden: made now but not shown until a path motion sizes it up (a cell that will divide holds its daughters' parts).
+  if (o.hidden) { part.hidden = true; part.grow = null; }
   parts.set(m.id, part);
   if (m.kind === 'piece') {
     part.piece = o;
@@ -1047,6 +1049,14 @@ function addLabel(m, seconds) {
 }
 
 function addMotion(m) {
+  // paths: many parts' paths in one mark, so they all start at the same moment (a cell dividing, phase by phase).
+  if (m.kind === 'paths') {
+    const o = m.params || {};
+    for (const one of Array.isArray(o.list) ? o.list.slice(0, 400) : []) {
+      if (one && typeof one.part === 'string') addMotion({ part: one.part, kind: 'path', params: { frames: one.frames, period: o.period, once: o.once } });
+    }
+    return;
+  }
   const part = parts.get(m.part);
   if (!part) return;
   const o = m.params || {};
@@ -1059,6 +1069,8 @@ function addMotion(m) {
   const frames = Array.isArray(o.frames)
     ? o.frames.slice(0, 720).filter(f => Array.isArray(f) && (f.length === 3 || f.length === 6 || f.length === 7) && f.every(n => typeof n === 'number' && isFinite(n)))
     : null;
+  // A new path takes the part over from where the old one left it: the old one goes.
+  if (m.kind === 'path') part.motions = part.motions.filter(motion => motion.kind !== 'path');
   part.motions.push({ kind: m.kind, axis: ['x', 'y', 'z'].includes(o.axis) ? o.axis : 'y', period: Math.max(0.2, num(o.period, m.kind === 'spin' ? 3 : 2)),
     amount: num(o.amount, m.kind === 'pulse' ? 0.08 : 0.3), center: vec3(o.center, new THREE.Vector3()), start: o.sync ? 0 : part.figure.age,
     reverse: !!o.reverse, frames, once: !!o.once });
@@ -1124,7 +1136,12 @@ function updatePart(part, t) {
     }
   }
   object.position.copy(position);
-  object.scale.copy(part.base.scale).multiplyScalar(g * scale);
+  if (part.hidden && !part.motions.some(motion => motion.kind === 'path')) scale = 0;
+  object.scale.copy(part.base.scale).multiplyScalar(Math.max(1e-3, g * scale));
+  // Shrunk away (hidden, or sized 0 by its path): it isn't drawn at all (its ink outline would leave a dot) and its
+  // labels go too.
+  object.visible = g * scale > 2e-3;
+  part.shown = g * scale > 0.05;
 }
 
 function updateFigure(figure, dt) {
@@ -1210,6 +1227,9 @@ function placeLabels(figure, dt) {
   const middle = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
   const placed = [];
   figure.labels.forEach((label, index) => {
+    const away = label.part && label.part.shown === false;
+    label.group.style.display = away ? 'none' : '';
+    if (away) return;
     if (label.part) {
       if (label.at) point.copy(label.at).applyMatrix4(label.part.object.matrixWorld);
       else { box.setFromObject(label.part.object); box.getCenter(point); }
