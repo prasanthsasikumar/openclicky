@@ -131,4 +131,14 @@ import Testing
         #expect(followUp.contains("Now they ask: \"what does the valve do?\""))
         #expect(!followUp.contains("{{"))
     }
+
+    @Test(arguments: ["what is a cell?", "what is mitosis", "explain cell division", "what are chromosomes", "tell me about bacteria"])
+    func whatAPartOfLifeIsGetsADrawing(question: String) {
+        #expect(DrawStageLesson.wantsADrawing(question), "\(question)")
+    }
+
+    @Test(arguments: ["what is a cell phone", "what is a cell in excel", "what's my cell number", "what is a solar cell"])
+    func otherCellsStayOut(question: String) {
+        #expect(!DrawStageLesson.wantsADrawing(question), "\(question)")
+    }
 }

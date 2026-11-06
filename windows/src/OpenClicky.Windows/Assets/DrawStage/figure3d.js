@@ -725,6 +725,8 @@ function addPart(m, seconds) {
   (parent ? parent.object : figure.root).add(placed);
   const part = { id: m.id, kind: m.kind, name: typeof o.name === 'string' ? o.name : null, figure, object: placed, base: { position: placed.position.clone(), scale, rotation: placed.rotation.clone() }, motions: [], grow: { start: figure.age, seconds: Math.max(0.15, seconds) } };
   placed.scale.setScalar(1e-3);
+  // hidden: made now but not shown until a path motion sizes it up (a cell that will divide holds its daughters' parts).
+  if (o.hidden) { part.hidden = true; part.grow = null; }
   parts.set(m.id, part);
   if (m.kind === 'piece') {
     part.piece = o;
@@ -1048,6 +1050,14 @@ function addLabel(m, seconds) {
 }
 
 function addMotion(m) {
+  // paths: many parts' paths in one mark, so they all start at the same moment (a cell dividing, phase by phase).
+  if (m.kind === 'paths') {
+    const o = m.params || {};
+    for (const one of Array.isArray(o.list) ? o.list.slice(0, 400) : []) {
+      if (one && typeof one.part === 'string') addMotion({ part: one.part, kind: 'path', params: { frames: one.frames, period: o.period, once: o.once } });
+    }
+    return;
+  }
   const part = parts.get(m.part);
   if (!part) return;
   const o = m.params || {};
@@ -1055,8 +1065,16 @@ function addMotion(m) {
     part.move = { from: part.base.position.clone(), to: vec3(o.to, part.base.position.clone()), start: part.figure.age, seconds: num(o.secs, 0.8) };
     return;
   }
+  // sync: the motion keeps the figure's own clock (from when it was made), so parts that move together stay in step
+  // however late each one is added: two gears' teeth, a crank and its rod. path: frames the program worked out.
+  const frames = Array.isArray(o.frames)
+    ? o.frames.slice(0, 720).filter(f => Array.isArray(f) && (f.length === 3 || f.length === 6 || f.length === 7) && f.every(n => typeof n === 'number' && isFinite(n)))
+    : null;
+  // A new path takes the part over from where the old one left it: the old one goes.
+  if (m.kind === 'path') part.motions = part.motions.filter(motion => motion.kind !== 'path');
   part.motions.push({ kind: m.kind, axis: ['x', 'y', 'z'].includes(o.axis) ? o.axis : 'y', period: Math.max(0.2, num(o.period, m.kind === 'spin' ? 3 : 2)),
-    amount: num(o.amount, m.kind === 'pulse' ? 0.08 : 0.3), center: vec3(o.center, new THREE.Vector3()), start: part.figure.age, reverse: !!o.reverse });
+    amount: num(o.amount, m.kind === 'pulse' ? 0.08 : 0.3), center: vec3(o.center, new THREE.Vector3()), start: o.sync ? 0 : part.figure.age,
+    reverse: !!o.reverse, frames, once: !!o.once });
 }
 
 function setView(m) {
@@ -1097,10 +1115,34 @@ function updatePart(part, t) {
         position = motion.center.clone().add(offset);
         break;
       }
+      case 'path': {
+        // Once a period through frames, [x, y, z] or [x, y, z, rx, ry, rz] (radians), in its parent's frame: a
+        // connecting rod, a piston, a rocker, a chain's links. Between frames it moves straight and turns the short way.
+        const frames = motion.frames;
+        if (!frames || !frames.length) break;
+        // once: plays through a single time and holds its last frame (a strand unzipping), else it loops.
+        const n = frames.length;
+        const u = motion.once ? Math.min(1, Math.max(0, (t - motion.start) / motion.period)) * (n - 1) : (((t - motion.start) / motion.period) % 1 + 1) % 1 * n;
+        const i = Math.floor(u), k = u - i;
+        const a = frames[i % n], b = frames[motion.once ? Math.min(i + 1, n - 1) : (i + 1) % n];
+        position.set(a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k);
+        if (a.length >= 6 && b.length >= 6) {
+          const turn = (p, q) => p + Math.atan2(Math.sin(q - p), Math.cos(q - p)) * k;
+          object.rotation.set(turn(a[3], b[3]), turn(a[4], b[4]), turn(a[5], b[5]));
+        }
+        // A seventh number sizes it: a heart chamber squeezing, a blood cell giving way to its other colour (0 hides it).
+        if (a.length === 7 && b.length === 7) scale *= a[6] + (b[6] - a[6]) * k;
+        break;
+      }
     }
   }
   object.position.copy(position);
-  object.scale.copy(part.base.scale).multiplyScalar(g * scale);
+  if (part.hidden && !part.motions.some(motion => motion.kind === 'path')) scale = 0;
+  object.scale.copy(part.base.scale).multiplyScalar(Math.max(1e-3, g * scale));
+  // Shrunk away (hidden, or sized 0 by its path): it isn't drawn at all (its ink outline would leave a dot) and its
+  // labels go too.
+  object.visible = g * scale > 2e-3;
+  part.shown = g * scale > 0.05;
 }
 
 function updateFigure(figure, dt) {
@@ -1186,6 +1228,9 @@ function placeLabels(figure, dt) {
   const middle = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
   const placed = [];
   figure.labels.forEach((label, index) => {
+    const away = label.part && label.part.shown === false;
+    label.group.style.display = away ? 'none' : '';
+    if (away) return;
     if (label.part) {
       if (label.at) point.copy(label.at).applyMatrix4(label.part.object.matrixWorld);
       else { box.setFromObject(label.part.object); box.getCenter(point); }

@@ -364,7 +364,7 @@
       case 'card': return 0.4;
       case 'photo': return 0.5;
       case 'figure': return 0.5;
-      case 'part3d': return 0.6;
+      case 'part3d': return mark.params && mark.params.hidden ? 0.02 : mark.params && mark.params.quick ? 0.1 : 0.6; // quick: one of many small parts (a DNA's nucleotides)
       case 'label3d': return 0.45;
       case 'view3d': return 0.5;
       case 'motion3d': return 0.05;

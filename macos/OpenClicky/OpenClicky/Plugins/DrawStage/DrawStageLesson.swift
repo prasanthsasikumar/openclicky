@@ -73,6 +73,18 @@ enum DrawStageLesson {
     /// Ownership words only: "my build", "our code". A bare "I" ("I want to know how a jet engine
     /// works", "can you tell me…") is how people ask, so it never counts against a question.
     private static let firstPersonWords = [" my ", " mine ", " our "]
+    /// Things in a cell, and the body, that a "what is …" question names: a drawing of it answers
+    /// ("what is a cell", "what is mitosis", "explain chromosomes"). Not a phone's cell or a spreadsheet's.
+    private static let lifeScience = [
+        " cell ", " cells ", " mitosis ", " meiosis ", " cell division ", " chromosome ", " chromosomes ", " chromatid ", " chromatids ",
+        " mitochondria ", " mitochondrion ", " chloroplast ", " chloroplasts ", " nucleus of a cell ", " bacteria ", " bacterium ",
+        " gene ", " genes ", " double helix ", " blood circulation ", " circulatory system ",
+    ]
+    private static let notLifeScience = [
+        " phone ", " phones ", " cellphone ", " battery ", " batteries ", " tower ", " excel ", " spreadsheet ", " sheet ", " table ", " prison ",
+        " jail ", " solar ",
+    ]
+    private static let lifeOpeners = [" what is ", " what's ", " what are ", " tell me about ", " explain ", " describe "]
     /// A curious question about how or why the world works, wherever the asking words fall in the
     /// sentence ("can you tell me how an electron microscope works"): a picture explains it best.
     private static let curiousOpeners = [
@@ -98,6 +110,8 @@ enum DrawStageLesson {
         if wordCount(text) < 2 { return false }
         if containsAny(text, screenActionPhrases) || containsAny(text, smallTalkOpeners) { return false }
         if containsAny(text, troubleWords) || containsAny(text, workWords) || containsAny(text, firstPersonWords) { return false }
+        // What a part of life is ("what is a cell", "what is mitosis"): a drawing of it answers.
+        if startsAny(text, lifeOpeners) && containsAny(text, lifeScience) && !containsAny(text, notLifeScience) { return true }
         if containsAny(text, curiousOpeners) || containsAny(text, explicitAsks) { return true }
         // "explain how a transistor works", "tell me how the heart works", "I want to know how a jet
         // engine works": asking how a thing works, in any wording, once the screen and trouble words are out.

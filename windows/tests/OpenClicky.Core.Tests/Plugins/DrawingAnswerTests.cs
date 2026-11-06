@@ -59,6 +59,60 @@ public partial class DrawingAnswerTests
         }
     }
 
+    [Fact]
+    public void ThePromptOffersMechanismsThatWorkOutTheirOwnMotion()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const m = mechanism(x, y, w, h, {speed: 20, parts: [...]})", prompt);
+        Assert.Contains("{gear: 'B', teeth: 36, meshes: 'A'}", prompt);
+        Assert.Contains("{piston: 'P', crank: 'K', rod: 3.6, angle: 90}", prompt);
+        Assert.Contains("m.speed('B') turns a minute", prompt);
+    }
+
+    [Fact]
+    public void ThePromptOffersDnaThatPairsAndAnimatesItself()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const d = dna(x, y, w, h, {sequence: 'ATGCGTACCTGAATGC'})", prompt);
+        Assert.Contains("d.unzip()", prompt);
+        Assert.Contains("d.copy()", prompt);
+        Assert.Contains("d.transcribe({from, to})", prompt);
+        Assert.Contains("(A with T, G with C)", prompt);
+    }
+
+    [Fact]
+    public void ThePromptOffersBloodGoingRoundTheRightWay()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const b = circulation(x, y, w, h, {})", prompt);
+        Assert.Contains("body, vena cava, right atrium, right ventricle, pulmonary artery, lungs, pulmonary veins, left atrium, left ventricle, aorta, body", prompt);
+        Assert.Contains("b.point('aorta')", prompt);
+    }
+
+    [Fact]
+    public void ThePromptOffersACellDividingPhaseByPhase()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const m = mitosis(x, y, w, h, {pairs: 2})", prompt);
+        Assert.Contains("m.next() plays the next phase", prompt);
+        Assert.Contains("cytokinesis (it pinches in two: two cells with the same chromosomes)", prompt);
+    }
+
+    [Theory]
+    [InlineData("what is a cell?")]
+    [InlineData("what is mitosis")]
+    [InlineData("explain cell division")]
+    [InlineData("what are chromosomes")]
+    [InlineData("tell me about bacteria")]
+    public void WhatAPartOfLifeIsGetsADrawing(string question) => Assert.True(DrawStageLesson.WantsADrawing(question));
+
+    [Theory]
+    [InlineData("what is a cell phone")]
+    [InlineData("what is a cell in excel")]
+    [InlineData("what's my cell number")]
+    [InlineData("what is a solar cell")]
+    public void OtherCellsStayOut(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
+
     // MARK: - the program in a reply
 
     [Fact]

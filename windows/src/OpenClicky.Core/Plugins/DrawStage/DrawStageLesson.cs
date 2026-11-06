@@ -99,6 +99,18 @@ public static partial class DrawStageLesson
             warmUpConnection: false);
     }
 
+    /// <summary>Things in a cell, and the body, that a "what is …" question names: a drawing of it answers ("what is a
+    /// cell", "what is mitosis", "explain chromosomes").</summary>
+    private static readonly string[] LifeScience =
+    [
+        " cell ", " cells ", " mitosis ", " meiosis ", " cell division ", " chromosome ", " chromosomes ", " chromatid ", " chromatids ",
+        " mitochondria ", " mitochondrion ", " chloroplast ", " chloroplasts ", " nucleus of a cell ", " bacteria ", " bacterium ",
+        " gene ", " genes ", " double helix ", " blood circulation ", " circulatory system ",
+    ];
+
+    /// <summary>The other things those words name: a phone's cell, a spreadsheet's, a battery's.</summary>
+    private static readonly string[] NotLifeScience = [" phone ", " phones ", " cellphone ", " battery ", " batteries ", " tower ", " excel ", " spreadsheet ", " sheet ", " table ", " prison ", " jail ", " solar "];
+
     // MARK: - Which questions
 
     /// <summary>Whether <paramref name="question"/> is best answered with a drawing.</summary>
@@ -115,6 +127,12 @@ public static partial class DrawStageLesson
         if (StartsAny(text, " how does ", " how do ", " how did ", " how is ", " how are ", " how can a ", " how can an ", " why ", " what happens ",
                 " what makes ", " what causes ", " what is inside ", " what's inside ", " what are the parts ")
             && !StartsAny(text, " how do you ", " how do we ", " how is it going ", " how are you ", " why not "))
+        {
+            return true;
+        }
+        // What a part of life is ("what is a cell", "what is mitosis", "explain chromosomes"): a drawing of it answers.
+        if (StartsAny(text, " what is ", " what's ", " what are ", " tell me about ", " explain ", " describe ")
+            && ContainsAny(text, LifeScience) && !ContainsAny(text, NotLifeScience) && !ContainsAny(text, " my ", " our "))
         {
             return true;
         }
@@ -276,7 +294,7 @@ public static partial class DrawStageLesson
           f.lathe({points: [[radius, y], …]}) (a turned profile: casings, nozzles, bottles, bells, a fuselage on axis: 'x')
           f.extrude({points: [[x, y], …], depth, holes: [[[x, y], …]], bevel}) (a flat outline made thick: wings, fins, brackets, a plane seen from above)
           f.tube({points: [[x, y, z], …], r}) (smooth: cables, hoses, veins) f.pipe({points, r, bend}) (straight runs with bends: plumbing, exhausts)
-          f.spring({r, h, coils, wire}) f.gear({r, teeth, depth}) f.arrow({from: [x, y, z], to: [x, y, z], color}) (flows and forces)
+          f.spring({r, h, coils, wire}) f.gear({r, teeth, depth}) (a still gear: gears that turn together are a mechanism(), below) f.arrow({from: [x, y, z], to: [x, y, z], color}) (flows and forces)
           f.blob({balls: [[x, y, z, r], [x, y, z, rx, ry, rz], …], sticks: [{from, to, r, r2}], paths: [{points, r, r2}], holes: [[x, y, z, r]], smooth}) one smooth organic surface over its balls and sticks, blended where they touch (smooth 0.1-0.6): organs, bodies, animals, teeth, leaves, rocks, clouds. Use it for anything alive; spheres and capsules side by side look like toys.
         Every part also takes at: [x, y, z], rot: [degrees x, y, z], axis: 'x' | 'y' | 'z' (which way a cyl, cone, capsule, spring, lathe or gear points; default y, gear and extrude default z), scale, parent: anotherPart (moves with it), color, opacity, and
           mat: 'steel' | 'alu' | 'titanium' | 'chrome' | 'iron' | 'gold' | 'copper' | 'brass' | 'plastic:<color>' | 'paint:<color>' | 'rubber' | 'wood' | 'stone' | 'ceramic' | 'glass' | 'water' | 'glow:<color>' (flames, lights, hot things)
@@ -343,6 +361,64 @@ public static partial class DrawStageLesson
         const heart = f.blob({balls: [[0.35, -0.35, 0, 0.85, 1.1, 0.8], [-0.35, -0.2, 0.15, 0.75, 0.95, 0.7], [0.2, -1.25, 0.05, 0.3]], smooth: 0.45, mat: 'tissue'}).pulse({amount: 0.035, period: 1})
         const aorta = f.blob({paths: [{points: [[0.1, 0.5, 0], [0.12, 1.5, -0.05], [0.55, 2.05, -0.1], [1.1, 1.75, -0.15], [1.2, 1.0, -0.2]], r: 0.3, r2: 0.26}], mat: 'tissue:#C0392B'})
         aorta.label('to the body', {color: 'red'})
+        ```
+
+        MECHANISMS (how a machine passes motion along: gears, a bike chain, a belt, an engine's crank and piston, a pump's rocker; the parts really move and stay in step)
+        const m = mechanism(x, y, w, h, {speed: 20, parts: [...]})   a working machine in 3D in that box. The first part is driven at speed (turns a minute). You say what joins what; where each part sits, how fast and which way it turns, and how a rod or a piston moves are worked out for you, so teeth always meet.
+          {gear: 'A', teeth: 12}   {gear: 'B', teeth: 36, meshes: 'A'} (its teeth lock into A's; angle: where it sits round A in degrees, else it finds room)   {gear: 'C', teeth: 10, on: 'B'} (on B's shaft, in front of it: turns with B)
+          {pulley: 'P', r: 1}   {pulley: 'Q', r: 2.5, belt: 'P', distance: 6, angle: 0} (crossed: true crosses the belt)   {sprocket: 'S', teeth: 40}   {sprocket: 'T', teeth: 16, chain: 'S', distance: 9}
+          {rack: 'R', meshes: 'A', length: 8} (a toothed bar the gear slides back and forth; angle: 270 puts it below)
+          {crank: 'K', r: 1.2, on: 'B'} (a crank disc on a shaft; listed first, it drives)   {piston: 'P', crank: 'K', rod: 3.6, angle: 90} (a connecting rod and a piston sliding in its cylinder, as in an engine)   {rocker: 'L', crank: 'K', rod: 3, length: 2.4, pivot: [4, -1], reach: 3} (a rocking arm on a pivot, as in a wiper; reach carries it on past the pivot). A pump jack: [{crank: 'motor', r: 1.2}, {rocker: 'beam', crank: 'motor', rod: 5, length: 3, pivot: [3, 5], reach: 4, head: true}] (the rocker's post and the crank's stand are drawn for you, down to one ground)
+          Any part takes label: 'words', and color or mat. A part joins only parts listed before it; the names are yours.
+        m.speed('B') turns a minute and m.direction('B') 'clockwise' or 'anticlockwise': build your say() lines and labels from them, after the mechanism() call, instead of working speeds out yourself (a small gear driven by a big one turns faster, not slower).   m.label('B', words, o)   m.view({tilt, turn, zoom})
+        Whenever gears, sprockets and a chain, pulleys and a belt, a rack, a crank, a piston or a rocking beam are in the answer, build them with mechanism(), never with f.gear() or a tube: hand-placed gears don't mesh and a hand-drawn chain doesn't move. m.figure is its 3D stage, in the same units (the first part at [0, 0, 0], x right, y up, the moving parts in the z = 0 plane; a 12-tooth gear is 3 across): add the machine's still body round its moving parts there (a frame, a tower, a base, a bike's wheel rim) with m.figure.box(…), cyl(…). Keep a machine to about 10 moving parts so each can be seen.
+        MECHANISM EXAMPLE (one beat of "why does a small gear spin faster?", inside a card c)
+        ```js
+        step(1); say("Here a small gear with 12 teeth turns a big one with 36.")
+        const m = mechanism(c.x + 20, c.y + 70, c.w - 40, c.h - 130, {speed: 30, parts: [{gear: 'small', teeth: 12, label: 'turned by the motor'}, {gear: 'big', teeth: 36, meshes: 'small'}]})
+        step(2); say('The small gear turns ' + m.speed('small') + ' times a minute, but the big one only ' + m.speed('big') + ', and ' + m.direction('big') + '.')
+        text(c.x + c.w / 2, c.y + c.h - 40, 'the big gear turns ' + m.speed('big') + ' times a minute', {size: 22})
+        ```
+
+        DNA (what DNA is, how it copies itself, how a gene is read into RNA)
+        const d = dna(x, y, w, h, {sequence: 'ATGCGTACCTGAATGC'})   a 3D double helix built from one strand's letters (4 to 30 of A, T, G, C). The partner strand is worked out (A with T, G with C), it turns once every ten base pairs, each base has its colour (A red, T yellow, G green, C blue) and each name is tagged once. form: 'ladder' draws it flat and untwisted.
+          d.unzip() untwists it and pulls the strands apart like a zip   d.copy() unzips it if it needs to, then free nucleotides pair up with each old strand: two DNAs, each one old strand and one new (lighter)   d.transcribe({from, to}) reads that stretch of base pairs: an mRNA (purple, U instead of T) forms against one strand, then leaves
+          Call each in the beat whose line says it happens; each takes a few seconds. d.complement and d.mrna(from, to) are the letters, for your words; d.label(which, words) tags a base pair (its number), a letter ('G'), 'backbone', 'new' (after copy) or 'mrna' (after transcribe).
+        Use dna() for DNA instead of building a helix from parts: its pairs and its turns are right.
+        DNA EXAMPLE (two beats of "how does DNA copy itself?", inside a card c)
+        ```js
+        step(1); say("DNA is two strands twisted together, joined by pairs of bases: A always with T, and G always with C.")
+        const d = dna(c.x + 20, c.y + 70, c.w - 40, c.h - 130, {sequence: 'ATGCGTACCTGAATGC'})
+        step(2); say("To copy itself, the cell unzips the strands, and new bases pair up with each one, so you get two identical DNAs.")
+        d.copy()
+        ```
+
+        BLOOD CIRCULATION (how blood goes round the body, what the heart does, why blood goes to the lungs)
+        const b = circulation(x, y, w, h, {})   the heart's four chambers (the person's right side on the viewer's left, as in every diagram), the lungs above and the body below, joined by see-through vessels, with blood cells really going round: body, vena cava, right atrium, right ventricle, pulmonary artery, lungs, pulmonary veins, left atrium, left ventricle, aorta, body. Cells are blue (little oxygen) until the lungs and red (full of oxygen) after them, and the atria squeeze before the ventricles every beat. beat: 60 (beats a minute), lap: 10 (seconds for a cell to go round).
+          b.point('aorta') makes a part swell gently while your line talks about it   b.label(part, words) tags one. Its parts: right atrium, right ventricle, left atrium, left ventricle, lungs, body, aorta, vena cava, pulmonary artery, pulmonary veins.
+        Use circulation() for how blood moves round the body instead of drawing a heart and arrows yourself: its route and colours are right.
+        CIRCULATION EXAMPLE (two beats of "how does blood go round my body?", inside a card c)
+        ```js
+        step(1); say("Your heart pumps blood in a figure of eight: out to your lungs and back, then out to your body and back.")
+        const b = circulation(c.x + 20, c.y + 60, c.w - 40, c.h - 110, {})
+        step(2); say("Blood picks up oxygen in the lungs and turns bright red, then the left side of the heart pushes it out through the aorta.")
+        b.point('lungs')
+        b.point('aorta')
+        ```
+
+        CELL DIVISION (how a cell divides, mitosis and its phases, how we grow or heal)
+        const m = mitosis(x, y, w, h, {pairs: 2})   an animal cell about to divide, in 3D, with its chromosomes in pairs (one from each parent, warm and cool colours, each pair its own length; pairs 1 to 4). It starts in interphase: the DNA loose in the nucleus, two centrosomes beside it.
+          m.next() plays the next phase while your line talks about it: prophase (each chromosome has been copied and coils up as two sister chromatids joined at a centromere, the nucleus breaks down, the centrosomes go to the two ends), metaphase (the chromosomes line up across the middle, held by spindle fibres from both ends), anaphase (the two copies of every chromosome are pulled apart, one to each end, and the cell stretches), telophase (a new nucleus forms round each set, the cell starts to pinch), cytokinesis (it pinches in two: two cells with the same chromosomes)
+          m.to('metaphase') plays every phase up to that one at once   m.phase is where it is   m.point('chromosomes') makes them swell gently while you talk about them   m.label(part, words) tags a part. Its parts: cell membrane, nucleus, chromosomes, centromeres, centrosomes, spindle fibres, new nuclei.
+        Use mitosis() for cell division instead of drawing the phases yourself: one step per phase, naming the phase in your line, reads best.
+        MITOSIS EXAMPLE (three beats of "how does a cell divide?", inside a card c)
+        ```js
+        step(1); say("A cell divides by mitosis. First it copies its DNA, which is loose in the nucleus.")
+        const m = mitosis(c.x + 20, c.y + 60, c.w - 40, c.h - 110, {pairs: 2})
+        step(2); say("In prophase the copies coil up into chromosomes, each two copies joined in the middle.")
+        m.next()
+        step(3); say("In metaphase they line up across the middle, held by spindle fibres from both ends.")
+        m.next()
         ```
         """);
 
