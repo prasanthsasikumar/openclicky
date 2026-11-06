@@ -17,7 +17,9 @@
 //  the model 3D pieces (f.piece) whatever Settings say; they are made by the maker Settings pick.
 //
 //    OpenClicky --openclicky-drawstage-smoke [program.js] [--speech] [--shot <file.png>]
-//    OpenClicky --openclicky-drawstage-smoke reply:<file> | lesson:<question> [--then reply:<file>] [--voice] [--save] [--shot <file.png>]
+//    OpenClicky --openclicky-drawstage-smoke reply:<file> | lesson:<question> [--then reply:<file>] [--voice] [--save] [--language <code>] [--shot <file.png>]
+//
+//  --language asks the lesson in that language (ReplyLanguage: ur for Urdu), whatever Settings say.
 //
 
 using System.Collections.Concurrent;
@@ -43,6 +45,9 @@ internal static class DrawStageSmoke
     private static readonly TimeSpan ChunkInterval = TimeSpan.FromMilliseconds(30);
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(90);
 
+    /// <summary>The lesson's language: --language, else Settings' own.</summary>
+    private static string languageCode = "en";
+
     public static int Run(string[] args)
     {
         ConsoleAttachment.Attach();
@@ -51,6 +56,8 @@ internal static class DrawStageSmoke
         var shotIndex = Array.IndexOf(args, "--shot");
         var shotPath = shotIndex >= 0 && shotIndex + 1 < args.Length ? args[shotIndex + 1] : null;
         var pace = args.Contains("--speech") ? DrawStagePace.Speech : DrawStagePace.Estimate;
+        var languageIndex = Array.IndexOf(args, "--language");
+        languageCode = languageIndex >= 0 && languageIndex + 1 < args.Length ? args[languageIndex + 1] : ReplyLanguage.CurrentCode;
 
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         var exitCode = 1;
@@ -175,7 +182,7 @@ internal static class DrawStageSmoke
                 [Core.Companion.CompanionManager.ImageLabeledWithItsPixelSize(capture)],
                 DrawStageLesson.SystemPrompt(capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels,
                     DrawStageLesson.DetailFrom(OpenClickyConfiguration.Settings.DrawingDetail), OpenClickyConfiguration.Settings.DrawingInstructions,
-                    pieces || DrawStageLesson.OffersPieces(OpenClickyConfiguration.Settings)),
+                    pieces || DrawStageLesson.OffersPieces(OpenClickyConfiguration.Settings), languageCode),
                 null,
                 drawingUp is null ? DrawStageLesson.UserPrompt(question) : DrawStageLesson.FollowUpPrompt(question, drawingUp),
                 null,

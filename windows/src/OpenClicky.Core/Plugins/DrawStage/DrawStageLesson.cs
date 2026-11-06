@@ -110,6 +110,11 @@ public static partial class DrawStageLesson
         if (text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 2) return false;
         // Doing something on the screen is pointing's: "how do I export this", "where is the save button".
         if (ContainsAny(text, " how do i ", " how can i ", " how should i ", " where is ", " where do i ", " click ", " open ")) return false;
+        if (ContainsAny(text, OtherLanguagePointingWords)) return false;
+        // Asked for a picture outright ("in 3D"), or a how/why/explain question in Urdu or Hindi, in either script or in
+        // Roman letters ("barish kaisy hoti hai 3d may batayein", "बारिश कैसे बरसती है"): the fast voice writes Urdu down
+        // in any of the three.
+        if (ContainsAny(text, " 3d ", " 2d ", " 3 d ", " 2 d ", " three d ") || ContainsAny(text, OtherLanguageDrawingWords)) return true;
         // A curious question about how or why the world works ("how does the heart pump blood", "why is the sky blue",
         // "how do birds fly", "what happens when ice melts"): a picture explains it best. "How do you…" asks for steps.
         if (StartsAny(text, " how does ", " how do ", " how did ", " how is ", " how are ", " how can a ", " how can an ", " why ", " what happens ",
@@ -182,7 +187,27 @@ public static partial class DrawStageLesson
         return phrases.Any(phrase => start.StartsWith(phrase, StringComparison.Ordinal));
     }
 
-    [GeneratedRegex(@"[^\p{L}\p{N}' ]+")]
+    /// <summary>Urdu (Urdu script, Hindi script, Roman letters): how, why, explain, draw, picture.</summary>
+    private static readonly string[] OtherLanguageDrawingWords =
+    [
+        // Urdu script
+        " کیسے ", " کیوں ", " سمجھائیں ", " سمجھاؤ ", " سمجھا ", " سمجھائیے ", " ڈرا ", " ڈرائنگ ", " تصویر ", " خاکہ ", " بنا کر ",
+        // Hindi script (the fast voice often writes spoken Urdu this way)
+        " कैसे ", " क्यों ", " समझाइए ", " समझाएं ", " समझाओ ", " समझा ", " ड्रॉ ", " ड्रा ", " ड्राइंग ", " चित्र ", " तस्वीर ", " बनाकर ", " बना कर ",
+        " एक्सप्लेन ",
+        // Roman Urdu
+        " kaise ", " kaisay ", " kaisy ", " kaisey ", " kesay ", " kese ", " kyun ", " kyon ", " kyu ", " kiyon ", " samjhao ", " samjhaein ",
+        " samjhayen ", " samjhaen ", " samjha ", " tasveer ", " bana kar ", " banakar ",
+    ];
+
+    /// <summary>Urdu "how do I", "where is": doing something on the screen, which pointing answers.</summary>
+    private static readonly string[] OtherLanguagePointingWords =
+    [
+        " کروں ", " کہاں ", " करूं ", " करूँ ", " कहाँ ", " कहां ", " karun ", " karoon ", " karoo ", " kahan ", " kahaan ",
+    ];
+
+    // Marks (\p{M}) are kept: Hindi's and Urdu's vowel signs are marks, and "कैसे" would otherwise break into "क स".
+    [GeneratedRegex(@"[^\p{L}\p{M}\p{N}' ]+")]
     private static partial Regex NonWord();
 
     // MARK: - The prompt
@@ -190,8 +215,26 @@ public static partial class DrawStageLesson
     /// <summary>The system prompt: the drawing language and how a good answer is built, for a canvas of
     /// <paramref name="width"/> × <paramref name="height"/> units (the screenshot sent with the question), at
     /// <paramref name="detail"/>, with the person's own instructions (Settings) at the end.</summary>
+    /// <param name="languageCode">The language Clicky speaks (ReplyLanguage): the drawing's lines and words are in it.</param>
     public static string SystemPrompt(int width, int height, DrawingDetail detail = DrawingDetail.Detailed, string? theirInstructions = null,
-        bool pieces = false)
+        bool pieces = false, string? languageCode = null)
+    {
+        var prompt = SystemPromptWithout(width, height, detail, theirInstructions, pieces);
+        return languageCode is null or "en" ? prompt : prompt + "\n\n" + Configuration.ReplyLanguage.Instruction(languageCode) + LanguageSection(languageCode);
+    }
+
+    /// <summary>For a language other than English: every word the drawing says or writes is in it, in its own script, while the
+    /// program stays English (its names and options are code).</summary>
+    public static string LanguageSection(string languageCode)
+    {
+        if (languageCode == "en") return "";
+        var name = Configuration.ReplyLanguage.EnglishName(languageCode);
+        return $"\n\nLANGUAGE\nEvery say() line, text(), label, card title and caption is in {name}, in its own script, as a native speaker "
+            + $"writes it. The program itself stays in English: names, part kinds, options and colours. {name} words are wider and taller than "
+            + "English ones: keep each text() to a few words and leave room around it.";
+    }
+
+    private static string SystemPromptWithout(int width, int height, DrawingDetail detail, string? theirInstructions, bool pieces)
     {
         var (beats, calls, parts, partsAtMost) = detail switch
         {

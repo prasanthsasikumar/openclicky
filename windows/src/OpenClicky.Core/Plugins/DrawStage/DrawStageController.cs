@@ -160,7 +160,8 @@ public sealed class DrawStageController
     {
         IsShowing = true;
         Current = null;
-        Send(DrawStageMessages.BeginStream(canvasWidth, canvasHeight, pace, keepPlace));
+        Send(DrawStageMessages.BeginStream(canvasWidth, canvasHeight, pace, keepPlace,
+            Configuration.OpenClickyConfiguration.Settings.DrawingScriptFont?.Trim()));
         Surface?.Present(frame, scale);
     }
 

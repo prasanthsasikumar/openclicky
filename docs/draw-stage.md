@@ -251,6 +251,27 @@ Ctrl+Alt+M is held only while drawn answers are on (the Teacher plugin and its d
 stay the other apps' (Word inserts a comment with them). Settings → Clicky → Drawings → "Mark the screen with" picks
 Ctrl+Alt+M, Ctrl+Alt+Shift+M or none (`markerShortcut` in shell.json); the island's marker button always works.
 
+## Drawing in Urdu (and other languages)
+
+A drawing speaks and writes in the language Clicky answers in (Settings → Clicky → Language, `ReplyLanguage`): the
+prompt asks for every `say()` line, `text()`, title and caption in it, in its own script, while the program stays
+English. Urdu and other Arabic-script words are drawn in "Clicky Script", a face that covers only those letters, so
+English words around them keep the handwriting font:
+
+- by default the bundled **Noto Nastaliq Urdu** (`vendor/fonts`, SIL Open Font License);
+- "Windows' own" (Segoe UI), or **a font on this PC** by its name, such as IndoPak Nastaleeq or Jameel Noori Nastaleeq
+  if installed: Settings → Clicky → Drawings → "Urdu in drawings" (`drawingScriptFont` in shell.json: unset, `system`,
+  or the font's name). Fonts with no clear licence are not bundled, only used from the PC.
+
+Right-to-left text is laid out right to left (mixed Urdu and English lines read in order), keeps the place the program
+gave it (start and end swap), and writes itself in from the right; an Urdu card title starts at the card's right. The
+caption follows the line's own direction. `--language ur` on the smoke asks a lesson in Urdu whatever Settings say.
+
+Gemini says the lines in Urdu without an English accent when it is the voice (a Gemini key; Settings → Clicky → Talking
+→ "Gemini voice" picks one of its 30 voices, and the fast voice on Gemini uses it too). This PC's engines don't hear
+Urdu, so with an account or the offline engine Gemini writes down what was said, Urdu in Urdu script and English words
+in English letters (`GeminiAudioTranscriptionProvider`, falling back to its lighter model when busy).
+
 ## Safety
 
 The program is model-written code, so:

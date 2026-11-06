@@ -62,7 +62,7 @@ public sealed partial class CompanionManager
         realtimeDrawing = cancellation;
         RealtimeVoiceClient.StopSpeaking();
         AppLog.Write("talk: answering by drawing; the fast voice steps aside");
-        _ = RunRealtimeDrawingAsync(transcript, capture, cancellation);
+        _ = RunRealtimeDrawingAsync(transcript, capture, cancellation, asked);
         return true;
     }
 
@@ -101,12 +101,12 @@ public sealed partial class CompanionManager
         catch (ObjectDisposedException) { }
     }
 
-    private async Task RunRealtimeDrawingAsync(string transcript, CompanionScreenCapture capture, CancellationTokenSource cancellation)
+    private async Task RunRealtimeDrawingAsync(string transcript, CompanionScreenCapture capture, CancellationTokenSource cancellation, bool asked)
     {
         var drew = false;
         try
         {
-            drew = await TryDrawingAnswerAsync(transcript, capture, conversationHistory.ToList(), cancellation.Token);
+            drew = await TryDrawingAnswerAsync(transcript, capture, conversationHistory.ToList(), cancellation.Token, asked: asked);
         }
         catch (Exception error) when (error is OperationCanceledException || cancellation.IsCancellationRequested)
         {
@@ -132,17 +132,19 @@ public sealed partial class CompanionManager
     /// </summary>
     private async Task<bool> TryDrawingAnswerAsync(string transcript, CompanionScreenCapture? capture,
         IReadOnlyList<(string UserTranscript, string AssistantResponse)> history, CancellationToken cancellationToken,
-        (byte[] Data, string Label)? markCloseUp = null, string? markedAreaLine = null)
+        (byte[] Data, string Label)? markCloseUp = null, string? markedAreaLine = null, bool asked = false)
     {
         var stage = DrawStageController.Shared;
-        if (capture is null || !IsForTheStage(transcript, capture))
+        // asked: the fast voice asked for a drawing (its draw tool), so the question's words aren't checked again; they may be
+        // in a language the word lists don't know, or written in another script ("बारिश कैसे बरसती है" for Urdu).
+        if (capture is null || !(asked ? DrawingStageIsOn : IsForTheStage(transcript, capture)))
         {
             stage.ClearIfShowing("a question that isn't about the drawing");
             return false;
         }
         // The drawing still up, when the question is asked on its screen: the question may be about it.
         var drawingUp = DrawingUpOn(capture);
-        var wantsADrawing = DrawStageLesson.WantsADrawing(transcript) || TeacherQuestion.IsTeachingQuestion(transcript);
+        var wantsADrawing = asked || DrawStageLesson.WantsADrawing(transcript) || TeacherQuestion.IsTeachingQuestion(transcript);
         AppLog.Write($"draw: answering by drawing ({capture.ScreenshotWidthInPixels}×{capture.ScreenshotHeightInPixels} canvas"
             + (drawingUp is null ? ")" : $", a follow-up to the drawing up ({drawingUp.Lines.Count} lines))"));
         // One lesson per question: the Teacher's own board stays away from this one.
@@ -169,7 +171,7 @@ public sealed partial class CompanionManager
                 async (onReplySoFar, token) => (await writer.AnalyzeImageStreamingAsync(
                     markCloseUp is { } closeUp ? [ImageLabeledWithItsPixelSize(capture), closeUp] : [ImageLabeledWithItsPixelSize(capture)],
                     DrawStageLesson.SystemPrompt(capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels, detail, settings.DrawingInstructions,
-                        DrawStageLesson.OffersPieces(settings)),
+                        DrawStageLesson.OffersPieces(settings), ReplyLanguage.CurrentCode),
                     history,
                     drawingUp is null ? DrawStageLesson.UserPrompt(transcript, markedAreaLine) : DrawStageLesson.FollowUpPrompt(transcript, drawingUp, markedAreaLine),
                     tools: null,
