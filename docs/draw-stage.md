@@ -191,6 +191,31 @@ the drawing model; one that can't be made at all becomes a solid box of the piec
 when a maker is set up, or when drawings are very detailed. The page reads GLB files itself (meshes, node placement,
 colours, textures; not Draco-compressed ones) and OBJ meshes (inward-wound ones are turned outward).
 
+### Mechanisms
+
+`mechanism(x, y, w, h, {parts, speed})` builds a working machine in a 3D figure (`stage-worker.js`). The program says
+what joins what; the worker works out where each part sits, how fast and which way it turns, and the path a rod or a
+piston follows. The first part is driven at `speed` turns a minute (20 by default).
+
+| Part | |
+|---|---|
+| `{gear: 'A', teeth: 12}`, `{gear: 'B', teeth: 36, meshes: 'A', angle}`, `{gear: 'C', teeth: 10, on: 'B'}` | gears of one tooth size (module 0.25), placed so their teeth meet (a tooth of one at a gap of the other), turning the other way at the teeth's ratio; `on` shares a shaft |
+| `{pulley: 'P', r}`, `{pulley: 'Q', r, belt: 'P', distance, angle, crossed}` | pulleys and a belt round them (open or crossed), marks travelling on it |
+| `{sprocket: 'S', teeth}`, `{sprocket: 'T', teeth, chain: 'S', distance, angle}` | sprockets and a chain whose links travel round |
+| `{rack: 'R', meshes: 'A', length, angle}` | a rack: the machine then swings back and forth, the rack sliding a third of its length |
+| `{crank: 'K', r, on}`, `{piston: 'P', crank: 'K', rod, angle}`, `{rocker: 'L', crank: 'K', rod, length, pivot, reach, head}` | a crank disc, a connecting rod and a piston in its cylinder (slider-crank), or a rocker on a pivot (four-bar), `reach` carrying it on past the pivot and `head` putting a pump jack's horse head on its far end |
+
+Any part takes `label`, `color`, `mat`. The machine's still body (a frame, a tower, a base) goes round it on `m.figure`, in the same units: the first part at the origin, the moving parts in the z = 0 plane. It hands back `m.speed(name)` (turns a minute) and `m.direction(name)`
+(clockwise or anticlockwise) for the spoken words, `m.label(name, words)`, `m.part(name)` and `m.view({...})`.
+
+Gears are drawn by the worker (`f.extrude` of a toothed outline), since `f.gear`'s teeth grow with its size and two
+sizes would not mesh. Wheels turn by `spin`; rods, pistons, rockers, racks and chain links follow a `path`: frames the
+worker computes for one cycle (the slider-crank's wrist pin from the rod's length, the four-bar's joint as the crossing
+of two circles, kept on one branch), which `figure3d.js` plays, moving straight and turning the short way between
+frames. Every motion of a mechanism has `sync`, so it keeps the figure's clock: parts added a beat apart stay in step.
+A rocker's post and a driving crank's stand are drawn down to one ground. Samples: `mechanism-gears.js`,
+`mechanism-engine.js`, `mechanism-bike.js`, `mechanism-pumpjack.js`.
+
 ## Follow-up questions
 
 A finished drawing stays up, and the stage remembers it (`DrawStageController.Current`: its questions, its whole
