@@ -15,9 +15,11 @@
 //  clock. --then reply:<file> answers a follow-up about the drawing (keep() adds to it), and
 //  --save saves the drawing at the end, as a question's would be (Videos\OpenClicky). --pieces offers
 //  the model 3D pieces (f.piece) whatever Settings say; they are made by the maker Settings pick.
+//  --program <file.js> writes the program the model wrote (a follow-up's after it), to read or replay.
 //
 //    OpenClicky --openclicky-drawstage-smoke [program.js] [--speech] [--shot <file.png>]
 //    OpenClicky --openclicky-drawstage-smoke reply:<file> | lesson:<question> [--then reply:<file>] [--voice] [--save] [--shot <file.png>]
+//                                            [--program <file.js>]
 //
 
 using System.Collections.Concurrent;
@@ -60,8 +62,10 @@ internal static class DrawStageSmoke
             {
                 var thenIndex = Array.IndexOf(args, "--then");
                 var followUp = thenIndex >= 0 && thenIndex + 1 < args.Length ? args[thenIndex + 1] : null;
+                var programIndex = Array.IndexOf(args, "--program");
+                var programOut = programIndex >= 0 && programIndex + 1 < args.Length ? args[programIndex + 1] : null;
                 exitCode = programPath is not null && (programPath.StartsWith("reply:", StringComparison.Ordinal) || programPath.StartsWith("lesson:", StringComparison.Ordinal))
-                    ? await RunAnswerAsync(programPath, followUp, shotPath, args.Contains("--voice"), args.Contains("--save"), args.Contains("--pieces"))
+                    ? await RunAnswerAsync(programPath, followUp, shotPath, args.Contains("--voice"), args.Contains("--save"), args.Contains("--pieces"), programOut)
                     : await RunAsync(programPath, shotPath, pace);
             }
             catch (Exception error)
@@ -139,7 +143,8 @@ internal static class DrawStageSmoke
 
     /// <summary>A whole drawing answer, as a question gets one: on the cursor screen's screenshot, spoken line by line; then a
     /// follow-up about it, and saving it, when asked for.</summary>
-    private static async Task<int> RunAnswerAsync(string argument, string? followUpArgument, string? shotPath, bool withVoice, bool save, bool pieces)
+    private static async Task<int> RunAnswerAsync(string argument, string? followUpArgument, string? shotPath, bool withVoice, bool save, bool pieces,
+        string? programOut)
     {
         FloatingWindowSupport.AllowsScreenCapture = true;
         SpeechVoiceServices.Current = SpeechVoiceServices.ForThisPC(new WindowsSystemVoice());
@@ -234,6 +239,12 @@ internal static class DrawStageSmoke
             Console.WriteLine($"smoke: drew {result.Drew}, {result.SpokenLines.Count} lines, {result.ProgramCharacters} chars, in {(DateTime.UtcNow - started).TotalSeconds:0.0} s"
                 + (drawingUp is null ? "" : result.KeptTheDrawing ? ", kept the drawing" : ", drew afresh")
                 + (result.UnspokenAfterVoiceFailure is { } unspoken ? $", voice failed with {unspoken.Count} unsaid" : ""));
+            if (programOut is not null && result.Program.Length > 0)
+            {
+                var written = drawingUp is null ? result.Program : "\n// the follow-up\n" + result.Program;
+                if (drawingUp is null) await File.WriteAllTextAsync(programOut, written); else await File.AppendAllTextAsync(programOut, written);
+                Console.WriteLine($"smoke: program written to {programOut}");
+            }
             drew = result.Drew;
             if (!drew) break;
             var lines = result.DrawnLines(text => withVoice && audioByLine.TryGetValue(text, out var audio) ? audio : null);
