@@ -62,9 +62,11 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
     private var transcriptionProvider: any BuddyTranscriptionProvider
     private var audioEngine = AVAudioEngine()
-    /// True once `audioEngine` was pointed at a microphone other than the default; it stays there,
-    /// so the next take on the default gets a new engine.
-    private var audioEngineHasChosenMicrophone = false
+    /// The input device `audioEngine` was last started on, nil for an engine no take has used. The
+    /// engine goes on describing that device after it is unplugged or pointed elsewhere, so a take
+    /// on another device, or on the same one at a new sample rate, gets a new engine
+    /// (`MicrophoneDevices.keptEngineIsStale`).
+    private var audioEngineDeviceID: AudioDeviceID?
     private var activeTranscriptionSession: (any BuddyStreamingTranscriptionSession)?
     /// Which session the callbacks may speak for. Each session gets a new identity before it is
     /// opened, and it is cleared when the session ends, so a late partial, final or error from an
@@ -320,12 +322,20 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         self.activeTranscriptionSession = activeTranscriptionSession
         print("🎙️ BuddyDictationManager: provider ready, starting audio engine")
 
-        // Settings → microphone: a chosen input device, else the system default.
-        let usesChosenMicrophone = MicrophoneDevices.choiceDiffersFromDefault(preferredUID: preferredMicrophoneUID)
-        if audioEngineHasChosenMicrophone && !usesChosenMicrophone {
+        // Settings → microphone: a chosen input device, else the system default. The engine is kept
+        // warm across takes, but not across a change of input: with the device it was started on
+        // gone (a headset unplugged), its input node still reported that device's sample rate and
+        // installing the tap at that rate threw, which took the app down (2026-11-07).
+        let nextDeviceID = MicrophoneDevices.deviceIDToSelect(preferredUID: preferredMicrophoneUID)
+        let deviceSampleRate = nextDeviceID.flatMap(MicrophoneDevices.nominalSampleRate(of:))
+        if let lastDeviceID = audioEngineDeviceID,
+           MicrophoneDevices.keptEngineIsStale(lastDeviceID: lastDeviceID, nextDeviceID: nextDeviceID,
+                                               engineSampleRate: audioEngine.inputNode.outputFormat(forBus: 0).sampleRate,
+                                               deviceSampleRate: deviceSampleRate) {
+            AppLog.append("microphone: the input changed since the last take, starting a new engine")
             audioEngine = AVAudioEngine()
         }
-        audioEngineHasChosenMicrophone = usesChosenMicrophone
+        audioEngineDeviceID = nextDeviceID
         MicrophoneDevices.apply(preferredUID: preferredMicrophoneUID, to: audioEngine)
         let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
