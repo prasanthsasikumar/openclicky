@@ -59,6 +59,27 @@ public partial class DrawingAnswerTests
         }
     }
 
+    [Fact]
+    public void ThePromptOffersMechanismsThatWorkOutTheirOwnMotion()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const m = mechanism(x, y, w, h, {speed: 20, parts: [...]})", prompt);
+        Assert.Contains("{gear: 'B', teeth: 36, meshes: 'A'}", prompt);
+        Assert.Contains("{piston: 'P', crank: 'K', rod: 3.6, angle: 90}", prompt);
+        Assert.Contains("m.speed('B') turns a minute", prompt);
+    }
+
+    [Fact]
+    public void ThePromptOffersDnaThatPairsAndAnimatesItself()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const d = dna(x, y, w, h, {sequence: 'ATGCGTACCTGAATGC'})", prompt);
+        Assert.Contains("d.unzip()", prompt);
+        Assert.Contains("d.copy()", prompt);
+        Assert.Contains("d.transcribe({from, to})", prompt);
+        Assert.Contains("(A with T, G with C)", prompt);
+    }
+
     // MARK: - the program in a reply
 
     [Fact]

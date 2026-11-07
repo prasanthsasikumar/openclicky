@@ -138,6 +138,51 @@ question, with a `NONE` way out when a drawing is not needed; `prompt/follow-up.
 question asked while a drawing is up (`{{asked}}`, `{{program}}`, `{{question}}`, `{{nextStep}}`,
 `{{marked}}`), where the model adds to the drawing (`keep()`), redraws it, or answers `NONE`.
 
+### Mechanisms
+
+`mechanism(x, y, w, h, {parts, speed})` builds a working machine in a 3D figure (`stage-worker.js`). The program says
+what joins what; the worker works out where each part sits, how fast and which way it turns, and the path a rod or a
+piston follows. The first part is driven at `speed` turns a minute (20 by default).
+
+| Part | |
+|---|---|
+| `{gear: 'A', teeth: 12}`, `{gear: 'B', teeth: 36, meshes: 'A', angle}`, `{gear: 'C', teeth: 10, on: 'B'}` | gears of one tooth size (module 0.25), placed so their teeth meet (a tooth of one at a gap of the other), turning the other way at the teeth's ratio; `on` shares a shaft |
+| `{pulley: 'P', r}`, `{pulley: 'Q', r, belt: 'P', distance, angle, crossed}` | pulleys and a belt round them (open or crossed), marks travelling on it |
+| `{sprocket: 'S', teeth}`, `{sprocket: 'T', teeth, chain: 'S', distance, angle}` | sprockets and a chain whose links travel round |
+| `{rack: 'R', meshes: 'A', length, angle}` | a rack: the machine then swings back and forth, the rack sliding a third of its length |
+| `{crank: 'K', r, on}`, `{piston: 'P', crank: 'K', rod, angle}`, `{rocker: 'L', crank: 'K', rod, length, pivot, reach, head}` | a crank disc, a connecting rod and a piston in its cylinder (slider-crank), or a rocker on a pivot (four-bar), `reach` carrying it on past the pivot and `head` putting a pump jack's horse head on its far end |
+
+Any part takes `label`, `color`, `mat`. The machine's still body (a frame, a tower, a base) goes round it on `m.figure`, in the same units: the first part at the origin, the moving parts in the z = 0 plane. It hands back `m.speed(name)` (turns a minute) and `m.direction(name)`
+(clockwise or anticlockwise) for the spoken words, `m.label(name, words)`, `m.part(name)` and `m.view({...})`.
+
+Gears are drawn by the worker (`f.extrude` of a toothed outline), since `f.gear`'s teeth grow with its size and two
+sizes would not mesh. Wheels turn by `spin`; rods, pistons, rockers, racks and chain links follow a `path`: frames the
+worker computes for one cycle (the slider-crank's wrist pin from the rod's length, the four-bar's joint as the crossing
+of two circles, kept on one branch), which `figure3d.js` plays, moving straight and turning the short way between
+frames. Every motion of a mechanism has `sync`, so it keeps the figure's clock: parts added a beat apart stay in step.
+A rocker's post and a driving crank's stand are drawn down to one ground. Samples: `mechanism-gears.js`,
+`mechanism-engine.js`, `mechanism-bike.js`, `mechanism-pumpjack.js`.
+
+### DNA
+
+`dna(x, y, w, h, {sequence, form})` builds DNA in a 3D figure (`stage-worker.js`) from one strand's letters (4 to 30
+of A, T, G, C; anything else is dropped, U read as T). The worker works out the partner strand (A–T, G–C) and the
+B-form helix: 0.34 nm a base pair, 36° a turn of it (ten to a turn), backbones 1 nm out and 150° apart so the major and
+minor grooves show. Each nucleotide is two parts (its base, its backbone segment) built with `quick`, so a 16-pair piece
+builds in a couple of seconds instead of forty. `form: 'ladder'` lays it flat; the ladder's pieces are the helix's,
+the same lengths, so untwisting only moves them.
+
+| Call | Does |
+|---|---|
+| `d.unzip()` | untwists (if a helix) and parts the strands, left to right like a zip |
+| `d.copy()` | unzips if needed, then free nucleotides float in and pair with each old strand: two DNAs, each one old strand (darker) and one new (lighter) |
+| `d.transcribe({from, to})` | strand one steps forward over that stretch, an mRNA (U for T) floats in and pairs with strand two, then drops away and the DNA closes |
+| `d.label(which, words)` | a base pair's number, a letter, `'backbone'`, `'new'` or `'mrna'`; each base's name and the backbone are tagged by default |
+| `d.complement`, `d.mrna(from, to)`, `d.sequence` | the letters, for the spoken words |
+
+Each call plans every part's whole move as one one-shot `path` (`once`: it plays through and holds its last frame),
+so a later step never cuts an earlier one short. Samples: `dna-structure.js`, `dna-copy.js`, `dna-transcribe.js`.
+
 ## Safety
 
 The program is model-written code, so:
