@@ -46,6 +46,31 @@ struct HearingSettingsTests {
         #expect(MicrophoneDevices.deviceToSelect(preferredUID: nil, connected: [jack, usb], defaultDeviceID: jack.deviceID).deviceID == jack.deviceID)
     }
 
+    /// A closed lid switches the built-in microphone off in hardware (Apple's microphone
+    /// disconnect), and macOS still falls back to it when a headset drops: three silent takes on
+    /// 2026-11-07 with a USB receiver sitting right there. "Automatic" then records from another
+    /// real microphone when one is connected; a virtual device (a meeting app's loopback) is not one.
+    @Test func automaticUsesAnotherMicrophoneWhileTheLidIsClosed() {
+        let virtual = MicrophoneDevices.ConnectedInput(deviceID: 120, uid: "TeamsAudioDevice", isPhysicalMicrophone: false)
+        let speakers = MicrophoneDevices.ConnectedInput(deviceID: 85, uid: "BuiltInSpeakerDevice", isPhysicalMicrophone: false)
+        let closed = MicrophoneDevices.deviceToSelect(preferredUID: nil, connected: [speakers, virtual, builtIn, usb], defaultDeviceID: builtIn.deviceID, lidIsClosed: true)
+        #expect(closed.deviceID == usb.deviceID)
+        #expect(closed.standsInForClosedLid)
+        // Lid open: the built-in microphone works and stays.
+        let open = MicrophoneDevices.deviceToSelect(preferredUID: nil, connected: [builtIn, usb], defaultDeviceID: builtIn.deviceID, lidIsClosed: false)
+        #expect(open.deviceID == builtIn.deviceID)
+        #expect(!open.standsInForClosedLid)
+        // Nothing real to stand in: the built-in microphone is kept, and the caller can say why it is silent.
+        #expect(MicrophoneDevices.deviceToSelect(preferredUID: nil, connected: [speakers, virtual, builtIn], defaultDeviceID: builtIn.deviceID, lidIsClosed: true).deviceID == builtIn.deviceID)
+        // The headphone jack hears nothing either, so it is never the stand-in.
+        let jack = MicrophoneDevices.ConnectedInput(deviceID: 91, uid: MicrophoneDevices.headphoneJackInputUID)
+        #expect(MicrophoneDevices.deviceToSelect(preferredUID: nil, connected: [jack, builtIn], defaultDeviceID: builtIn.deviceID, lidIsClosed: true).deviceID == builtIn.deviceID)
+        // A chosen microphone is still the chosen one, lid or no lid.
+        #expect(MicrophoneDevices.deviceToSelect(preferredUID: builtIn.uid, connected: [builtIn, usb], defaultDeviceID: usb.deviceID, lidIsClosed: true).deviceID == builtIn.deviceID)
+        // Another default than the built-in microphone is unaffected by the lid.
+        #expect(MicrophoneDevices.deviceToSelect(preferredUID: nil, connected: [builtIn, usb], defaultDeviceID: usb.deviceID, lidIsClosed: true).deviceID == usb.deviceID)
+    }
+
     @Test func anUnpluggedChosenMicrophoneFallsBackToTheDefaultAndIsReported() {
         let choice = MicrophoneDevices.deviceToSelect(preferredUID: usb.uid, connected: [builtIn], defaultDeviceID: builtIn.deviceID)
         #expect(choice.deviceID == builtIn.deviceID)

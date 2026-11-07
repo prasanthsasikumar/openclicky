@@ -10,6 +10,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import IOKit
 
 struct MicrophoneDevice: Identifiable, Equatable {
     let uid: String
@@ -34,10 +35,8 @@ nonisolated enum MicrophoneDevices {
 
     /// The name of the microphone a take would record from right now, for "Automatic (…)".
     static func effectiveInputName(preferredUID: String?) -> String? {
-        let connected = allDeviceIDs().compactMap { deviceID in
-            stringProperty(of: deviceID, kAudioDevicePropertyDeviceUID).map { ConnectedInput(deviceID: deviceID, uid: $0) }
-        }
-        let choice = deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultInputDeviceID())
+        let connected = connectedInputs()
+        let choice = deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultInputDeviceID(), lidIsClosed: lidIsClosed())
         guard let deviceID = choice.deviceID else { return nil }
         return stringProperty(of: deviceID, kAudioObjectPropertyName)
     }
@@ -64,13 +63,14 @@ nonisolated enum MicrophoneDevices {
     /// Returns false when no device could be selected (logged).
     @discardableResult
     static func apply(preferredUID: String?, to engine: AVAudioEngine) -> Bool {
-        let connected = allDeviceIDs().compactMap { deviceID in
-            stringProperty(of: deviceID, kAudioDevicePropertyDeviceUID).map { ConnectedInput(deviceID: deviceID, uid: $0) }
-        }
+        let connected = connectedInputs()
         let defaultDeviceID = defaultInputDeviceID()
-        let choice = deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultDeviceID)
+        let choice = deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultDeviceID, lidIsClosed: lidIsClosed())
         if choice.chosenUIDIsMissing, let preferredUID {
             AppLog.append("microphone: \(preferredUID) is not connected, using the mac default")
+        }
+        if choice.standsInForClosedLid, let deviceID = choice.deviceID {
+            AppLog.append("microphone: the Mac's microphone is off while the lid is closed, using \(stringProperty(of: deviceID, kAudioObjectPropertyName) ?? "another input")")
         }
         guard let deviceID = choice.deviceID else {
             AppLog.append("microphone: no input device to select")
@@ -94,15 +94,13 @@ nonisolated enum MicrophoneDevices {
     /// chosen one, or the built-in microphone standing in for the headphone jack. Echo cancellation
     /// can only record from the default, so the realtime lane asks this before turning it on.
     static func choiceDiffersFromDefault(preferredUID: String?) -> Bool {
-        let connected = allDeviceIDs().compactMap { deviceID in
-            stringProperty(of: deviceID, kAudioDevicePropertyDeviceUID).map { ConnectedInput(deviceID: deviceID, uid: $0) }
-        }
+        let connected = connectedInputs()
         let defaultDeviceID = defaultInputDeviceID()
-        let choice = deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultDeviceID)
+        let choice = deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultDeviceID, lidIsClosed: lidIsClosed())
         return choiceDiffersFromDefault(choice: choice, defaultDeviceID: defaultDeviceID)
     }
 
-    static func choiceDiffersFromDefault(choice: (deviceID: AudioDeviceID?, chosenUIDIsMissing: Bool),
+    static func choiceDiffersFromDefault(choice: (deviceID: AudioDeviceID?, chosenUIDIsMissing: Bool, standsInForClosedLid: Bool),
                                          defaultDeviceID: AudioDeviceID?) -> Bool {
         guard let chosenDeviceID = choice.deviceID, !choice.chosenUIDIsMissing else { return false }
         return chosenDeviceID != defaultDeviceID
@@ -110,10 +108,8 @@ nonisolated enum MicrophoneDevices {
 
     /// The device a take would record from right now, for a caller keeping an engine across takes.
     static func deviceIDToSelect(preferredUID: String?) -> AudioDeviceID? {
-        let connected = allDeviceIDs().compactMap { deviceID in
-            stringProperty(of: deviceID, kAudioDevicePropertyDeviceUID).map { ConnectedInput(deviceID: deviceID, uid: $0) }
-        }
-        return deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultInputDeviceID()).deviceID
+        let connected = connectedInputs()
+        return deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultInputDeviceID(), lidIsClosed: lidIsClosed()).deviceID
     }
 
     /// Whether an engine kept from the last take must be replaced before the next one. An engine
@@ -133,6 +129,39 @@ nonisolated enum MicrophoneDevices {
     struct ConnectedInput: Equatable {
         let deviceID: AudioDeviceID
         let uid: String
+        /// A microphone that can hear: input channels, and not a virtual or aggregate device (a
+        /// meeting app's loopback, a multi-output set). Only such a device stands in for the
+        /// built-in microphone while the lid is closed.
+        var isPhysicalMicrophone: Bool = true
+    }
+
+    /// Every device, with whether it is a real microphone.
+    private static func connectedInputs() -> [ConnectedInput] {
+        allDeviceIDs().compactMap { deviceID in
+            stringProperty(of: deviceID, kAudioDevicePropertyDeviceUID).map {
+                ConnectedInput(deviceID: deviceID, uid: $0, isPhysicalMicrophone: inputChannelCount(of: deviceID) > 0 && !isVirtualOrAggregate(deviceID))
+            }
+        }
+    }
+
+    /// Closing the lid of a MacBook disconnects its microphone in hardware (Apple's microphone
+    /// disconnect), yet macOS still makes it the default input when a headset drops, and every
+    /// take then hears exact silence (2026-11-07). The USB receiver next to the Mac was left unused.
+    static func lidIsClosed() -> Bool {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard service != 0 else { return false }
+        defer { IOObjectRelease(service) }
+        guard let value = IORegistryEntryCreateCFProperty(service, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() else { return false }
+        return (value as? Bool) ?? false
+    }
+
+    /// True when a take would record from the built-in microphone while the lid is closed, so the
+    /// person can be told why nothing was heard rather than "check the microphone".
+    static func builtInMicrophoneIsOffBehindTheLid(preferredUID: String?) -> Bool {
+        guard lidIsClosed() else { return false }
+        let connected = connectedInputs()
+        let choice = deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultInputDeviceID(), lidIsClosed: true)
+        return connected.first(where: { $0.deviceID == choice.deviceID })?.uid == builtInMicrophoneUID
     }
 
     /// The headphone jack's input. macOS lists it, and often makes it the default input, as soon as
@@ -144,18 +173,24 @@ nonisolated enum MicrophoneDevices {
     /// Which device a take records from: the chosen one when it is connected, else the default,
     /// except that a default which is the headphone jack gives way to the built-in microphone
     /// (choose the jack explicitly for a headset with a microphone).
+    /// With the lid closed, a default that is the built-in microphone (off in hardware) gives way to
+    /// another connected real microphone when there is one (`standsInForClosedLid`).
     /// `chosenUIDIsMissing` is true when a device was chosen but is not among `connected`.
-    static func deviceToSelect(preferredUID: String?, connected: [ConnectedInput],
-                               defaultDeviceID: AudioDeviceID?) -> (deviceID: AudioDeviceID?, chosenUIDIsMissing: Bool) {
+    static func deviceToSelect(preferredUID: String?, connected: [ConnectedInput], defaultDeviceID: AudioDeviceID?,
+                               lidIsClosed: Bool = false) -> (deviceID: AudioDeviceID?, chosenUIDIsMissing: Bool, standsInForClosedLid: Bool) {
         guard let preferredUID, !preferredUID.isEmpty else {
             let defaultUID = connected.first(where: { $0.deviceID == defaultDeviceID })?.uid
             if defaultUID == headphoneJackInputUID, let builtIn = connected.first(where: { $0.uid == builtInMicrophoneUID }) {
-                return (builtIn.deviceID, false)
+                return (builtIn.deviceID, false, false)
             }
-            return (defaultDeviceID, false)
+            if lidIsClosed, defaultUID == builtInMicrophoneUID,
+               let other = connected.first(where: { $0.isPhysicalMicrophone && $0.uid != builtInMicrophoneUID && $0.uid != headphoneJackInputUID }) {
+                return (other.deviceID, false, true)
+            }
+            return (defaultDeviceID, false, false)
         }
-        if let match = connected.first(where: { $0.uid == preferredUID }) { return (match.deviceID, false) }
-        return (defaultDeviceID, true)
+        if let match = connected.first(where: { $0.uid == preferredUID }) { return (match.deviceID, false, false) }
+        return (defaultDeviceID, true, false)
     }
 
     // MARK: CoreAudio
@@ -184,6 +219,15 @@ nonisolated enum MicrophoneDevices {
         var size = UInt32(MemoryLayout<Float64>.size)
         guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &rate) == noErr, rate > 0 else { return nil }
         return rate
+    }
+
+    /// A virtual device (a meeting app's loopback) or an aggregate: not a microphone of its own.
+    private static func isVirtualOrAggregate(_ deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyTransportType, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var transport: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &transport) == noErr else { return false }
+        return transport == kAudioDeviceTransportTypeVirtual || transport == kAudioDeviceTransportTypeAggregate
     }
 
     private static func inputChannelCount(of deviceID: AudioDeviceID) -> Int {

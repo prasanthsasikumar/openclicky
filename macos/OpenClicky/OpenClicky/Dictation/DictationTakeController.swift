@@ -692,6 +692,13 @@ final class DictationTakeController: ObservableObject {
         scheduleIdle(after: 2.5)
     }
 
+    /// Why a take heard nothing: a closed lid switches the built-in microphone off in hardware,
+    /// and when no other microphone is connected to stand in, that is the reason, not a fault.
+    private var silentMicrophoneHint: String {
+        MicrophoneDevices.builtInMicrophoneIsOffBehindTheLid(preferredUID: dictationManager.preferredMicrophoneUID)
+            ? "the Mac's microphone is off while the lid is closed" : "check the microphone"
+    }
+
     /// The engine gave back no words. When the microphone never heard a voice either, the
     /// microphone is the likely cause (a silent input records nothing for Parakeet to read), so the
     /// orb says so; the log keeps the loudest level either way.
@@ -699,7 +706,7 @@ final class DictationTakeController: ObservableObject {
         let loudestLevelDescription = loudestLevelThisTake.map { String(format: "%.3f", Double($0)) } ?? "none"
         AppLog.append("take \(failedTakeID.uuidString.prefix(8)) no words (loudest \(loudestLevelDescription), \(levelSamplesThisTake) levels)")
         if let loudestLevelThisTake, levelSamplesThisTake >= 10, loudestLevelThisTake < Self.silentTakeLevel {
-            failTake("didn't catch that. check the microphone", takeID: failedTakeID)
+            failTake("didn't catch that. \(silentMicrophoneHint)", takeID: failedTakeID)
         } else {
             failTake("didn't catch that", takeID: failedTakeID)
         }
@@ -739,7 +746,7 @@ final class DictationTakeController: ObservableObject {
         // silence, not what was said: nothing is pasted.
         if let loudestLevelThisTake, levelSamplesThisTake >= 10, loudestLevelThisTake < Self.silentTakeLevel, liveTypingAtFinish?.hasTyped != true {
             AppLog.append("take \(thisTakeID.uuidString.prefix(8)) heard only silence (loudest \(String(format: "%.3f", Double(loudestLevelThisTake)))); dropped \(raw.count) characters")
-            failTake("didn't catch that. check the microphone", takeID: thisTakeID)
+            failTake("didn't catch that. \(silentMicrophoneHint)", takeID: thisTakeID)
             return
         }
         let duration = Date().timeIntervalSince(takeStartedAt)

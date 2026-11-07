@@ -20,6 +20,7 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 ### Mac
 
 - **No crash after unplugging a headset.** Dictating after a headset or dock came off could take the whole app down: the microphone engine still described the headset while the Mac's own microphone runs at a different rate. The next take now starts a fresh engine whenever the input changed.
+- **A closed lid no longer means a silent take.** A MacBook's own microphone is off in hardware while the lid is closed, yet macOS still falls back to it when a headset drops. With the microphone on Automatic, OpenClicky now records from another connected microphone instead (a USB receiver, an iPhone), and when there is none it says the lid is the reason rather than "check the microphone".
 
 ## 0.11.0
 
