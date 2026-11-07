@@ -108,6 +108,28 @@ nonisolated enum MicrophoneDevices {
         return chosenDeviceID != defaultDeviceID
     }
 
+    /// The device a take would record from right now, for a caller keeping an engine across takes.
+    static func deviceIDToSelect(preferredUID: String?) -> AudioDeviceID? {
+        let connected = allDeviceIDs().compactMap { deviceID in
+            stringProperty(of: deviceID, kAudioDevicePropertyDeviceUID).map { ConnectedInput(deviceID: deviceID, uid: $0) }
+        }
+        return deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultInputDeviceID()).deviceID
+    }
+
+    /// Whether an engine kept from the last take must be replaced before the next one. An engine
+    /// started on one device goes on describing that device after it is unplugged: on 2026-11-07
+    /// the input node of dictation's engine still said 8 kHz (a headset, gone) while the built-in
+    /// microphone that had become the default ran at 48 kHz, `installTap` threw an Objective-C
+    /// exception at the mismatch, and the app crashed on its next main-actor check. So: a new
+    /// engine when the device changed, or when the device's own sample rate (when CoreAudio gives
+    /// it) is not what the engine's input believes.
+    static func keptEngineIsStale(lastDeviceID: AudioDeviceID, nextDeviceID: AudioDeviceID?,
+                                  engineSampleRate: Double, deviceSampleRate: Double?) -> Bool {
+        if nextDeviceID != lastDeviceID { return true }
+        if let deviceSampleRate, deviceSampleRate != engineSampleRate { return true }
+        return false
+    }
+
     struct ConnectedInput: Equatable {
         let deviceID: AudioDeviceID
         let uid: String
@@ -153,6 +175,15 @@ nonisolated enum MicrophoneDevices {
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID) == noErr else { return nil }
         return deviceID
+    }
+
+    /// The rate the device runs at, as CoreAudio reports it; nil when it won't say.
+    static func nominalSampleRate(of deviceID: AudioDeviceID) -> Double? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var rate: Float64 = 0
+        var size = UInt32(MemoryLayout<Float64>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &rate) == noErr, rate > 0 else { return nil }
+        return rate
     }
 
     private static func inputChannelCount(of deviceID: AudioDeviceID) -> Int {

@@ -15,6 +15,12 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
+## Unreleased
+
+### Mac
+
+- **No crash after unplugging a headset.** Dictating after a headset or dock came off could take the whole app down: the microphone engine still described the headset while the Mac's own microphone runs at a different rate. The next take now starts a fresh engine whenever the input changed.
+
 ## 0.11.0
 
 With thanks to [darkworks](https://github.com/darkworks), who wrote the drawing stage both apps draw on and brought the Windows app its 3D figures, own-model answers, voice control and more, and to [Tan Wei Jie (Justin)](https://github.com/weijietan97), who maintains the Windows app.

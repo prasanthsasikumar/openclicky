@@ -52,6 +52,26 @@ struct HearingSettingsTests {
         #expect(choice.chosenUIDIsMissing)
     }
 
+    /// 2026-11-07: a headset unplugged between takes left dictation's long-lived engine reporting
+    /// the headset's 8 kHz while the Mac's microphone runs at 48 kHz; installing the tap threw an
+    /// Objective-C exception and the app crashed on the next main-actor check. An engine kept across
+    /// takes is replaced when the device it was started on is gone or its sample rate no longer
+    /// matches what the engine believes.
+    @Test func aKeptEngineIsReplacedWhenTheInputDeviceOrItsSampleRateChanged() {
+        let headset: AudioDeviceID = 161, builtInMicrophone: AudioDeviceID = 99
+        // Same device, same rate: keep the warm engine.
+        #expect(!MicrophoneDevices.keptEngineIsStale(lastDeviceID: headset, nextDeviceID: headset, engineSampleRate: 8_000, deviceSampleRate: 8_000))
+        // The headset went away and the built-in microphone is the input now.
+        #expect(MicrophoneDevices.keptEngineIsStale(lastDeviceID: headset, nextDeviceID: builtInMicrophone, engineSampleRate: 8_000, deviceSampleRate: 48_000))
+        // A different device at the same rate still gets a new engine: the old one holds the gone device's ID.
+        #expect(MicrophoneDevices.keptEngineIsStale(lastDeviceID: headset, nextDeviceID: builtInMicrophone, engineSampleRate: 48_000, deviceSampleRate: 48_000))
+        // The same device re-set to another rate (Audio MIDI Setup) is a mismatch too.
+        #expect(MicrophoneDevices.keptEngineIsStale(lastDeviceID: builtInMicrophone, nextDeviceID: builtInMicrophone, engineSampleRate: 44_100, deviceSampleRate: 48_000))
+        // No device to record from, or a rate CoreAudio would not tell: judged on the device alone.
+        #expect(MicrophoneDevices.keptEngineIsStale(lastDeviceID: headset, nextDeviceID: nil, engineSampleRate: 8_000, deviceSampleRate: nil))
+        #expect(!MicrophoneDevices.keptEngineIsStale(lastDeviceID: headset, nextDeviceID: headset, engineSampleRate: 8_000, deviceSampleRate: nil))
+    }
+
     /// F-13: the realtime lane's engine is handed the same microphone as dictation.
     /// Echo cancellation only hears the Mac's default input, so the realtime lane keeps it on
     /// unless the person chose a different, connected microphone.
