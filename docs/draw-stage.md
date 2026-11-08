@@ -139,10 +139,31 @@ board.
 | `card(x, y, w, h, {title})` | a paper card to explain on |
 | `photo(x, y, w, h, {query, caption})` | a real photo from Wikimedia Commons (found by the app) in a polaroid frame |
 | `figure(x, y, w, h, {tilt, turn, zoom, spin, ground})` | a turning 3D stage; its parts are below |
-| `W`, `H`, `sin`, `cos`, `PI`, `mid`, `along`, `polar`, `lerp`, `range` | the canvas and helpers |
+| `chart(x, y, w, h, o)`, `timeline(x, y, w, o)` | a graph or a timeline placed by value; below |
+| `W`, `H`, `sin`, `cos`, `exp`, `log`, `PI`, `mid`, `along`, `polar`, `lerp`, `range` | the canvas and helpers |
 
 Options `o`: `color` (`ink, blue, red, green, orange, purple, pink, yellow, teal, brown, grey, white` or `#hex`),
 `width`, `fill`, `fillOpacity`, `dashed`, `size`, `align` (`start`, `middle`, `end`), `bold`.
+
+### Graphs and timelines
+
+`chart()` and `timeline()` are drawn with the marks above, but take values instead of canvas units, so the scale is
+right without the model working out every coordinate (`stage-worker.js`, nothing new on the page).
+
+| Call | Draws |
+|---|---|
+| `chart(x, y, w, h, {x, y, grid, color})` | axes with numbered ticks in that box. Each axis is `{from, to, step, label, format}` (`step` is optional: about one number per 50-80 units), or `{labels: [...]}` for named columns. They cross at zero when zero is on them |
+| `g.line(data, o)`, `g.area(data, o)` | a line (or the shaded space under it) through `[[x, y], …]`, numbers (one per column) or a function of x; cut where it leaves the axes. `{dots: true}` marks each point |
+| `g.bars(values, o)` | a bar per value (`{colors, values: true, barWidth}`) |
+| `g.dot(x, y, {label})`, `g.label(x, y, words, o)`, `g.hline(y, words, o)`, `g.vline(x, words, o)` | a point, a note, a dashed line across at a value |
+| `g.at(x, y)`, `g.x(v)`, `g.y(v)` | canvas units of a value, for the model's own marks |
+| `timeline(x, y, w, {from, to, step, label, format})` | a line of years across at height `y` |
+| `t.event(when, words, o)`, `t.span(from, to, words, o)`, `t.at(when)` | a dot with its label on a stem, a band for a stretch of time, a value's point |
+
+Each axis is one stroke, its tick nubs on it. A chart's own labels (a dot's, a dashed line's) take the spot around
+their point that crosses the fewest of its strokes and labels. A timeline's labels go on stems: the shortest stem,
+above or below, where the label touches no other and no stem runs through it, centred on its stem or ending at it.
+Samples: `chart-falling-ball.js`, `chart-bars-water.js`, `timeline-flight.js`.
 
 ### 3D figures
 
@@ -321,7 +342,7 @@ The program is model-written code, so:
 | 1.x | the Realtime voice lane; a Settings switch; a model-callable tool for questions the heuristic misses |
 | 2 ✓ | `figure()` 3D figures with three.js r172 (`figure3d.js`, `vendor/three`): box, cyl, cone, sphere, torus, capsule, tube, lathe, extrude, spring, gear, arrow; real materials; parts growing in on their line; labels that follow their part; spin, stroke, bob, pulse, orbit, move |
 | 2.x ✓ | drag to turn, wheel to zoom, click a part → ask about it; cutaways, copies, mirror, rounded boxes, pipes, organic blobs; the studio look (shadows, outlines, rim light, tags); a hold line; marking part of the screen |
-| 3 | photo cards ✓, follow-up questions that add to the drawing ✓, molecules, graphs and timelines |
+| 3 | photo cards ✓, follow-up questions that add to the drawing ✓, graphs and timelines ✓, molecules |
 | 4 | lessons: saving as a picture and a video with its voice ✓, quiz cards |
 
 ## Trying it
