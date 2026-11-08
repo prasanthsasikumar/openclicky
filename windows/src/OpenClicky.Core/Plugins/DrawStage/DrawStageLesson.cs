@@ -126,7 +126,7 @@ public static partial class DrawStageLesson
         // Asked for a picture outright ("in 3D"), or a how/why/explain question in Urdu or Hindi, in either script or in
         // Roman letters ("barish kaisy hoti hai 3d may batayein", "बारिश कैसे बरसती है"): the fast voice writes Urdu down
         // in any of the three.
-        if (ContainsAny(text, " 3d ", " 2d ", " 3 d ", " 2 d ", " three d ") || ContainsAny(text, OtherLanguageDrawingWords)) return true;
+        if (AsksForADimension(text) || ContainsAny(text, OtherLanguageDrawingWords)) return true;
         // What a thing is made of or looks like, and chemistry ("what is aspirin made of", "what does caffeine look like",
         // "what is dopamine"): a molecule or a cutaway shows it. Numbers over time and history ("how has world population
         // grown over 300 years", "the history of computers"): a graph or a timeline. Not the person's own things ("what does
@@ -159,6 +159,30 @@ public static partial class DrawStageLesson
             " how this works ", " how that works ", " how it works ", " what's inside ", " what is inside ", " how is this made ",
             " how is it made ", " how are these made ", " explain this ", " explain that ", " explain it ", " show me how ");
     }
+
+    /// <summary>Whether the question asks for the answer in 3D or 2D ("show the heart in 3D", "3d may batayein", "3D drawing
+    /// bana"), not one that only mentions 3D ("the best 3d printer", "is this game 2d or 3d").</summary>
+    private static bool AsksForADimension(string text)
+    {
+        foreach (var dimension in new[] { "3d", "2d", "3 d", "2 d", "three d" })
+        {
+            if (!text.Contains(" " + dimension + " ", StringComparison.Ordinal)) continue;
+            if (text.Contains(" in " + dimension + " ", StringComparison.Ordinal)) return true;
+            foreach (var after in DimensionFollowers)
+            {
+                if (text.Contains(" " + dimension + " " + after + " ", StringComparison.Ordinal)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>The word after "3d" that makes it a way to show the answer: Urdu and Hindi "in" (may, mein, में, میں), or
+    /// the kind of picture ("3d drawing", "3d model of").</summary>
+    private static readonly string[] DimensionFollowers =
+    [
+        "may", "mai", "main", "mein", "me", "men", "mien", "में", "मे", "میں", "مے",
+        "drawing", "diagram", "picture", "view", "animation", "model of", "ڈرائنگ", "ड्राइंग",
+    ];
 
     /// <summary>Words that ask what a thing is made of, what it looks like or how its atoms sit.</summary>
     private static readonly string[] WhatItIsMadeOf =

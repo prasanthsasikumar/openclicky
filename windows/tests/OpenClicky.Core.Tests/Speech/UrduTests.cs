@@ -147,6 +147,14 @@ public class UrduTests
     [InlineData("show the heart in 3D")]
     public void AnUrduHowOrWhyQuestionOrAskingFor3DIsDrawn(string question) => Assert.True(DrawStageLesson.WantsADrawing(question));
 
+    // Mentioning 3D is not asking for a drawing in 3D: these get a plain answer, as before Urdu came in.
+    [Theory]
+    [InlineData("what's the best 3d printer to buy")]
+    [InlineData("is this game 2d or 3d")]
+    [InlineData("export this as a 3d model")]
+    [InlineData("which 3d software should I learn")]
+    public void AnEnglishQuestionThatOnlyMentions3DIsNotDrawn(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
+
     [Theory]
     [InlineData("main file kaise save karun")]
     [InlineData("سیٹنگز کہاں ہیں")]
