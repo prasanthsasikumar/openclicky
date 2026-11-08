@@ -288,6 +288,21 @@ the same lengths, so untwisting only moves them.
 Each call plans every part's whole move as one one-shot `path` (`once`: it plays through and holds its last frame),
 so a later step never cuts an earlier one short. Samples: `dna-structure.js`, `dna-copy.js`, `dna-transcribe.js`.
 
+### Blood circulation
+
+`circulation(x, y, w, h, {beat, lap})` draws the double circuit as a flat diagram in a 3D figure (`stage-worker.js`):
+the heart's four chambers (the person's right on the viewer's left, as diagrams have it), the lungs above, the body's
+organs below, see-through vessels and capillary beds, and blood cells going round the real route: body, vena cava,
+right atrium, right ventricle, pulmonary artery, a lung (cells take turns through left and right), pulmonary veins,
+left atrium, left ventricle, aorta, body.
+
+Each cell is a blue disc and a red disc on the same lap, one of them sized 0: blue from the body's capillaries to the
+lungs', red from the lungs' to the body's, trading across each capillary bed. That needs a size in a path frame:
+`figure3d.js`'s `path` motion now takes a seventh number per frame, a scale (0 hides the part). The chambers use the
+same thing to beat: the atria squeeze at the start of each beat, the ventricles a third of a beat later (`beat`, 60 a
+minute). A lap takes `lap` seconds (10; really about a minute). `b.point(part)` makes a part swell gently while it is
+talked about; `b.label(part, words)` tags one. Sample: `circulation-blood.js`.
+
 ## Follow-up questions
 
 A finished drawing stays up, and the stage remembers it (`DrawStageController.Current`: its questions, its whole

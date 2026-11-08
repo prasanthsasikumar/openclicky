@@ -92,6 +92,15 @@ public partial class DrawingAnswerTests
         Assert.Contains("(A with T, G with C)", prompt);
     }
 
+    [Fact]
+    public void ThePromptOffersBloodGoingRoundTheRightWay()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const b = circulation(x, y, w, h, {})", prompt);
+        Assert.Contains("body, vena cava, right atrium, right ventricle, pulmonary artery, lungs, pulmonary veins, left atrium, left ventricle, aorta, body", prompt);
+        Assert.Contains("b.point('aorta')", prompt);
+    }
+
     // MARK: - the program in a reply
 
     [Fact]

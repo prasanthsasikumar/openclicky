@@ -1057,7 +1057,7 @@ function addMotion(m) {
   // sync: the motion keeps the figure's own clock (from when it was made), so parts that move together stay in step
   // however late each one is added: two gears' teeth, a crank and its rod. path: frames the program worked out.
   const frames = Array.isArray(o.frames)
-    ? o.frames.slice(0, 720).filter(f => Array.isArray(f) && (f.length === 3 || f.length === 6) && f.every(n => typeof n === 'number' && isFinite(n)))
+    ? o.frames.slice(0, 720).filter(f => Array.isArray(f) && (f.length === 3 || f.length === 6 || f.length === 7) && f.every(n => typeof n === 'number' && isFinite(n)))
     : null;
   part.motions.push({ kind: m.kind, axis: ['x', 'y', 'z'].includes(o.axis) ? o.axis : 'y', period: Math.max(0.2, num(o.period, m.kind === 'spin' ? 3 : 2)),
     amount: num(o.amount, m.kind === 'pulse' ? 0.08 : 0.3), center: vec3(o.center, new THREE.Vector3()), start: o.sync ? 0 : part.figure.age,
@@ -1113,10 +1113,12 @@ function updatePart(part, t) {
         const i = Math.floor(u), k = u - i;
         const a = frames[i % n], b = frames[motion.once ? Math.min(i + 1, n - 1) : (i + 1) % n];
         position.set(a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k);
-        if (a.length === 6 && b.length === 6) {
+        if (a.length >= 6 && b.length >= 6) {
           const turn = (p, q) => p + Math.atan2(Math.sin(q - p), Math.cos(q - p)) * k;
           object.rotation.set(turn(a[3], b[3]), turn(a[4], b[4]), turn(a[5], b[5]));
         }
+        // A seventh number sizes it: a heart chamber squeezing, a blood cell giving way to its other colour (0 hides it).
+        if (a.length === 7 && b.length === 7) scale *= a[6] + (b[6] - a[6]) * k;
         break;
       }
     }
