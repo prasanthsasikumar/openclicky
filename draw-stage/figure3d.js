@@ -1061,7 +1061,7 @@ function addMotion(m) {
     : null;
   part.motions.push({ kind: m.kind, axis: ['x', 'y', 'z'].includes(o.axis) ? o.axis : 'y', period: Math.max(0.2, num(o.period, m.kind === 'spin' ? 3 : 2)),
     amount: num(o.amount, m.kind === 'pulse' ? 0.08 : 0.3), center: vec3(o.center, new THREE.Vector3()), start: o.sync ? 0 : part.figure.age,
-    reverse: !!o.reverse, frames });
+    reverse: !!o.reverse, frames, once: !!o.once });
 }
 
 function setView(m) {
@@ -1107,8 +1107,11 @@ function updatePart(part, t) {
         // connecting rod, a piston, a rocker, a chain's links. Between frames it moves straight and turns the short way.
         const frames = motion.frames;
         if (!frames || !frames.length) break;
-        const u = (((t - motion.start) / motion.period) % 1 + 1) % 1 * frames.length, i = Math.floor(u), k = u - i;
-        const a = frames[i % frames.length], b = frames[(i + 1) % frames.length];
+        // once: plays through a single time and holds its last frame (a strand unzipping), else it loops.
+        const n = frames.length;
+        const u = motion.once ? Math.min(1, Math.max(0, (t - motion.start) / motion.period)) * (n - 1) : (((t - motion.start) / motion.period) % 1 + 1) % 1 * n;
+        const i = Math.floor(u), k = u - i;
+        const a = frames[i % n], b = frames[motion.once ? Math.min(i + 1, n - 1) : (i + 1) % n];
         position.set(a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k);
         if (a.length === 6 && b.length === 6) {
           const turn = (p, q) => p + Math.atan2(Math.sin(q - p), Math.cos(q - p)) * k;
