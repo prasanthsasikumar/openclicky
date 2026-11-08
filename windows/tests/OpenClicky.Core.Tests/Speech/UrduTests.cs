@@ -155,6 +155,15 @@ public class UrduTests
     [InlineData("which 3d software should I learn")]
     public void AnEnglishQuestionThatOnlyMentions3DIsNotDrawn(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
 
+    // A chart, a history or a "look like" about the person's own work is answered in words, not a graph or a molecule.
+    [Theory]
+    [InlineData("how do you make a chart in excel")]
+    [InlineData("add a chart to this spreadsheet")]
+    [InlineData("how to clear the history of this browser")]
+    [InlineData("what should this email look like")]
+    [InlineData("what is a cell in google sheets")]
+    public void AChartOrHistoryAboutTheirOwnWorkIsNotDrawn(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
+
     [Theory]
     [InlineData("main file kaise save karun")]
     [InlineData("سیٹنگز کہاں ہیں")]

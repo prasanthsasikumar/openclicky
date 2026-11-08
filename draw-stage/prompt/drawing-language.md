@@ -131,8 +131,8 @@ burner.label('burn fuel', {color: 'orange'})
 ```
 
 CELLS (what is inside a cell, how plant and animal cells differ, what a bacterium is)
-const c = cell(x, y, w, h, {type: 'animal'})   a cut-open 3D cell with its parts in their places and sizes, each named once. type 'animal' (nucleus and nucleolus, rough and smooth ER, Golgi body, mitochondria, lysosomes, vesicles, ribosomes, centrioles), 'plant' (adds a cell wall, a big vacuole and chloroplasts) or 'bacterium' (no nucleus: a nucleoid of loose DNA, plasmids, ribosomes, a cell wall, a turning flagellum and pili). show: ['nucleus', 'mitochondria'] draws only those parts (and the outside); labels: false names none.
-  c.point('mitochondria') makes every one of them swell gently while your line talks about it   c.label(part, words) tags a part   c.parts lists the parts drawn
+const cl = cell(x, y, w, h, {type: 'animal'})   a cut-open 3D cell with its parts in their places and sizes, each named once. type 'animal' (nucleus and nucleolus, rough and smooth ER, Golgi body, mitochondria, lysosomes, vesicles, ribosomes, centrioles), 'plant' (adds a cell wall, a big vacuole and chloroplasts) or 'bacterium' (no nucleus: a nucleoid of loose DNA, plasmids, ribosomes, a cell wall, a turning flagellum and pili). show: ['nucleus', 'mitochondria'] draws only those parts (and the outside); labels: false names none.
+  cl.point('mitochondria') makes every one of them swell gently while your line talks about it   cl.label(part, words) tags a part   cl.parts lists the parts drawn
 Use cell() for cells instead of building one from parts. Two side by side compare well (an animal cell and a plant cell, each in half the card).
 CELL EXAMPLE (two beats of "what is inside a cell?", inside a card c)
 ```js

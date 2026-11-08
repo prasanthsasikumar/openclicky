@@ -81,7 +81,7 @@ enum DrawStageLesson {
         " gene ", " genes ", " double helix ", " blood circulation ", " circulatory system ",
     ]
     private static let notLifeScience = [
-        " phone ", " phones ", " cellphone ", " battery ", " batteries ", " tower ", " excel ", " spreadsheet ", " sheet ", " table ", " prison ",
+        " phone ", " phones ", " cellphone ", " battery ", " batteries ", " tower ", " excel ", " spreadsheet ", " sheet ", " sheets ", " table ", " prison ",
         " jail ", " solar ",
     ]
     private static let lifeOpeners = [" what is ", " what's ", " what are ", " tell me about ", " explain ", " describe "]

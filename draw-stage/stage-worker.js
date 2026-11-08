@@ -776,7 +776,7 @@ function moleculeShape(atoms, bonds) {
 }
 
 // What molecule() hands back when it couldn't build one: calls on it do nothing.
-const noMolecule = () => new Proxy({}, { get: () => () => null });
+const noMolecule = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
 
 function molecule(x, y, w, h, o) {
   if (![x, y, w, h].every(finite) || w < 40 || h < 40) { warn('molecule() needs x, y, width and height (at least 40 each); skipped'); return noMolecule(); }
@@ -967,6 +967,8 @@ function mechanism(x, y, w, h, o) {
     const ref = k => { const r = typeof s[k] === 'string' ? placed.get(s[k]) : null; if (typeof s[k] === 'string' && !r) fail(s, 'no part called ' + s[k] + ' before it'); return r; };
     const part = { name, kind, spec: s, z: 0, ratio: list.length ? null : 1, phase: 0 };
     const meshes = ref('meshes'), on = ref('on'), belt = ref('belt') || ref('chain'), crank = kind === 'piston' || kind === 'rocker' ? ref('crank') : null;
+    // on: is a shaft to share, so only a part that turns about a centre can carry another (not a piston, rocker or rack).
+    if (on && !(on.c && ['gear', 'pulley', 'sprocket', 'crank'].includes(on.kind))) { fail(s, 'on: names a gear, pulley, sprocket or crank to share its shaft'); continue; }
     if (kind === 'gear' || kind === 'sprocket' || kind === 'pulley') {
       part.teeth = kind === 'pulley' ? 0 : Math.max(8, Math.min(72, Math.round(finite(s.teeth) ? s.teeth : 16)));
       part.r = kind === 'pulley' ? Math.max(0.4, Math.min(8, finite(s.r) ? s.r : 1.5)) : TOOTH * part.teeth / 2; // pitch radius
@@ -1170,7 +1172,7 @@ function mechanism(x, y, w, h, o) {
   };
 }
 // What mechanism() hands back when it couldn't build one: calls on it do nothing.
-const noMechanism = () => new Proxy({}, { get: () => () => null });
+const noMechanism = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
 api.mechanism = mechanism;
 
 // DNA: dna(x, y, w, h, {sequence, form}) builds a double helix (or a flat ladder) in a 3D figure from the letters of
@@ -1370,7 +1372,7 @@ function dna(x, y, w, h, o) {
   return handle;
 }
 // What dna() hands back when it couldn't build one: calls on it do nothing.
-const noDna = () => new Proxy({}, { get: () => () => null });
+const noDna = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
 api.dna = dna;
 
 // Blood circulation: circulation(x, y, w, h, {speed, labels}) draws the heart, the lungs and the body as a flat
@@ -1509,7 +1511,7 @@ function circulation(x, y, w, h, o) {
   };
 }
 // What circulation() hands back when it couldn't draw: calls on it do nothing.
-const noCirculation = () => new Proxy({}, { get: () => () => null });
+const noCirculation = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
 api.circulation = circulation;
 
 // Cell division: mitosis(x, y, w, h, {pairs, labels}) builds an animal cell about to divide, in a 3D figure, and
@@ -1829,7 +1831,7 @@ function mitosis(x, y, w, h, o) {
   return handle;
 }
 // What mitosis() hands back when it couldn't draw: calls on it do nothing.
-const noMitosis = () => new Proxy({}, { get: () => () => null });
+const noMitosis = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
 api.mitosis = mitosis;
 
 // const x = ..., let x = ..., var x = ... (each name of `const a = 1, b = 2`) and function f() {...} at the start of a
@@ -2039,7 +2041,7 @@ function cell(x, y, w, h, o) {
   };
 }
 // What cell() hands back when it couldn't build one: calls on it do nothing.
-const noCell = () => new Proxy({}, { get: () => () => null });
+const noCell = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
 api.cell = cell;
 
 // Nothing the program writes can reach the network or load more code.

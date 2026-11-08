@@ -109,7 +109,7 @@ public static partial class DrawStageLesson
     ];
 
     /// <summary>The other things those words name: a phone's cell, a spreadsheet's, a battery's.</summary>
-    private static readonly string[] NotLifeScience = [" phone ", " phones ", " cellphone ", " battery ", " batteries ", " tower ", " excel ", " spreadsheet ", " sheet ", " table ", " prison ", " jail ", " solar "];
+    private static readonly string[] NotLifeScience = [" phone ", " phones ", " cellphone ", " battery ", " batteries ", " tower ", " excel ", " spreadsheet ", " sheet ", " sheets ", " table ", " prison ", " jail ", " solar "];
 
     // MARK: - Which questions
 
@@ -131,7 +131,8 @@ public static partial class DrawStageLesson
         // "what is dopamine"): a molecule or a cutaway shows it. Numbers over time and history ("how has world population
         // grown over 300 years", "the history of computers"): a graph or a timeline. Not the person's own things ("what does
         // my email look like", "show my sales chart").
-        if (!ContainsAny(text, " my ", " our ")
+        if (!ContainsAny(text, " my ", " mine ", " our ") && !ContainsAny(text, AboutTheirWork)
+            && !StartsAny(text, " how do you ", " how do we ")
             && (ContainsAny(text, WhatItIsMadeOf) || ContainsAny(text, OverTime)
                 || (StartsAny(text, " how has ", " how have ") && ContainsAny(text, Changed))
                 || (StartsAny(text, " what is ", " what's ", " what are ", " tell me about ") && ContainsAny(text, Chemicals))))
@@ -182,6 +183,15 @@ public static partial class DrawStageLesson
     [
         "may", "mai", "main", "mein", "me", "men", "mien", "में", "मे", "میں", "مے",
         "drawing", "diagram", "picture", "view", "animation", "model of", "ڈرائنگ", "ड्राइंग",
+    ];
+
+    /// <summary>The person's own work and trouble ("add a chart to this spreadsheet", "what should this email look like",
+    /// "the history of this browser"): words answer those, not a molecule or a graph. As the Mac's work and trouble words.</summary>
+    private static readonly string[] AboutTheirWork =
+    [
+        " app ", " file ", " files ", " code ", " build ", " setting ", " settings ", " window ", " tab ", " button ", " menu ", " folder ",
+        " email ", " message ", " page ", " excel ", " spreadsheet ", " sheet ", " sheets ", " browser ", " slide ", " slides ", " document ",
+        " error ", " errors ", " crash ", " broken ", " bug ", " not working ", " issue ", " problem ",
     ];
 
     /// <summary>Words that ask what a thing is made of, what it looks like or how its atoms sit.</summary>
@@ -489,8 +499,8 @@ public static partial class DrawStageLesson
         ```
 
         CELLS (what is inside a cell, how plant and animal cells differ, what a bacterium is)
-        const c = cell(x, y, w, h, {type: 'animal'})   a cut-open 3D cell with its parts in their places and sizes, each named once. type 'animal' (nucleus and nucleolus, rough and smooth ER, Golgi body, mitochondria, lysosomes, vesicles, ribosomes, centrioles), 'plant' (adds a cell wall, a big vacuole and chloroplasts) or 'bacterium' (no nucleus: a nucleoid of loose DNA, plasmids, ribosomes, a cell wall, a turning flagellum and pili). show: ['nucleus', 'mitochondria'] draws only those parts (and the outside); labels: false names none.
-          c.point('mitochondria') makes every one of them swell gently while your line talks about it   c.label(part, words) tags a part   c.parts lists the parts drawn
+        const cl = cell(x, y, w, h, {type: 'animal'})   a cut-open 3D cell with its parts in their places and sizes, each named once. type 'animal' (nucleus and nucleolus, rough and smooth ER, Golgi body, mitochondria, lysosomes, vesicles, ribosomes, centrioles), 'plant' (adds a cell wall, a big vacuole and chloroplasts) or 'bacterium' (no nucleus: a nucleoid of loose DNA, plasmids, ribosomes, a cell wall, a turning flagellum and pili). show: ['nucleus', 'mitochondria'] draws only those parts (and the outside); labels: false names none.
+          cl.point('mitochondria') makes every one of them swell gently while your line talks about it   cl.label(part, words) tags a part   cl.parts lists the parts drawn
         Use cell() for cells instead of building one from parts. Two side by side compare well (an animal cell and a plant cell, each in half the card).
         CELL EXAMPLE (two beats of "what is inside a cell?", inside a card c)
         ```js

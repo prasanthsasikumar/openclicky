@@ -138,9 +138,9 @@ public partial class DrawingAnswerTests
     public void ThePromptOffersCellsCutOpenWithTheirParts()
     {
         var prompt = DrawStageLesson.SystemPrompt(1280, 720);
-        Assert.Contains("const c = cell(x, y, w, h, {type: 'animal'})", prompt);
+        Assert.Contains("const cl = cell(x, y, w, h, {type: 'animal'})", prompt);
         Assert.Contains("'plant' (adds a cell wall, a big vacuole and chloroplasts)", prompt);
-        Assert.Contains("c.point('mitochondria')", prompt);
+        Assert.Contains("cl.point('mitochondria')", prompt);
     }
 
     [Theory]
