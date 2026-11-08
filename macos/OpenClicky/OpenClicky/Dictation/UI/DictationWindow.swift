@@ -156,9 +156,11 @@ final class DictationWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         companionManager.stopSettingsTour()
-        // Back to a menu-bar app: no Dock icon while the window is closed.
+        // Back to a menu-bar app: no Dock icon while the window is closed. Only titled windows
+        // count: the pointer overlay is a borderless NSWindow that is visible all the time, and
+        // counting it kept the Dock icon for good after the first time the window opened.
         DispatchQueue.main.async {
-            if !(NSApp.windows.contains { $0.isVisible && !($0 is NSPanel) }) {
+            if !(NSApp.windows.contains { $0.isVisible && $0.styleMask.contains(.titled) }) {
                 NSApp.setActivationPolicy(.accessory)
             }
         }

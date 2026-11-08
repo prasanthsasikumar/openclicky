@@ -17,6 +17,17 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ## Unreleased
 
+With thanks to [darkworks](https://github.com/darkworks), who taught the drawing stage everything new below.
+
+### All platforms
+
+- **Molecules in 3D.** Ask "what is aspirin made of?" or "what does a water molecule look like?" and Clicky builds a ball-and-stick model with its real shape and the usual colours. Questions about what something is made of, a known chemical, or numbers over time are now drawn instead of only answered in words. By darkworks (PR #50).
+- **Machines that work.** Gears that mesh, a bike chain, an engine's crank and piston, a pump jack: each part turns at the right speed and the right way. By darkworks (PR #51).
+- **Biology, drawn.** DNA that pairs, unzips, copies and is read; animal, plant and bacterial cells cut open with their parts in place; blood going round the heart, lungs and body; a cell dividing, one phase per sentence. By darkworks (PRs #55, #57, #58, #59).
+- **Graphs and timelines.** "How has the world's population grown?" or "the big moments in the history of computers" are drawn to scale, with labels kept clear of the lines. By darkworks (PR #49).
+- **Labels that don't overlap.** A drawing's labels now move out of each other's way. By darkworks (PR #48).
+- **"3D" alone no longer means a drawing.** "What's the best 3D printer?" gets a plain answer; "show me in 3D" still draws.
+
 ### Mac
 
 - **No crash after unplugging a headset.** Dictating after a headset or dock came off could take the whole app down: the microphone engine still described the headset while the Mac's own microphone runs at a different rate. The next take now starts a fresh engine whenever the input changed.
@@ -25,6 +36,13 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 - **Hands-free works with the lid closed.** With the lid closed (or with a microphone you chose in Settings), hands-free failed to start at all. It now records from that microphone and finishes its answers: since only the Mac's own microphone can cancel Clicky's voice, the microphone pauses while Clicky speaks, so press esc to interrupt it there.
 - **Account notes in your voice.** Notes about your free allowance now play in the voice you picked (Kokoro, or a key's voice) instead of the Mac's built-in voice.
 - **Answers with your OpenCode Zen key.** Paste a key from [opencode.ai/zen](https://opencode.ai/zen) in Settings → Account → Your keys and Clicky answers through Zen, straight from your Mac. It asks Kimi K3, which can see your screen; set another Zen model under `answerModels` → `openCode` in `~/.openclicky/shell.json`, as long as it reads images. Dictation clean-up on that key uses the quicker GLM 5.3 Flash.
+- **The Dock icon goes away again.** After the OpenClicky window had been opened once, its Dock icon stayed even after you closed the window. It now leaves with the window, as a menu-bar app should.
+
+### Windows
+
+- **Urdu (اردو).** Pick it under Settings → Clicky → Language and Clicky answers, speaks and draws in Urdu. With a Gemini key it also hears Urdu, which Windows' own speech engines can't. By darkworks (PR #46).
+- **Gemini voices.** With a Gemini key, choose from all 30 Gemini voices under Talking; the fast voice uses the same one. By darkworks (PR #46).
+- **One Explorer window for your saves.** Saving a drawing as a picture or video selects it in the Explorer window already open on its folder instead of opening a new one each time. By darkworks (PR #47).
 
 ## 0.11.0
 
