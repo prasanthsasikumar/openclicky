@@ -105,7 +105,9 @@ public class SpeechQueueTests
                 fetched.Enqueue(text);
                 return Bytes(text);
             },
-            (_, token) => Task.Delay(300, token));
+            // The first piece plays until the cancel: with a fixed length, a runner that stalls past it moves the queue on
+            // and fetches pieces 4 and 5 before the cancel lands (CI, "fetched 5").
+            (_, token) => Task.Delay(Timeout.Infinite, token));
         foreach (var piece in new[] { "p1", "p2", "p3", "p4", "p5", "p6" }) queue.Enqueue(piece);
         queue.Finish();
         using var playbackCancellation = new CancellationTokenSource();

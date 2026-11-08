@@ -194,15 +194,10 @@ internal sealed class DrawingRecorder(DrawStageWindow window, DrawStageControlle
         return $"{clean} {when:yyyy-MM-dd HH.mm.ss}";
     }
 
+    /// <summary>The saved file, selected in the Explorer window already on Videos\OpenClicky when there is one (a second
+    /// save doesn't open a second window).</summary>
     private static void Reveal(string path)
     {
-        try
-        {
-            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = false });
-        }
-        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            AppLog.Write($"draw: could not show the saved file ({error.Message})");
-        }
+        if (!Platform.ExplorerReveal.Select(path)) AppLog.Write("draw: could not show the saved file");
     }
 }

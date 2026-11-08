@@ -357,7 +357,8 @@ internal static class Ui
     {
         try
         {
-            if (File.Exists(path)) System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
+            // A file is selected in the Explorer window already on its folder, when there is one.
+            if (File.Exists(path)) Platform.ExplorerReveal.Select(path);
             else if (Directory.Exists(path)) System.Diagnostics.Process.Start("explorer.exe", $"\"{path}\"");
             else if (Path.GetDirectoryName(path) is { } folder && Directory.Exists(folder)) System.Diagnostics.Process.Start("explorer.exe", $"\"{folder}\"");
         }
