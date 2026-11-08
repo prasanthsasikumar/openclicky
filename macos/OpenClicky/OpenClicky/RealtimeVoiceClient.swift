@@ -205,6 +205,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     }
     private var isAudioWired = false
     private var isForwardingMicrophone = false
+    /// When Clicky's voice last stopped playing: without echo cancellation the microphone is held
+    /// for a moment after, while the room still rings with it (`MicrophoneEchoGate`).
+    private var playbackEndedAt: Date?
     private var currentMode: TurnMode = .pushToTalk
     private var pushToTalkArmed = false
     private var idlePauseTask: Task<Void, Never>?
@@ -996,6 +999,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                         guard let self else { return }
                         self.inputLevel = level
                         guard self.isForwardingMicrophone else { return }
+                        guard !MicrophoneEchoGate.holdsMicrophone(echoCancelled: self.audio.hasEchoCancellation,
+                                                                   isSpeaking: self.isSpeaking,
+                                                                   playbackEndedAt: self.playbackEndedAt) else { return }
                         self.forwardMicrophoneAudio(pcm16: pcm16)
                     }
                 },
@@ -1003,7 +1009,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                     Task { @MainActor in
                         guard let self else { return }
                         self.isSpeaking = isPlaying
-                        if !isPlaying { self.scheduleIdlePauseIfNeeded() }
+                        if !isPlaying {
+                            self.playbackEndedAt = Date()
+                            self.scheduleIdlePauseIfNeeded()
+                        }
                     }
                 }
             )
@@ -1711,6 +1720,16 @@ nonisolated final class RealtimeAudioEngine: @unchecked Sendable {
     private var onMicrophoneFrame: ((Data, CGFloat) -> Void)?
     private var onPlaybackActiveChanged: ((Bool) -> Void)?
     private var engine = AVAudioEngine()
+    /// Whether the running graph cancels Clicky's own voice out of the microphone (the
+    /// voice-processing unit). Read by the client for every microphone frame, so behind a lock.
+    private let echoCancelled = OSAllocatedUnfairLock(initialState: false)
+    var hasEchoCancellation: Bool { echoCancelled.withLock { $0 } }
+    /// The microphone's own engine when it is not the Mac's default input (a chosen microphone, or
+    /// another one standing in for a closed lid); nil when `engine` records too. On macOS an engine's
+    /// input and output are one I/O unit, so selecting an input-only device on `engine` left its
+    /// output at 0 Hz × 0 and start() failed with -10875: hands-free never started with the lid
+    /// closed (2026-11-08, Wireless Mic Rx).
+    private var captureEngine: AVAudioEngine?
     private var playerNode = AVAudioPlayerNode()
     private var converter: AVAudioConverter?
     private var monoFormat: AVAudioFormat?
@@ -1768,9 +1787,7 @@ nonisolated final class RealtimeAudioEngine: @unchecked Sendable {
                     self.tearDown()
                 }
                 if self.isRunning {
-                    if !self.engine.isRunning {
-                        do { try self.engine.start() } catch { continuation.resume(throwing: error); return }
-                    }
+                    do { try self.startEngines() } catch { continuation.resume(throwing: error); return }
                     continuation.resume(returning: "audio already running")
                     return
                 }
@@ -1813,6 +1830,7 @@ nonisolated final class RealtimeAudioEngine: @unchecked Sendable {
             self.playerNode.stop()
             self.queuedBuffers = 0
             self.engine.stop()
+            self.captureEngine?.stop()
         }
     }
 
@@ -1838,9 +1856,7 @@ nonisolated final class RealtimeAudioEngine: @unchecked Sendable {
     func enqueue(pcm16 data: Data) {
         queue.async {
             guard self.isRunning else { return }
-            if !self.engine.isRunning {
-                do { try self.engine.start() } catch { return }
-            }
+            do { try self.startEngines() } catch { return }
             let sampleCount = data.count / MemoryLayout<Int16>.size
             guard sampleCount > 0,
                   let buffer = AVAudioPCMBuffer(pcmFormat: Self.playbackFormat, frameCapacity: AVAudioFrameCount(sampleCount)),
@@ -1886,10 +1902,15 @@ nonisolated final class RealtimeAudioEngine: @unchecked Sendable {
             // Settings → microphone, set before outputNode is first touched: from then on the input
             // unit refuses a device change (-10851) and, with voice processing on, the engine failed
             // to start at all (-10875) — realtime voice was down on the 2026-10-11 build.
-            let selectedMicrophone = MicrophoneDevices.apply(preferredUID: preferredMicrophoneUID, to: engine)
+            // A device other than the default gets an engine of its own (`captureEngine`).
+            let recordsApart = MicrophoneDevices.choiceDiffersFromDefault(preferredUID: preferredMicrophoneUID)
+            let microphoneEngine = recordsApart ? AVAudioEngine() : engine
+            if recordsApart { captureEngine = microphoneEngine }
+            let selectedMicrophone = MicrophoneDevices.apply(preferredUID: preferredMicrophoneUID, to: microphoneEngine)
             notes.append(selectedMicrophone ? "microphone \(preferredMicrophoneUID ?? "mac default")" : "microphone not selected, system input")
+            if recordsApart { notes.append("recording on its own engine") }
         }
-        let inputNode = engine.inputNode
+        let inputNode = (captureEngine ?? engine).inputNode
         let outputNode = engine.outputNode
         if voiceProcessing {
             try inputNode.setVoiceProcessingEnabled(true)
@@ -1938,13 +1959,25 @@ nonisolated final class RealtimeAudioEngine: @unchecked Sendable {
         inputNode.installTap(onBus: 0, bufferSize: 2400, format: hardwareFormat) { [weak self] buffer, _ in
             self?.handleMicrophoneBuffer(buffer)
         }
+        captureEngine?.prepare()
         engine.prepare()
-        try engine.start()
+        try startEngines()
+        echoCancelled.withLock { $0 = voiceProcessing }
+        if !voiceProcessing { notes.append("microphone held while clicky speaks") }
         return "audio running: input \(Int(hardwareFormat.sampleRate)) Hz × \(hardwareFormat.channelCount) ch, \(notes.joined(separator: ", ")), voice processing \(voiceProcessing ? "on" : "off")"
     }
 
+    /// Starts whichever engines are stopped: the one that plays, and the microphone's own if it has one.
+    private func startEngines() throws {
+        if let captureEngine, !captureEngine.isRunning { try captureEngine.start() }
+        if !engine.isRunning { try engine.start() }
+    }
+
     private func tearDown() {
-        engine.inputNode.removeTap(onBus: 0)
+        echoCancelled.withLock { $0 = false }
+        (captureEngine ?? engine).inputNode.removeTap(onBus: 0)
+        captureEngine?.stop()
+        captureEngine = nil
         engine.stop()
         engine = AVAudioEngine()
         playerNode = AVAudioPlayerNode()
@@ -2010,5 +2043,22 @@ nonisolated final class RealtimeAudioEngine: @unchecked Sendable {
         var sum: Float = 0
         for index in 0..<Int(buffer.frameLength) { sum += channel[index] * channel[index] }
         return CGFloat(min(1, sqrt(sum / Float(buffer.frameLength)) * 6))
+    }
+}
+
+/// Half-duplex for a microphone without echo cancellation: with only the voice-processing unit
+/// able to cancel Clicky's voice, and it only on the Mac's default input, a stand-in microphone
+/// (the lid closed) or a chosen one heard the answer from the speakers, the server took it for the
+/// person talking and cut the answer off after a few words (2026-11-08: "Terminal is now minimized"
+/// came back as "you said: Terminal"). So the microphone is not forwarded while Clicky speaks or
+/// for `tail` seconds after. The person can't talk over Clicky then; esc still stops it.
+nonisolated enum MicrophoneEchoGate {
+    static let tail: TimeInterval = 0.5
+
+    static func holdsMicrophone(echoCancelled: Bool, isSpeaking: Bool, playbackEndedAt: Date?, now: Date = Date()) -> Bool {
+        guard !echoCancelled else { return false }
+        if isSpeaking { return true }
+        guard let playbackEndedAt else { return false }
+        return now.timeIntervalSince(playbackEndedAt) < tail
     }
 }
