@@ -41,7 +41,7 @@ struct ScreenElementGrounderTests {
     @Test func groundingRunsOnEveryAnswerSourceButThePlans() {
         #expect(ScreenElementGrounder.reasonGroundingCannotRun(on: .anthropicDirect) == nil)
         #expect(ScreenElementGrounder.reasonGroundingCannotRun(on: .backend) == nil)
-        for source in [AnswerSource.openAI, .openRouter, .gemini, .groq, .mistral, .xai] {
+        for source in [AnswerSource.openAI, .openRouter, .gemini, .groq, .mistral, .xai, .openCode] {
             #expect(ScreenElementGrounder.reasonGroundingCannotRun(on: .answerProvider(source)) == nil)
         }
         #expect(ScreenElementGrounder.reasonGroundingCannotRun(on: .answerProvider(.claudeCodePlan)) != nil)
