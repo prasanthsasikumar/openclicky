@@ -61,7 +61,7 @@ Parts, in world units (about 1-5 across), each returns a part:
   f.lathe({points: [[radius, y], …]}) (a turned profile: casings, nozzles, bottles, bells, a fuselage on axis: 'x')
   f.extrude({points: [[x, y], …], depth, holes: [[[x, y], …]], bevel}) (a flat outline made thick: wings, fins, brackets, a plane seen from above)
   f.tube({points: [[x, y, z], …], r}) (smooth: cables, hoses, veins) f.pipe({points, r, bend}) (straight runs with bends: plumbing, exhausts)
-  f.spring({r, h, coils, wire}) f.gear({r, teeth, depth}) f.arrow({from: [x, y, z], to: [x, y, z], color}) (flows and forces)
+  f.spring({r, h, coils, wire}) f.gear({r, teeth, depth}) (a still gear: gears that turn together are a mechanism(), below) f.arrow({from: [x, y, z], to: [x, y, z], color}) (flows and forces)
   f.blob({balls: [[x, y, z, r], [x, y, z, rx, ry, rz], …], sticks: [{from, to, r, r2}], paths: [{points, r, r2}], holes: [[x, y, z, r]], smooth}) one smooth organic surface over its balls and sticks, blended where they touch (smooth 0.1-0.6): organs, bodies, animals, teeth, leaves, rocks, clouds. Use it for anything alive; spheres and capsules side by side look like toys.
 Every part also takes at: [x, y, z], rot: [degrees x, y, z], axis: 'x' | 'y' | 'z' (which way a cyl, cone, capsule, spring, lathe or gear points; default y, gear and extrude default z), scale, parent: anotherPart (moves with it), color, opacity, and
   mat: 'steel' | 'alu' | 'titanium' | 'chrome' | 'iron' | 'gold' | 'copper' | 'brass' | 'plastic:<color>' | 'paint:<color>' | 'rubber' | 'wood' | 'stone' | 'ceramic' | 'glass' | 'water' | 'glow:<color>' (flames, lights, hot things)
@@ -135,4 +135,21 @@ ORGANIC EXAMPLE (one beat of "how does the heart pump blood?": a blob for the mu
 const heart = f.blob({balls: [[0.35, -0.35, 0, 0.85, 1.1, 0.8], [-0.35, -0.2, 0.15, 0.75, 0.95, 0.7], [0.2, -1.25, 0.05, 0.3]], smooth: 0.45, mat: 'tissue'}).pulse({amount: 0.035, period: 1})
 const aorta = f.blob({paths: [{points: [[0.1, 0.5, 0], [0.12, 1.5, -0.05], [0.55, 2.05, -0.1], [1.1, 1.75, -0.15], [1.2, 1.0, -0.2]], r: 0.3, r2: 0.26}], mat: 'tissue:#C0392B'})
 aorta.label('to the body', {color: 'red'})
+```
+
+MECHANISMS (how a machine passes motion along: gears, a bike chain, a belt, an engine's crank and piston, a pump's rocker; the parts really move and stay in step)
+const m = mechanism(x, y, w, h, {speed: 20, parts: [...]})   a working machine in 3D in that box. The first part is driven at speed (turns a minute). You say what joins what; where each part sits, how fast and which way it turns, and how a rod or a piston moves are worked out for you, so teeth always meet.
+  {gear: 'A', teeth: 12}   {gear: 'B', teeth: 36, meshes: 'A'} (its teeth lock into A's; angle: where it sits round A in degrees, else it finds room)   {gear: 'C', teeth: 10, on: 'B'} (on B's shaft, in front of it: turns with B)
+  {pulley: 'P', r: 1}   {pulley: 'Q', r: 2.5, belt: 'P', distance: 6, angle: 0} (crossed: true crosses the belt)   {sprocket: 'S', teeth: 40}   {sprocket: 'T', teeth: 16, chain: 'S', distance: 9}
+  {rack: 'R', meshes: 'A', length: 8} (a toothed bar the gear slides back and forth; angle: 270 puts it below)
+  {crank: 'K', r: 1.2, on: 'B'} (a crank disc on a shaft; listed first, it drives)   {piston: 'P', crank: 'K', rod: 3.6, angle: 90} (a connecting rod and a piston sliding in its cylinder, as in an engine)   {rocker: 'L', crank: 'K', rod: 3, length: 2.4, pivot: [4, -1], reach: 3} (a rocking arm on a pivot, as in a wiper; reach carries it on past the pivot). A pump jack: [{crank: 'motor', r: 1.2}, {rocker: 'beam', crank: 'motor', rod: 5, length: 3, pivot: [3, 5], reach: 4, head: true}] (the rocker's post and the crank's stand are drawn for you, down to one ground)
+  Any part takes label: 'words', and color or mat. A part joins only parts listed before it; the names are yours.
+m.speed('B') turns a minute and m.direction('B') 'clockwise' or 'anticlockwise': build your say() lines and labels from them, after the mechanism() call, instead of working speeds out yourself (a small gear driven by a big one turns faster, not slower).   m.label('B', words, o)   m.view({tilt, turn, zoom})
+Whenever gears, sprockets and a chain, pulleys and a belt, a rack, a crank, a piston or a rocking beam are in the answer, build them with mechanism(), never with f.gear() or a tube: hand-placed gears don't mesh and a hand-drawn chain doesn't move. m.figure is its 3D stage, in the same units (the first part at [0, 0, 0], x right, y up, the moving parts in the z = 0 plane; a 12-tooth gear is 3 across): add the machine's still body round its moving parts there (a frame, a tower, a base, a bike's wheel rim) with m.figure.box(…), cyl(…). Keep a machine to about 10 moving parts so each can be seen.
+MECHANISM EXAMPLE (one beat of "why does a small gear spin faster?", inside a card c)
+```js
+step(1); say("Here a small gear with 12 teeth turns a big one with 36.")
+const m = mechanism(c.x + 20, c.y + 70, c.w - 40, c.h - 130, {speed: 30, parts: [{gear: 'small', teeth: 12, label: 'turned by the motor'}, {gear: 'big', teeth: 36, meshes: 'small'}]})
+step(2); say('The small gear turns ' + m.speed('small') + ' times a minute, but the big one only ' + m.speed('big') + ', and ' + m.direction('big') + '.')
+text(c.x + c.w / 2, c.y + c.h - 40, 'the big gear turns ' + m.speed('big') + ' times a minute', {size: 22})
 ```
