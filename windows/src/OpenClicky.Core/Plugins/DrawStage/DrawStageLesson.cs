@@ -115,6 +115,17 @@ public static partial class DrawStageLesson
         // Roman letters ("barish kaisy hoti hai 3d may batayein", "बारिश कैसे बरसती है"): the fast voice writes Urdu down
         // in any of the three.
         if (ContainsAny(text, " 3d ", " 2d ", " 3 d ", " 2 d ", " three d ") || ContainsAny(text, OtherLanguageDrawingWords)) return true;
+        // What a thing is made of or looks like, and chemistry ("what is aspirin made of", "what does caffeine look like",
+        // "what is dopamine"): a molecule or a cutaway shows it. Numbers over time and history ("how has world population
+        // grown over 300 years", "the history of computers"): a graph or a timeline. Not the person's own things ("what does
+        // my email look like", "show my sales chart").
+        if (!ContainsAny(text, " my ", " our ")
+            && (ContainsAny(text, WhatItIsMadeOf) || ContainsAny(text, OverTime)
+                || (StartsAny(text, " how has ", " how have ") && ContainsAny(text, Changed))
+                || (StartsAny(text, " what is ", " what's ", " what are ", " tell me about ") && ContainsAny(text, Chemicals))))
+        {
+            return true;
+        }
         // A curious question about how or why the world works ("how does the heart pump blood", "why is the sky blue",
         // "how do birds fly", "what happens when ice melts"): a picture explains it best. "How do you…" asks for steps.
         if (StartsAny(text, " how does ", " how do ", " how did ", " how is ", " how are ", " how can a ", " how can an ", " why ", " what happens ",
@@ -130,6 +141,32 @@ public static partial class DrawStageLesson
             " how this works ", " how that works ", " how it works ", " what's inside ", " what is inside ", " how is this made ",
             " how is it made ", " how are these made ", " explain this ", " explain that ", " explain it ", " show me how ");
     }
+
+    /// <summary>Words that ask what a thing is made of, what it looks like or how its atoms sit.</summary>
+    private static readonly string[] WhatItIsMadeOf =
+    [
+        " made of ", " made from ", " look like ", " looks like ", " molecule ", " molecules ", " atom ", " atoms ",
+        " chemical formula ", " chemical structure ", " structure of ", " formula of ", " formula for ",
+    ];
+
+    /// <summary>Words that ask for numbers over time or a stretch of history: a graph or a timeline answers.</summary>
+    private static readonly string[] OverTime =
+    [
+        " graph ", " chart ", " plot ", " timeline ", " history of ", " over time ", " over the years ", " over the last ", " over the past ",
+        " through history ", " through the ages ",
+    ];
+
+    /// <summary>What a "how has …" question asks happened to a thing ("how has the population grown").</summary>
+    private static readonly string[] Changed = [" grown ", " grow ", " changed ", " change ", " increased ", " decreased ", " risen ", " fallen ", " dropped ", " evolved ",];
+
+    /// <summary>Everyday chemicals a "what is …" question is about: their molecule answers it.</summary>
+    private static readonly string[] Chemicals =
+    [
+        " aspirin ", " caffeine ", " dopamine ", " serotonin ", " adrenaline ", " melatonin ", " histamine ", " oxytocin ", " cortisol ",
+        " glucose ", " fructose ", " sucrose ", " nicotine ", " paracetamol ", " acetaminophen ", " ibuprofen ", " penicillin ", " ethanol ",
+        " methane ", " ammonia ", " ozone ", " benzene ", " carbon dioxide ", " carbon monoxide ", " hydrogen peroxide ", " sulfuric acid ",
+        " sulphuric acid ", " acetic acid ", " cholesterol ", " vitamin c ", " capsaicin ", " chlorophyll ", " dna ",
+    ];
 
     /// <summary>Whether <paramref name="question"/>, asked while a drawing is up, may be about it: one a picture answers, or one
     /// that asks for more of the drawing, another view of it or about a part of it. The model has the last word (NONE).</summary>
@@ -351,6 +388,13 @@ public static partial class DrawStageLesson
         Labels: part.label('words', {color}) or f.label(part, 'words', {color}); they are small tags tied to the part by a leader line. f.view({tilt, turn, zoom}) changes the camera in a beat.
         Name each part's const after what it is (const liftFan = f.cyl(…)): a click on the part asks about it by that name.
         MAKE IT LOOK REAL: a figure is built from many parts, like a good model kit: usually {{parts}} (bolts, ribs, ports, chips, blades, windows, seams, a lens). Get the proportions right, keep parts touching (nothing floats unless it really does), and use the real materials and colours. Show the inside with cut instead of drawing two separate pictures. Build the body in beat 1 (it may take a dozen parts), then add the moving and inner parts, motion and labels as the voice explains them. Put the figure's parts near the origin, y up, x along its length.
+
+        MOLECULES (when the question is about what something is made of, a chemical, a reaction, or why a substance behaves as it does)
+        const m = molecule(x, y, w, h, {name: 'water'})   a 3D ball-and-stick model in that box, built atom by atom, its real shape (angles, rings, double bonds) worked out for you. Known names: water, carbon dioxide, carbon monoxide, oxygen, ozone, nitrogen, hydrogen, methane, ammonia, ethanol, ethylene, acetic acid, hydrogen peroxide, sulfuric acid, sodium chloride, benzene, glucose, caffeine, aspirin (or formulas such as 'H2O', 'CO2').
+        Any other molecule: give its SMILES, the one line chemists write it in: molecule(x, y, w, h, {smiles: 'CC(=O)Oc1ccccc1C(=O)O'}) is aspirin, 'NCCc1ccc(O)c(O)c1' dopamine. Lowercase atoms are in an aromatic ring; leave the hydrogens out, they are added. Use the standard SMILES you know for it, since the shape comes from it.
+        Options: style: 'space' (space-filling: each atom a full-size ball), labels: false (no element names) or 'all' (small molecules), spin (turns a minute; it sways gently otherwise), tilt, turn.
+        m.label(atom, words, o) tags an atom, named the safe way: 'N' (the first nitrogen), 'O#2' (the second oxygen), 'ring' (its first ring); or a number, counting from 0 in the order the SMILES writes the atoms   m.view({tilt, turn, zoom})
+        Each element's name is tagged once by itself; pass labels: false when you tag the atoms yourself. Two molecules side by side compare well (water and carbon dioxide); keep each to about 30 heavy atoms so its atoms can be told apart.
 
         EXAMPLE (a complete answer to "how does a bicycle pump work?" on a 1280 × 720 screen)
         ```js

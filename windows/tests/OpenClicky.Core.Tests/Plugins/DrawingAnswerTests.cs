@@ -28,6 +28,14 @@ public partial class DrawingAnswerTests
     [InlineData("hey, how do birds fly?")]
     [InlineData("what happens when ice melts")]
     [InlineData("how are rainbows made")]
+    [InlineData("what is aspirin made of?")]
+    [InlineData("what is dopamine?")]
+    [InlineData("what are clouds made of")]
+    [InlineData("what does caffeine look like")]
+    [InlineData("show me a water molecule")]
+    [InlineData("How has world population grown over 300 years?")]
+    [InlineData("what were the big moments in the history of computers?")]
+    [InlineData("can you make a graph of the temperature of the earth")]
     public void QuestionsAPictureAnswersGetADrawing(string question) => Assert.True(DrawStageLesson.WantsADrawing(question));
 
     [Theory]
@@ -39,6 +47,10 @@ public partial class DrawingAnswerTests
     [InlineData("how do you make a new folder")]
     [InlineData("how are you today")]
     [InlineData("why not")]
+    [InlineData("what is your name")]
+    [InlineData("what does my email look like")]
+    [InlineData("how has your day been")]
+    [InlineData("open my sales chart")]
     public void DoingThingsAndSmallTalkDoNot(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
 
     [Fact]
@@ -307,5 +319,16 @@ public partial class DrawingAnswerTests
     {
         var (_, _, played) = await DrawAsync(Streams(TwoBeats), holdLine: DrawingAnswer.HoldLine, holdLineAfter: TimeSpan.FromSeconds(5));
         Assert.Equal(["One.", "Two."], played);
+    }
+
+    [Fact]
+    public void ThePromptOffersMoleculesByNameOrBySmiles()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("const m = molecule(x, y, w, h, {name: 'water'})", prompt);
+        Assert.Contains("{smiles: 'CC(=O)Oc1ccccc1C(=O)O'}", prompt);
+        Assert.Contains("leave the hydrogens out", prompt);
+        Assert.Contains("m.label(atom, words, o)", prompt);
+        Assert.Contains("'O#2' (the second oxygen)", prompt);
     }
 }
