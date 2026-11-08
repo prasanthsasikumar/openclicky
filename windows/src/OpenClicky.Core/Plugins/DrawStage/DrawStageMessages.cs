@@ -41,7 +41,7 @@ public static class DrawStageMessages
 {
     /// <summary>A new program on a canvas of that size; <paramref name="keepPlace"/> leaves the drawing where the person moved
     /// the last one (a replay of it), else it goes where it is drawn.</summary>
-    public static string BeginStream(int canvasWidth, int canvasHeight, DrawStagePace pace, bool keepPlace = false)
+    public static string BeginStream(int canvasWidth, int canvasHeight, DrawStagePace pace, bool keepPlace = false, string? scriptFont = null)
     {
         var message = new JsonObject
         {
@@ -51,6 +51,8 @@ public static class DrawStageMessages
             ["pace"] = pace == DrawStagePace.Speech ? "speech" : "estimate",
         };
         if (keepPlace) message["keepPlace"] = true;
+        // The font Urdu and other Arabic-script words are drawn in (shell.json drawingScriptFont; unset is the bundled one).
+        if (scriptFont is { Length: > 0 }) message["scriptFont"] = scriptFont;
         return message.ToJsonString();
     }
 

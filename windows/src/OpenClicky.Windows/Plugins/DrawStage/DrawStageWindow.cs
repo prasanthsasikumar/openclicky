@@ -241,6 +241,8 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
             ".html" => "text/html; charset=utf-8",
             ".js" => "text/javascript; charset=utf-8",
             ".css" => "text/css; charset=utf-8",
+            // The bundled Noto Nastaliq Urdu (vendor/fonts), for Urdu words in drawings.
+            ".ttf" => "font/ttf",
             _ => null,
         };
         var folder = Path.GetFullPath(PageFolder) + Path.DirectorySeparatorChar;

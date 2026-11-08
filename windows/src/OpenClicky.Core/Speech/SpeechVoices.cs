@@ -112,7 +112,7 @@ public static class SpeechVoiceChoices
     /// answers in a row) Automatic passes it by; a voice picked by hand is never passed by.
     /// </summary>
     public static SpeechVoiceChoice Resolve(OpenClickyShellSettings settings, bool hasAccount, bool kokoroInstalled, string languageCode,
-                                            bool accountVoiceIsResting = false)
+                                            bool accountVoiceIsResting = false, Func<bool>? thisPCSpeaksLanguage = null)
     {
         var picked = FromStored(settings.SpeechVoice);
         var kokoroCantSpeakLanguage = picked == SpeechVoiceChoice.Kokoro && KokoroVoice.SpeakerFor(languageCode, null) is null;
@@ -120,18 +120,47 @@ public static class SpeechVoiceChoices
         IReadOnlyList<SpeechVoiceChoice> candidates = picked == SpeechVoiceChoice.Automatic || kokoroCantSpeakLanguage
             ? automaticCandidates
             : [picked, SpeechVoiceChoice.Account];
+        // This PC's voice in a language Windows has no voice for (Urdu, 2026-11-04) says nothing at all: a voice with a key that
+        // speaks the language goes instead, even one not picked. Only when there is none does this PC's voice try.
+        var pcSpeaks = thisPCSpeaksLanguage ?? (() => true);
         foreach (var candidate in candidates)
         {
-            if (CanSpeak(candidate, settings, hasAccount, kokoroInstalled, languageCode)) return candidate;
+            if (!CanSpeak(candidate, settings, hasAccount, kokoroInstalled, languageCode)) continue;
+            if (candidate == SpeechVoiceChoice.Mac && !pcSpeaks()) break;
+            return candidate;
+        }
+        if (!pcSpeaks())
+        {
+            foreach (var candidate in automaticCandidates)
+            {
+                if (candidate != SpeechVoiceChoice.Mac && CanSpeak(candidate, settings, hasAccount, kokoroInstalled, languageCode)) return candidate;
+            }
         }
         return SpeechVoiceChoice.Mac;
     }
 
     /// <summary><see cref="Resolve"/> with this PC's settings.</summary>
-    public static SpeechVoiceChoice Current(SpeechVoiceServices? services = null) =>
-        Resolve(OpenClickyConfiguration.Settings, OpenClickyConfiguration.HasAccountToken,
-                (services ?? SpeechVoiceServices.Current)?.KokoroIsInstalled() ?? false, ReplyLanguage.CurrentCode,
-                AccountVoiceRest.IsResting);
+    public static SpeechVoiceChoice Current(SpeechVoiceServices? services = null)
+    {
+        var voices = services ?? SpeechVoiceServices.Current;
+        var languageCode = ReplyLanguage.CurrentCode;
+        return Resolve(OpenClickyConfiguration.Settings, OpenClickyConfiguration.HasAccountToken,
+            voices?.KokoroIsInstalled() ?? false, languageCode, AccountVoiceRest.IsResting,
+            () => ThisPCSpeaks(voices, languageCode));
+    }
+
+    /// <summary>Whether Windows has a voice for <paramref name="languageCode"/> (English always; asked once per language).</summary>
+    private static bool ThisPCSpeaks(SpeechVoiceServices? voices, string languageCode)
+    {
+        if (voices is null || languageCode.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return true;
+        return PCSpeaksLanguage.GetOrAdd(languageCode, code =>
+        {
+            try { return voices.SystemVoice.Voices(code).Count > 0; }
+            catch (Exception) { return true; }
+        });
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> PCSpeaksLanguage = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The voice that takes over when the account voice is late or fails: Kokoro when it is downloaded and speaks
     /// the language (offline, under a second a sentence once loaded), else this PC.</summary>
@@ -314,19 +343,39 @@ public static class CloudVoiceRequests
     public const string GeminiSpeechModel = "gemini-3.8-flash-tts";
     public const string GeminiVoiceName = "Kore";
 
-    public static HttpRequestMessage GeminiSpeech(string key, string text)
+    /// <summary>Gemini's prebuilt voices, each with the word Google describes it by. They all speak every language Gemini
+    /// does, Urdu included.</summary>
+    public static IReadOnlyList<(string Name, string Trait)> GeminiVoices { get; } =
+    [
+        ("Achernar", "soft"), ("Achird", "friendly"), ("Algenib", "gravelly"), ("Algieba", "smooth"), ("Alnilam", "firm"),
+        ("Aoede", "breezy"), ("Autonoe", "bright"), ("Callirrhoe", "easy-going"), ("Charon", "informative"), ("Despina", "smooth"),
+        ("Enceladus", "breathy"), ("Erinome", "clear"), ("Fenrir", "excitable"), ("Gacrux", "mature"), ("Iapetus", "clear"),
+        ("Kore", "firm"), ("Laomedeia", "upbeat"), ("Leda", "youthful"), ("Orus", "firm"), ("Puck", "upbeat"),
+        ("Pulcherrima", "forward"), ("Rasalgethi", "informative"), ("Sadachbia", "lively"), ("Sadaltager", "knowledgeable"),
+        ("Schedar", "even"), ("Sulafat", "warm"), ("Umbriel", "easy-going"), ("Vindemiatrix", "gentle"), ("Zephyr", "bright"),
+        ("Zubenelgenubi", "casual"),
+    ];
+
+    /// <summary>shell.json's `geminiVoice` when it names one of them; Kore otherwise.</summary>
+    public static string GeminiVoiceFor(OpenClickyShellSettings settings) =>
+        GeminiVoices.FirstOrDefault(voice => string.Equals(voice.Name, settings.GeminiVoice?.Trim(), StringComparison.OrdinalIgnoreCase)).Name ?? GeminiVoiceName;
+
+    /// <summary>One line of speech from Gemini, in <paramref name="voiceName"/>; <paramref name="style"/> (ReplyLanguage.GeminiSpeakingStyle)
+    /// goes before the words, as Gemini's speech takes its style in words.</summary>
+    public static HttpRequestMessage GeminiSpeech(string key, string text, string voiceName = GeminiVoiceName, string? style = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{GeminiSpeechModel}:generateContent");
         request.SetHeader("x-goog-api-key", key);
+        var spoken = style is null ? text : $"{style}\n{text}";
         request.Content = DirectProviderRequests.JsonContent(new JsonObject
         {
-            ["contents"] = new JsonArray(new JsonObject { ["parts"] = new JsonArray(new JsonObject { ["text"] = text }) }),
+            ["contents"] = new JsonArray(new JsonObject { ["parts"] = new JsonArray(new JsonObject { ["text"] = spoken }) }),
             ["generationConfig"] = new JsonObject
             {
                 ["responseModalities"] = new JsonArray("AUDIO"),
                 ["speechConfig"] = new JsonObject
                 {
-                    ["voiceConfig"] = new JsonObject { ["prebuiltVoiceConfig"] = new JsonObject { ["voiceName"] = GeminiVoiceName } },
+                    ["voiceConfig"] = new JsonObject { ["prebuiltVoiceConfig"] = new JsonObject { ["voiceName"] = voiceName } },
                 },
             },
         });
@@ -463,7 +512,8 @@ public static class CloudVoiceSpeaker
             }
             case SpeechVoiceChoice.Gemini:
             {
-                var data = await SendAsync(CloudVoiceRequests.GeminiSpeech(Key(settings.GeminiApiKey, "Gemini"), text), "Gemini", client, cancellationToken).ConfigureAwait(false);
+                var data = await SendAsync(CloudVoiceRequests.GeminiSpeech(Key(settings.GeminiApiKey, "Gemini"), text,
+                    CloudVoiceRequests.GeminiVoiceFor(settings), ReplyLanguage.GeminiSpeakingStyle(languageCode)), "Gemini", client, cancellationToken).ConfigureAwait(false);
                 return CloudVoiceRequests.DecodeGeminiSpeech(data);
             }
             case SpeechVoiceChoice.Polly:

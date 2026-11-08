@@ -280,6 +280,17 @@ public sealed class GeminiLiveDialect(int sampleRate, string? resumptionHandle, 
             ["sessionResumption"] = ResumptionHandle is { } handle ? new JsonObject { ["handle"] = handle } : new JsonObject(),
         };
         if (declarations.Count > 0) setup["tools"] = new JsonArray(new JsonObject { ["functionDeclarations"] = declarations });
+        // The Gemini voice picked in Settings speaks here too, so answers and the fast voice sound the same.
+        if (Configuration.OpenClickyConfiguration.Settings.GeminiVoice is { Length: > 0 })
+        {
+            ((JsonObject)setup["generationConfig"]!)["speechConfig"] = new JsonObject
+            {
+                ["voiceConfig"] = new JsonObject
+                {
+                    ["prebuiltVoiceConfig"] = new JsonObject { ["voiceName"] = CloudVoiceRequests.GeminiVoiceFor(Configuration.OpenClickyConfiguration.Settings) },
+                },
+            };
+        }
         return [new JsonObject { ["setup"] = setup }];
     }
 

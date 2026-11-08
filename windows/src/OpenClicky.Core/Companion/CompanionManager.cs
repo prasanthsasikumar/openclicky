@@ -464,13 +464,27 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
 
     // MARK: - Start / stop
 
-    /// <summary>An account hears with the offline engine; own keys keep the configured provider.</summary>
+    /// <summary>The language push-to-talk was last set up to hear.</summary>
+    private string? hearingLanguage;
+
+    /// <summary>An account hears with the offline engine; own keys keep the configured provider. A language this PC's
+    /// engines don't hear (Urdu) is heard by Gemini instead, when there is a Gemini key.</summary>
     private void ApplyHearingForAccount()
     {
-        BuddyDictationManager.ReplaceTranscriptionProvider(
-            AccountCapabilities.Current().HearsOnDevice
-                ? new OnDeviceHearingProvider(services.OfflineSpeech)
-                : BuddyTranscriptionProviderFactory.MakeDefaultProvider(services.OfflineSpeech));
+        var chosen = AccountCapabilities.Current().HearsOnDevice
+            ? new OnDeviceHearingProvider(services.OfflineSpeech)
+            : BuddyTranscriptionProviderFactory.MakeDefaultProvider(services.OfflineSpeech);
+        hearingLanguage = ReplyLanguage.CurrentCode;
+        var provider = BuddyTranscriptionProviderFactory.ForLanguage(chosen, chosen is OnDeviceHearingProvider, hearingLanguage,
+            new GeminiAudioTranscriptionProvider());
+        if (!ReferenceEquals(provider, chosen)) AppLog.Write($"transcription: this PC doesn't hear {ReplyLanguage.EnglishName(hearingLanguage)}; Gemini hears it");
+        BuddyDictationManager.ReplaceTranscriptionProvider(provider);
+    }
+
+    /// <summary>shell.json changed: a new language may need another transcriber.</summary>
+    private void OnSettingsChangedForHearing()
+    {
+        if (ReplyLanguage.CurrentCode != hearingLanguage) services.MainThread.Post(ApplyHearingForAccount);
     }
 
     public void Start()
@@ -492,6 +506,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         ApplyHearingForAccount();
         // A key or token changed in shell.json: the open Realtime session was minted with the old one.
         OpenClickyConfiguration.CredentialsChanged += OnCredentialsChanged;
+        OpenClickyConfiguration.SettingsChanged += OnSettingsChangedForHearing;
         AccountProfileStore.ProfileChanged += OnAccountProfileChanged;
         AccountProfileStore.Shared.ShowNotice = notice => services.MainThread.Post(() => ShowQuietNotice(notice));
         AccountProfileStore.Shared.Start();
@@ -545,6 +560,7 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
         pointerPresenceTimer?.Dispose();
         pointerPresenceTimer = null;
         OpenClickyConfiguration.CredentialsChanged -= OnCredentialsChanged;
+        OpenClickyConfiguration.SettingsChanged -= OnSettingsChangedForHearing;
         AccountProfileStore.ProfileChanged -= OnAccountProfileChanged;
     }
 

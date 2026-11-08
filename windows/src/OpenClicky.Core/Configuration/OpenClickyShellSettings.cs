@@ -125,6 +125,13 @@ public sealed class OpenClickyShellSettings
     /// <summary>The Kokoro speaker picked in Settings; null → the language's default.</summary>
     [JsonPropertyName("kokoroSpeaker")] public int? KokoroSpeaker { get; set; }
 
+    /// <summary>Gemini's prebuilt voice for answers and the fast voice ("Kore" when unset; CloudVoiceRequests.GeminiVoices).</summary>
+    [JsonPropertyName("geminiVoice")] public string? GeminiVoice { get; set; }
+
+    /// <summary>The font Urdu and other Arabic-script words are drawn in on the drawing stage: unset is the bundled Noto
+    /// Nastaliq Urdu, "system" is Windows' own (Segoe UI), anything else names a font installed on this PC.</summary>
+    [JsonPropertyName("drawingScriptFont")] public string? DrawingScriptFont { get; set; }
+
     /// <summary>The system voice picked in Settings (the Mac's key name, kept so the file is shared).</summary>
     [JsonPropertyName("macVoiceIdentifier")] public string? MacVoiceIdentifier { get; set; }
 
