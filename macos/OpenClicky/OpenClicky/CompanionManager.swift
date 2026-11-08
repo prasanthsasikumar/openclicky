@@ -2050,8 +2050,18 @@ final class CompanionManager: ObservableObject {
                     // or a request sent with no token), or Anthropic refusing an own key directly.
                     speakWithSystemVoice(await OpenClickyAuthSession.shared.sentenceAfterBackendRejection(responseBody: refusal.body))
                 } else if Self.isAccountNotice(error) {
-                    if let notice = Self.accountNoticeToSpeak(for: error, alreadySpoken: &spokenAccountNotices) {
-                        speakWithSystemVoice(notice)
+                    // Shown every time, spoken once a session: a later refusal is never silent.
+                    let isGuestWithoutEmail = OpenClickyAuthSession.shared.isGuestWithoutEmail
+                    if let sentence = Self.accountNotice(for: error, isGuestWithoutEmail: isGuestWithoutEmail) {
+                        showAskCaption(Self.captionText(sentence), holdSeconds: 10)
+                    }
+                    if let notice = Self.accountNoticeToSpeak(for: error, isGuestWithoutEmail: isGuestWithoutEmail,
+                                                              alreadySpoken: &spokenAccountNotices) {
+                        speakNoticeInPickedVoice(notice)
+                        if Self.isGuestTrialEnded(error, isGuestWithoutEmail: isGuestWithoutEmail) {
+                            AppLog.append("ask: guest trial ended; opening Keys & Account")
+                            showSettings(.account)
+                        }
                     }
                 } else {
                     ClickyAnalytics.trackResponseError(error: error.localizedDescription)
@@ -2576,6 +2586,8 @@ final class CompanionManager: ObservableObject {
     /// cut off by the next, say) never sets a newer turn back to idle.
     private var systemVoiceNoticeNumber = 0
     private var isSystemVoiceNoticeSpeaking = false
+    /// An account notice being fetched or played in the picked voice (`speakNoticeInPickedVoice`).
+    private var noticeVoiceTask: Task<Void, Never>?
     /// Turns waiting for the notice to end before they go back to idle (`waitForSystemVoiceNoticeToEnd`).
     private var systemVoiceNoticeEndWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -2583,16 +2595,54 @@ final class CompanionManager: ObservableObject {
     /// The state is `.responding` while it talks and goes back to `.idle` when it ends: nothing set
     /// it back before, so the island stayed "speaking" after a notice until the next question.
     func speakWithSystemVoice(_ text: String) {
-        answeringSourceName = nil
-        stopSystemVoice()
-        let noticeNumber = systemVoiceNoticeNumber
-        isSystemVoiceNoticeSpeaking = true
-        let noticeEnded: () -> Void = { [weak self] in self?.systemVoiceNoticeEnded(noticeNumber: noticeNumber) }
-        voiceState = .responding
+        let noticeEnded = beginNotice()
         // A fixed notice that has a recording plays it, in the app's own voice.
         if let line = RecordedVoice.line(forSpokenText: text), recordedVoice.play(line, onFinished: noticeEnded) {
             return
         }
+        sayWithMacVoice(text, onEnded: noticeEnded)
+    }
+
+    /// Says an account notice in the voice picked in Settings → Clicky → Voice (Kokoro, a key's
+    /// voice), not this Mac's, which sounded robotic beside the answers. The free account voice
+    /// would likely be refused with the question, so it hands over to the fastest local voice.
+    /// This Mac's voice, a recorded line, or a voice that fails goes through the system voice.
+    func speakNoticeInPickedVoice(_ text: String) {
+        let picked = SpeechVoiceChoice.current()
+        let voice = picked == .account
+            ? SpeechVoiceChoice.fastestLocalVoice(kokoroInstalled: KokoroVoice.isInstalled, languageCode: ReplyLanguage.currentCode)
+            : picked
+        guard voice != .mac, voice != .automatic, RecordedVoice.line(forSpokenText: text) == nil else {
+            speakWithSystemVoice(text)
+            return
+        }
+        let noticeEnded = beginNotice()
+        noticeVoiceTask = Task { [weak self] in
+            do {
+                let audio = try await CloudVoiceSpeaker.audio(for: text, voice: voice)
+                guard let self, !Task.isCancelled else { return }
+                try await self.answerVoicePlayer.playToCompletion(audio)
+                noticeEnded()
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                AppLog.append("notice: \(voice.rawValue) failed (\((error as NSError).code)); the system voice says it")
+                self.sayWithMacVoice(text, onEnded: noticeEnded)
+            }
+        }
+    }
+
+    /// The start of a notice: whatever notice was being said stops, and the turn is `.responding`
+    /// until the returned closure is called.
+    private func beginNotice() -> () -> Void {
+        answeringSourceName = nil
+        stopSystemVoice()
+        let noticeNumber = systemVoiceNoticeNumber
+        isSystemVoiceNoticeSpeaking = true
+        voiceState = .responding
+        return { [weak self] in self?.systemVoiceNoticeEnded(noticeNumber: noticeNumber) }
+    }
+
+    private func sayWithMacVoice(_ text: String, onEnded noticeEnded: @escaping () -> Void) {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = MacVoice.currentVoice()
         utterance.rate = MacVoice.speakingRate(for: utterance.voice)
@@ -2617,6 +2667,8 @@ final class CompanionManager: ObservableObject {
         isSystemVoiceNoticeSpeaking = false
         systemSpeechSynthesizer.stopSpeaking(at: .immediate)
         recordedVoice.stop()
+        noticeVoiceTask?.cancel()
+        noticeVoiceTask = nil
         resumeSystemVoiceNoticeEndWaiters()
     }
 
@@ -2662,10 +2714,16 @@ final class CompanionManager: ObservableObject {
     }
 
     /// The plain sentence for an account limit, when the ask lane's Claude call answered 402.
-    static func limitSentence(for error: Error) -> String? {
+    static func limitSentence(for error: Error, isGuestWithoutEmail: Bool = false) -> String? {
         guard let refusal = refusedQuestion(error), refusal.status == 402 else { return nil }
-        let message = AccountLimitError.from(status: 402, body: refusal.body)?.message ?? ""
+        let message = AccountLimitError.from(status: 402, body: refusal.body)?.message(isGuestWithoutEmail: isGuestWithoutEmail) ?? ""
         return message.isEmpty ? AccountLimitError.personalLimit.message : message
+    }
+
+    /// The question was refused because an email-less guest's free days or allowance are over.
+    static func isGuestTrialEnded(_ error: Error, isGuestWithoutEmail: Bool) -> Bool {
+        guard isGuestWithoutEmail, let refusal = refusedQuestion(error) else { return false }
+        return AccountLimitError.from(status: refusal.status, body: refusal.body) == .confirmEmail
     }
 
     /// The question was refused with a 401: the account's token (expired, or issued before a move),
@@ -2682,15 +2740,24 @@ final class CompanionManager: ObservableObject {
 
     /// The sentence for an account notice the first time this session; nil afterwards (and for any
     /// other error), so a lane that keeps hitting the same limit falls back silently.
-    static func accountNoticeToSpeak(for error: Error, alreadySpoken: inout Set<String>) -> String? {
-        let sentence: String?
-        if let refusal = refusedQuestion(error), isServiceTrouble(refusal) {
-            sentence = AccountLimitError.serviceTroubleMessage
-        } else {
-            sentence = limitSentence(for: error)
-        }
-        guard let sentence, alreadySpoken.insert(sentence).inserted else { return nil }
+    static func accountNoticeToSpeak(for error: Error, isGuestWithoutEmail: Bool = false, alreadySpoken: inout Set<String>) -> String? {
+        guard let sentence = accountNotice(for: error, isGuestWithoutEmail: isGuestWithoutEmail),
+              alreadySpoken.insert(sentence).inserted else { return nil }
         return sentence
+    }
+
+    /// The sentence for an account notice (a 402 limit, or the free service's 503 trouble), every
+    /// time: the caption shows it even when the voice has already said it this session.
+    static func accountNotice(for error: Error, isGuestWithoutEmail: Bool = false) -> String? {
+        if let refusal = refusedQuestion(error), isServiceTrouble(refusal) {
+            return AccountLimitError.serviceTroubleMessage
+        }
+        return limitSentence(for: error, isGuestWithoutEmail: isGuestWithoutEmail)
+    }
+
+    /// A spoken sentence as a caption: the notices are written lowercase for the voice.
+    static func captionText(_ sentence: String) -> String {
+        sentence.prefix(1).uppercased() + sentence.dropFirst()
     }
 
     private static func isServiceTrouble(_ refusal: BackendHTTPError) -> Bool {

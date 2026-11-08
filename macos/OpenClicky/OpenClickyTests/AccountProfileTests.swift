@@ -132,6 +132,23 @@ struct AccountProfileTests {
         #expect(!CompanionManager.isAccountNotice(claudeError(500, #"{"error":"daily_limit"}"#)))
     }
 
+    @MainActor @Test func anEmailLessGuestWhoseTrialEndedIsToldToAddAnEmail() {
+        let confirm = BackendHTTPError(service: .answers, status: 402, body: Data(#"{"error":"confirm_email"}"#.utf8))
+        let daily = BackendHTTPError(service: .answers, status: 402, body: Data(#"{"error":"daily_limit"}"#.utf8))
+        // No email was ever given, so there is no code to type: say how to keep going instead.
+        #expect(CompanionManager.accountNotice(for: confirm, isGuestWithoutEmail: true) == AccountLimitError.guestTrialEndedMessage)
+        #expect(CompanionManager.accountNotice(for: confirm, isGuestWithoutEmail: false) == AccountLimitError.confirmEmail.message)
+        #expect(CompanionManager.accountNotice(for: daily, isGuestWithoutEmail: true) == AccountLimitError.dailyLimit.message)
+        #expect(CompanionManager.isGuestTrialEnded(confirm, isGuestWithoutEmail: true))
+        #expect(!CompanionManager.isGuestTrialEnded(confirm, isGuestWithoutEmail: false))
+        #expect(!CompanionManager.isGuestTrialEnded(daily, isGuestWithoutEmail: true))
+        // Spoken once a session; the caption has the same sentence every time.
+        var spoken: Set<String> = []
+        #expect(CompanionManager.accountNoticeToSpeak(for: confirm, isGuestWithoutEmail: true, alreadySpoken: &spoken) == AccountLimitError.guestTrialEndedMessage)
+        #expect(CompanionManager.accountNoticeToSpeak(for: confirm, isGuestWithoutEmail: true, alreadySpoken: &spoken) == nil)
+        #expect(CompanionManager.captionText(AccountLimitError.guestTrialEndedMessage).hasPrefix("Your free trial has ended."))
+    }
+
     @MainActor @Test func polishSaysTheFreeServiceIsHavingTrouble() {
         #expect(AccountPolishError.unavailable(503).errorDescription == AccountLimitError.serviceTroubleMessage)
         #expect(AccountPolishError.unavailable(500).errorDescription == "couldn't reach openclicky right now.")

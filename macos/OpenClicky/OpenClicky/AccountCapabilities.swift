@@ -75,6 +75,14 @@ enum AccountLimitError: String, Equatable {
         }
     }
 
+    /// The sentence for this refusal to someone signed in as an email-less guest: `confirm_email`
+    /// then means the guest's free days or allowance are over, and there is no email or code to look for.
+    func message(isGuestWithoutEmail: Bool) -> String {
+        self == .confirmEmail && isGuestWithoutEmail ? Self.guestTrialEndedMessage : message
+    }
+
+    static let guestTrialEndedMessage = "your free trial has ended. add your email in settings, keys and account, to keep going for free."
+
     /// A grant route answered 503 `unavailable`: the ledger itself could not be reached.
     static let serviceTroubleMessage = "openclicky's free service is having trouble, try again in a minute."
 
