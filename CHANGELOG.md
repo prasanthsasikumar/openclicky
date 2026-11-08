@@ -15,7 +15,7 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
-## Unreleased
+## 0.12.0
 
 With thanks to [darkworks](https://github.com/darkworks), who taught the drawing stage everything new below.
 
