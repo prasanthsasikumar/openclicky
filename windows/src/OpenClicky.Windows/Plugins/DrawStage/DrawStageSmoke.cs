@@ -86,6 +86,23 @@ internal static class DrawStageSmoke
         return exitCode;
     }
 
+    /// <summary>The screen with the drawing on it, saved as a PNG: the frame DWM composed (<see cref="MonitorFrameCapture"/>),
+    /// else a BitBlt grab. BitBlt alone tears over the stage now and then (a block shows the desktop behind it).</summary>
+    private static async Task SaveShotAsync(string shotPath, PixelRect screenBounds, ScreenCapture fallback)
+    {
+        var frame = await MonitorFrameCapture.CapturePngAsync(screenBounds);
+        var how = "composed frame";
+        if (frame is null)
+        {
+            var shots = await fallback.CaptureAllScreensAsync(new ScreenCaptureOptions { MaxDimension = 0, Format = ScreenImageFormat.Png, CursorScreenOnly = true });
+            frame = shots.Count > 0 ? shots[0].ImageData : null;
+            how = "BitBlt";
+        }
+        if (frame is null) { Console.WriteLine("smoke: no screen to save"); return; }
+        await File.WriteAllBytesAsync(shotPath, frame);
+        Console.WriteLine($"smoke: screen saved to {shotPath} ({how})");
+    }
+
     private static async Task<int> RunAsync(string? programPath, string? shotPath, DrawStagePace pace)
     {
         FloatingWindowSupport.AllowsScreenCapture = true;
@@ -132,16 +149,7 @@ internal static class DrawStageSmoke
         }
         Console.WriteLine($"smoke: finished drawing in {(DateTime.UtcNow - started).TotalSeconds:0.0} s");
 
-        if (shotPath is not null)
-        {
-            var screenCapture = new ScreenCapture(screens);
-            var shots = await screenCapture.CaptureAllScreensAsync(new ScreenCaptureOptions { MaxDimension = 0, Format = ScreenImageFormat.Png, CursorScreenOnly = true });
-            if (shots.Count > 0)
-            {
-                await File.WriteAllBytesAsync(shotPath, shots[0].ImageData);
-                Console.WriteLine($"smoke: screen saved to {shotPath}");
-            }
-        }
+        if (shotPath is not null) await SaveShotAsync(shotPath, screen.Bounds, new ScreenCapture(screens));
         await Task.Delay(TimeSpan.FromSeconds(1.5));
         stage.Clear("smoke done");
         stage.Surface = null;
@@ -289,15 +297,7 @@ internal static class DrawStageSmoke
                 + (saved.Failure is { } failure ? $", failed: {failure}" : ""));
             if (saved.VideoPath is null) errors++;
         }
-        if (shotPath is not null && drew)
-        {
-            var shots = await screenCapture.CaptureAllScreensAsync(new ScreenCaptureOptions { MaxDimension = 0, Format = ScreenImageFormat.Png, CursorScreenOnly = true });
-            if (shots.Count > 0)
-            {
-                await File.WriteAllBytesAsync(shotPath, shots[0].ImageData);
-                Console.WriteLine($"smoke: screen saved to {shotPath}");
-            }
-        }
+        if (shotPath is not null && drew) await SaveShotAsync(shotPath, capture.DisplayFrame, screenCapture);
         await Task.Delay(TimeSpan.FromSeconds(1.5));
         stage.Clear("smoke done");
         stage.Surface = null;
