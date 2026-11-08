@@ -99,6 +99,18 @@ public static partial class DrawStageLesson
             warmUpConnection: false);
     }
 
+    /// <summary>Things in a cell, and the body, that a "what is …" question names: a drawing of it answers ("what is a
+    /// cell", "what is mitosis", "explain chromosomes").</summary>
+    private static readonly string[] LifeScience =
+    [
+        " cell ", " cells ", " mitosis ", " meiosis ", " cell division ", " chromosome ", " chromosomes ", " chromatid ", " chromatids ",
+        " mitochondria ", " mitochondrion ", " chloroplast ", " chloroplasts ", " nucleus of a cell ", " bacteria ", " bacterium ",
+        " gene ", " genes ", " double helix ", " blood circulation ", " circulatory system ",
+    ];
+
+    /// <summary>The other things those words name: a phone's cell, a spreadsheet's, a battery's.</summary>
+    private static readonly string[] NotLifeScience = [" phone ", " phones ", " cellphone ", " battery ", " batteries ", " tower ", " excel ", " spreadsheet ", " sheet ", " table ", " prison ", " jail ", " solar "];
+
     // MARK: - Which questions
 
     /// <summary>Whether <paramref name="question"/> is best answered with a drawing.</summary>
@@ -131,6 +143,12 @@ public static partial class DrawStageLesson
         if (StartsAny(text, " how does ", " how do ", " how did ", " how is ", " how are ", " how can a ", " how can an ", " why ", " what happens ",
                 " what makes ", " what causes ", " what is inside ", " what's inside ", " what are the parts ")
             && !StartsAny(text, " how do you ", " how do we ", " how is it going ", " how are you ", " why not "))
+        {
+            return true;
+        }
+        // What a part of life is ("what is a cell", "what is mitosis", "explain chromosomes"): a drawing of it answers.
+        if (StartsAny(text, " what is ", " what's ", " what are ", " tell me about ", " explain ", " describe ")
+            && ContainsAny(text, LifeScience) && !ContainsAny(text, NotLifeScience) && !ContainsAny(text, " my ", " our "))
         {
             return true;
         }
@@ -507,6 +525,21 @@ public static partial class DrawStageLesson
         step(2); say("Blood picks up oxygen in the lungs and turns bright red, then the left side of the heart pushes it out through the aorta.")
         b.point('lungs')
         b.point('aorta')
+        ```
+
+        CELL DIVISION (how a cell divides, mitosis and its phases, how we grow or heal)
+        const m = mitosis(x, y, w, h, {pairs: 2})   an animal cell about to divide, in 3D, with its chromosomes in pairs (one from each parent, warm and cool colours, each pair its own length; pairs 1 to 4). It starts in interphase: the DNA loose in the nucleus, two centrosomes beside it.
+          m.next() plays the next phase while your line talks about it: prophase (each chromosome has been copied and coils up as two sister chromatids joined at a centromere, the nucleus breaks down, the centrosomes go to the two ends), metaphase (the chromosomes line up across the middle, held by spindle fibres from both ends), anaphase (the two copies of every chromosome are pulled apart, one to each end, and the cell stretches), telophase (a new nucleus forms round each set, the cell starts to pinch), cytokinesis (it pinches in two: two cells with the same chromosomes)
+          m.to('metaphase') plays every phase up to that one at once   m.phase is where it is   m.point('chromosomes') makes them swell gently while you talk about them   m.label(part, words) tags a part. Its parts: cell membrane, nucleus, chromosomes, centromeres, centrosomes, spindle fibres, new nuclei.
+        Use mitosis() for cell division instead of drawing the phases yourself: one step per phase, naming the phase in your line, reads best.
+        MITOSIS EXAMPLE (three beats of "how does a cell divide?", inside a card c)
+        ```js
+        step(1); say("A cell divides by mitosis. First it copies its DNA, which is loose in the nucleus.")
+        const m = mitosis(c.x + 20, c.y + 60, c.w - 40, c.h - 110, {pairs: 2})
+        step(2); say("In prophase the copies coil up into chromosomes, each two copies joined in the middle.")
+        m.next()
+        step(3); say("In metaphase they line up across the middle, held by spindle fibres from both ends.")
+        m.next()
         ```
         """);
 

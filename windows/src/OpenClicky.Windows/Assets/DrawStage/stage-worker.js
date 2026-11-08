@@ -32,6 +32,8 @@
 //                                           d.transcribe({from, to}), d.label(which, words), d.complement, d.mrna()
 //   circulation(x, y, w, h, {beat, lap})    the heart, lungs and body with blood going round, blue to red →
 //                                           b.point(part), b.label(part, words)
+//   mitosis(x, y, w, h, {pairs})            a cell dividing, phase by phase: m.next() or m.to('anaphase') plays it on →
+//                                           m.phase, m.point(part), m.label(part, words)
 'use strict';
 
 const LIMIT_MARKS = 2000;
@@ -1509,6 +1511,326 @@ function circulation(x, y, w, h, o) {
 // What circulation() hands back when it couldn't draw: calls on it do nothing.
 const noCirculation = () => new Proxy({}, { get: () => () => null });
 api.circulation = circulation;
+
+// Cell division: mitosis(x, y, w, h, {pairs, labels}) builds an animal cell about to divide, in a 3D figure, and
+// m.next() / m.to(phase) play what happens, phase by phase: interphase (the DNA loose in the nucleus) → prophase (each
+// chromosome has been copied and coils up into two sister chromatids joined at a centromere, the nucleus breaks down,
+// the centrosomes go to the poles) → metaphase (the chromosomes line up across the middle, spindle fibres from both
+// poles holding each one) → anaphase (the sisters are pulled apart, one to each pole, and the cell stretches) →
+// telophase (a new nucleus forms round each set, the chromosomes uncoil, the cell starts to pinch) → cytokinesis (it
+// pinches in two: two cells, each with the same chromosomes as the first). Chromosomes come in pairs, one from each
+// parent (warm and cool colours), each pair its own length. Every part is made at the start, the ones that come later
+// hidden; a call plans every moving part's whole move and sends it as one 'paths' mark, so they all start together.
+const MITOSIS_PHASES = ['interphase', 'prophase', 'metaphase', 'anaphase', 'telophase', 'cytokinesis'];
+const MITOSIS_LOOK = {
+  membrane: 'tissue:#F2B8B0', nucleus: 'tissue:#8E6CC4', nucleolus: 'tissue:#5B3F99', centrosome: 'tissue:#2E9E6B',
+  spindle: 'tissue:#8A9AA8', centromere: 'tissue:#33333F',
+};
+const MITOSIS_MUM = ['#D64545', '#E07B39', '#C2185B', '#C9A227'], MITOSIS_DAD = ['#3366CC', '#2E9BB5', '#6A4FC4', '#2E8B57'];
+const MITOSIS_LENGTHS = [1.0, 0.82, 0.66, 0.52];
+// The cell's outline from round to two: two balls a apart each side of the middle, radius r, blended by k (a flip-book:
+// one is shown at a time, the next taking over).
+const MITOSIS_SHAPES = [
+  { a: 0, r: 2.6, k: 0.5 }, { a: 0.4, r: 2.45, k: 1.2 }, { a: 0.75, r: 2.35, k: 1.2 }, { a: 1.05, r: 2.25, k: 1.1 },
+  { a: 1.35, r: 2.1, k: 0.8 }, { a: 1.6, r: 2.0, k: 0.6 }, { a: 1.95, r: 1.95, k: 0.45 }, { a: 2.25, r: 1.92, k: 0.3 },
+  { a: 2.6, r: 1.9, k: 0.15 },
+];
+// The i-th point of a Halton sequence in base b: spread evenly, the same every time.
+function mitosisSpread(i, b) { let f = 1, r = 0; for (let n = i; n > 0; n = Math.floor(n / b)) { f /= b; r += f * (n % b); } return r; }
+
+function mitosis(x, y, w, h, o) {
+  const opts = options(o);
+  if (![x, y, w, h].every(finite) || w < 60 || h < 60) { warn('mitosis() needs x, y, width and height (at least 60 each); skipped'); return noMitosis(); }
+  const pairs = finite(opts.pairs) ? Math.max(1, Math.min(4, Math.round(opts.pairs))) : 2, n = pairs * 2;
+  const turn = finite(opts.turn) ? opts.turn : -22, tilt = finite(opts.tilt) ? opts.tilt : 14;
+  const f = api.figure(x, y, w, h, { tilt, turn, zoom: opts.zoom, ground: false });
+  const handles = new Map();
+  const keep = (name, item) => { if (!handles.has(name)) handles.set(name, []); handles.get(name).push(item); return item; };
+  const deg = r => r.map(v => v * 180 / Math.PI);
+  // A thing that moves: its part and where it is now ({c: centre, r: Euler radians, s: size, 0 hidden}).
+  const thing = (name, kind, params, pose) => keep(name, {
+    handle: f[kind](Object.assign({}, params, { at: pose.c, rot: deg(pose.r), quick: true, hidden: pose.s === 0 || undefined })), pose });
+  const P = (c, r = [0, 0, 0], s = 1) => ({ c, r, s });
+  const POLE = 2.2;
+
+  // The outline, as a flip-book of shapes; the first is shown.
+  const shapes = MITOSIS_SHAPES.map((sh, i) => thing('cell membrane', 'blob', {
+    balls: sh.a ? [[-sh.a, 0, 0, sh.r], [sh.a, 0, 0, sh.r]] : [[0, 0, 0, sh.r]], smooth: sh.k, mat: MITOSIS_LOOK.membrane, opacity: 0.28,
+  }, P([0, 0, 0], [0, 0, 0], i ? 0 : 1)));
+  let shown = 0;
+
+  // The nucleus, and the two that form at the end (hidden till telophase).
+  const nucleus = thing('nucleus', 'sphere', { r: 1.3, mat: MITOSIS_LOOK.nucleus, opacity: 0.4 }, P([0, 0, 0]));
+  const nucleolus = thing('nucleolus', 'sphere', { r: 0.32, mat: MITOSIS_LOOK.nucleolus }, P([0.45, 0.35, -0.55]));
+  const daughters = [-1, 1].map(side => ({
+    side,
+    nucleus: thing('new nuclei', 'sphere', { r: 0.95, mat: MITOSIS_LOOK.nucleus, opacity: 0.4 }, P([side * 1.9, 0, 0], [0, 0, 0], 0)),
+    nucleolus: thing('nucleolus', 'sphere', { r: 0.24, mat: MITOSIS_LOOK.nucleolus }, P([side * 1.9 + 0.3, 0.3, -0.45], [0, 0, 0], 0)),
+  }));
+
+  // Two centrosomes (each two centrioles at right angles), side by side above the nucleus until prophase.
+  const centrosomes = [-1, 1].map((side, k) => {
+    const at = [k ? 0.6 : 0.05, 1.8, -0.4];
+    return { side, at, parts: [
+      thing('centrosomes', 'cyl', { r: 0.07, h: 0.3, mat: MITOSIS_LOOK.centrosome }, P(at)),
+      thing('centrosomes', 'cyl', { r: 0.07, h: 0.3, mat: MITOSIS_LOOK.centrosome }, P(v3add(at, [0.14, 0.12, 0]), [0, 0, Math.PI / 2])),
+    ] };
+  });
+  const OFFSETS = [[0, 0, 0], [0.14, 0.12, 0]];
+
+  // Chromosomes: pair q, from mum (h 0) or dad (h 1). Each is two sister chromatids (b hidden until it's copied in
+  // prophase) and a centromere bead. Where each sits in each phase is worked out here, once.
+  const ring = Math.max(0.85, (2 * MITOSIS_LENGTHS.slice(0, pairs).reduce((s, l) => s + l, 0)) / (2 * Math.PI) * 1.25);
+  // The metaphase plate: where each chromosome lies across the middle (x = 0), its centre (y, z) and its tilt, clear of
+  // the others both in the plate and as the figure is first seen (the plate nearly edge on), so none hides another.
+  // Kept as far apart as there is room for. The view as figure3d.js frames it: toward the camera, then right and up.
+  const [tu, ti] = [turn * Math.PI / 180, tilt * Math.PI / 180];
+  const eye = [Math.sin(tu) * Math.cos(ti), Math.sin(ti), Math.cos(tu) * Math.cos(ti)];
+  const right = v3unit([eye[2], 0, -eye[0]]), up = [eye[1] * right[2] - eye[2] * right[1], eye[2] * right[0] - eye[0] * right[2], eye[0] * right[1] - eye[1] * right[0]];
+  const seenAt = (yy, zz) => [right[1] * yy + right[2] * zz, up[1] * yy + up[2] * zz];
+  const plateFor = gap => {
+    const spots = [];
+    for (let j = 0; j < n; j++) {
+      const L = MITOSIS_LENGTHS[Math.floor(j / 2)];
+      let spot = null;
+      for (let i = 1; i < 3000 && !spot; i++) {
+        const yy = (mitosisSpread(i + 13 * j, 2) - 0.5) * 3.8, zz = (mitosisSpread(i + 13 * j, 3) - 0.5) * 3.0, tilt = (mitosisSpread(i + 13 * j, 5) - 0.5) * 1.0;
+        const ends = [[yy - (Math.cos(tilt) * L) / 2, zz - (Math.sin(tilt) * L) / 2], [yy + (Math.cos(tilt) * L) / 2, zz + (Math.sin(tilt) * L) / 2]];
+        if (ends.some(([a, b]) => Math.hypot(a, b) > 2.15)) continue;
+        const shown = ends.map(([a, b]) => seenAt(a, b));
+        if (spots.every(s => segmentGap(ends, s.ends) > 0.36 && segmentGap(shown, s.shown) > gap)) spot = { y: yy, z: zz, tilt, ends, shown };
+      }
+      if (!spot) return null;
+      spots.push(spot);
+    }
+    return spots;
+  };
+  const plate = plateFor(0.8) || plateFor(0.65) || plateFor(0.5) || plateFor(0.38) || plateFor(0.26) || plateFor(0)
+    || Array.from({ length: n }, (_, j) => ({ y: (j - (n - 1) / 2) * 0.45, z: 0, tilt: 0 }));
+  const chromosomes = [];
+  for (let j = 0; j < n; j++) {
+    const q = Math.floor(j / 2), L = MITOSIS_LENGTHS[q], color = (j % 2 ? MITOSIS_DAD : MITOSIS_MUM)[q];
+    // Interphase: loose and thin, anywhere in the nucleus.
+    const loose = [(mitosisSpread(j + 1, 2) - 0.5) * 1.1, (mitosisSpread(j + 1, 3) - 0.5) * 1.1, (mitosisSpread(j + 1, 5) - 0.5) * 0.7];
+    const looseTurn = [mitosisSpread(j + 3, 3) * Math.PI, 0, mitosisSpread(j + 3, 2) * Math.PI * 2];
+    // Prophase: coiled up round a ring where the nucleus was, lying along it.
+    const phi = (2 * Math.PI * j) / n + 0.3, theta = phi + Math.PI / 2 + (mitosisSpread(j + 5, 2) - 0.5) * 0.6;
+    const pro = { c: [Math.cos(phi) * ring, Math.sin(phi) * ring, j % 2 ? 0.25 : -0.25], r: [0, 0, theta], side: [Math.cos(theta), Math.sin(theta), 0] };
+    const spot = plate[j];
+    const chromatid = (s, pose) => thing('chromosomes', 'capsule', { r: 0.12, h: L, mat: 'tissue:' + color }, pose);
+    const a = chromatid(1, P(loose, looseTurn, 0.5)), b = chromatid(2, P(loose, looseTurn, 0));
+    const bead = thing('centromeres', 'sphere', { r: 0.14, mat: MITOSIS_LOOK.centromere }, P(pro.c, [0, 0, 0], 0));
+    chromosomes.push({ j, q, L, a, b, bead, pro, meta: { c: [0, spot.y, spot.z], r: [spot.tilt, 0, 0] } });
+  }
+  // How far apart two flat segments are (0 when they cross).
+  function segmentGap(s1, s2) {
+    const pd = (p, a, b) => { const d = [b[0] - a[0], b[1] - a[1]], l = d[0] ** 2 + d[1] ** 2 || 1;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / l)); return Math.hypot(p[0] - a[0] - t * d[0], p[1] - a[1] - t * d[1]); };
+    const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const [p1, p2] = s1, [p3, p4] = s2;
+    if (cross(p1, p2, p3) * cross(p1, p2, p4) < 0 && cross(p3, p4, p1) * cross(p3, p4, p2) < 0) return 0;
+    return Math.min(pd(p1, p3, p4), pd(p2, p3, p4), pd(p3, p1, p2), pd(p4, p1, p2));
+  }
+
+  // Where a chromatid's spindle fibre holds it: its middle while it lies across, its leading end once it is pulled
+  // round to point at its pole (its pose's turn about z: 0 across, ±π/2 along the spindle).
+  const along = r => [-Math.sin(r[2]), Math.cos(r[2]) * Math.cos(r[0]), Math.cos(r[2]) * Math.sin(r[0])];
+  const holdPoint = (pose, L) => v3add(pose.c, v3mul(along(pose.r), (L / 2) * Math.abs(Math.sin(pose.r[2]))));
+  const poleOf = side => [side * POLE, 0, 0];
+  // Fibres: one to each chromatid from its pole (a to the left, b to the right), and a few from pole to pole.
+  const sisterAt = (ch, side, pose) => v3add(pose.c, v3mul(side < 0 ? [-1, 0, 0] : [1, 0, 0], 0.12));
+  const fibres = [];
+  for (const ch of chromosomes) {
+    for (const side of [-1, 1]) {
+      const metaHold = sisterAt(ch, side, ch.meta), proHold = v3add(ch.pro.c, v3mul(ch.pro.side, side * 0.12));
+      const longest = Math.max(v3len(v3sub(metaHold, poleOf(side))), v3len(v3sub(proHold, poleOf(side))));
+      fibres.push({ ch, side, longest, item: thing('spindle fibres', 'cyl', { r: 0.035, h: longest, mat: MITOSIS_LOOK.spindle }, P(poleOf(side), [0, 0, 0], 0)) });
+    }
+  }
+  const polar = [];
+  for (let k = 0; k < 4; k++) {
+    const side = k % 2 ? 1 : -1, end = [-side * 0.4, (k < 2 ? 1 : -1) * 0.9, (k % 3 ? 0.5 : -0.5)];
+    const d = v3sub(end, poleOf(side)), longest = v3len(d);
+    polar.push({ side, end, longest, item: thing('spindle fibres', 'cyl', { r: 0.03, h: longest, mat: MITOSIS_LOOK.spindle }, P(poleOf(side), [0, 0, 0], 0)) });
+  }
+  const fibrePose = (from, to, longest, reach = 1) => {
+    const d = v3sub(to, from), len = v3len(d) * reach;
+    return { c: v3add(from, v3mul(v3unit(d), len / 2)), r: eulerFromY(d), s: len > 1e-3 ? len / longest : 0 };
+  };
+
+  // ---- planning a call's moves: keys [[seconds from the call's start, pose], …] per thing, eased between.
+  const ease = k => k * k * (3 - 2 * k);
+  const turnTo = (p, q, k) => p + Math.atan2(Math.sin(q - p), Math.cos(q - p)) * k;
+  const mix = (a, b, k) => ({ c: v3lerp(a.c, b.c, k), r: a.r.map((v, i) => turnTo(v, b.r[i], k)), s: a.s + (b.s - a.s) * k });
+  function poseAt(keys, t) {
+    if (t <= keys[0][0]) return keys[0][1];
+    for (let j = 0; j < keys.length - 1; j++) {
+      const [t0, a] = keys[j], [t1, b] = keys[j + 1];
+      if (t <= t1) return mix(a, b, ease(Math.min(1, Math.max(0, (t - t0) / Math.max(1e-6, t1 - t0)))));
+    }
+    return keys[keys.length - 1][1];
+  }
+  let plan = null, clock = 0;
+  const keysOf = item => { if (!plan.has(item)) plan.set(item, [[0, item.pose]]); return plan.get(item); };
+  // Arrive at a pose (any of c, r, s; the rest as it was) by t seconds into this phase.
+  const to = (item, t, pose = {}) => {
+    const keys = keysOf(item), last = keys[keys.length - 1][1];
+    keys.push([clock + t, { c: pose.c || last.c, r: pose.r || last.r, s: pose.s === undefined ? last.s : pose.s }]);
+  };
+  const now = (item, t) => (plan.has(item) ? poseAt(plan.get(item), clock + t) : item.pose);
+  // Flip the outline to shape i at t.
+  const outline = (i, t) => { to(shapes[shown], t); to(shapes[shown], t + 0.06, { s: 0 }); to(shapes[i], t, { s: 0 }); to(shapes[i], t + 0.06, { s: 1 }); shown = i; };
+  // Fibres follow the chromatids they hold, sampled every tenth of a second: reach grows 0 → 1 over [from, till].
+  const follow = (seconds, reach = () => 1) => {
+    for (let t = 0; t <= seconds + 1e-6; t += 0.1) {
+      for (const fb of fibres) {
+        const chromatid = fb.side < 0 ? fb.ch.a : fb.ch.b;
+        to(fb.item, t, fibrePose(poleOf(fb.side), holdPoint(now(chromatid, t), fb.ch.L), fb.longest, reach(t)));
+      }
+    }
+  };
+
+  const PHASES = {
+    prophase() {
+      for (const ch of chromosomes) {
+        const at = ch.a.pose; // the copy appears on the original, then they part a little as they coil up
+        to(ch.b, 0.3, { c: at.c, r: at.r, s: 0 }); to(ch.b, 0.9, { s: 0.5 });
+        to(ch.a, 0.9);
+        to(ch.a, 2.2, { c: v3add(ch.pro.c, v3mul(ch.pro.side, -0.12)), r: ch.pro.r, s: 1 });
+        to(ch.b, 2.2, { c: v3add(ch.pro.c, v3mul(ch.pro.side, 0.12)), r: ch.pro.r, s: 1 });
+        to(ch.bead, 1.7, { c: ch.pro.c, s: 0 }); to(ch.bead, 2.3, { s: 1 });
+      }
+      to(nucleus, 1.4); to(nucleus, 2.7, { s: 0 });
+      to(nucleolus, 1.0); to(nucleolus, 2.0, { s: 0 });
+      for (const cs of centrosomes) cs.parts.forEach((part, k) => { to(part, 0.8); to(part, 3.0, { c: v3add(poleOf(cs.side), OFFSETS[k]) }); });
+      return 3.1;
+    },
+    metaphase() {
+      for (const ch of chromosomes) {
+        for (const [part, side] of [[ch.a, -1], [ch.b, 1]]) { to(part, 0.5); to(part, 2.6, { c: sisterAt(ch, side, ch.meta), r: ch.meta.r }); }
+        to(ch.bead, 0.5); to(ch.bead, 2.6, { c: ch.meta.c });
+      }
+      follow(3.0, t => ease(Math.min(1, Math.max(0, (t - 0.1) / 1.0))));
+      for (const p of polar) { to(p.item, 0.3, fibrePose(poleOf(p.side), p.end, p.longest, 0)); to(p.item, 1.4, fibrePose(poleOf(p.side), p.end, p.longest)); }
+      return 3.0;
+    },
+    anaphase() {
+      for (const ch of chromosomes) {
+        for (const [part, side] of [[ch.a, -1], [ch.b, 1]]) {
+          const tilt = ch.meta.r[0];
+          to(part, 0.3);
+          to(part, 2.6, { c: [side * (1.5 - ch.L / 2), ch.meta.c[1] * 0.7, ch.meta.c[2] * 0.7], r: [tilt, 0, side < 0 ? Math.PI / 2 : -Math.PI / 2] });
+        }
+        to(ch.bead, 0.2); to(ch.bead, 0.5, { s: 0 });
+      }
+      follow(2.8);
+      outline(1, 0.9); outline(2, 1.6); outline(3, 2.3);
+      return 2.8;
+    },
+    telophase() {
+      // The fibres let go and shrink back into their poles.
+      for (let t = 0; t <= 0.8 + 1e-6; t += 0.1) {
+        const reach = 1 - ease(t / 0.8);
+        for (const fb of fibres) to(fb.item, t, fibrePose(poleOf(fb.side), holdPoint(now(fb.side < 0 ? fb.ch.a : fb.ch.b, 0), fb.ch.L), fb.longest, reach));
+        for (const p of polar) to(p.item, t, fibrePose(poleOf(p.side), p.end, p.longest, reach));
+      }
+      for (const ch of chromosomes) {
+        for (const [part, side, k] of [[ch.a, -1, ch.j * 2], [ch.b, 1, ch.j * 2 + 1]]) {
+          const off = [(mitosisSpread(k + 7, 2) - 0.5) * 0.7, (mitosisSpread(k + 7, 3) - 0.5) * 0.8, (mitosisSpread(k + 7, 5) - 0.5) * 0.6];
+          to(part, 0.4);
+          to(part, 2.4, { c: v3add([side * 1.9, 0, 0], off), r: [mitosisSpread(k + 2, 3) * Math.PI, 0, mitosisSpread(k + 2, 2) * Math.PI * 2], s: 0.5 });
+        }
+      }
+      for (const d of daughters) {
+        to(d.nucleus, 1.1); to(d.nucleus, 2.6, { s: 1 });
+        to(d.nucleolus, 1.6); to(d.nucleolus, 2.8, { s: 1 });
+      }
+      for (const cs of centrosomes) cs.parts.forEach((part, k) => { to(part, 0.6); to(part, 2.6, { c: v3add([cs.side * 1.9, 1.3, -0.3], OFFSETS[k]) }); });
+      outline(4, 1.2); outline(5, 2.4);
+      return 3.0;
+    },
+    cytokinesis() {
+      // The two halves move apart as the middle pinches shut.
+      const shift = (item, side) => { to(item, 0.3); to(item, 2.5, { c: v3add(keysOf(item)[keysOf(item).length - 1][1].c, [side * 1.0, 0, 0]) }); };
+      for (const ch of chromosomes) { shift(ch.a, -1); shift(ch.b, 1); }
+      for (const d of daughters) { shift(d.nucleus, d.side); shift(d.nucleolus, d.side); }
+      for (const cs of centrosomes) cs.parts.forEach(part => shift(part, cs.side));
+      outline(6, 0.7); outline(7, 1.4); outline(8, 2.1);
+      return 2.8;
+    },
+  };
+
+  // Labels: each the first time its part is there; a label goes when its part does (the nucleus in prophase).
+  const tagged = new Set();
+  const NAMES = { membrane: 'cell membrane', cell: 'cell membrane', 'cell membrane': 'cell membrane', nucleus: 'nucleus', nuclei: 'new nuclei',
+    'new nucleus': 'new nuclei', 'new nuclei': 'new nuclei', chromosome: 'chromosomes', chromosomes: 'chromosomes', chromatid: 'chromosomes',
+    chromatids: 'chromosomes', 'sister chromatids': 'chromosomes', dna: 'chromosomes', centromere: 'centromeres', centromeres: 'centromeres',
+    centrosome: 'centrosomes', centrosomes: 'centrosomes', centriole: 'centrosomes', centrioles: 'centrosomes', spindle: 'spindle fibres',
+    'spindle fibres': 'spindle fibres', 'spindle fibers': 'spindle fibres', fibres: 'spindle fibres', fibers: 'spindle fibres', nucleolus: 'nucleolus' };
+  const nameOf = which => NAMES[String(which).trim().toLowerCase()] || null;
+  const tagOn = (item, words, o2) => item.handle.label(String(words), options(o2));
+  const autoTag = (key, item, words, at) => {
+    if (opts.labels === false || tagged.has(key)) return;
+    tagged.add(key);
+    tagOn(item, words, at ? { at } : {});
+  };
+  const firstOf = name => (handles.get(name) || [])[0];
+  autoTag('membrane', shapes[0], 'cell membrane', [1.7, -1.9, 0.4]);
+  autoTag('nucleus', nucleus, 'nucleus', [0.9, -0.9, 0.2]);
+  autoTag('dna', chromosomes[0].a, 'DNA (chromosomes)');
+  autoTag('centrosomes', centrosomes[0].parts[0], 'centrosomes');
+  const PHASE_TAGS = {
+    // On the beads, so they go when the copies part in anaphase.
+    prophase: () => { autoTag('sisters', chromosomes[0].bead, 'two copies, joined'); autoTag('centromere', chromosomes[n - 1].bead, 'centromere'); },
+    metaphase: () => autoTag('spindle', fibres[fibres.length - 1].item, 'spindle fibres'),
+    telophase: () => autoTag('new nuclei', daughters[1].nucleus, 'new nucleus', [0.6, -0.7, 0.2]),
+    cytokinesis: () => autoTag('two cells', shapes[8], 'two new cells', [3.9, -1.3, 0.3]),
+  };
+
+  let phase = 'interphase';
+  // Plays every phase after the current one up to `target`, back to back, as one mark.
+  function playTo(target) {
+    const goal = MITOSIS_PHASES.indexOf(target);
+    let at = MITOSIS_PHASES.indexOf(phase);
+    if (goal <= at) { warn(goal < 0 ? 'mitosis: no phase called ' + target + ' (' + MITOSIS_PHASES.join(', ') + ')' : 'mitosis: already at ' + phase); return handle; }
+    plan = new Map();
+    clock = 0;
+    const tags = [];
+    while (at < goal) {
+      at++;
+      clock += PHASES[MITOSIS_PHASES[at]]();
+      if (PHASE_TAGS[MITOSIS_PHASES[at]]) tags.push(PHASE_TAGS[MITOSIS_PHASES[at]]);
+    }
+    const total = clock + 0.05, FRAMES = Math.max(24, Math.min(240, Math.round(total * 24)));
+    const round = v => Math.round(v * 1000) / 1000;
+    const list = [];
+    for (const [item, keys] of plan) {
+      const frames = Array.from({ length: FRAMES }, (_, k) => { const p = poseAt(keys, (k / (FRAMES - 1)) * total); return [...p.c, ...p.r, p.s].map(round); });
+      list.push({ part: item.handle.id, frames });
+      item.pose = keys[keys.length - 1][1];
+    }
+    push({ do: 'motion3d', fig: f.id, kind: 'paths', params: { list, period: total, once: true } });
+    plan = null;
+    phase = MITOSIS_PHASES[goal];
+    handle.phase = phase;
+    tags.forEach(tag => tag());
+    return handle;
+  }
+  const handle = {
+    figure: f, phase, phases: MITOSIS_PHASES.slice(), pairs,
+    next: () => (phase === 'cytokinesis' ? (warn('mitosis: it has already divided'), handle) : playTo(MITOSIS_PHASES[MITOSIS_PHASES.indexOf(phase) + 1])),
+    to: target => playTo(String(target).trim().toLowerCase()),
+    label: (which, words, o2) => { const name = nameOf(which); return name && firstOf(name) ? tagOn(firstOf(name), words, o2) : (warn('mitosis label: no ' + which), null); },
+    // Points a part out while it is talked about: every piece of it swells gently.
+    point: which => { const name = nameOf(which); if (!name || !handles.has(name)) { warn('mitosis point: no ' + which); return null; } handles.get(name).forEach(t => t.handle.pulse({ amount: 0.1, period: 1.2 })); return handle; },
+    parts: [...new Set(Object.values(NAMES))],
+    view: o2 => f.view(o2),
+  };
+  return handle;
+}
+// What mitosis() hands back when it couldn't draw: calls on it do nothing.
+const noMitosis = () => new Proxy({}, { get: () => () => null });
+api.mitosis = mitosis;
 
 // const x = ..., let x = ..., var x = ... (each name of `const a = 1, b = 2`) and function f() {...} at the start of a
 // statement are kept in `scope`, so later statements see them; everything else runs as written.
