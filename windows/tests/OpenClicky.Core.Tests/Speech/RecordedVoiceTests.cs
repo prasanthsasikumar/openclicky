@@ -1,6 +1,8 @@
 // RecordedVoice: the fixed sentences find their recordings, every line ships an mp3 in the Windows
 // assets, and a line reports its end exactly once whether it played out, was cut off or stopped.
 
+using OpenClicky.Core.Answers;
+using OpenClicky.Core.Providers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Shortcuts;
@@ -33,6 +35,35 @@ public class RecordedVoiceTests
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "OpenClicky.Windows.sln"))) directory = directory.Parent;
         Assert.NotNull(directory);
         return Path.Combine(directory!.FullName, "src", "OpenClicky.Windows", "Assets", "RecordedVoice");
+    }
+
+    /// <summary>The recorded notices are found by their exact sentence, so a sentence changed in the code
+    /// would quietly go back to this PC's voice. This fails instead: record the line again with
+    /// macos/OpenClicky/scripts/record-voice-lines.py and update RecordedVoice.Notices.</summary>
+    [Fact]
+    public void TheAccountAndKeyNoticesHaveTheirRecordings()
+    {
+        var expected = new (string Sentence, RecordedVoice.Line Line)[]
+        {
+            (ProviderRouter.NeedsAnthropicKeySentence, RecordedVoice.Line.NoticeNeedsKeyAnswer),
+            (ProviderRouter.NeedsOpenAIKeySentence, RecordedVoice.Line.NoticeNeedsKeyOpenAI),
+            (OpenClickyAuthSession.SpokenSignInExpiredSentence, RecordedVoice.Line.NoticeSignInExpired),
+            (OpenClickyAuthSession.OwnKeyRefusedSentence, RecordedVoice.Line.NoticeOwnKeyRefused),
+            (OpenClickyAuthSession.AskAgainSentence, RecordedVoice.Line.NoticeAskAgain),
+            (OpenClickyAuthSession.UnreachableMessage, RecordedVoice.Line.NoticeUnreachableRetry),
+            (AccountLimitError.PersonalLimit.Message(), RecordedVoice.Line.NoticeMonthAllowanceUsed),
+            (AccountLimitError.DailyLimit.Message(), RecordedVoice.Line.NoticeDayAllowanceUsed),
+            (AccountLimitError.MonthlyBudget.Message(), RecordedVoice.Line.NoticeFreeBudgetUsed),
+            (AccountLimitError.NotOnPlan.Message(), RecordedVoice.Line.NoticeNeedsOwnKey),
+            (AccountLimitError.AccountsFull.Message(), RecordedVoice.Line.NoticeAccountsFull),
+            (AccountLimitError.Blocked.Message(), RecordedVoice.Line.NoticeAccountPaused),
+            (AccountLimitError.ConfirmEmail.Message(), RecordedVoice.Line.NoticeConfirmEmail),
+            (AccountLimitError.DeviceLimit.Message(), RecordedVoice.Line.NoticeDeviceLimit),
+            (AccountLimitErrors.ServiceTroubleMessage, RecordedVoice.Line.NoticeServiceTrouble),
+            (BillingSummary.SwitchedOffMessage, RecordedVoice.Line.NoticeSwitchedOff),
+            (AskLaneFailures.EmptyAnswerSentence, RecordedVoice.Line.NoticeEmptyAnswer),
+        };
+        foreach (var (sentence, line) in expected) Assert.Equal(line, RecordedVoice.LineFor(sentence));
     }
 
     [Fact]
