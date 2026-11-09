@@ -52,6 +52,7 @@ internal sealed class FakeProviderFactory : IDictationProviderFactory
     public IBuddyTranscriptionProvider MakeSarvam(Func<DictationLanguage> language) => Make("sarvam");
     public IBuddyTranscriptionProvider MakeOpenClicky(Func<string?> bareLanguageCode) => Make("openclicky");
     public IBuddyTranscriptionProvider MakeAssemblyAI(Func<string?> bareLanguageCode) => Make("assemblyai");
+    public IBuddyTranscriptionProvider MakeServer(Func<string?> bareLanguageCode) => Make("server");
 }
 
 /// <summary>

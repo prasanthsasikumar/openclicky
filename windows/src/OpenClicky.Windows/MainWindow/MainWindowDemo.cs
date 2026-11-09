@@ -42,10 +42,19 @@ public static class MainWindowDemo
         // The tour starts on its own the first time General opens; the demo starts it only when asked.
         preferences.Set(SettingsTourController.HasPlayedKey, !args.Contains("--tour"));
         var settings = new DictationSettings(preferences);
+        // --speech-server <address>: Your models shows a speech server turned on, hearing and speaking.
+        var speechServerIndex = Array.IndexOf(args, "--speech-server");
+        var speechServer = speechServerIndex >= 0 && speechServerIndex + 1 < args.Length ? args[speechServerIndex + 1] : null;
         OpenClickyConfiguration.Update(shell =>
         {
             shell.OpenaiApiKey = "sk-demo-not-a-real-key-7f3a";
             shell.ElevenLabsApiKey = "sk_demo_voice_19c2";
+            if (speechServer is null) return;
+            shell.SpeechServerUrl = speechServer;
+            shell.SpeechServerHearingModel = "gemma4:e2b-it-qat";
+            shell.SpeechServerVoiceModel = "speaches-ai/Kokoro-82M-v1.0-ONNX";
+            shell.SpeechServerVoice = "af_heart";
+            shell.SpeechVoice = "server";
         });
         var spaceStore = new DictationSpaceStore(OpenClickyPaths.DictationDirectory);
         SeedSpace(spaceStore);

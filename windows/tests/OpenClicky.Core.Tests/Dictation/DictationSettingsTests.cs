@@ -198,7 +198,7 @@ public sealed class DictationSettingsTests
     [Fact]
     public void TheEnginesKeepTheMacsRawValues()
     {
-        Assert.Equal(["moonshine", "parakeet", "offline", "sarvam", "openclicky", "assemblyai"], DictationEngineChoices.AllCases.Select(engine => engine.Id()));
+        Assert.Equal(["moonshine", "parakeet", "offline", "sarvam", "openclicky", "assemblyai", "server"], DictationEngineChoices.AllCases.Select(engine => engine.Id()));
         Assert.Equal("Moonshine, built in", DictationEngineChoice.Moonshine.SettingsTitle());
         Assert.Equal("this pc", DictationEngineChoice.Moonshine.ListenerName());
         Assert.Equal(DictationEngineChoice.OpenClicky, DictationEngineChoices.FromRawValue("openclicky"));
@@ -289,6 +289,7 @@ public sealed class DictationSettingsTests
         public Func<DictationLanguage>? SarvamLanguage { get; private set; }
         public Func<string?>? OpenClickyLanguage { get; private set; }
         public Func<string?>? AssemblyAILanguage { get; private set; }
+        public Func<string?>? ServerLanguage { get; private set; }
 
         public IBuddyTranscriptionProvider MakeOffline(string? preferredLocale) { OfflineLocale = preferredLocale; return new NamedTranscriptionProvider("offline"); }
         public IBuddyTranscriptionProvider MakeMoonshine(Func<string?> bareLanguageCode) { MoonshineLanguage = bareLanguageCode; return new NamedTranscriptionProvider("moonshine"); }
@@ -296,6 +297,7 @@ public sealed class DictationSettingsTests
         public IBuddyTranscriptionProvider MakeSarvam(Func<DictationLanguage> language) { SarvamLanguage = language; return new NamedTranscriptionProvider("sarvam"); }
         public IBuddyTranscriptionProvider MakeOpenClicky(Func<string?> bareLanguageCode) { OpenClickyLanguage = bareLanguageCode; return new NamedTranscriptionProvider("openclicky"); }
         public IBuddyTranscriptionProvider MakeAssemblyAI(Func<string?> bareLanguageCode) { AssemblyAILanguage = bareLanguageCode; return new NamedTranscriptionProvider("assemblyai"); }
+        public IBuddyTranscriptionProvider MakeServer(Func<string?> bareLanguageCode) { ServerLanguage = bareLanguageCode; return new NamedTranscriptionProvider("server"); }
     }
 
     [Fact]
@@ -312,6 +314,7 @@ public sealed class DictationSettingsTests
         Assert.Equal("hi", factory.ParakeetLanguage!());
         Assert.Equal("hi", factory.OpenClickyLanguage!());
         Assert.Equal("hi", factory.AssemblyAILanguage!());
+        Assert.Equal("hi", factory.ServerLanguage!());
         Assert.Equal("hi-IN", factory.SarvamLanguage!().Code);
 
         // Read when a take starts: auto sends none, so the model detects it.

@@ -27,6 +27,8 @@ public interface IDictationProviderFactory
     IBuddyTranscriptionProvider MakeOpenClicky(Func<string?> bareLanguageCode);
     /// <summary>AssemblyAI streaming; the bare language read when a take starts, null = detect.</summary>
     IBuddyTranscriptionProvider MakeAssemblyAI(Func<string?> bareLanguageCode);
+    /// <summary>The person's own speech server (SpeechServer); the bare language read when a take starts, null = detect.</summary>
+    IBuddyTranscriptionProvider MakeServer(Func<string?> bareLanguageCode);
 }
 
 /// <summary>Builds the transcription provider the settings ask for, and says why one cannot be used.</summary>
@@ -41,6 +43,8 @@ public static class DictationEngineResolver
             DictationEngineChoice.Sarvam => factory.MakeSarvam(() => settings.Language),
             // The styles page's language, read when a take starts; auto sends none so the model detects it.
             DictationEngineChoice.OpenClicky => factory.MakeOpenClicky(() => settings.Language.BareCode),
+            // The person's own server: nothing of OpenClicky's in between.
+            DictationEngineChoice.Server => factory.MakeServer(() => settings.Language.BareCode),
             _ => factory.MakeAssemblyAI(() => settings.Language.BareCode),
         };
 
@@ -70,6 +74,8 @@ public static class DictationEngineResolver
                     bareLanguageCode is null ? DictationSettings.StoredLanguage().BareCode : bareLanguageCode());
             case DictationEngineChoice.Sarvam:
                 return SarvamUnavailableReason(sarvamKey);
+            case DictationEngineChoice.Server:
+                return SpeechServer.Hears(OpenClickyConfiguration.Settings) ? null : SpeechServer.NeedsServerSentence;
             default:
                 if (!isConfigured) return "needs an openclicky account or your openai key";
                 if (kind == AccountKind.Account) return "needs your own key";
