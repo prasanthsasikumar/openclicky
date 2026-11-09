@@ -213,4 +213,35 @@ public class DrawStageTests
         surface.PageSays("""{"type":"figurePart","text":""}""");
         Assert.Equal(["left side: to the body"], clicked);
     }
+
+    [Fact]
+    public void ARememberedDrawingOffersAQuizWhenSettingsDo()
+    {
+        var (stage, surface) = MakeStage();
+        surface.PageSays("""{"type":"ready"}""");
+        stage.Begin(Screen, 1, 1280, 720);
+        var drawing = new DrawnAnswer(["how does a heart work?"], "step(1); say('a')", Screen, 1, 1280, 720, []);
+        stage.OffersQuiz = () => true;
+        stage.Remember(drawing);
+        Assert.True((bool)JsonNode.Parse(surface.Posted.Last())!["quiz"]!);
+        stage.OffersQuiz = () => false;
+        stage.Remember(drawing);
+        Assert.False((bool)JsonNode.Parse(surface.Posted.Last())!["quiz"]!);
+        Assert.Equal("remembered", (string)JsonNode.Parse(surface.Posted.Last())!["type"]!);
+    }
+
+    [Fact]
+    public void TheQuizButtonAndItsLinesReachTheApp()
+    {
+        var (stage, surface) = MakeStage();
+        var asked = 0;
+        var said = new List<string>();
+        stage.QuizRequested += () => asked++;
+        stage.SayRequested += said.Add;
+        surface.PageSays("""{"type":"quiz"}""");
+        surface.PageSays("""{"type":"say","text":"What pumps the blood? The heart, the lungs or the liver?"}""");
+        surface.PageSays("""{"type":"say","text":""}""");
+        Assert.Equal(1, asked);
+        Assert.Equal(["What pumps the blood? The heart, the lungs or the liver?"], said);
+    }
 }

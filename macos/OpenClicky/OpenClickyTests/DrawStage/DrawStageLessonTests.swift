@@ -66,6 +66,7 @@ import Testing
         #expect(DrawStageLesson.mayBeAFollowUp("make the nucleus bigger"))
         #expect(DrawStageLesson.mayBeAFollowUp("slow it down"))
         #expect(DrawStageLesson.mayBeAFollowUp("hide the labels"))
+        #expect(DrawStageLesson.mayBeAFollowUp("quiz me"))
         #expect(!DrawStageLesson.mayBeAFollowUp("open spotify"))
         #expect(!DrawStageLesson.mayBeAFollowUp("thanks"))
         #expect(!DrawStageLesson.mayBeAFollowUp("how do I export this"))

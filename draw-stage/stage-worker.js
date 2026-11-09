@@ -11,6 +11,8 @@
 //                                           (part.change({size, color, opacity, hidden}), part.hide(), part.show()) or a
 //                                           builder's part (cl.part('nucleus')); f.tempo(0.5) slows a figure's motions,
 //                                           f.labels(false) hides its labels
+//   quiz([{q, choices, answer, right, wrong, part}])   a few questions on what was drawn, beside it, answered by
+//                                           tapping a choice; each is read out, then whether it was right, the score last
 //   line(points, o) / curve(points, o)      a pen stroke through [[x, y], ...]; curve() is smooth
 //   arrow(points, o)                        a stroke with a head at its last point
 //   circle(x, y, r, o) / ellipse(x, y, rx, ry, o) / rect(x, y, w, h, o) / poly(points, o)
@@ -79,6 +81,7 @@ const api = {
   // A follow-up's changes to what is already drawn, in place.
   change: (target, o) => changeDrawn(target, options(o)),
   erase: (...targets) => { targets.forEach(target => changeDrawn(target, { hidden: true })); return null; },
+  quiz: (...args) => quiz(...args),
   step: n => { if (finite(n)) currentStep = n; },
   say: words => { says.push({ text: String(words), step: currentStep, at: total }); },
 
@@ -463,8 +466,38 @@ function partGroup(list) {
     show: o => { list.forEach(h => h.show(o)); return group; },
     pulse: o => { list.forEach(h => h.pulse(o)); return group; },
     label: (words, o) => (list[0] ? list[0].label(words, o) : null),
+    ids: list.map(h => h.id),
   };
   return group;
+}
+
+// A quiz on what was drawn: quiz([{q, choices: ['…', '…'], answer: 0 (or the right choice's words), right: 'said when
+// they get it', wrong: 'said when they don't', part: a 3D part or a builder's part it is about}]). The page shows one
+// question at a time beside the drawing with its choices to tap, reads it out, says whether the answer was right (the
+// part it is about swells for a moment), and gives the score at the end. Up to 5 questions, 2 to 4 choices each. The
+// page places it, so a place given first (quiz(x, y, w, [...])) is passed over.
+function quiz(...args) {
+  const questions = args.find(Array.isArray), o = args.find(a => a && typeof a === 'object' && !Array.isArray(a));
+  const idsOf = part => {
+    if (!part) return [];
+    if (Array.isArray(part)) return part.flatMap(idsOf);
+    if (Array.isArray(part.ids)) return part.ids.filter(id => typeof id === 'string');
+    return typeof part.id === 'string' ? [part.id] : [];
+  };
+  const list = [];
+  for (const raw of Array.isArray(questions) ? questions.slice(0, 5) : []) {
+    const q = options(raw);
+    const text = String(q.q || q.question || '').trim();
+    const choices = (Array.isArray(q.choices) ? q.choices : []).map(c => String(c).trim()).filter(Boolean).slice(0, 4);
+    let answer = finite(q.answer) ? Math.round(q.answer) : choices.findIndex(c => c.toLowerCase() === String(q.answer || '').trim().toLowerCase());
+    if (!text || choices.length < 2 || answer < 0 || answer >= choices.length) {
+      warn('quiz(): a question needs q, 2 to 4 choices and its answer (the number of the right choice, from 0, or its words); one was skipped');
+      continue;
+    }
+    list.push({ q: text, choices, answer, right: q.right ? String(q.right) : null, wrong: q.wrong ? String(q.wrong) : null, parts: idsOf(q.part) });
+  }
+  if (!list.length) { warn('quiz() had no questions it could ask; skipped'); return null; }
+  return push({ do: 'quiz', questions: list }, o);
 }
 // What part() hands back for a name it doesn't know: calls on it do nothing.
 const noPart = (who, which) => { warn(who + ': no part ' + JSON.stringify(which)); return new Proxy({}, { get: () => () => null }); };

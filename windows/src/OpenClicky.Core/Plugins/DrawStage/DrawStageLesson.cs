@@ -36,6 +36,15 @@ public enum DrawingDetail
     VeryDetailed,
 }
 
+/// <summary>A quiz on a drawing (Settings → Clicky → Drawings): never, a Quiz me button on it, or asked straight after every
+/// new drawing (for a child, a classroom). Saying "quiz me" while a drawing is up asks for one whatever this is.</summary>
+public enum DrawingQuiz
+{
+    Off,
+    Offer,
+    Always,
+}
+
 public static partial class DrawStageLesson
 {
     /// <summary>On by default while the Teacher plugin is on; off sends teaching questions to the Teacher's board.</summary>
@@ -67,6 +76,32 @@ public static partial class DrawStageLesson
         DrawingDetail.VeryDetailed => "veryDetailed",
         _ => "detailed",
     };
+
+    /// <summary>shell.json's `drawingQuiz` ("off", "offer", "always"); offer when unset.</summary>
+    public static DrawingQuiz QuizFrom(string? raw) => raw switch
+    {
+        "off" => DrawingQuiz.Off,
+        "always" => DrawingQuiz.Always,
+        _ => DrawingQuiz.Offer,
+    };
+
+    public static string RawValue(DrawingQuiz quiz) => quiz switch
+    {
+        DrawingQuiz.Off => "off",
+        DrawingQuiz.Always => "always",
+        _ => "offer",
+    };
+
+    /// <summary>What the Quiz me button, and a quiz after every drawing, ask: answered as a follow-up to the drawing.</summary>
+    public const string QuizQuestion = "Quiz me on this drawing.";
+
+    /// <summary>Whether <paramref name="question"/> asks to be quizzed on the drawing ("quiz me", "test me on this", "ask me
+    /// some questions about it").</summary>
+    public static bool IsQuizRequest(string question)
+    {
+        var text = Words(question);
+        return ContainsAny(text, " quiz ", " quizzes ", " test me ", " test us ", " ask me questions ", " ask me some questions ", " ask me a question ");
+    }
 
     /// <summary>The longest a person's own drawing instructions may be (they ride along with every drawing).</summary>
     public const int LongestInstructions = 2000;
@@ -224,7 +259,7 @@ public static partial class DrawStageLesson
     /// that asks for more of the drawing, another view of it or about a part of it. The model has the last word (NONE).</summary>
     public static bool MayBeAFollowUp(string question)
     {
-        if (WantsADrawing(question)) return true;
+        if (WantsADrawing(question) || IsQuizRequest(question)) return true;
         var text = Words(question);
         if (text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 2 || IsSaveRequest(question)) return false;
         if (ContainsAny(text, " how do i ", " how can i ", " where is ", " where do i ", " click ", " open ", " close ", " minimize ", " press ", " type ")
@@ -439,6 +474,7 @@ public static partial class DrawStageLesson
         Motion, chained on a part: .spin({axis, period}) .stroke({axis, amount, period}) (a piston, a moving print head) .bob({axis, amount, period}) .pulse({amount, period}) (a beating heart) .orbit({center, axis, period}) .move({to, secs}) (once, in its beat).
         Labels: part.label('words', {color}) or f.label(part, 'words', {color}); they are small tags tied to the part by a leader line. f.view({tilt, turn, zoom}) changes the camera in a beat.
         Changing what is drawn (a follow-up that keeps the drawing): part.change({size: 1.5}) (times as big as it is now: 1.3 to 1.6 shows clearly, more can push a part out of what holds it), part.change({color: 'red'}), part.change({opacity: 0.3}), part.hide(), part.show(); f.tempo(0.5) runs every motion in the figure at half speed (2: twice as fast); f.labels(false) hides its labels (on a builder too: cl.labels(false), b.tempo(0.5)). A builder's part by name: cl.part('nucleus'), b.part('aorta'), m.part('chromosomes') (cell, circulation, mitosis, mechanism; molecule's mol.part('O')), changed together. A 2D mark: erase(arrowA) takes it away, change(arrowA, {color: 'red'}) recolours it (keep what line(), arrow(), text()… return in a const to change it later). A new caption where an old one is: erase the old one first, so they don't print over each other.
+        QUIZ (when they ask to be quizzed on the drawing): quiz([{q: 'What does the nucleus hold?', choices: ['DNA', 'water', 'food'], answer: 0, right: 'Yes! The nucleus keeps the DNA safe.', wrong: 'Not quite: the nucleus holds the DNA.', part: cl.part('nucleus')}, …]) shows one question at a time on the drawing, its choices to tap. The app reads each question and its choices out, then your right or wrong line, then the score, so don't say() the questions yourself. 2 or 3 questions on what the drawing showed and said, 3 short choices each; answer is the number of the right choice, from 0; part (optional) is what the question is about, and it swells when they answer. The app puts it beside the drawing, where the screen has room, so it covers none of it.
         Name each part's const after what it is (const liftFan = f.cyl(…)): a click on the part asks about it by that name.
         MAKE IT LOOK REAL: a figure is built from many parts, like a good model kit: usually {{parts}} (bolts, ribs, ports, chips, blades, windows, seams, a lens). Get the proportions right, keep parts touching (nothing floats unless it really does), and use the real materials and colours. Show the inside with cut instead of drawing two separate pictures. Build the body in beat 1 (it may take a dozen parts), then add the moving and inner parts, motion and labels as the voice explains them. Put the figure's parts near the origin, y up, x along its length.
 
@@ -605,6 +641,7 @@ public static partial class DrawStageLesson
             Now they ask: "{{question.Trim()}}"
             {{marked}}
             Decide how to answer:
+            - A quiz ("quiz me", "test me on this"): keep it. Start with keep(), then in step({{lastStep + 1}}) one short line inviting them ("Let's see what you remember!"), then quiz([…]) with 2 or 3 questions on what this drawing showed and said.
             - A change to what is drawn (a part bigger or smaller, another colour, hide or bring back a part, slower or faster, without labels): keep it and change it in place, without drawing it again. Start with keep(), then in step({{lastStep + 1}}) one line saying what changes, and the change: cl.part('nucleus').change({size: 1.5}), heart.change({color: 'red'}), lungs.hide(), f.tempo(0.5), f.labels(false), erase(arrowA).
             - More about this same drawing (explain a part, a closer look at one part, more labels, what happens next, make a part move): keep it. Start your program with keep() and write only the new beats, numbered on from step({{lastStep + 1}}). They run after the program above, so its names (c, f, the parts) are there to use, and everything it drew stays on the screen. Draw in the room the drawing left, or turn the figure with f.view({tilt, turn, zoom}) to show a part.
             - The same thing drawn another way (in 3D, as a cutaway, simpler) or something new a picture answers: draw it afresh, without keep(). Reuse what fits from the program above.

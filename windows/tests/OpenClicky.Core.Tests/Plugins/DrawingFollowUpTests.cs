@@ -33,6 +33,8 @@ public partial class DrawingAnswerTests
     [InlineData("slow it down")]
     [InlineData("hide the labels")]
     [InlineData("remove the lungs")]
+    [InlineData("quiz me")]
+    [InlineData("test me on this")]
     public void QuestionsAboutTheDrawingMayBeFollowUps(string question) => Assert.True(DrawStageLesson.MayBeAFollowUp(question));
 
     [Theory]
@@ -101,6 +103,37 @@ public partial class DrawingAnswerTests
         Assert.Contains("keep()", prompt);
         Assert.Contains("numbered on from step(6)", prompt);
         Assert.Contains($"only the word {DrawStageLesson.NotAFollowUp}", prompt);
+    }
+
+    [Theory]
+    [InlineData("Quiz me on this drawing.", true)]
+    [InlineData("can you quiz me", true)]
+    [InlineData("test me on the heart", true)]
+    [InlineData("ask me some questions about it", true)]
+    [InlineData("what is a quiz show", true)]
+    [InlineData("how does the heart work", false)]
+    [InlineData("is this a test", false)]
+    public void QuizRequestsAreKnown(string question, bool isQuiz) => Assert.Equal(isQuiz, DrawStageLesson.IsQuizRequest(question));
+
+    [Fact]
+    public void TheQuizSettingIsOfferUnlessSet()
+    {
+        Assert.Equal(DrawingQuiz.Offer, DrawStageLesson.QuizFrom(null));
+        Assert.Equal(DrawingQuiz.Offer, DrawStageLesson.QuizFrom("something else"));
+        foreach (var quiz in new[] { DrawingQuiz.Off, DrawingQuiz.Offer, DrawingQuiz.Always })
+            Assert.Equal(quiz, DrawStageLesson.QuizFrom(DrawStageLesson.RawValue(quiz)));
+    }
+
+    [Fact]
+    public void AQuizIsWrittenWithQuizOnTheDrawing()
+    {
+        var prompt = DrawStageLesson.FollowUpPrompt(DrawStageLesson.QuizQuestion, JetEngine);
+        Assert.Contains("- A quiz (\"quiz me\", \"test me on this\"): keep it.", prompt);
+        Assert.Contains("then in step(5) one short line inviting them", prompt);
+        var system = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("QUIZ (when they ask to be quizzed on the drawing): quiz([{q:", prompt + system);
+        Assert.Contains("The app puts it beside the drawing", system);
+        Assert.Contains("so don't say() the questions yourself", system);
     }
 
     [Fact]

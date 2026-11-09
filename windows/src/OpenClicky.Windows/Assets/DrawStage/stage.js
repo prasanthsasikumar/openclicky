@@ -57,6 +57,7 @@
   let markCount = 0, errors = 0, uid = 0;
   const drawn = new Map(); // a 2D mark's number in the program → what was drawn for it (erase / change)
   let remembered = false, recording = false;
+  const quizButton = document.querySelector('#tools [data-act="quiz"]');
 
   const now = () => performance.now() / 1000;
 
@@ -67,6 +68,7 @@
     markCount = 0;
     labels = [];
     drawn.clear();
+    clearQuizzes();
     cards = [];
     strokes = [];
     while (svg.lastChild) svg.removeChild(svg.lastChild);
@@ -326,6 +328,7 @@
     finishedSent = true;
     showCaption(null);
     send({ type: 'finished' });
+    for (const quiz of quizzes) if (quiz.unspoken) speakQuestion(quiz);
     showTools();
   }
 
@@ -525,6 +528,7 @@
       case 'motion3d': return 0.05;
       case 'change3d': case 'tempo3d': case 'labels3d': return 0.15;
       case 'change2d': return 0.4;
+      case 'quiz': return 0.6;
       default: return 0.2;
     }
   }
@@ -583,6 +587,131 @@
         { duration: seconds * 1000, delay: (delay || 0) * 1000, easing: 'cubic-bezier(.35,.2,.55,.95)', fill: 'both' });
     }
     if (m.dashed) pen.animate([{ opacity: 0 }, { opacity: 1 }], { duration: seconds * 1000, delay: (delay || 0) * 1000, fill: 'both' });
+  }
+
+  // ------------------------------------------------------------------ a quiz on the drawing (quiz())
+  // One question at a time beside the drawing, its choices to tap. The app reads each question out (say) once the
+  // drawing has finished speaking, then whether the answer was right; the part it is about swells for a moment; the
+  // score last. The panel sits in the screen's room beside the drawing (placeQuizzes), not on it, and follows it.
+  const quizzes = [];
+  function drawQuiz(m, seconds) {
+    const panel = document.createElement('div');
+    panel.className = 'quiz';
+    document.body.appendChild(panel);
+    panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: Math.max(150, seconds * 1000), fill: 'both' });
+    const quiz = { panel, questions: m.questions, i: 0, score: 0, unspoken: true, gone: false, answered: false, timers: [], at: null };
+    quizzes.push(quiz);
+    showQuestion(quiz);
+    placeQuizzes();
+    if (finishedSent) speakQuestion(quiz);
+  }
+
+  // Each quiz panel goes where there is most room beside the drawing's box: left or right of it, else below or above it,
+  // else over its bottom edge. It only moves when its place has clearly changed (a figure's tags sway the box a little).
+  function placeQuizzes() {
+    if (!quizzes.length) return;
+    const box = contentBounds();
+    if (!box) return;
+    const gap = 14, edge = 12, vw = window.innerWidth, vh = window.innerHeight;
+    const room = { left: box.x - gap - edge, right: vw - box.x - box.w - gap - edge, below: vh - box.y - box.h - gap - edge, above: box.y - gap - edge };
+    for (const quiz of quizzes) {
+      const panel = quiz.panel;
+      let width, x, y;
+      const side = room.right >= room.left ? 'right' : 'left';
+      if (room[side] >= 300) {
+        width = Math.min(520, room[side]);
+        panel.style.width = width + 'px';
+        const h = panel.offsetHeight;
+        x = side === 'right' ? box.x + box.w + gap : box.x - gap - width;
+        y = clamp(box.y + box.h / 2 - h / 2, edge, Math.max(edge, vh - h - edge));
+      } else {
+        width = Math.min(560, Math.max(280, box.w - 2 * gap));
+        panel.style.width = width + 'px';
+        const h = panel.offsetHeight;
+        x = clamp(box.x + box.w / 2 - width / 2, edge, Math.max(edge, vw - width - edge));
+        y = room.below >= h ? box.y + box.h + gap : room.above >= h ? box.y - gap - h : box.y + box.h - h - gap;
+      }
+      if (!quiz.at || Math.abs(quiz.at.x - x) > 12 || Math.abs(quiz.at.y - y) > 12) {
+        quiz.at = { x, y };
+        panel.style.left = Math.round(x) + 'px';
+        panel.style.top = Math.round(y) + 'px';
+      }
+    }
+  }
+
+  const spokenChoices = choices => choices.length > 1 ? choices.slice(0, -1).join(', ') + ' or ' + choices[choices.length - 1] + '?' : choices[0];
+  function speakQuestion(quiz) {
+    if (quiz.gone || quiz.i >= quiz.questions.length) return;
+    quiz.unspoken = false;
+    const q = quiz.questions[quiz.i];
+    send({ type: 'say', text: q.q + ' ' + spokenChoices(q.choices) });
+  }
+
+  function showQuestion(quiz) {
+    const q = quiz.questions[quiz.i], n = quiz.questions.length;
+    quiz.panel.textContent = '';
+    const add = (tag, className, text) => { const node = document.createElement(tag); node.className = className; if (text != null) node.textContent = text; return node; };
+    quiz.panel.appendChild(add('div', 'count', n > 1 ? 'Question ' + (quiz.i + 1) + ' of ' + n : 'Question'));
+    quiz.panel.appendChild(add('div', 'question', q.q));
+    const choices = add('div', 'choices');
+    // Two columns when the choices are short and there's room; one otherwise.
+    const narrow = quiz.panel.getBoundingClientRect().width < 420 || q.choices.some(c => c.length > 24);
+    choices.style.setProperty('--columns', narrow ? 1 : 2);
+    q.choices.forEach((choice, j) => {
+      const button = add('button', '', choice);
+      button.type = 'button';
+      button.addEventListener('click', () => answer(quiz, j));
+      choices.appendChild(button);
+    });
+    quiz.panel.appendChild(choices);
+    quiz.panel.appendChild(add('div', 'feedback'));
+    quiz.at = null;
+    placeQuizzes();
+  }
+
+  function answer(quiz, j) {
+    if (quiz.gone || quiz.answered) return;
+    quiz.answered = true;
+    const q = quiz.questions[quiz.i], right = j === q.answer;
+    if (right) quiz.score++;
+    quiz.panel.querySelectorAll('.choices button').forEach((button, b) => {
+      button.disabled = true;
+      if (b === q.answer) button.classList.add('right');
+      else if (b === j) button.classList.add('wrong');
+    });
+    const said = right ? (q.right || "Yes, that's right!") : (q.wrong || "Not quite: it's " + q.choices[q.answer] + '.');
+    const feedback = quiz.panel.querySelector('.feedback');
+    feedback.textContent = said;
+    feedback.className = 'feedback ' + (right ? 'right' : 'wrong');
+    send({ type: 'say', text: said });
+    log('quiz: question ' + (quiz.i + 1) + (right ? ' right' : ' wrong'));
+    // The part it is about swells for a moment.
+    if (window.Figure3D) for (const id of q.parts || []) {
+      window.Figure3D.apply({ do: 'change3d', part: id, params: { size: 1.3, secs: 0.35 } }, 0.35, null);
+      quiz.timers.push(setTimeout(() => window.Figure3D.apply({ do: 'change3d', part: id, params: { size: 1 / 1.3, secs: 0.5 } }, 0.5, null), 1600));
+    }
+    // On to the next question once that has been said, or the score.
+    const words = said.split(/\s+/).length;
+    quiz.timers.push(setTimeout(() => {
+      if (quiz.gone) return;
+      quiz.i++;
+      quiz.answered = false;
+      if (quiz.i < quiz.questions.length) { showQuestion(quiz); speakQuestion(quiz); return; }
+      const n = quiz.questions.length, all = quiz.score === n;
+      const score = 'You got ' + quiz.score + ' out of ' + n + (all ? '. Brilliant!' : quiz.score >= n / 2 ? '. Well done!' : '. Good try!');
+      quiz.panel.textContent = '';
+      const done = document.createElement('div');
+      done.className = 'question done';
+      done.textContent = score;
+      quiz.panel.appendChild(done);
+      send({ type: 'say', text: score });
+      log('quiz: ' + quiz.score + ' of ' + n);
+    }, Math.max(2200, (words / WORDS_PER_SECOND + 1.1) * 1000)));
+  }
+
+  function clearQuizzes() {
+    for (const quiz of quizzes) { quiz.gone = true; quiz.timers.forEach(clearTimeout); quiz.panel.remove(); }
+    quizzes.length = 0;
   }
 
   // A follow-up's change to a 2D mark already drawn: hidden (true fades it out, false brings it back), color (its pen
@@ -648,6 +777,7 @@
 
   function paint(m, seconds, index) {
     if (m.do === 'change2d') { change2d(m, seconds); return; }
+    if (m.do === 'quiz') { drawQuiz(m, seconds); return; }
     const group = el('g');
     if (m.do === 'text') labelLayer.appendChild(group); else svg.insertBefore(group, labelLayer);
     if (Number.isInteger(m.n)) drawn.set(m.n, group);
@@ -852,6 +982,7 @@
       grip.style.top = gripLeft.style.top = (box.y + box.h - BOX_PAD - grip.offsetHeight) + 'px';
     }
     dragArea = canMove ? box : null;
+    placeQuizzes();
     svg.style.cursor = canMove ? 'move' : '';
     if (!gesture) reportHits();
   }
@@ -861,6 +992,7 @@
   function reportHits() {
     const rects = window.Figure3D && !recording ? window.Figure3D.rects() : [];
     if (dragArea && !recording) rects.push(dragArea);
+    if (!recording) for (const quiz of quizzes) { const box = quiz.panel.getBoundingClientRect(); rects.push({ x: box.left, y: box.top, w: box.width, h: box.height }); }
     for (const node of [tools, grip, gripLeft]) {
       if (node.hidden || recording) continue;
       const box = node.getBoundingClientRect();
@@ -878,6 +1010,7 @@
       if (button.disabled) return;
       if (button.dataset.save) send({ type: 'save', text: button.dataset.save });
       else if (button.dataset.act === 'close') send({ type: 'close' });
+      else if (button.dataset.act === 'quiz') send({ type: 'quiz' });
       else if (button.dataset.act === 'pip') togglePip();
     });
   }
@@ -1048,7 +1181,7 @@
     switch (message.type) {
       case 'beginStream': begin(message); break;
       case 'continueStream': continueStream(message); break;
-      case 'remembered': remembered = true; showTools(); break;
+      case 'remembered': remembered = true; quizButton.hidden = !message.quiz; showTools(); break;
       case 'recording': {
         recording = !!message.on;
         document.body.classList.toggle('recording', recording);

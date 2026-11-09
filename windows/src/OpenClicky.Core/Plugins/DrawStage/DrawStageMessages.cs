@@ -86,6 +86,9 @@ public static class DrawStageMessages
 
     public static string Simple(string type) => new JsonObject { ["type"] = type }.ToJsonString();
 
+    /// <summary>The finished drawing is remembered: its buttons show, the Quiz me button too when <paramref name="offerQuiz"/>.</summary>
+    public static string Remembered(bool offerQuiz) => new JsonObject { ["type"] = "remembered", ["quiz"] = offerQuiz }.ToJsonString();
+
     /// <summary>The photo the page asked for (photoWanted) as a data URL with its credit; without one, that none was found.</summary>
     public static string Photo(string id, DrawStagePhoto? photo) => photo is null
         ? new JsonObject { ["type"] = "photo", ["id"] = id, ["failed"] = true }.ToJsonString()

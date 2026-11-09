@@ -181,6 +181,15 @@ the flattest ring laid out as a ring and chains zigzagging out of it, relaxes fo
 about 0.15 s; a statement may run 2 s), then turns the molecule so its longest axis lies across and a flat one faces
 the viewer. Samples: `molecule-water-co2.js`, `molecule-glucose.js`.
 
+### A quiz on the drawing
+
+`quiz([{q, choices: ['…', '…', '…'], answer: 0, right, wrong, part}, …])` asks a few questions on what was drawn, one
+at a time, in a panel the page docks beside the drawing (where the screen has room), with choices to tap. The page asks
+the app to read each question and its choices out (`say`), then whether the answer was right, then the score; the part a
+question is about swells when it is answered. A finished drawing shows a **Quiz me** button when the app says so
+(`remembered` with `quiz: true`); clicking it sends `quiz`. Settings → Clicky → Drawings → Quiz after a drawing picks
+Off, Offer (the button) or Always (a quiz after every new drawing).
+
 ### Changing a drawing in place
 
 A follow-up (`keep()`) runs in the same worker as the drawing, so it can change what is drawn instead of drawing it

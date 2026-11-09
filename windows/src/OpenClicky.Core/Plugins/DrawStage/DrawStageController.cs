@@ -103,6 +103,15 @@ public sealed class DrawStageController
     /// <summary>The drawing's close button was clicked: it goes, as with esc.</summary>
     public event Action? CloseRequested;
 
+    /// <summary>The drawing's Quiz me button was clicked.</summary>
+    public event Action? QuizRequested;
+
+    /// <summary>The page asks for a line to be said aloud: a quiz's question, whether the answer was right, the score.</summary>
+    public event Action<string>? SayRequested;
+
+    /// <summary>Whether a finished drawing shows the Quiz me button (Settings → Clicky → Drawings); none when unset.</summary>
+    public Func<bool>? OffersQuiz { get; set; }
+
     /// <summary>Saves a drawing to disk; set by the composition root. Without one, drawings can't be saved.</summary>
     public IDrawingSaver? Saver { get; set; }
 
@@ -114,7 +123,7 @@ public sealed class DrawStageController
     {
         if (!IsShowing) return;
         Current = drawing;
-        if (IsReady) Surface?.Post(DrawStageMessages.Simple("remembered"));
+        if (IsReady) Surface?.Post(DrawStageMessages.Remembered(OffersQuiz?.Invoke() ?? false));
     }
 
     /// <summary>The page has loaded and takes messages straight away.</summary>
@@ -316,6 +325,12 @@ public sealed class DrawStageController
                 break;
             case "close":
                 CloseRequested?.Invoke();
+                break;
+            case "quiz":
+                QuizRequested?.Invoke();
+                break;
+            case "say" when message.Text is { Length: > 0 } said:
+                SayRequested?.Invoke(said);
                 break;
             case "bounds" when message.Bounds is { } bounds:
                 measuring?.TrySetResult(bounds);

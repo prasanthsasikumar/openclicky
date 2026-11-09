@@ -81,6 +81,10 @@ public sealed class OpenClickyShellSettings
     /// <summary>The person's own instructions for drawings, added to the drawing prompt (null: none).</summary>
     [JsonPropertyName("drawingInstructions")] public string? DrawingInstructions { get; set; }
 
+    /// <summary>A quiz after a drawing: "off", "offer" (null: a Quiz me button on the drawing) or "always" (asks straight
+    /// after every new drawing). DrawStageLesson.QuizFrom.</summary>
+    [JsonPropertyName("drawingQuiz")] public string? DrawingQuiz { get; set; }
+
     /// <summary>The keys that start a mark from anywhere while drawn answers are on: unset is Ctrl+Alt+M, "ctrlAltShiftM",
     /// "off" (MarkerShortcuts).</summary>
     [JsonPropertyName("markerShortcut")] public string? MarkerShortcut { get; set; }

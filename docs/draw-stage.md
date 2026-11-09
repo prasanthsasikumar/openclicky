@@ -340,6 +340,29 @@ asks for more of the drawing, another view, a part of it), the model gets the dr
 
 A question that can't be about it (opening an app, small talk, a question for the agent) clears it first.
 
+### A quiz on the drawing
+
+`quiz([{q, choices, answer, right, wrong, part}, …])` asks a few questions on what was drawn. The page shows one at a
+time in a panel beside the drawing, its choices to tap: in the screen's room left or right of the drawing's box, else
+below or above it, else over its bottom edge, following the drawing when it is moved or resized (`placeQuizzes`). It
+asks the app to say each question with its choices (`say`, once the drawing has finished speaking), then the program's
+`right` or `wrong` line (or a plain one), and the score at the end; the right choice turns green and a wrong pick red,
+and the question's `part` (a 3D part or a builder's part) swells for a moment. `answer` is the right choice's number
+from 0, or its words. The model writes a quiz as a follow-up (`keep()`, one inviting line, `quiz([…])`).
+
+When a quiz comes is Settings → Clicky → Drawings → **Quiz after a drawing** (`drawingQuiz` in shell.json):
+
+| Choice | What happens |
+|---|---|
+| Off | no quizzes, unless asked for |
+| Offer (default) | a **Quiz me** button on each finished drawing (the page shows it when `remembered` says `quiz: true`) |
+| Always | a quiz straight after every new drawing (not after a follow-up or a quiz), for a child or a class |
+
+The button and Always both ask `DrawStageLesson.QuizQuestion` ("Quiz me on this drawing.") as a follow-up to the drawing
+up. Saying "quiz me" or "test me on this" while a drawing is up does the same, whatever the setting
+(`DrawStageLesson.IsQuizRequest`). The app says the quiz's lines in the answer voice (this PC's voice if that fails); a
+new line cuts the one being said, and closing the drawing stops it. The panel is left out of a saved video.
+
 ### Changing a drawing in place
 
 A follow-up's program runs in the same worker as the drawing's, so it can reach what the drawing made and change it:

@@ -40,6 +40,8 @@ internal sealed partial class SettingsRowFactory
                 return new LiveContent(() => Ui.Card(DrawingSourceRow(item, query)), Changes.Shell);
             case "clicky.drawingDetail":
                 return Ui.Card(DrawingDetailRow(item, query));
+            case "clicky.drawingQuiz":
+                return Ui.Card(DrawingQuizRow(item, query));
             case "clicky.drawingInstructions":
                 return Ui.Card(DrawingInstructionsRow(item, query));
             case "clicky.markerShortcut":
@@ -228,6 +230,22 @@ internal sealed partial class SettingsRowFactory
                 ShellSettingsRevision.NoteChanged();
             },
             200);
+        return Ui.Row(item.Title, item.Detail, query, picker);
+    }
+
+    /// <summary>A quiz after a drawing: off, a Quiz me button on it, or always (DrawStageLesson.QuizFrom).</summary>
+    private static Grid DrawingQuizRow(SettingsItem item, string query)
+    {
+        var current = DrawStageLesson.QuizFrom(OpenClickyConfiguration.Settings.DrawingQuiz);
+        var picker = Ui.Picker(
+            [(DrawingQuiz.Off, "Off"), (DrawingQuiz.Offer, "Offer (a Quiz me button)"), (DrawingQuiz.Always, "Always")],
+            current,
+            choice =>
+            {
+                OpenClickyConfiguration.Update(saved => saved.DrawingQuiz = choice == DrawingQuiz.Offer ? null : DrawStageLesson.RawValue(choice));
+                ShellSettingsRevision.NoteChanged();
+            },
+            220);
         return Ui.Row(item.Title, item.Detail, query, picker);
     }
 
