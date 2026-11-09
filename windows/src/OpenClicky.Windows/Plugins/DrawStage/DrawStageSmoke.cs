@@ -228,6 +228,9 @@ internal static class DrawStageSmoke
         var errors = 0;
         stage.Logged += line => { if (line.StartsWith("error: ", StringComparison.Ordinal)) errors++; };
         stage.LineAdded += (k, text) => Console.WriteLine($"smoke: line {k}: {text}");
+        // As in the app: the Quiz me button unless Settings turns quizzes off, and the lines a quiz would say.
+        stage.OffersQuiz = () => DrawStageLesson.QuizFrom(OpenClickyConfiguration.Settings.DrawingQuiz) != DrawingQuiz.Off;
+        stage.SayRequested += text => Console.WriteLine($"smoke: say: {text}");
         stage.Logged += line => { if (line.StartsWith("piece", StringComparison.Ordinal) || line.StartsWith("no piece", StringComparison.Ordinal)) Console.WriteLine($"smoke: {line}"); };
         // Pieces (f.piece) are made as a question's are: by the maker Settings picks, the drawing model when it fails.
         var pieceWorkshop = new PieceWorkshop(() => PieceMakers.For(OpenClickyConfiguration.Settings,
