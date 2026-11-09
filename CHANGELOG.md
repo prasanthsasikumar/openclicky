@@ -17,7 +17,7 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ## 0.12.0
 
-With thanks to [darkworks](https://github.com/darkworks), who taught the drawing stage everything new below.
+With thanks to [darkworks](https://github.com/darkworks), who taught the drawing stage the new drawings below.
 
 ### All platforms
 
@@ -27,6 +27,8 @@ With thanks to [darkworks](https://github.com/darkworks), who taught the drawing
 - **Graphs and timelines.** "How has the world's population grown?" or "the big moments in the history of computers" are drawn to scale, with labels kept clear of the lines. By darkworks (PR #49).
 - **Labels that don't overlap.** A drawing's labels now move out of each other's way. By darkworks (PR #48).
 - **"3D" alone no longer means a drawing.** "What's the best 3D printer?" gets a plain answer; "show me in 3D" still draws.
+- **Ask first, sign up later.** With no key and no account, your first question starts the free trial the welcome tour offers and gets an answer, instead of being told to add your email. Add your email in Settings later to keep going.
+- **No robotic voice for account notes.** Notes like "your sign-in has expired" or "you've used today's free allowance" are now recorded in Clicky's own voice, so they sound right even before there is a voice to answer in. A voice you picked yourself still says them.
 
 ### Mac
 

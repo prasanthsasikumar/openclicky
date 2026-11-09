@@ -10,4 +10,17 @@ struct AccountAuthTests {
         #expect(decoded.accountsOpen == nil)
         #expect(decoded.confirmRedirectUrl == nil)
     }
+
+    @Test func aQuestionNothingCanAnswerStartsAGuestFirst() {
+        let nothingCanAnswer = ProviderRoute.unavailable(ProviderRouter.needsAnthropicKeySentence)
+        #expect(OpenClickyAuthSession.shouldStartGuestBeforeAsking(answerRoute: nothingCanAnswer, hasAccountToken: false))
+        // Signed in already (a guest whose route went away is refused by the backend, not replaced).
+        #expect(!OpenClickyAuthSession.shouldStartGuestBeforeAsking(answerRoute: nothingCanAnswer, hasAccountToken: true))
+    }
+
+    @Test func aKeyOrAPlanNeverGetsAGuest() {
+        for route in [ProviderRoute.anthropicDirect, .answerProvider(.claudeCodePlan), .answerProvider(.openAI), .backend] {
+            #expect(!OpenClickyAuthSession.shouldStartGuestBeforeAsking(answerRoute: route, hasAccountToken: false))
+        }
+    }
 }

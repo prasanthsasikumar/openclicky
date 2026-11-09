@@ -1797,6 +1797,12 @@ final class CompanionManager: ObservableObject {
                     askIslandStatus = nil
                     showAskCaption("“\(transcript)” · thinking…", holdSeconds: 30)
                 }
+                // Nothing can answer yet (no key, no plan, no account): start the free guest the
+                // welcome tour would have made, so the question is answered instead of refused.
+                // Before the capture, which sends fewer screens on an account.
+                await OpenClickyAuthSession.shared.startGuestIfNothingCanAnswer()
+                guard !Task.isCancelled else { return }
+
                 // Captured after the pause, so what is sent is what is on screen now.
                 // Capture all connected screens so the AI has full context (an account sends at most two)
                 let allScreenCaptures: [CompanionScreenCapture]
@@ -2605,14 +2611,16 @@ final class CompanionManager: ObservableObject {
 
     /// Says an account notice in the voice picked in Settings → Clicky → Voice (Kokoro, a key's
     /// voice), not this Mac's, which sounded robotic beside the answers. The free account voice
-    /// would likely be refused with the question, so it hands over to the fastest local voice.
-    /// This Mac's voice, a recorded line, or a voice that fails goes through the system voice.
+    /// would likely be refused with the question, so a notice with a recording plays that (Clicky's
+    /// recorded voice) and one without goes to the fastest local voice. This Mac's voice, Automatic,
+    /// or a voice that fails goes through the system voice, which plays the recording when there is one.
     func speakNoticeInPickedVoice(_ text: String) {
         let picked = SpeechVoiceChoice.current()
-        let voice = picked == .account
+        let isRecorded = RecordedVoice.line(forSpokenText: text) != nil
+        let voice = picked == .account && !isRecorded
             ? SpeechVoiceChoice.fastestLocalVoice(kokoroInstalled: KokoroVoice.isInstalled, languageCode: ReplyLanguage.currentCode)
             : picked
-        guard voice != .mac, voice != .automatic, RecordedVoice.line(forSpokenText: text) == nil else {
+        guard voice != .mac, voice != .automatic, voice != .account else {
             speakWithSystemVoice(text)
             return
         }

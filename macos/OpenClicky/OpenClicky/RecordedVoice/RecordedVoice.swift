@@ -5,7 +5,8 @@
 //  The lines OpenClicky says the same way every time, recorded once in its answering voice
 //  (OpenAI speech, marin) and bundled, so they sound good with no key and no network: the
 //  first-run tour's narration, and the notices that used to be read by the Mac's system voice
-//  ("i didn't get an answer…"). Anything not recorded here is spoken the way it was before.
+//  ("i didn't get an answer…", "add your email for a free account…", the allowance notes).
+//  Anything not recorded here is spoken the way it was before.
 //
 
 import AVFoundation
@@ -13,7 +14,7 @@ import Foundation
 
 @MainActor
 final class RecordedVoice {
-    enum Line: String {
+    enum Line: String, CaseIterable {
         case tourHello = "tour-hello"
         case tourDictate = "tour-dictate"
         case tourDictateDone = "tour-dictate-done"
@@ -30,6 +31,25 @@ final class RecordedVoice {
         case noticeStoppedPartway = "notice-stopped-partway"
         case noticeWentWrong = "notice-went-wrong"
         case noticeRealtimeUnavailable = "notice-realtime-unavailable"
+        // Account, sign-in and key notices, said before there is any voice to say them in.
+        case noticeNeedsKeyAnswer = "notice-needs-key-answer"
+        case noticeNeedsKeyOpenAI = "notice-needs-key-openai"
+        case noticeSignInExpired = "notice-sign-in-expired"
+        case noticeOwnKeyRefused = "notice-own-key-refused"
+        case noticeAskAgain = "notice-ask-again"
+        case noticeUnreachableRetry = "notice-unreachable-retry"
+        case noticeBackendTrouble = "notice-backend-trouble"
+        case noticeMonthAllowanceUsed = "notice-month-allowance-used"
+        case noticeDayAllowanceUsed = "notice-day-allowance-used"
+        case noticeFreeBudgetUsed = "notice-free-budget-used"
+        case noticeNeedsOwnKey = "notice-needs-own-key"
+        case noticeAccountsFull = "notice-accounts-full"
+        case noticeAccountPaused = "notice-account-paused"
+        case noticeConfirmEmail = "notice-confirm-email"
+        case noticeDeviceLimit = "notice-device-limit-mac"
+        case noticeGuestTrialEnded = "notice-guest-trial-ended"
+        case noticeServiceTrouble = "notice-service-trouble"
+        case noticeSwitchedOff = "notice-switched-off"
         // The one-minute Settings tour (SettingsTour.swift).
         case settingsTourIntro = "settings-tour-intro"
         case settingsTourDictation = "settings-tour-dictation"
@@ -51,6 +71,26 @@ final class RecordedVoice {
         "the answer stopped partway. please ask again.": .noticeStoppedPartway,
         "something went wrong getting your answer. please ask again.": .noticeWentWrong,
         "realtime voice is unavailable right now.": .noticeRealtimeUnavailable,
+        // Recorded by scripts/record-voice-lines.py; RecordedVoiceTests fails when one of these
+        // sentences changes in the code, as the reminder to record it again.
+        "i can answer that once you add your email for a free account, in settings, account. a key from openai, anthropic, openrouter, gemini and others works too.": .noticeNeedsKeyAnswer,
+        "i can do that once you add your email for a free account, in settings, account. your own openai key works too.": .noticeNeedsKeyOpenAI,
+        "your openclicky sign-in has expired. sign in again in settings, account.": .noticeSignInExpired,
+        "your own api key was refused. check it in settings, keys & plans.": .noticeOwnKeyRefused,
+        "please ask that again.": .noticeAskAgain,
+        "couldn't reach openclicky right now, try again in a minute.": .noticeUnreachableRetry,
+        "something went wrong talking to the openclicky backend. check the backend and your token in the settings file.": .noticeBackendTrouble,
+        "you've used this month's free allowance, it comes back on the 1st. dictation still works.": .noticeMonthAllowanceUsed,
+        "you've used today's free allowance, it comes back tomorrow. dictation still works.": .noticeDayAllowanceUsed,
+        "openclicky's free allowance is used up for now, you can keep going with your own key.": .noticeFreeBudgetUsed,
+        "that needs your own key for now.": .noticeNeedsOwnKey,
+        "openclicky's free accounts are full right now, you can use your own key instead.": .noticeAccountsFull,
+        "this account is paused. dictation still works.": .noticeAccountPaused,
+        "confirm your email to keep going: type the code from the email in settings, account.": .noticeConfirmEmail,
+        "this mac already has two openclicky accounts, sign in with one of them.": .noticeDeviceLimit,
+        "your free trial has ended. add your email in settings, keys and account, to keep going for free.": .noticeGuestTrialEnded,
+        "openclicky's free service is having trouble, try again in a minute.": .noticeServiceTrouble,
+        "this login isn't switched on for openclicky yet. write to hello@flowsxr.com, or use your own key.": .noticeSwitchedOff,
     ]
 
     static func line(forSpokenText text: String) -> Line? {
