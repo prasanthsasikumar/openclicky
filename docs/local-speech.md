@@ -42,14 +42,18 @@ voice on, OpenAI Realtime or Gemini Live hears and speaks instead. Dictation can
 | Ollama already installed | Gemma 4 E2B | Phonon (Mac now; Windows and Linux when Ollama ships it) |
 
 - **Whisper large-v3-turbo** (MIT licence): hears about 99 languages, Urdu among them, in a fraction of a
-  second on a graphics card. The best all-round choice.
+  second on a graphics card (0.3 s for a 5-second question on an RTX 3090). The best all-round choice.
 - **Gemma 4 E2B** through Ollama: hears well, but takes a few seconds a question, since it is a language model
   that also listens. Good if Ollama is all you want to run.
-- **Kokoro** (Apache 2.0): a clear, quick voice in 8 languages.
+- **Kokoro** (Apache 2.0): a clear, quick voice in 8 languages (0.1 s for a sentence on an RTX 3090).
+- **Piper** (MIT; each voice has its own licence): small voices in many languages, quick even without a graphics
+  card, less natural than Kokoro.
 - **Chatterbox Multilingual** (MIT, 23 languages including Hindi) and **Qwen3-TTS** (Apache 2.0, 10 languages)
   sound more natural and can copy a voice from a short recording; run them through LocalAI or their own servers.
-- **Urdu voice**: no strong open model yet. Indic Parler-TTS lists Urdu, but check its licence first. Until
-  then Urdu answers are best spoken by a Gemini key.
+- **Urdu voice**: no strong open model yet. Speaches lists a community Piper voice,
+  `Keshavji/piper-ur_PK-fasih-medium` (voice `fasih`). It is understandable but mispronounces some words, and
+  it states no licence, so try it at home but don't hand it out. Indic Parler-TTS lists Urdu, but Speaches
+  doesn't run it, and its licence needs checking. Until then Urdu answers are best spoken by a Gemini key.
 
 ## Option 1: Ollama
 
@@ -71,22 +75,26 @@ To reach Ollama on another PC, start it there with `OLLAMA_HOST=0.0.0.0` and all
 With an NVIDIA card:
 
 ```bash
-docker run --rm --detach --publish 8000:8000 --name speaches --volume hf-hub-cache:/home/ubuntu/.cache/huggingface/hub --gpus=all ghcr.io/speaches-ai/speaches:latest-cuda
+docker run --detach --restart unless-stopped --publish 8000:8000 --name speaches --volume hf-hub-cache:/home/ubuntu/.cache/huggingface/hub --gpus=all ghcr.io/speaches-ai/speaches:latest-cuda
 ```
 
-Without one, use the image `ghcr.io/speaches-ai/speaches:latest-cpu` and leave out `--gpus=all`.
+`--restart unless-stopped` starts it again after the PC restarts. Without a graphics card, use the image
+`ghcr.io/speaches-ai/speaches:latest-cpu` and leave out `--gpus=all`. The GPU image is about 6 GB.
 
-Then download the models (the CLI needs [uv](https://docs.astral.sh/uv/)):
+Then download the models:
 
 ```bash
-export SPEACHES_BASE_URL=http://localhost:8000
-uvx speaches-cli registry ls --task automatic-speech-recognition
-uvx speaches-cli model download deepdml/faster-whisper-large-v3-turbo-ct2
-uvx speaches-cli model download speaches-ai/Kokoro-82M-v1.0-ONNX
+curl -X POST http://localhost:8000/v1/models/deepdml/faster-whisper-large-v3-turbo-ct2
+curl -X POST http://localhost:8000/v1/models/speaches-ai/Kokoro-82M-v1.0-ONNX
 ```
 
+`curl "http://localhost:8000/v1/registry?task=text-to-speech"` lists the voices it can download
+(`task=automatic-speech-recognition` the hearing models); the `speaches-cli` tool (`uvx speaches-cli`) does the same.
 Pick any large-v3-turbo model the registry lists. In OpenClicky use `http://localhost:8000`, pick the Whisper
 model to hear and `speaches-ai/Kokoro-82M-v1.0-ONNX` to speak, with the voice `af_heart`.
+
+Speaches unloads a model after 5 idle minutes, so the first question after a pause takes a second or two longer.
+It sends a Piper voice's answer as one WAV per sentence; OpenClicky joins them, so every sentence is spoken.
 
 ## Option 3: anything else that speaks OpenAI's audio API
 
@@ -111,6 +119,11 @@ the key box; it is sent as `Authorization: Bearer …`.
   "Your speech server".
 - **"The speech server said 400 …"**: the model doesn't do that job (a chat model picked to hear, say), or the
   voice name isn't one the model has. The message after the number is the server's own.
+- **Slow on a graphics card**: check that `nvidia-smi` lists the card on the server. If it says it can't talk to
+  the driver, the models run on the processor; on Ubuntu, `sudo apt install nvidia-open` and a restart put the
+  driver back (an `apt autoremove` can take it away when nothing else installed by hand needs it).
+- **Slow from another place**: through a VPN each request also waits for the network. On the same network the
+  server answers in well under a second; through a slow VPN it can take two or three.
 
 Everything you say goes only to the address you typed. The app's log (`%LOCALAPPDATA%\OpenClicky\Logs\app.log`)
 notes each failed request, but never what was said.

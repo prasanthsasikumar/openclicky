@@ -107,6 +107,38 @@ public class SpeechServerTests
     }
 
     [Fact]
+    public async Task AWavWhoseHeaderCountsOnlyTheFirstSentenceIsPlayedWhole()
+    {
+        static uint SizeAt(byte[] wav, int at) => BitConverter.ToUInt32(wav, at);
+        static byte[] Sentence(byte sample, int bytes) => BuddyWAVFileBuilder.BuildWavData(Enumerable.Repeat(sample, bytes).ToArray(), 22_050);
+        // Speaches + Piper: one whole WAV per sentence, back to back.
+        var whole = Sentence(1, 1000).Concat(Sentence(2, 2000)).Concat(Sentence(3, 600)).ToArray();
+        var joined = SpeechServer.WithWholeSoundData(whole);
+        Assert.Equal(44 + 3600, joined.Length);
+        Assert.Equal(3600u, SizeAt(joined, 40));
+        Assert.Equal(36u + 3600u, SizeAt(joined, 4));
+        Assert.Equal(Enumerable.Repeat((byte)1, 1000).Concat(Enumerable.Repeat((byte)2, 2000)).Concat(Enumerable.Repeat((byte)3, 600)), joined[44..]);
+        var client = new HttpClient(new FakeServer(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(whole) }));
+        Assert.Equal(3600u, SizeAt(await SpeechServer.SpeakAsync(Server, "Three sentences.", client: client), 40));
+        // Sentences in different formats aren't joined.
+        var mixed = Sentence(1, 1000).Concat(BuddyWAVFileBuilder.BuildWavData(new byte[100], 24_000)).ToArray();
+        Assert.Same(mixed, SpeechServer.WithWholeSoundData(mixed));
+
+        // A streamed header that doesn't know its length gets what came, in whole samples.
+        var streamed = Sentence(4, 1000).Concat(new byte[] { 4, 4, 4 }).ToArray();
+        BitConverter.TryWriteBytes(streamed.AsSpan(40, 4), uint.MaxValue);
+        Assert.Equal(1002u, SizeAt(SpeechServer.WithWholeSoundData(streamed), 40));
+
+        // A right header, or a LIST chunk after the sound, is left alone.
+        var right = BuddyWAVFileBuilder.BuildWavData(new byte[2000], 24_000);
+        Assert.Same(right, SpeechServer.WithWholeSoundData(right));
+        var list = right.Concat(Encoding.ASCII.GetBytes("LIST")).Concat(BitConverter.GetBytes(4u)).Concat(Encoding.ASCII.GetBytes("INFO")).ToArray();
+        Assert.Same(list, SpeechServer.WithWholeSoundData(list));
+        byte[] notAWav = [1, 2, 3];
+        Assert.Same(notAWav, SpeechServer.WithWholeSoundData(notAWav));
+    }
+
+    [Fact]
     public async Task AFailureSaysWhatTheServerSaid()
     {
         var client = new HttpClient(new FakeServer(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)

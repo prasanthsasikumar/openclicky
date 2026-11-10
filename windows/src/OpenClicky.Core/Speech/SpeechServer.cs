@@ -130,7 +130,72 @@ public static class SpeechServer
         using var request = SpeechRequest(server, model, text);
         var data = await SendAsync(request, server, cancellationToken, client, forVoice: true).ConfigureAwait(false);
         if (data.Length == 0) throw CloudVoiceException.Unreadable(VendorName);
-        return data;
+        return WithWholeSoundData(data);
+    }
+
+    /// <summary>
+    /// One WAV holding all the sound that came. Speaches sends Piper's answer as one whole WAV per sentence, back to back, so a
+    /// reader that believes the first header (NAudio, Whisper) plays or hears only the first sentence; those are joined into one
+    /// file when they share a format. A streamed header that doesn't know its length (0 or 0xFFFFFFFF, or more than came) gets
+    /// the length that is there. Anything else is returned as it came.
+    /// </summary>
+    public static byte[] WithWholeSoundData(byte[] wav)
+    {
+        if (SoundData(wav, 0) is not { } first) return wav;
+        var (format, dataSizeAt, dataStart, declared) = first;
+        long there = wav.Length - dataStart;
+        if (declared is 0 or uint.MaxValue || declared > there)
+        {
+            var whole = there - there % Math.Max(1, (int)BitConverter.ToUInt16(wav, format + 12));
+            return Rebuilt(wav, dataSizeAt, wav.AsSpan(dataStart, (int)whole));
+        }
+        var end = dataStart + declared;
+        if (end >= wav.Length) return wav;
+        var sound = new MemoryStream();
+        sound.Write(wav, dataStart, (int)declared);
+        while (end < wav.Length)
+        {
+            if (SoundData(wav, (int)end) is not { } next || !wav.AsSpan(next.Format, 16).SequenceEqual(wav.AsSpan(format, 16))
+                || next.DataStart + next.Declared > wav.Length) return wav;
+            sound.Write(wav, next.DataStart, (int)next.Declared);
+            end = next.DataStart + next.Declared;
+        }
+        return Rebuilt(wav, dataSizeAt, sound.ToArray());
+    }
+
+    /// <summary>The WAV starting at <paramref name="at"/>: where its "fmt " body is, where its data size is written, where its sound starts, and the size it declares.</summary>
+    private static (int Format, int DataSizeAt, int DataStart, long Declared)? SoundData(byte[] wav, int at)
+    {
+        if (at + 44 > wav.Length || !Ascii(wav, at, "RIFF") || !Ascii(wav, at + 8, "WAVE")) return null;
+        var format = -1;
+        var offset = at + 12;
+        while (offset + 8 <= wav.Length)
+        {
+            var size = (long)BitConverter.ToUInt32(wav, offset + 4);
+            if (Ascii(wav, offset, "fmt ") && size >= 16 && offset + 24 <= wav.Length) format = offset + 8;
+            if (Ascii(wav, offset, "data")) return format < 0 ? null : (format, offset + 4, offset + 8, size);
+            offset += (int)Math.Min(8 + size + (size & 1), int.MaxValue / 2);
+        }
+        return null;
+    }
+
+    /// <summary>The header up to the data size (fmt and any other chunks before the sound), then the sound, with both sizes right.</summary>
+    private static byte[] Rebuilt(byte[] wav, int dataSizeAt, ReadOnlySpan<byte> sound)
+    {
+        var header = dataSizeAt + 4;
+        var rebuilt = new byte[header + sound.Length];
+        wav.AsSpan(0, header).CopyTo(rebuilt);
+        sound.CopyTo(rebuilt.AsSpan(header));
+        BitConverter.TryWriteBytes(rebuilt.AsSpan(dataSizeAt, 4), (uint)sound.Length);
+        BitConverter.TryWriteBytes(rebuilt.AsSpan(4, 4), (uint)(rebuilt.Length - 8));
+        return rebuilt;
+    }
+
+    private static bool Ascii(byte[] bytes, int at, string text)
+    {
+        if (at < 0 || at + text.Length > bytes.Length) return false;
+        for (var i = 0; i < text.Length; i++) if (bytes[at + i] != text[i]) return false;
+        return true;
     }
 
     /// <summary>The server's name in the voice's errors and the log.</summary>
