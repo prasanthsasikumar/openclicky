@@ -28,6 +28,11 @@ public partial class DrawingAnswerTests
     [InlineData("make it simpler")]
     [InlineData("what's that orange part")]
     [InlineData("how does the fan work")]
+    [InlineData("make the nucleus bigger")]
+    [InlineData("colour the arteries red")]
+    [InlineData("slow it down")]
+    [InlineData("hide the labels")]
+    [InlineData("remove the lungs")]
     public void QuestionsAboutTheDrawingMayBeFollowUps(string question) => Assert.True(DrawStageLesson.MayBeAFollowUp(question));
 
     [Theory]
@@ -96,6 +101,19 @@ public partial class DrawingAnswerTests
         Assert.Contains("keep()", prompt);
         Assert.Contains("numbered on from step(6)", prompt);
         Assert.Contains($"only the word {DrawStageLesson.NotAFollowUp}", prompt);
+    }
+
+    [Fact]
+    public void AChangeToTheDrawingIsMadeInPlace()
+    {
+        var prompt = DrawStageLesson.FollowUpPrompt("make the fan bigger", JetEngine);
+        Assert.Contains("keep it and change it in place, without drawing it again", prompt);
+        Assert.Contains("then in step(5) one line saying what changes", prompt);
+        Assert.Contains("cl.part('nucleus').change({size: 1.5})", prompt);
+        Assert.DoesNotContain("(in 3D, as a cutaway, bigger, simpler)", prompt);
+        var system = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("f.tempo(0.5) runs every motion in the figure at half speed", system);
+        Assert.Contains("erase(arrowA) takes it away", system);
     }
 
     // MARK: - how detailed, and their own instructions (Settings → Clicky → Drawings)
