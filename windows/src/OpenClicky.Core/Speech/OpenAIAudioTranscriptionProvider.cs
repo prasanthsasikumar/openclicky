@@ -107,18 +107,21 @@ public sealed class OpenAIAudioTranscriptionProvider : IBuddyTranscriptionProvid
 }
 
 /// <param name="transcribe">Who turns the take into words (the WAV, its language and prompt): another transcriber's
-/// request (Gemini's); null sends it to OpenAI or the backend.</param>
+/// request (Gemini's, the speech server's); null sends it to OpenAI or the backend.</param>
+/// <param name="finalTranscriptWait">How long the take waits for its words before going on without them (8 s; a speech
+/// server loading its model takes longer).</param>
 internal sealed class OpenAIAudioTranscriptionSession(
     IReadOnlyList<string> keyterms,
     string? language,
     Action<string> onTranscriptUpdate,
     Action<string> onFinalTranscriptReady,
     Action<Exception> onError,
-    Func<byte[], string?, string?, CancellationToken, Task<string>>? transcribe = null) : IBuddyStreamingTranscriptionSession
+    Func<byte[], string?, string?, CancellationToken, Task<string>>? transcribe = null,
+    TimeSpan? finalTranscriptWait = null) : IBuddyStreamingTranscriptionSession
 {
     private const int TargetSampleRate = 16_000;
 
-    public TimeSpan FinalTranscriptFallbackDelay => TimeSpan.FromSeconds(8);
+    public TimeSpan FinalTranscriptFallbackDelay => finalTranscriptWait ?? TimeSpan.FromSeconds(8);
 
     private readonly BuddyPCM16AudioConverter audioPCM16Converter = new(TargetSampleRate);
     private readonly object stateLock = new();

@@ -373,13 +373,14 @@ public sealed class DetachedSettingsServices(IProcessRunner? processes = null) :
         "polly" => "Amazon Polly",
         "sarvam" => "Sarvam",
         "kokoro" => "Kokoro (on this PC)",
+        "server" => "Your speech server",
         _ => "This PC",
     };
 
-    private static readonly string[] AllVoiceIds = ["automatic", "account", "openai", "elevenlabs", "google", "gemini", "polly", "sarvam", "kokoro", "mac"];
+    private static readonly string[] AllVoiceIds = ["automatic", "account", "openai", "elevenlabs", "google", "gemini", "polly", "sarvam", "kokoro", "server", "mac"];
 
     /// <summary>Automatic's order (SpeechVoiceChoice.automaticOrder).</summary>
-    private static readonly string[] AutomaticOrder = ["openai", "elevenlabs", "google", "polly", "sarvam", "gemini", "account", "kokoro", "mac"];
+    private static readonly string[] AutomaticOrder = ["server", "openai", "elevenlabs", "google", "polly", "sarvam", "gemini", "account", "kokoro", "mac"];
 
     private bool CanSpeak(string voiceId, OpenClickyShellSettings shell, bool hasAccount)
     {
@@ -394,6 +395,7 @@ public sealed class DetachedSettingsServices(IProcessRunner? processes = null) :
             "polly" => (shell.AmazonPollyCredentials ?? "").Split(':').Length is 2 or 3,
             "sarvam" => Has(shell.SarvamKey),
             "kokoro" => Kokoro.State.Kind == ModelDownloadState.Stage.Installed,
+            "server" => Speech.SpeechServer.Speaks(shell),
             "mac" => true,
             _ => false,
         };
@@ -425,6 +427,7 @@ public sealed class DetachedSettingsServices(IProcessRunner? processes = null) :
                 "polly" => "Amazon Polly, on your own key.",
                 "sarvam" => "Sarvam, on your own key.",
                 "kokoro" => "Kokoro, on this PC. Free, offline, nothing counted.",
+                "server" => "Your speech server. Free, private, nothing counted.",
                 "account" => "ElevenLabs, through OpenClicky.",
                 _ => "this PC’s voice. Free, offline, nothing counted.",
             };

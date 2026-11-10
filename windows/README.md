@@ -35,6 +35,8 @@ second time (or pick "Open OpenClicky" in the tray menu) to open its window.
 - `%LOCALAPPDATA%\OpenClicky\` — `preferences.json`, `dictation.sqlite`, downloaded models (Kokoro, Parakeet; the built-in
   Moonshine lives next to the exe in `Assets\Models`, put there by `scripts\fetch-speech-model.ps1` before a release build, from this repository's `models` prerelease, a hash-pinned mirror of sherpa-onnx's archive),
   `Logs\app.log` (truncated past 2 MB at launch; read it first when something misbehaves).
+- Your own speech server (Ollama, Speaches, LocalAI…) can hear questions and speak answers: Settings → Clicky → Your
+  models → Speech server. How to set one up: [docs/local-speech.md](../docs/local-speech.md).
 
 ## Debug flags
 

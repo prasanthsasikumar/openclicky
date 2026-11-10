@@ -56,7 +56,7 @@ public static class SettingsLayout
         new(DictationSettingsPage.Clicky, "Drawings",
             ["plugins.teacher", "clicky.drawingSource", "clicky.drawingDetail", "clicky.pieceMaker", "clicky.drawingInstructions", "clicky.drawingScriptFont", "clicky.markerShortcut"])
             { Intro = "Answers drawn on your screen while Clicky explains them, in 2D and 3D." },
-        new(DictationSettingsPage.Clicky, "Your models", ["models.ollama", "models.lmStudio", "models.custom"])
+        new(DictationSettingsPage.Clicky, "Your models", ["models.ollama", "models.lmStudio", "models.custom", "models.speech"])
             { Intro = "Models you run yourself, on this PC or another one on your network." },
         new(DictationSettingsPage.Clicky, "More",
             ["keyboard.type", "keyboard.handsFree", "clicky.model", "clicky.emailApp", "clicky.emailNeverSent",

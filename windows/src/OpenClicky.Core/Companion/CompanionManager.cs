@@ -464,27 +464,42 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
 
     // MARK: - Start / stop
 
-    /// <summary>The language push-to-talk was last set up to hear.</summary>
+    /// <summary>The language and speech server push-to-talk was last set up to hear with.</summary>
     private string? hearingLanguage;
 
-    /// <summary>An account hears with the offline engine; own keys keep the configured provider. A language this PC's
-    /// engines don't hear (Urdu) is heard by Gemini instead, when there is a Gemini key.</summary>
+    /// <summary>What decides who hears: the reply language, and the speech server's address and hearing model.</summary>
+    private static string HearingKey()
+    {
+        var server = SpeechServer.From(OpenClickyConfiguration.Settings);
+        return server?.HearingModel is { } model ? $"{ReplyLanguage.CurrentCode}|{server.BaseUrl}|{model}" : ReplyLanguage.CurrentCode;
+    }
+
+    /// <summary>A speech server of the person's own hears when they picked a model for it (it hears whatever language
+    /// that model does). Otherwise an account hears with the offline engine; own keys keep the configured provider. A
+    /// language this PC's engines don't hear (Urdu) is heard by Gemini instead, when there is a Gemini key.</summary>
     private void ApplyHearingForAccount()
     {
+        hearingLanguage = HearingKey();
+        if (SpeechServer.Hears(OpenClickyConfiguration.Settings))
+        {
+            AppLog.Write("transcription: the speech server hears");
+            BuddyDictationManager.ReplaceTranscriptionProvider(new SpeechServerTranscriptionProvider());
+            return;
+        }
         var chosen = AccountCapabilities.Current().HearsOnDevice
             ? new OnDeviceHearingProvider(services.OfflineSpeech)
             : BuddyTranscriptionProviderFactory.MakeDefaultProvider(services.OfflineSpeech);
-        hearingLanguage = ReplyLanguage.CurrentCode;
-        var provider = BuddyTranscriptionProviderFactory.ForLanguage(chosen, chosen is OnDeviceHearingProvider, hearingLanguage,
+        var provider = BuddyTranscriptionProviderFactory.ForLanguage(chosen, chosen is OnDeviceHearingProvider, ReplyLanguage.CurrentCode,
             new GeminiAudioTranscriptionProvider());
-        if (!ReferenceEquals(provider, chosen)) AppLog.Write($"transcription: this PC doesn't hear {ReplyLanguage.EnglishName(hearingLanguage)}; Gemini hears it");
+        if (!ReferenceEquals(provider, chosen)) AppLog.Write($"transcription: this PC doesn't hear {ReplyLanguage.EnglishName(ReplyLanguage.CurrentCode)}; Gemini hears it");
+        else AppLog.Write($"transcription: {provider.DisplayName} hears");
         BuddyDictationManager.ReplaceTranscriptionProvider(provider);
     }
 
-    /// <summary>shell.json changed: a new language may need another transcriber.</summary>
+    /// <summary>shell.json changed: a new language, or a speech server turned on, off or changed, may need another transcriber.</summary>
     private void OnSettingsChangedForHearing()
     {
-        if (ReplyLanguage.CurrentCode != hearingLanguage) services.MainThread.Post(ApplyHearingForAccount);
+        if (HearingKey() != hearingLanguage) services.MainThread.Post(ApplyHearingForAccount);
     }
 
     public void Start()
