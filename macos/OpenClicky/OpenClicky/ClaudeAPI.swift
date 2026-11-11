@@ -279,8 +279,14 @@ class ClaudeAPI {
                 throw streamFailure
             }
             // A cut-off answer is still spoken as it is; the log says why it ended early.
-            if Self.stopReason(fromEvent: eventPayload) == "max_tokens" {
+            let stopReason = Self.stopReason(fromEvent: eventPayload)
+            if stopReason == "max_tokens" {
                 AppLog.append("claude: answer cut off at max_tokens (\(accumulatedResponseText.count) chars)")
+            }
+            // Claude's safety classifier stopped the answer (it may have started): said plainly, not spoken half.
+            if stopReason == SafetyBlock.anthropicStopReason {
+                AppLog.append("claude: answer stopped by the safety filter after \(accumulatedResponseText.count) chars")
+                throw SafetyBlockError(reason: SafetyBlock.anthropicStopReason)
             }
 
             // We care about content_block_delta events that contain text chunks

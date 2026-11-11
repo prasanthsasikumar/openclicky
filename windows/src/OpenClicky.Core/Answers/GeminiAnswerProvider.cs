@@ -214,8 +214,8 @@ public sealed class GeminiAnswerProvider(string apiKey, string model, AnswerHttp
 public sealed class GeminiStreamAccumulator
 {
     /// <summary>
-    /// A question Gemini declined after the 200: a `promptFeedback.blockReason` (safety) or an
-    /// `error` object inside the stream.
+    /// An `error` object inside the stream after the 200. A safety block (`promptFeedback.blockReason`,
+    /// or a safety `finishReason`) is a <see cref="SafetyBlockException"/> instead.
     /// </summary>
     public sealed class StreamRefusalException(string message) : Exception(message);
 
@@ -237,12 +237,18 @@ public sealed class GeminiStreamAccumulator
         {
             throw new StreamRefusalException(JsonHelpers.String(streamError["message"]) ?? "the stream broke off");
         }
+        // The question itself was blocked: every blockReason (SAFETY, BLOCKLIST, PROHIBITED_CONTENT, OTHER…) is Gemini's filter.
         if (streamEvent["promptFeedback"] is JsonObject promptFeedback && JsonHelpers.String(promptFeedback["blockReason"]) is { } blockReason)
         {
-            throw new StreamRefusalException($"Gemini would not answer this question ({blockReason})");
+            throw new SafetyBlockException($"Gemini {blockReason}");
         }
         if ((streamEvent["candidates"] as JsonArray)?.FirstOrDefault() is not JsonObject firstCandidate) return [];
-        if (JsonHelpers.String(firstCandidate["finishReason"]) is { } candidateFinishReason) FinishReason = candidateFinishReason;
+        if (JsonHelpers.String(firstCandidate["finishReason"]) is { } candidateFinishReason)
+        {
+            FinishReason = candidateFinishReason;
+            // The answer was stopped partway: what came is cut off mid-thought, so none of it stands as the answer.
+            if (SafetyBlock.IsGeminiSafetyFinish(candidateFinishReason)) throw new SafetyBlockException($"Gemini {candidateFinishReason}");
+        }
         if (firstCandidate["content"] is not JsonObject content || content["parts"] is not JsonArray parts) return [];
 
         var textChunks = new List<string>();

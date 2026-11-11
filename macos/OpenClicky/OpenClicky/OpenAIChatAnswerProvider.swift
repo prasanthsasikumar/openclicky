@@ -293,8 +293,13 @@ nonisolated struct OpenAIChatStreamAccumulator {
             throw MidStreamError(message: errorMessage)
         }
         guard let firstChoice = (event["choices"] as? [[String: Any]])?.first else { return .nothingToShow }
-        if let choiceFinishReason = firstChoice["finish_reason"] as? String { finishReason = choiceFinishReason }
+        if let choiceFinishReason = firstChoice["finish_reason"] as? String {
+            finishReason = choiceFinishReason
+            if choiceFinishReason == SafetyBlock.openAIFinishReason { throw SafetyBlockError(reason: choiceFinishReason) }
+        }
         guard let delta = firstChoice["delta"] as? [String: Any] else { return .nothingToShow }
+        // A model that declines writes it in `refusal`, not `content`: unread, the answer came back empty.
+        if let refusal = delta["refusal"] as? String, !refusal.isEmpty { throw SafetyBlockError(reason: "refusal") }
 
         if let toolCallFragments = delta["tool_calls"] as? [[String: Any]] {
             for toolCallFragment in toolCallFragments {
