@@ -140,6 +140,8 @@ public static class AskLanePrompts
         var tools = offersQuickActions ? quickActionToolDefinitions.ToList() : [];
         // Offered whatever the lane setup, but only when there is text to write over.
         if (hasWritingTarget) tools.Add(WriteInPlace.AnthropicToolDefinition());
+        // Always offered: "use easier words" is remembered on every route.
+        tools.Add(AnswerStyle.AnthropicToolDefinition());
         return tools;
     }
 
@@ -149,13 +151,15 @@ public static class AskLanePrompts
     /// over, then the talk skills. <paramref name="pluginPromptLines"/> (the Teacher's, while it is on) go
     /// straight after the companion prompt, before the reply language.
     /// </summary>
+    /// <param name="answerStyle">How they asked to be answered; null reads shell.json (AnswerStyle.Current).</param>
     public static string AskSystemPrompt(bool quickActionsOffered, bool hasWritingTarget, string skillsBlock, string? languageCode = null,
-                                         string pluginPromptLines = "")
+                                         string pluginPromptLines = "", IReadOnlyList<AnswerStyleChoice>? answerStyle = null)
     {
         var toolsLine = quickActionsOffered ? "\n\n" + AccountToolsInstruction : "";
         var writeInPlaceLine = "\n\n" + (hasWritingTarget ? WriteInPlace.PromptInstruction : WriteInPlace.NoTargetPromptInstruction);
+        var answerStyleLines = "\n\n" + AnswerStyle.PromptSection(answerStyle ?? AnswerStyle.Current);
         return AssistantName.Introduce(
-            ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt + pluginPromptLines, languageCode) + toolsLine + writeInPlaceLine, skillsBlock));
+            ComposeTalkInstructions(WithReplyLanguage(CompanionVoiceResponseSystemPrompt + pluginPromptLines, languageCode) + toolsLine + writeInPlaceLine + answerStyleLines, skillsBlock));
     }
 
     /// <summary>
