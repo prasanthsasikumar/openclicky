@@ -345,9 +345,36 @@ struct AnswerProviderHTTPTests {
         ])
     }
 
-    @Test func aBlockedGeminiQuestionSaysSo() {
-        #expect(throws: GeminiStreamAccumulator.StreamRefusal.self) {
-            _ = try GeminiAnswerProvider.parseStream(lines: [#"data: {"promptFeedback":{"blockReason":"SAFETY"}}"#])
+    // A question Gemini's filter blocked, or an answer it stopped partway, is a safety block: asking again
+    // gets the same block, so the ask lane says so plainly instead of "please ask again".
+    @Test(arguments: [
+        (#"data: {"promptFeedback":{"blockReason":"SAFETY"}}"#, "Gemini SAFETY"),
+        (#"data: {"promptFeedback":{"blockReason":"PROHIBITED_CONTENT"}}"#, "Gemini PROHIBITED_CONTENT"),
+        (#"data: {"candidates":[{"content":{"parts":[{"text":"well"}],"role":"model"},"finishReason":"SAFETY"}]}"#, "Gemini SAFETY"),
+        (#"data: {"candidates":[{"finishReason":"BLOCKLIST"}]}"#, "Gemini BLOCKLIST"),
+    ])
+    func aBlockedGeminiQuestionOrAnswerIsASafetyBlock(line: String, reason: String) {
+        #expect(throws: SafetyBlockError(reason: reason)) {
+            _ = try GeminiAnswerProvider.parseStream(lines: [#"data: {"candidates":[{"content":{"parts":[{"text":"so "}],"role":"model"}}]}"#, line])
+        }
+    }
+
+    @Test(arguments: ["STOP", "MAX_TOKENS", "RECITATION"])
+    func otherGeminiFinishReasonsAreNotASafetyBlock(finishReason: String) throws {
+        let result = try GeminiAnswerProvider.parseStream(lines: [
+            #"data: {"candidates":[{"content":{"parts":[{"text":"done."}],"role":"model"},"finishReason":""# + finishReason + #""}]}"#,
+        ])
+        #expect(result.text == "done.")
+    }
+
+    // An OpenAI-compatible content filter, or a model that writes its refusal in `refusal`, is a safety block.
+    @Test(arguments: [
+        (#"data: {"choices":[{"index":0,"delta":{},"finish_reason":"content_filter"}]}"#, "content_filter"),
+        (#"data: {"choices":[{"index":0,"delta":{"refusal":"I can't help with that."}}]}"#, "refusal"),
+    ])
+    func anOpenAIContentFilterIsASafetyBlock(line: String, reason: String) {
+        #expect(throws: SafetyBlockError(reason: reason)) {
+            _ = try OpenAIChatAnswerProvider.parseStream(lines: [#"data: {"choices":[{"index":0,"delta":{"content":"So "}}]}"#, line, "data: [DONE]"])
         }
     }
 

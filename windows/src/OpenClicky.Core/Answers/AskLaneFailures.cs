@@ -26,6 +26,14 @@ public static class AskLaneFailures
     public const string EmptyAnswerSentence = "i didn't get an answer. please ask again.";
 
     /// <summary>
+    /// A safety filter stopped the answer (<see cref="SafetyBlockException"/>). Asking again gets the same
+    /// block, so it says what happened and what still can be done; it is also remembered as the reply, so a
+    /// "why?" or a "yes" after it is answered knowing what happened.
+    /// </summary>
+    public const string SafetyBlockSentence =
+        "the ai i use has a safety filter, and it stopped that answer. i can still explain the ideas behind it, if you'd like.";
+
+    /// <summary>
     /// An interrupted request: the caller's cancellation, or the HTTP read cancelled because a new
     /// question replaced this one. HttpClient's own timeout (a TaskCanceledException wrapping a
     /// TimeoutException) is a failure, not an interruption.
