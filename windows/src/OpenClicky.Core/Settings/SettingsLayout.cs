@@ -49,6 +49,8 @@ public static class SettingsLayout
     [
         new(DictationSettingsPage.Clicky, "Talking", ["keyboard.talk", "keyboard.mouseTalk", "clicky.assistantName", "clicky.speechVoice", "clicky.language", "clicky.answerSource"])
             { Intro = "How you ask, and who answers in which voice." },
+        new(DictationSettingsPage.Clicky, "How it answers", ["clicky.answerSimpler", "clicky.answerShorter", "clicky.answerYesNoFirst"])
+            { Intro = "Ask Clicky for easier words, shorter answers or yes or no first, and it remembers. Switch them off here." },
         new(DictationSettingsPage.Clicky, "Hands-free", ["clicky.fastVoice", "clicky.realtimeProvider", "clicky.fastVoiceNeedsKey", "clicky.alwaysListening"])
             { Intro = "Talking back instantly, and listening without the keys." },
         new(DictationSettingsPage.Clicky, "Pointer", ["clicky.pointer", "clicky.pointerColor", "clicky.pointerStyle"])

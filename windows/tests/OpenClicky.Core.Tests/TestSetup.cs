@@ -12,5 +12,7 @@ internal static class TestSetup
     {
         // A user who renamed their assistant would otherwise see the prompt tests fail.
         AssistantName.Pinned = AssistantName.Default;
+        // Likewise a machine whose person asked for simpler words or shorter answers.
+        OpenClicky.Core.Answers.AnswerStyle.Pinned = [];
     }
 }

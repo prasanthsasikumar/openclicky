@@ -656,7 +656,8 @@ public class FastActionToolDefinitionTests
         }
         // They fit the ask lane's hook.
         var tools = AskLanePrompts.AskTools(offersQuickActions: true, hasWritingTarget: false, anthropic);
-        Assert.Equal(21, tools.Count);
+        // The quick actions, then set_answer_style (always offered).
+        Assert.Equal(22, tools.Count);
     }
 
     /// <summary>

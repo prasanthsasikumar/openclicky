@@ -122,14 +122,15 @@ public class AskLanePromptsTests
     }
 
     [Fact]
-    public void TheToolsAreTheQuickActionsThenWriteInPlace()
+    public void TheToolsAreTheQuickActionsThenWriteInPlaceThenTheAnswerStyle()
     {
         var quickActions = QuickActionToolDefinitions.All();
-        Assert.Equal(quickActions.Select(tool => tool["name"]!.GetValue<string>()),
+        Assert.Equal(quickActions.Select(tool => tool["name"]!.GetValue<string>()).Append(AnswerStyle.ToolName),
                      AskLanePrompts.AskTools(true, false, quickActions).Select(tool => tool["name"]!.GetValue<string>()));
-        Assert.Equal(["write_in_place"], AskLanePrompts.AskTools(false, true, quickActions).Select(tool => tool["name"]!.GetValue<string>()));
-        Assert.Equal(7, AskLanePrompts.AskTools(true, true, quickActions).Count);
-        Assert.Empty(AskLanePrompts.AskTools(false, false, quickActions));
+        Assert.Equal(["write_in_place", AnswerStyle.ToolName], AskLanePrompts.AskTools(false, true, quickActions).Select(tool => tool["name"]!.GetValue<string>()));
+        Assert.Equal(8, AskLanePrompts.AskTools(true, true, quickActions).Count);
+        // "use easier words" is remembered on every route, so its tool is always there.
+        Assert.Equal([AnswerStyle.ToolName], AskLanePrompts.AskTools(false, false, quickActions).Select(tool => tool["name"]!.GetValue<string>()));
     }
 
     [Fact]
@@ -140,10 +141,11 @@ public class AskLanePromptsTests
         var toolsAt = prompt.IndexOf(AskLanePrompts.AccountToolsInstruction, StringComparison.Ordinal);
         var writeAt = prompt.IndexOf(WriteInPlace.PromptInstruction, StringComparison.Ordinal);
         Assert.True(toolsAt > 0 && writeAt > toolsAt);
-        Assert.EndsWith(WriteInPlace.PromptInstruction + "\n\nskill block", prompt);
-        // With nothing to write over, the only line after the language says not to read a rewrite out.
+        Assert.EndsWith(WriteInPlace.PromptInstruction + "\n\n" + AnswerStyle.PromptSection([]) + "\n\nskill block", prompt);
+        // With nothing to write over, the lines after the language say not to read a rewrite out, then how to remember a style.
         var bare = AskLanePrompts.AskSystemPrompt(false, false, " ", "en");
-        Assert.Equal(AskLanePrompts.WithReplyLanguage(AskLanePrompts.CompanionVoiceResponseSystemPrompt, "en") + "\n\n" + WriteInPlace.NoTargetPromptInstruction, bare);
+        Assert.Equal(AskLanePrompts.WithReplyLanguage(AskLanePrompts.CompanionVoiceResponseSystemPrompt, "en") + "\n\n" + WriteInPlace.NoTargetPromptInstruction
+                     + "\n\n" + AnswerStyle.PromptSection([]), bare);
         Assert.DoesNotContain(AskLanePrompts.AccountToolsInstruction, bare);
     }
 

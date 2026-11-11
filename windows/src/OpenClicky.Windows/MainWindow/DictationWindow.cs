@@ -422,6 +422,7 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
     private static WpfUi.SymbolRegular SectionSymbol(string? pageSection) => pageSection switch
     {
         "Talking" => WpfUi.SymbolRegular.Mic24,
+        "How it answers" => WpfUi.SymbolRegular.ChatBubblesQuestion24,
         "Hands-free" => WpfUi.SymbolRegular.Headphones24,
         "Pointer" => WpfUi.SymbolRegular.CursorClick24,
         "Drawings" => WpfUi.SymbolRegular.PaintBrush24,
