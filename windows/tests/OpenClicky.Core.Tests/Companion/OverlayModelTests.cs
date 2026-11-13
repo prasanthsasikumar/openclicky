@@ -107,6 +107,60 @@ public class OverlayModelTests
         Assert.Equal("", model.CursorCaptionText);
     }
 
+    /// <summary>Captions of the spoken answer: each piece shows whole, the last stays a moment after the voice, then fades.</summary>
+    [Fact]
+    public void ASpokenCaptionShowsWholeAndFadesAfterTheVoice()
+    {
+        var (model, clock, _) = Make();
+        model.ShowSpokenCaption("the save button is at the top.");
+        Assert.Equal("the save button is at the top.", model.CursorCaptionText);
+        Assert.True(model.IsShowingSpokenCaption);
+        clock.Advance(30);
+        Assert.Equal(1.0, model.CursorCaptionOpacity);
+
+        model.ShowSpokenCaption("click it to save.");
+        model.FadeSpokenCaptionAfter(2.5);
+        clock.Advance(2.4);
+        Assert.Equal("click it to save.", model.CursorCaptionText);
+        Assert.Equal(1.0, model.CursorCaptionOpacity);
+        clock.Advance(0.2);
+        Assert.Equal(0.0, model.CursorCaptionOpacity);
+        clock.Advance(0.35);
+        Assert.False(model.IsCursorCaptionVisible);
+        Assert.False(model.IsShowingSpokenCaption);
+    }
+
+    [Fact]
+    public void TheNextPieceCancelsTheFade()
+    {
+        var (model, clock, _) = Make();
+        model.ShowSpokenCaption("first.");
+        model.FadeSpokenCaptionAfter(1);
+        clock.Advance(0.5);
+        model.ShowSpokenCaption("second.");
+        clock.Advance(5);
+        Assert.Equal("second.", model.CursorCaptionText);
+        Assert.Equal(1.0, model.CursorCaptionOpacity);
+    }
+
+    /// <summary>Stopping the answer takes its caption away; a caption that isn't the answer's ("listening…") stays.</summary>
+    [Fact]
+    public void StoppingTheAnswerTakesOnlyItsOwnCaptionAway()
+    {
+        var (model, clock, _) = Make();
+        model.ShowSpokenCaption("the answer.");
+        model.DismissSpokenCaption();
+        Assert.Equal(0.0, model.CursorCaptionOpacity);
+
+        model.ShowLiveCaption("listening…");
+        Assert.False(model.IsShowingSpokenCaption);
+        model.DismissSpokenCaption();
+        model.FadeSpokenCaptionAfter(1);
+        clock.Advance(5);
+        Assert.Equal("listening…", model.CursorCaptionText);
+        Assert.Equal(1.0, model.CursorCaptionOpacity);
+    }
+
     [Fact]
     public void ANewCaptionReplacesOneStillTyping()
     {

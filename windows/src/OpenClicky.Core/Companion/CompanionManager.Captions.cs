@@ -7,8 +7,10 @@
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Speech;
 
 namespace OpenClicky.Core.Companion;
 
@@ -29,6 +31,51 @@ public sealed partial class CompanionManager
         Overlay.CancelTransientHide();
         Overlay.ShowCaption(IslandTexts.ExplainMessage(DictationSettings.DictationKey), 8);
         Overlay.ScheduleTransientHideIfNeeded();
+    }
+
+    // MARK: - Captions of what is said
+
+    /// <summary>Whether what is about to be said is captioned (AnswerCaptions): decided once per answer or notice, from
+    /// the setting, how the question was asked and the sound output.</summary>
+    private bool AnswerCaptionsAreShown()
+    {
+        var choice = AnswerCaptions.Current;
+        var shown = choice == AnswerCaptionsChoice.WhenItCannotBeHeard
+            ? AnswerCaptions.AreShown(choice, lastQuestionWasTyped, TeacherBoard.Shared.CurrentOutput())
+            : choice == AnswerCaptionsChoice.Always;
+        if (shown) AppLog.Write($"captions: shown ({choice.RawValue()}, typed {lastQuestionWasTyped})");
+        return shown;
+    }
+
+    // Fast voice: captioned from its transcript; the caption fades once the response is over and its audio has played.
+    private bool fastVoiceIsCaptioned;
+    private bool fastVoiceResponseIsOver;
+
+    /// <summary>A new response: the last one's caption, if it is still up, fades as if it had been said.</summary>
+    private void EndFastVoiceCaptions()
+    {
+        if (!fastVoiceIsCaptioned) return;
+        fastVoiceIsCaptioned = false;
+        Overlay.FadeSpokenCaptionAfter(AnswerCaptions.SecondsAfterTheVoice);
+    }
+
+    private void StartFastVoiceCaptions()
+    {
+        fastVoiceIsCaptioned = AnswerCaptionsAreShown();
+        fastVoiceResponseIsOver = false;
+    }
+
+    private void ShowFastVoiceCaption(string transcriptSoFar)
+    {
+        if (fastVoiceIsCaptioned) Overlay.ShowSpokenCaption(AnswerCaptions.LiveText(transcriptSoFar));
+    }
+
+    private void FadeFastVoiceCaptionOnceSaid(bool responseIsOver = false)
+    {
+        if (responseIsOver) fastVoiceResponseIsOver = true;
+        if (!fastVoiceIsCaptioned || !fastVoiceResponseIsOver || RealtimeVoiceClient.IsSpeaking) return;
+        fastVoiceIsCaptioned = false;
+        Overlay.FadeSpokenCaptionAfter(AnswerCaptions.SecondsAfterTheVoice);
     }
 
     // MARK: - Pointer presence

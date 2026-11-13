@@ -49,6 +49,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
     private readonly Action refreshMarkerKeys;
     private readonly IDisposable pointerColorObservation;
     private readonly IDisposable pointerStyleObservation;
+    private readonly IDisposable captionColorObservation;
+    private readonly IDisposable captionGlowObservation;
     private readonly GuidedStepInputSource guidedStepInput;
     private readonly VelopackAppUpdater updater;
     private readonly TrayIcon trayIcon;
@@ -96,6 +98,13 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         ApplyPointerLook();
         pointerColorObservation = preferences.Observe(PointerLook.ColorPreferenceKey, () => platform.MainThread.Post(ApplyPointerLook));
         pointerStyleObservation = preferences.Observe(PointerLook.StylePreferenceKey, () => platform.MainThread.Post(ApplyPointerLook));
+        // The caption's colour and glow (Settings → Clicky → Talking), the same way.
+        void ApplyCaptionLook() => Overlay.OverlayWindow.ApplyCaptionLook(
+            CaptionLook.HexFor(preferences.GetString(CaptionLook.ColorPreferenceKey)),
+            CaptionLook.GlowFrom(preferences.GetString(CaptionLook.GlowPreferenceKey)));
+        ApplyCaptionLook();
+        captionColorObservation = preferences.Observe(CaptionLook.ColorPreferenceKey, () => platform.MainThread.Post(ApplyCaptionLook));
+        captionGlowObservation = preferences.Observe(CaptionLook.GlowPreferenceKey, () => platform.MainThread.Post(ApplyCaptionLook));
         guidedStepInput = new GuidedStepInputSource(platform.KeyboardMonitor);
         var services = new CompanionServices
         {
@@ -340,6 +349,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         OpenClickyConfiguration.SettingsChanged -= refreshMarkerKeys;
         pointerColorObservation.Dispose();
         pointerStyleObservation.Dispose();
+        captionColorObservation.Dispose();
+        captionGlowObservation.Dispose();
         mouseTalk.Dispose();
         screenMarker.Dispose();
         try

@@ -290,10 +290,14 @@ public sealed partial class OverlayModel : ObservableObject
 
     private CancellationTokenSource? captionCancellation;
 
+    /// <summary>The caption is the spoken answer's (AnswerCaptions), not a notice: stopping the answer takes it away.</summary>
+    public bool IsShowingSpokenCaption { get; private set; }
+
     /// <summary>Types <paramref name="message"/> beside the buddy one character every 30 ms (the onboarding prompt, the
     /// island's (i), hands-free feedback), holds it <paramref name="holdSeconds"/>, then fades it out.</summary>
     public void StreamCursorCaption(string message, double holdSeconds = 10)
     {
+        IsShowingSpokenCaption = false;
         captionCancellation?.Cancel();
         var cancellation = new CancellationTokenSource();
         captionCancellation = cancellation;
@@ -325,6 +329,7 @@ public sealed partial class OverlayModel : ObservableObject
     {
         var heardSoFar = text.Trim();
         if (heardSoFar.Length == 0) return;
+        IsShowingSpokenCaption = false;
         captionCancellation?.Cancel();
         captionCancellation = null;
         CursorCaptionText = heardSoFar;
@@ -332,8 +337,47 @@ public sealed partial class OverlayModel : ObservableObject
         IsCursorCaptionVisible = true;
     }
 
+    /// <summary>What the voice is saying now (a piece of the answer, or fast voice's words so far), shown whole until the
+    /// next piece or <see cref="FadeSpokenCaptionAfter"/>.</summary>
+    public void ShowSpokenCaption(string text)
+    {
+        if (text.Trim().Length == 0) return;
+        ShowLiveCaption(text);
+        IsShowingSpokenCaption = true;
+    }
+
+    /// <summary>The voice has finished: the spoken caption stays <paramref name="seconds"/> to finish reading, then fades. A
+    /// caption shown meanwhile (the next piece, a notice) cancels the fade.</summary>
+    public void FadeSpokenCaptionAfter(double seconds)
+    {
+        if (!IsShowingSpokenCaption || !IsCursorCaptionVisible) return;
+        captionCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        captionCancellation = cancellation;
+        _ = DismissAfterAsync(seconds, cancellation.Token);
+    }
+
+    /// <summary>The answer was stopped: its caption goes now. Any other caption is left alone.</summary>
+    public void DismissSpokenCaption()
+    {
+        if (IsShowingSpokenCaption) DismissCursorCaption();
+    }
+
+    private async Task DismissAfterAsync(double seconds, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await delay(TimeSpan.FromSeconds(seconds), cancellationToken);
+            DismissCursorCaption();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     public void DismissCursorCaption()
     {
+        IsShowingSpokenCaption = false;
         captionCancellation?.Cancel();
         captionCancellation = null;
         if (!IsCursorCaptionVisible) return;
