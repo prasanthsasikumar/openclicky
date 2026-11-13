@@ -238,6 +238,9 @@ public sealed class SettingsCatalog
         ? "Hands-free: just talk, no keys. Instant with fast voice on."
         : "Hands-free: just talk, no keys. Clicky answers once you stop talking.";
 
+    public const string CaptionsDetail =
+        "What Clicky says, written beside the pointer as it speaks. Automatically when you typed the question, or the sound is off or low.";
+
     public const string FastVoiceNeedsKeyDetail = "Instant replies need your own OpenAI or Gemini key. Without one, Clicky answers in the standard voice.";
 
     /// <summary>Models of the person's own (Ollama, LM Studio, any OpenAI-compatible server) and who writes drawings.</summary>
@@ -284,6 +287,13 @@ public sealed class SettingsCatalog
             Item("clicky.speechVoice", "Voice", "Voice", "Who speaks the answers: the cloud voice, or this PC’s own voice, free and offline.",
                 ["voice", "speech", "tts", "text to speech", "elevenlabs", "eleven labs", "kokoro", "offline", "on device",
                  "pc voice", "windows voice", "narrator", "credits", "allowance", "left"]),
+            Item("clicky.captions", "Voice", "Captions", CaptionsDetail,
+                ["captions", "subtitles", "read along", "read the answer", "deaf", "hard of hearing", "hearing", "muted", "mute",
+                 "sound off", "quiet", "noisy", "classroom", "written", "text"]),
+            Item("clicky.captionColor", "Voice", "Caption colour", "The colour of the words beside the pointer: the red bubble, or bright words on a dark card.",
+                ["caption", "captions", "subtitles", "colour", "color", "text colour", "font colour", "orange", "yellow", "white", "dark"]),
+            Item("clicky.captionGlow", "Voice", "Caption glow", "A soft halo around the words, in their own colour.",
+                ["caption", "captions", "subtitles", "glow", "glowing", "neon", "halo", "shine", "bright"]),
         ];
         // Fast voice runs on OpenAI Realtime or Gemini Live, which need an own OpenAI or Gemini key; without one
         // its switch would do nothing, so the row shows the way to a key instead.

@@ -58,6 +58,12 @@ public sealed class SpeechQueue
     /// <summary>Piece <c>n</c> finished playing (or its player was stopped); on the run loop's thread.</summary>
     public event Action<int>? PieceEnded;
 
+    /// <summary>The words of piece <c>n</c> (in enqueue order): what the captions show while it plays.</summary>
+    public string PieceText(int pieceIndex)
+    {
+        lock (stateLock) return pieceIndex >= 0 && pieceIndex < pieceTexts.Count ? pieceTexts[pieceIndex] : "";
+    }
+
     public void Enqueue(string pieceText)
     {
         lock (stateLock)
@@ -249,16 +255,27 @@ public sealed class StreamingAnswerSpeaker
     private readonly SpeechQueue speechQueue;
     private readonly Action onVoiceStarts;
     private readonly Action<string> onPointTag;
+    private readonly Action<string>? onPieceStarts;
     private bool hasVoiceStarted;
     private bool hasHandledPointTag;
     private int enqueuedPieceCount;
     private bool isCancelled;
 
-    public StreamingAnswerSpeaker(SpeechQueue speechQueue, Action onVoiceStarts, Action<string> onPointTag)
+    /// <param name="onPieceStarts">The words of each piece as the voice starts saying it (the captions), on the queue's
+    /// thread; never after <see cref="Cancel"/>.</param>
+    public StreamingAnswerSpeaker(SpeechQueue speechQueue, Action onVoiceStarts, Action<string> onPointTag, Action<string>? onPieceStarts = null)
     {
         this.speechQueue = speechQueue;
         this.onVoiceStarts = onVoiceStarts;
         this.onPointTag = onPointTag;
+        this.onPieceStarts = onPieceStarts;
+        if (onPieceStarts is not null) speechQueue.PieceStarted += PieceDidStart;
+    }
+
+    private void PieceDidStart(int pieceIndex)
+    {
+        if (IsCancelled) return;
+        onPieceStarts?.Invoke(speechQueue.PieceText(pieceIndex));
     }
 
     /// <summary>A new question interrupted this answer: its voice must not start and its pointer must not fly.</summary>

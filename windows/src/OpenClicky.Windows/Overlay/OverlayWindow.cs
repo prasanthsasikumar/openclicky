@@ -161,6 +161,8 @@ public sealed class OverlayWindow : Window
         navigationBubble.RenderTransform = navigationBubbleScaleTransform;
         // Room for the caption bubble's padding inside the 300 frame.
         captionBubble.MaxWidth = 300;
+        RestyleCaption();
+        CaptionLookChanged += RestyleCaption;
 
         clickRipple = new Ellipse
         {
@@ -197,7 +199,52 @@ public sealed class OverlayWindow : Window
         lastFrameTime = MotionClock.Now;
     }
 
-    private static (Border Bubble, TextBlock Text) MakeBubble(bool wraps, double verticalPadding)
+    // MARK: - The caption's look (Settings → Clicky → Talking: caption colour and glow)
+
+    /// <summary>The words' colour (null: the classic white on the red bubble) and their glow; every overlay follows it.</summary>
+    private static (string? Hex, CaptionGlow Glow) captionLook = (null, CaptionGlow.Off);
+    private static event Action? CaptionLookChanged;
+
+    /// <summary>The dark, see-through card that bright words sit on, so they read on any screen.</summary>
+    private static readonly SolidColorBrush CaptionCardBrush = DS.Brush(DS.Hex("#14171F"), 0.88);
+
+    /// <summary>Restyles the caption on every monitor's overlay, now and from now on (on the main thread).</summary>
+    public static void ApplyCaptionLook(string? wordsHex, CaptionGlow glow)
+    {
+        captionLook = (wordsHex, glow);
+        CaptionLookChanged?.Invoke();
+    }
+
+    private void RestyleCaption() => StyleCaption(captionBubble, captionTextBlock, captionLook.Hex, captionLook.Glow);
+
+    /// <summary>Dresses a caption bubble (<see cref="MakeBubble"/>) in a look: the overlay's, and the caption-looks smoke run's.</summary>
+    internal static void StyleCaption(Border captionBubble, TextBlock captionTextBlock, string? wordsHex, CaptionGlow glow)
+    {
+        var words = wordsHex is null ? Colors.White : DS.Hex(wordsHex);
+        if (wordsHex is null)
+        {
+            captionBubble.Background = DS.Colors.OverlayCursorBrush;
+            captionBubble.BorderThickness = new Thickness(0);
+            captionBubble.Effect = new DropShadowEffect { Color = DS.Colors.OverlayCursor, ShadowDepth = 0, BlurRadius = 12, Opacity = 0.5, RenderingBias = RenderingBias.Performance };
+        }
+        else
+        {
+            captionBubble.Background = CaptionCardBrush;
+            var neon = glow == CaptionGlow.Strong;
+            captionBubble.BorderBrush = DS.Brush(words, neon ? 0.7 : 0.35);
+            captionBubble.BorderThickness = new Thickness(1);
+            // A strong glow lights the card's edge in the words' colour; otherwise a soft dark shadow lifts it off the page.
+            captionBubble.Effect = neon
+                ? new DropShadowEffect { Color = words, ShadowDepth = 0, BlurRadius = 18, Opacity = 0.6, RenderingBias = RenderingBias.Performance }
+                : new DropShadowEffect { Color = Colors.Black, ShadowDepth = 0, BlurRadius = 10, Opacity = 0.35, RenderingBias = RenderingBias.Performance };
+        }
+        captionTextBlock.Foreground = DS.Brush(words);
+        captionTextBlock.Effect = glow.Halo() is { } halo
+            ? new DropShadowEffect { Color = words, ShadowDepth = 0, BlurRadius = halo.BlurRadius, Opacity = halo.Opacity, RenderingBias = RenderingBias.Quality }
+            : null;
+    }
+
+    internal static (Border Bubble, TextBlock Text) MakeBubble(bool wraps, double verticalPadding)
     {
         var text = new TextBlock
         {
@@ -789,6 +836,7 @@ public sealed class OverlayWindow : Window
     {
         isClosed = true;
         System.Windows.Media.CompositionTarget.Rendering -= OnRendering;
+        CaptionLookChanged -= RestyleCaption;
         model.PropertyChanged -= OnModelPropertyChanged;
     }
 }
