@@ -1,0 +1,32 @@
+step(1); say("Let me build a 3D model of a human skull for you: the round cranium on top, with the face and jaw below.")
+const f = figure(340, 90, 600, 500, {tilt: 8, turn: 18, ground: false})
+const cranium = f.blob({balls: [[0, 0.7, 0, 1.25, 1.05, 1.15], [0, 0.1, 0, 1.2, 1.0, 1.05]], smooth: 0.35, mat: 'bone'})
+const face = f.blob({balls: [[0, -0.75, 0.75, 0.55, 0.75, 0.5], [0.35, -0.5, 0.7, 0.3, 0.35, 0.3], [-0.35, -0.5, 0.7, 0.3, 0.35, 0.3]], smooth: 0.4, mat: 'bone'})
+cranium.label('cranium', {color: 'blue'})
+
+step(2); say("Here are the two eye sockets, the nose hole, and the cheekbones.")
+const socketR = f.blob({balls: [[0.45, -0.35, 0.95, 0.28, 0.22, 0.15]], smooth: 0.5, mat: 'bone:#2b2620'})
+const socketL = f.blob({balls: [[-0.45, -0.35, 0.95, 0.28, 0.22, 0.15]], smooth: 0.5, mat: 'bone:#2b2620'})
+const nose = f.blob({holes: [[0, -0.7, 1.05, 0.12, 0.22, 0.1]], mat: 'bone'})
+socketR.label('eye socket', {color: 'purple'})
+
+step(3); say("The lower jaw, called the mandible, is a U-shaped bone that hinges on the skull and can swing open.")
+const jaw = f.tube({points: [[-0.55, -1.3, 0.3], [-0.5, -1.6, 0.85], [0, -1.65, 1.0], [0.5, -1.6, 0.85], [0.55, -1.3, 0.3]], r: 0.12, mat: 'bone'})
+const hingeR = f.cyl({r: 0.08, h: 0.25, axis: 'x', at: [0.62, -1.15, 0.45], mat: 'bone'})
+const hingeL = f.cyl({r: 0.08, h: 0.25, axis: 'x', at: [-0.62, -1.15, 0.45], mat: 'bone'})
+jaw.label('mandible', {color: 'orange'})
+
+step(4); say("Along the jaws sit the teeth: twenty in a child, thirty-two in an adult.")
+const toothTop = f.box({w: 0.09, h: 0.18, d: 0.09, at: [0.45, -1.22, 0.85], copies: {n: 6, step: [-0.18, 0, 0.03]}, mat: 'bone:#f4efe2'})
+const toothBot = f.box({w: 0.09, h: 0.18, d: 0.09, at: [0.45, -1.5, 0.85], copies: {n: 6, step: [-0.18, 0, 0.03]}, mat: 'bone:#f4efe2'})
+
+step(5); say("At the base, a hole called the foramen magnum lets the spinal cord connect to the brain.")
+const hole = f.blob({holes: [[0, -0.95, -0.2, 0.2, 0.12, 0.2]], mat: 'bone'})
+const cord = f.cyl({r: 0.1, h: 0.6, axis: 'y', at: [0, -1.5, -0.25], mat: 'tissue:#C0392B'})
+f.view({tilt: 25, turn: 35})
+hole.label('spinal cord', {color: 'red'})
+
+step(6); say("So the skull is a bony helmet for the brain, with openings for the eyes, nose and spinal cord.")
+text(640, 640, 'the skull protects the brain', {size: 24, bold: true, color: 'yellow'})
+highlight(480, 618, 330, 34, {color: 'yellow', fillOpacity: 0.3})
+suggest(['Show it from below', 'Open the jaw'])

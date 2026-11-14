@@ -1,0 +1,20 @@
+step(1); say("Let me build a 3D model of a human skull for you. It has a round brain case on top and a face at the front.")
+text(640, 80, 'Human skull', {size: 28, bold: true})
+const f = figure(340, 110, 600, 480, {tilt: 12, turn: -25, ground: false})
+const cranium = f.blob({balls: [[0, 0.55, -0.15, 0.95, 0.9, 0.85], [0, 0.1, 0.3, 0.75, 0.6, 0.55], [-0.62, -0.05, 0.5, 0.25], [0.62, -0.05, 0.5, 0.25], [0, -0.45, 0.55, 0.5, 0.3, 0.35]], smooth: 0.35, holes: [[-0.38, 0.0, 0.98, 0.2], [0.38, 0.0, 0.98, 0.2], [0, -0.28, 0.85, 0.1]], mat: 'bone'})
+f.label(cranium, 'brain case', {color: 'blue'})
+
+step(2); say("The lower jaw is a separate U-shaped bone, and the upper teeth sit in a row along the front.")
+const jaw = f.blob({balls: [[-0.55, -0.95, 0.2, 0.2], [0.55, -0.95, 0.2, 0.2], [0, -1.2, 0.45, 0.42, 0.22, 0.3], [-0.6, -0.5, -0.2, 0.2], [0.6, -0.5, -0.2, 0.2]], smooth: 0.4, mat: 'bone'})
+f.label(jaw, 'lower jaw', {color: 'purple'})
+const teeth = f.sphere({r: 0.075, at: [-0.36, -0.68, 0.86], copies: {n: 8, step: [0.1, 0, 0]}, mat: 'ceramic'})
+f.label(teeth, 'teeth', {color: 'teal'})
+
+step(3); say("The eye sockets are two deep holes, and the nose is an opening between them.")
+const socket = f.torus({r: 0.2, tube: 0.03, at: [-0.38, 0.0, 0.96], mat: 'paint:#C0392B', mirror: 'x'})
+f.label(socket, 'eye socket', {color: 'red'})
+
+step(4); say("The skull protects the brain and gives the face its shape, while the jaw moves to let us chew.")
+highlight(400, 570, 480, 40, {color: 'yellow'})
+text(640, 590, 'The skull protects the brain and holds the face', {size: 24})
+suggest(['Show the jaw moving', 'Compare with a monkey skull'])

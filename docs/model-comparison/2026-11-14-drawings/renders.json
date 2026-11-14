@@ -1,0 +1,249 @@
+{
+ "deepseek-v4.1-flash|plane": {
+  "shot": "deepseek-v4.1-flash__plane.jpg",
+  "errors": []
+ },
+ "deepseek-v4.1-flash|school": {
+  "shot": "deepseek-v4.1-flash__school.jpg",
+  "errors": []
+ },
+ "deepseek-v4.1-flash|skull": {
+  "shot": "deepseek-v4.1-flash__skull.jpg",
+  "errors": [
+   "syntax error in the cranium statement",
+   "cranium is not defined"
+  ]
+ },
+ "deepseek-v4-pro|school": {
+  "shot": "deepseek-v4-pro__school.jpg",
+  "errors": []
+ },
+ "deepseek-v4-pro|plane": {
+  "shot": "deepseek-v4-pro__plane.jpg",
+  "errors": []
+ },
+ "muse-spark-1.2-contributor|school": {
+  "shot": "muse-spark-1.2-contributor__school.jpg",
+  "errors": []
+ },
+ "muse-spark-1.2-contributor|skull": {
+  "shot": "muse-spark-1.2-contributor__skull.jpg",
+  "errors": []
+ },
+ "muse-spark-1.3-contributor|school": {
+  "shot": "muse-spark-1.3-contributor__school.jpg",
+  "errors": []
+ },
+ "muse-spark-1.2-contributor|plane": {
+  "shot": "muse-spark-1.2-contributor__plane.jpg",
+  "errors": [
+   "cockpit is not defined"
+  ]
+ },
+ "glm-5.3-flash|school": {
+  "shot": "glm-5.3-flash__school.jpg",
+  "errors": []
+ },
+ "muse-spark-1.3-contributor|skull": {
+  "shot": "muse-spark-1.3-contributor__skull.jpg",
+  "errors": []
+ },
+ "glm-5.3-flash|plane": {
+  "shot": "glm-5.3-flash__plane.jpg",
+  "errors": []
+ },
+ "glm-5.3-flash|skull": {
+  "shot": "glm-5.3-flash__skull.jpg",
+  "errors": []
+ },
+ "muse-spark-1.3-contributor|plane": {
+  "shot": "muse-spark-1.3-contributor__plane.jpg",
+  "errors": []
+ },
+ "gpt-5.6-luna|skull": {
+  "shot": "gpt-5.6-luna__skull.jpg",
+  "errors": []
+ },
+ "gpt-5.6-luna|school": {
+  "shot": "gpt-5.6-luna__school.jpg",
+  "errors": []
+ },
+ "gpt-5.6-luna|plane": {
+  "shot": "gpt-5.6-luna__plane.jpg",
+  "errors": []
+ },
+ "gpt-6-luna|skull": {
+  "shot": "gpt-6-luna__skull.jpg",
+  "errors": []
+ },
+ "gpt-6-luna|school": {
+  "shot": "gpt-6-luna__school.jpg",
+  "errors": []
+ },
+ "gpt-6-luna|plane": {
+  "shot": "gpt-6-luna__plane.jpg",
+  "errors": []
+ },
+ "claude-haiku-5-5|skull": {
+  "shot": "claude-haiku-5-5__skull.jpg",
+  "errors": []
+ },
+ "claude-haiku-5-5|school": {
+  "shot": "claude-haiku-5-5__school.jpg",
+  "errors": []
+ },
+ "claude-haiku-5-5|plane": {
+  "shot": "claude-haiku-5-5__plane.jpg",
+  "errors": []
+ },
+ "hy3|school": {
+  "shot": "hy3__school.jpg",
+  "errors": []
+ },
+ "hy3|plane": {
+  "shot": "hy3__plane.jpg",
+  "errors": [
+   "syntax error in an arrow statement"
+  ]
+ },
+ "hy3|skull": {
+  "shot": "hy3__skull.jpg",
+  "errors": [
+   "syntax error in the teeth statement"
+  ]
+ },
+ "kimi-k2.7-code|school": {
+  "shot": "kimi-k2.7-code__school.jpg",
+  "errors": []
+ },
+ "kimi-k2.7-code|skull": {
+  "shot": "kimi-k2.7-code__skull.jpg",
+  "errors": []
+ },
+ "kimi-k3|school": {
+  "shot": "kimi-k3__school.jpg",
+  "errors": []
+ },
+ "kimi-k3|skull": {
+  "shot": "kimi-k3__skull.jpg",
+  "errors": [
+   "syntax error in the jaw statement"
+  ]
+ },
+ "kimi-k2.7-code|plane": {
+  "shot": "kimi-k2.7-code__plane.jpg",
+  "errors": []
+ },
+ "kimi-k3|plane": {
+  "shot": "kimi-k3__plane.jpg",
+  "errors": []
+ },
+ "mimo-v2.6-pro|school": {
+  "shot": "mimo-v2.6-pro__school.jpg",
+  "errors": []
+ },
+ "minimax-m3|skull": {
+  "shot": "minimax-m3__skull.jpg",
+  "errors": [
+   "syntax errors in 5 statements (cranium, forehead, face, cheeks)"
+  ]
+ },
+ "mimo-v2.6-pro|plane": {
+  "shot": "mimo-v2.6-pro__plane.jpg",
+  "errors": [
+   "syntax error in the beacon statement"
+  ]
+ },
+ "mimo-v2.6-pro|skull": {
+  "shot": "mimo-v2.6-pro__skull.jpg",
+  "errors": []
+ },
+ "minimax-m3.1-flash|school": {
+  "shot": "minimax-m3.1-flash__school.jpg",
+  "errors": [
+   "title is not defined"
+  ]
+ },
+ "minimax-m3.1-flash|plane": {
+  "shot": "minimax-m3.1-flash__plane.jpg",
+  "errors": []
+ },
+ "step-5-preview|school": {
+  "shot": "step-5-preview__school.jpg",
+  "errors": [
+   "overwrote step(): later beats lost"
+  ]
+ },
+ "minimax-m3.1-flash|skull": {
+  "shot": "minimax-m3.1-flash__skull.jpg",
+  "errors": []
+ },
+ "step-5-preview|plane": {
+  "shot": "step-5-preview__plane.jpg",
+  "errors": []
+ },
+ "longcat-2.0|plane": {
+  "shot": "longcat-2.0__plane.jpg",
+  "errors": []
+ },
+ "qwen3.8-max|school": {
+  "shot": "qwen3.8-max__school.jpg",
+  "errors": []
+ },
+ "qwen3.8-max|skull": {
+  "shot": "qwen3.8-max__skull.jpg",
+  "errors": []
+ },
+ "qwen3.7-plus|school": {
+  "shot": "qwen3.7-plus__school.jpg",
+  "errors": []
+ },
+ "qwen3.8-flash|school": {
+  "shot": "qwen3.8-flash__school.jpg",
+  "errors": []
+ },
+ "qwen3.7-plus|skull": {
+  "shot": "qwen3.7-plus__skull.jpg",
+  "errors": []
+ },
+ "qwen3.8-max|plane": {
+  "shot": "qwen3.8-max__plane.jpg",
+  "errors": []
+ },
+ "qwen3.7-plus|plane": {
+  "shot": "qwen3.7-plus__plane.jpg",
+  "errors": []
+ },
+ "qwen3.8-flash|skull": {
+  "shot": "qwen3.8-flash__skull.jpg",
+  "errors": []
+ },
+ "gemini-4-argon|school": {
+  "shot": "gemini-4-argon__school.jpg",
+  "errors": []
+ },
+ "gemini-4-argon|skull": {
+  "shot": "gemini-4-argon__skull.jpg",
+  "errors": []
+ },
+ "gemini-4-argon|plane": {
+  "shot": "gemini-4-argon__plane.jpg",
+  "errors": []
+ },
+ "kimi-k3.1-pro|plane": {
+  "shot": "kimi-k3.1-pro__plane.jpg",
+  "errors": []
+ },
+ "kimi-k3.1-pro|skull": {
+  "shot": "kimi-k3.1-pro__skull.jpg",
+  "errors": []
+ },
+ "kimi-k3.1-pro|school": {
+  "shot": "kimi-k3.1-pro__school.jpg",
+  "errors": []
+ },
+ "longcat-2.5-free|skull": {
+  "shot": "longcat-2.5-free__skull.jpg",
+  "errors": []
+ }
+}

@@ -1,0 +1,37 @@
+step(1); say("Let me build a 3D passenger airplane, starting with the long fuselage, pointed nose, tail fin, and rear stabilizers.")
+const c = {x: 320, y: 80, w: 640, h: 460}
+text(c.x + c.w / 2, c.y - 26, 'Passenger airplane', {size: 26, bold: true})
+const f = figure(c.x, c.y, c.w, c.h, {tilt: 18, turn: -38, ground: true})
+const fuselage = f.lathe({points: [[0, -2.2], [0.22, -2.05], [0.48, -1.8], [0.55, -1.1], [0.58, -0.1], [0.58, 0.8], [0.52, 1.5], [0.32, 2.0], [0.08, 2.3]], axis: 'x', mat: 'paint:white'})
+const tailFin = f.extrude({points: [[0, 0], [0.7, 0], [0.85, 1.35], [0.15, 1.35], [0, 0.55]], depth: 0.12, axis: 'z', at: [1.55, 0.1, 0], mat: 'paint:#1E4D8C'})
+const hStab = f.extrude({points: [[0, 0], [0.9, 0.03], [1.4, 0], [1.2, -0.1], [0.1, -0.09]], depth: 1.1, axis: 'z', at: [1.6, -0.12, 0], mirror: 'z', rot: [0, -18, 0], mat: 'paint:white'})
+const cockpit = f.box({w: 0.34, h: 0.1, d: 0.26, at: [-1.82, 0.13, 0], rot: [0, -12, 0], mat: 'glass'})
+const windows = f.box({w: 0.06, h: 0.05, d: 0.04, at: [-1.0, 0.22, 0.54], copies: {n: 8, step: [0.22, 0, 0]}, mirror: 'z', color: '#222222'})
+
+step(2); say("Next come the swept-back wings, with a jet engine hanging under each wing on a pylon.")
+const wing = f.extrude({points: [[0, 0], [1.2, 0.05], [2.4, 0], [2.05, -0.18], [0.15, -0.14]], depth: 2.2, axis: 'z', at: [0.05, -0.46, 0], mirror: 'z', rot: [0, -28, 0], mat: 'alu'})
+const winglet = f.box({w: 0.1, h: 0.38, d: 0.06, at: [1.85, -0.08, 2.18], rot: [0, 25, 0], mirror: 'z', mat: 'paint:#1E4D8C'})
+const pylon = f.box({w: 0.06, h: 0.36, d: 0.08, at: [0.25, -0.64, 1.22], mirror: 'z', mat: 'paint:white'})
+const engine = f.cyl({r: 0.27, h: 0.8, axis: 'x', at: [0.25, -0.9, 1.22], mirror: 'z', mat: 'paint:#444444'})
+const intake = f.cyl({r: 0.22, h: 0.06, axis: 'x', at: [-0.23, -0.9, 1.22], mirror: 'z', color: '#111111'})
+
+step(3); say("The landing gear folds up inside the fuselage in flight, but here it is down so you can see the wheels.")
+const noseStrut = f.box({w: 0.05, h: 0.46, d: 0.05, at: [-1.6, -0.55, 0], mat: 'steel'})
+const noseWheel = f.cyl({r: 0.12, h: 0.1, axis: 'x', at: [-1.6, -0.78, 0], mat: 'rubber'})
+const mainStrut = f.box({w: 0.05, h: 0.36, d: 0.05, at: [0.15, -0.82, 0.85], mirror: 'z', mat: 'steel'})
+const mainWheel = f.cyl({r: 0.14, h: 0.1, axis: 'x', at: [0.15, -1.0, 0.85], mirror: 'z', mat: 'rubber'})
+
+step(4); say("Here are the main parts: the fuselage body, the lifting wings, the thrust engines, and the steering tail.")
+fuselage.label('fuselage', {color: 'blue'})
+wing.label('wing', {color: 'green'})
+engine.label('engine', {color: 'red'})
+tailFin.label('tail', {color: 'purple'})
+noseStrut.label('landing gear', {color: 'brown'})
+
+step(5); say("The engines push air backwards to move the plane forward, while the wings bend the airflow to create lift.")
+f.arrow({from: [2.8, -0.9, 1.22], to: [1.4, -0.9, 1.22], color: 'red'})
+f.arrow({from: [0.9, -0.3, 0], to: [0.9, 0.8, 0], color: 'green'})
+highlight(c.x + c.w / 2 - 140, c.y - 68, 280, 36, {color: 'yellow'})
+text(c.x + c.w / 2, c.y - 50, 'Engines thrust, wings lift', {size: 24, bold: true})
+
+suggest(['Show a cutaway inside', 'Make the engines spin'])

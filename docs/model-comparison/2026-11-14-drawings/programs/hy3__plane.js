@@ -1,0 +1,27 @@
+step(1); say("Let me build a 3D model of an airplane for you.")
+const f = figure(290, 120, 700, 480, {tilt: 18, turn: -35})
+const fuse = f.lathe({points: [[0.15, -3.2], [0.5, -2.6], [0.75, -1.5], [0.8, 0], [0.75, 1.5], [0.55, 2.6], [0.1, 3.2]], axis: 'x', mat: 'paint:#f5f5f5', name: 'fuselage'})
+const wingR = f.extrude({points: [[-1.2, 0], [1.2, 0], [0.8, 3.2], [-0.4, 3.2]], depth: 0.12, at: [-0.2, -0.1, 0], rot: [90, 0, 0], mat: 'alu', name: 'wingR'})
+const wingL = f.extrude({points: [[-1.2, 0], [1.2, 0], [0.8, -3.2], [-0.4, -3.2]], depth: 0.12, at: [-0.2, -0.1, 0], rot: [90, 0, 0], mat: 'alu', name: 'wingL'})
+const tailFin = f.extrude({points: [[-0.6, 0], [0.6, 0], [0.3, 1.2], [-0.2, 1.2]], depth: 0.1, at: [2.4, 0.2, 0], mat: 'paint:#e0e0e0', name: 'tail'})
+const tailR = f.extrude({points: [[-0.4, 0], [0.4, 0], [0.3, 1.2], [-0.2, 1.2]], depth: 0.1, at: [2.6, 0, 0], rot: [90, 0, 0], mat: 'alu'})
+const tailL = f.extrude({points: [[-0.4, 0], [0.4, 0], [0.3, -1.2], [-0.2, -1.2]], depth: 0.1, at: [2.6, 0, 0], rot: [90, 0, 0], mat: 'alu'})
+
+step(2); say("Under each wing sits a jet engine that sucks air in and blows it out the back.")
+const engR = f.cyl({r: 0.25, h: 1.2, axis: 'x', at: [-0.5, -0.4, 1.6], mat: 'steel', name: 'engineR'})
+const engL = f.cyl({r: 0.25, h: 1.2, axis: 'x', at: [-0.5, -0.4, -1.6], mat: 'steel', name: 'engineL'})
+const fanR = f.cyl({r: 0.22, h: 0.1, axis: 'x', at: [-1.1, -0.4, 1.6], mat: 'paint:#30343B'}).spin({axis: 'x', period: 0.6})
+const fanL = f.cyl({r: 0.22, h: 0.1, axis: 'x', at: [-1.1, -0.4, -1.6], mat: 'paint:#30343B'}).spin({axis: 'x', period: 0.6})
+
+step(3); say("The windows let light in, and the tail fins keep the plane steady in the air.")
+f.box({w: 0.12, h: 0.12, d: 0.05, at: [0.8, 0.35, 0.78], copies: {n: 7, step: [-0.35, 0, 0]}, mat: 'glass'})
+f.box({w: 0.3, h: 0.2, d: 0.05, at: [2.0, 0.3, 0.7], rot: [0, 0, 10], mat: 'glass'})
+fuse.label('fuselage', {color: 'blue'})
+wingR.label('wing', {color: 'purple'})
+engR.label('jet engine', {color: 'orange'})
+tailFin.label('tail fin', {color: 'green'})
+
+step(4); say("When flying, air rushes over the wings to lift the plane, and the engines push it forward.")
+f.arrow({from: [-1.8, -0.4, 1.6], to: [-3.0, -0.4, 1.6], color: 'red'})
+f.arrow({from: [-1.8, -0.4, -1.6], to: [-3.0, -0.4, -1.6], color: 'red'})
+f.arrow({from: [-0.2,

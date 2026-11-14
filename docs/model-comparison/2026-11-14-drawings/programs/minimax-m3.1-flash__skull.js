@@ -1,0 +1,61 @@
+step(1); say("Let me build a three-dimensional model of a human skull, seen from a three-quarter angle.")
+text(640, 40, 'Human skull model', {size: 30, bold: true, color: 'white'})
+const f = figure(290, 64, 700, 500, {tilt: 7, turn: -26, zoom: 1, ground: false})
+const cranium = f.blob({balls: [[0, 0.82, -0.35, 1.2, 1.05, 1.18], [0, 0.35, -0.45, 1.08, 0.92, 1.12], [0, 0.62, 0.32, 1.0, 0.92, 0.85]], smooth: 0.45, mat: 'bone'})
+const forehead = f.blob({balls: [[0, 0.72, 0.72, 0.86, 0.68, 0.45], [0, 0.55, 0.95, 0.66, 0.5, 0.28]], smooth: 0.35, mat: 'bone:#E7DCC5'})
+f.blob({balls: [[0, 0.2, -1.05, 0.92, 0.78, 0.55], [0, 0.55, -1.25, 0.7, 0.6, 0.35]], smooth: 0.4, mat: 'bone'})
+f.blob({balls: [[0, -0.1, 0.82, 0.9, 0.72, 0.33], [0, -0.72, 0.78, 0.68, 0.42, 0.3], [-0.54, 0.04, 0.9, 0.54, 0.5, 0.26], [0.54, 0.04, 0.9, 0.54, 0.5, 0.26], [0, -0.45, 0.95, 0.34, 0.42, 0.26]], holes: [[-0.54, 0.04, 0.92, 0.36], [0.54, 0.04, 0.92, 0.36], [0, -0.28, 0.98, 0.16], [0, -0.52, 0.98, 0.17]], smooth: 0.32, mat: 'bone'})
+f.label(cranium, 'cranium', {color: 'yellow'})
+
+step(2); say("The rounded cranium protects the brain, while brow and cheek bones shape the face.")
+f.blob({balls: [[-0.54, 0.43, 1.02, 0.55, 0.14, 0.2]], smooth: 0.2, mat: 'bone'})
+f.blob({balls: [[0.54, 0.43, 1.02, 0.55, 0.14, 0.2]], smooth: 0.2, mat: 'bone'})
+f.blob({balls: [[-0.82, -0.28, 0.88, 0.36, 0.3, 0.32]], smooth: 0.3, mat: 'bone'})
+f.blob({balls: [[0.82, -0.28, 0.88, 0.36, 0.3, 0.32]], smooth: 0.3, mat: 'bone'})
+f.blob({balls: [[-1.1, 0.05, -0.2, 0.4, 0.54, 0.6]], smooth: 0.4, mat: 'bone'})
+f.blob({balls: [[1.1, 0.05, -0.2, 0.4, 0.54, 0.6]], smooth: 0.4, mat: 'bone'})
+f.tube({points: [[-0.82, -0.24, 0.7], [-1.05, -0.05, 0.35], [-1.12, 0.05, 0.02]], r: 0.12, mat: 'bone'})
+f.tube({points: [[0.82, -0.24, 0.7], [1.05, -0.05, 0.35], [1.12, 0.05, 0.02]], r: 0.12, mat: 'bone'})
+
+step(3); say("Two deep eye sockets and a pear-shaped nose opening sit between the cheekbones and the upper jaw.")
+const socketLeft = f.sphere({r: 0.35, at: [-0.54, 0.04, 0.66], scale: [1, 1.08, 0.18], mat: 'paint:#2A1E16'})
+f.sphere({r: 0.35, at: [0.54, 0.04, 0.66], scale: [1, 1.08, 0.18], mat: 'paint:#2A1E16'})
+f.torus({r: 0.36, tube: 0.1, at: [-0.54, 0.04, 1.08], rot: [90, 0, 0], mat: 'bone'})
+f.torus({r: 0.36, tube: 0.1, at: [0.54, 0.04, 1.08], rot: [90, 0, 0], mat: 'bone'})
+f.blob({balls: [[0, 0.2, 1.14, 0.16, 0.32, 0.13], [0, -0.02, 1.13, 0.2, 0.2, 0.13]], smooth: 0.25, mat: 'bone'})
+const nasalOpening = f.blob({balls: [[0, -0.34, 0.7, 0.16, 0.22, 0.08], [0, -0.54, 0.7, 0.17, 0.18, 0.08]], smooth: 0.2, mat: 'paint:#2A1E16'})
+f.label(socketLeft, 'eye socket', {color: 'white'})
+f.label(nasalOpening, 'nasal opening', {color: 'white'})
+
+step(4); say("The lower jaw hangs in a horseshoe shape, and the upper and lower teeth meet at the front.")
+f.blob({balls: [[0, -1.28, 0.92, 0.46, 0.22, 0.26]], smooth: 0.3, mat: 'bone'})
+const mandible = f.tube({points: [[-1.0, -0.88, 0.32], [-0.94, -1.12, 0.66], [-0.58, -1.3, 0.9], [0, -1.36, 1.0], [0.58, -1.3, 0.9], [0.94, -1.12, 0.66], [1.0, -0.88, 0.32]], r: 0.16, mat: 'bone'})
+f.tube({points: [[-1.0, -0.88, 0.32], [-1.12, -0.62, 0.1], [-1.13, -0.35, -0.05]], r: 0.17, mat: 'bone'})
+f.tube({points: [[1.0, -0.88, 0.32], [1.12, -0.62, 0.1], [1.13, -0.35, -0.05]], r: 0.17, mat: 'bone'})
+f.sphere({r: 0.2, at: [-1.13, -0.32, -0.05], mat: 'bone'})
+f.sphere({r: 0.2, at: [1.13, -0.32, -0.05], mat: 'bone'})
+for (let i = 0; i < 8; i++) {
+  const x = (i - 3.5) * 0.145
+  const z = 1.13 - 0.1 * Math.pow(x / 0.51, 2)
+  f.box({w: 0.115, h: 0.19, d: 0.1, at: [x, -0.91, z], rot: [0, -x * 42, 0], mat: 'bone:#F4EBD7'})
+}
+for (let i = 0; i < 8; i++) {
+  const x = (i - 3.5) * 0.145
+  const z = 1.07 - 0.09 * Math.pow(x / 0.51, 2)
+  f.box({w: 0.112, h: 0.18, d: 0.1, at: [x, -1.12, z], rot: [0, -x * 40, 0], mat: 'bone:#EFE5D0'})
+}
+f.label(mandible, 'lower jaw', {color: 'yellow'})
+
+step(5); say("Fine suture lines and ear openings finish the model, showing how the separate bones fit together.")
+const earLeft = f.cyl({r: 0.15, h: 0.06, axis: 'x', at: [-1.42, -0.1, -0.18], mat: 'paint:#2A1E16'})
+f.cyl({r: 0.15, h: 0.06, axis: 'x', at: [1.42, -0.1, -0.18], mat: 'paint:#2A1E16'})
+f.tube({points: [[0, 1.42, 0.6], [0, 1.68, 0.28], [0, 1.85, -0.25], [0, 1.74, -0.72], [0, 1.38, -1.12], [0, 0.9, -1.45]], r: 0.035, mat: 'paint:#9B8763'})
+f.tube({points: [[-1.08, 1.15, -0.25], [-0.72, 1.62, -0.2], [-0.3, 1.8, -0.15], [0.3, 1.8, -0.15], [0.72, 1.62, -0.2], [1.08, 1.15, -0.25]], r: 0.03, mat: 'paint:#9B8763'})
+f.tube({points: [[-0.75, 0.75, -1.2], [0, 1.15, -1.45], [0.75, 0.75, -1.2]], r: 0.03, mat: 'paint:#9B8763'})
+f.label(earLeft, 'ear opening', {color: 'white'})
+f.view({turn: -18, tilt: 9, zoom: 1.02})
+
+step(6); say("So this is a human skull: a big braincase, hollow face openings, and a strong hinged jaw.")
+highlight(425, 566, 430, 36, {color: 'yellow'})
+text(640, 584, 'Braincase, hollow face, hinged jaw', {size: 24, bold: true, color: 'ink'})
+suggest(['Show it from the side', 'Show a skull cutaway'])
