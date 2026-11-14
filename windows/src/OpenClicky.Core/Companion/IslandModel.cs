@@ -33,8 +33,6 @@ public sealed partial class IslandModel : ObservableObject
     /// <summary>Text typed out in the compact strip (the goodbye); null = none.</summary>
     [ObservableProperty] private string? captionText;
     [ObservableProperty] private bool isComposerOpen;
-    /// <summary>The busy strip has a line to show under its status.</summary>
-    [ObservableProperty] private bool hasCompactDetailLine;
     /// <summary>The goodbye on quit: its caption shows even over a busy strip, and nothing opens after it.</summary>
     [ObservableProperty] private bool isSayingGoodbye;
 
@@ -169,7 +167,8 @@ public sealed partial class IslandModel : ObservableObject
     public IslandContentState ContentState => new(
         Expansion,
         IsShowingCaption,
-        HasCompactDetailLine,
+        // The notch strip is one word and one glyph: nothing under it, so the window never grows for a caption.
+        HasCompactDetailLine: false,
         ConnectHasExamplePrompts: ConnectPrompt is { ExamplePrompts.Count: > 0 },
         PermissionOffersTrustReset: PermissionPrompt?.OffersAccessibilityTrustReset == true,
         TourHasStatus: TourCard?.Status is not null,
@@ -348,13 +347,6 @@ public sealed partial class IslandModel : ObservableObject
         IsComposerOpen = false;
         isHovering = false;
         Reconcile(immediately: true);
-    }
-
-    public void SetCompactDetailLine(bool hasDetailLine)
-    {
-        if (HasCompactDetailLine == hasDetailLine) return;
-        HasCompactDetailLine = hasDetailLine;
-        if (Expansion == IslandExpansion.Compact) LayoutChanged?.Invoke();
     }
 
     public void TogglePinned()
@@ -558,7 +550,6 @@ public sealed partial class IslandCompanionModel : ObservableObject
     public bool IsIdle => VoiceState == CompanionVoiceState.Idle;
     public string CompactStatusText => AskIslandStatus ?? IslandTexts.CompactStatus(VoiceState, IsDictatingToFrontApp, IsAlwaysListening, AgentActivityText, AnsweringSourceName);
     public string? DetailLine => IslandTexts.DetailLine(VoiceState, AgentActivityText, LastTranscript);
-    public bool HasCompactDetailLine => DetailLine is not null;
     public string PointerStatusText => IslandTexts.PointerStatus(IsClickyCursorEnabled, PointerPresence, IsPointerAwake);
     public IReadOnlyList<IslandShortcut> ShortcutGrid => IslandTexts.ShortcutGrid(DictationKey, IsAlwaysListening);
     public string VoicePillToolTip => EngineBlockedPillLabel is null

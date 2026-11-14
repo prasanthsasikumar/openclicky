@@ -201,44 +201,61 @@ internal sealed class BuddyBadgeView : Grid
 
 // MARK: - Compact
 
-/// <summary>The busy strip (380 × 37): the indicator on the left, what is happening on the right, a stop sign while
-/// speaking, and one caption line under it when there is something to read.</summary>
+/// <summary>The busy strip (160 × 28), HeyClicky's notch: one capitalised word on the left and a small animated mark on
+/// the right whose colour bleeds out of the strip's right edge. A click still stops what is happening.</summary>
 internal sealed class CompactStatusView : Grid, IIslandContent
 {
+    private const double EdgeGlowWidth = 36;
+
     private readonly IslandCompanionModel hub;
-    private readonly BuddyBadgeView badge;
-    private readonly TextBlock statusText;
-    private readonly Grid stopIcon;
-    private readonly TextBlock detailText;
+    private readonly TextBlock wordFront;
+    private readonly TextBlock wordBack;
+    private readonly Border edgeGlow;
+    private readonly NotchGlyphView glyph;
     private readonly Border stopOverlay;
+    private readonly Tween frontOpacity = new(1);
+    private readonly Tween backOpacity = new(0);
+    private string? wordText;
+    private Color? glowColor;
 
     public CompactStatusView(IslandCompanionModel hub)
     {
         this.hub = hub;
-        Margin = new Thickness(14, 0, 14, 0);
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(DS.HUD.StripHeight) });
-        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var topRow = new DockPanel { LastChildFill = true };
-        badge = new BuddyBadgeView(hub) { Width = 20, Height = 18, Margin = new Thickness(0, 0, 12, 0) };
-        DockPanel.SetDock(badge, Dock.Left);
-        topRow.Children.Add(badge);
-        stopIcon = new Grid { Width = 15, Height = 15, Margin = new Thickness(12, 0, 0, 0) };
-        stopIcon.Children.Add(new Ellipse { Fill = DS.HUD.TextBrush });
-        stopIcon.Children.Add(new Rectangle { Width = 5.5, Height = 5.5, RadiusX = 1, RadiusY = 1, Fill = DS.HUD.IslandBrush });
-        DockPanel.SetDock(stopIcon, Dock.Right);
-        topRow.Children.Add(stopIcon);
-        statusText = Text("", 12, DS.HUD.Text2Brush, trimming: TextTrimming.CharacterEllipsis);
-        statusText.HorizontalAlignment = HorizontalAlignment.Right;
-        topRow.Children.Add(statusText);
-        SetRow(topRow, 0);
-        Children.Add(topRow);
+        // The state's colour bleeding out of the notch: transparent 36 px from the right edge, its colour at 60% there.
+        edgeGlow = new Border
+        {
+            Width = EdgeGlowWidth,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            IsHitTestVisible = false,
+        };
+        Children.Add(edgeGlow);
 
-        detailText = Text("", 14, DS.HUD.TextBrush, trimming: TextTrimming.CharacterEllipsis);
-        detailText.HorizontalAlignment = HorizontalAlignment.Left;
-        SetRow(detailText, 1);
-        Children.Add(detailText);
+        // One word, white, 14 from the left. Two layers so a new word can cross-fade over the old one (150 ms).
+        var wordHost = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(14, 0, 0, 0),
+        };
+        wordBack = Text("", 12, DS.HUD.TextBrush, DS.Fonts.Semibold);
+        wordFront = Text("", 12, DS.HUD.TextBrush, DS.Fonts.Semibold);
+        wordBack.Opacity = 0;
+        wordHost.Children.Add(wordBack);
+        wordHost.Children.Add(wordFront);
+        Children.Add(wordHost);
+
+        // The small animated mark, 22 × 12, 12 from the right edge.
+        glyph = new NotchGlyphView
+        {
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0),
+        };
+        Children.Add(glyph);
+        // The glow reaches the strip's right edge, so keep it inside the black's rounded bottom corners.
+        SizeChanged += (_, _) => ClipToIslandBody();
 
         // Only while speaking, or while a question is on its way (the pause before sending, or a
         // guide's first step being looked up: it stops it, as esc does), so a click on the busy
@@ -248,26 +265,210 @@ internal sealed class CompactStatusView : Grid, IIslandContent
             if (hub.IsSpeaking) hub.StopSpeakingCommand.Execute(null);
             else hub.StopAskCommand.Execute(null);
         }, IslandTexts.StopSpeakingToolTip);
-        SetRowSpan(stopOverlay, 3);
-        stopOverlay.Margin = new Thickness(-14, 0, -14, 0);
         Children.Add(stopOverlay);
         Refresh();
     }
 
     public void Refresh()
     {
-        badge.Refresh();
-        statusText.Text = hub.CompactStatusText;
+        var word = IslandTexts.NotchWord(hub.VoiceState, hub.IsDictatingToFrontApp, hub.AgentActivityText);
+        if (word != wordText)
+        {
+            if (wordText is null)
+            {
+                wordFront.Text = word;
+                frontOpacity.Snap(1);
+                backOpacity.Snap(0);
+            }
+            else
+            {
+                wordBack.Text = wordText;
+                backOpacity.Snap(1);
+                wordFront.Text = word;
+                frontOpacity.Snap(0);
+                backOpacity.AnimateTo(0, 0.15, Easing.EaseOut);
+                frontOpacity.AnimateTo(1, 0.15, Easing.EaseOut);
+            }
+            wordText = word;
+        }
+        wordFront.Opacity = frontOpacity.Value;
+        wordBack.Opacity = backOpacity.Value;
+
+        glyph.State = GlyphStateFor(hub);
+        if (GlyphColor(glyph.State) is { } color)
+        {
+            glyph.Visibility = Visibility.Visible;
+            if (glowColor != color)
+            {
+                glowColor = color;
+                edgeGlow.Background = EdgeGlow(color);
+            }
+        }
+        else
+        {
+            glyph.Visibility = Visibility.Collapsed;
+            edgeGlow.Background = null;
+            glowColor = null;
+        }
+
         var canStop = hub.IsSpeaking || hub.IsQuestionOnItsWay;
-        stopIcon.Visibility = canStop ? Visibility.Visible : Visibility.Collapsed;
         stopOverlay.Visibility = canStop ? Visibility.Visible : Visibility.Collapsed;
         stopOverlay.ToolTip = hub.IsSpeaking ? IslandTexts.StopSpeakingToolTip : IslandTexts.StopAskToolTip;
-        var detailLine = hub.DetailLine;
-        detailText.Text = detailLine ?? "";
-        detailText.Visibility = detailLine is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    public void Tick() => badge.Tick();
+    public void Tick()
+    {
+        wordFront.Opacity = frontOpacity.Value;
+        wordBack.Opacity = backOpacity.Value;
+        glyph.Tick();
+    }
+
+    /// <summary>The strip's own rectangle with the island's rounded bottom corners (its top corners flare out beyond
+    /// the content, so they stay square here).</summary>
+    private void ClipToIslandBody()
+    {
+        if (ActualWidth <= 0 || ActualHeight <= 0) return;
+        Clip = Shapes.Island(new Rect(0, 0, ActualWidth, ActualHeight), bottomCornerRadius: 12, topCornerFlare: 0);
+    }
+
+    private static NotchGlyphView.GlyphState GlyphStateFor(IslandCompanionModel hub)
+    {
+        if (hub.IsSpeaking) return NotchGlyphView.GlyphState.Speaking;
+        if (hub.IsDictatingToFrontApp)
+        {
+            return hub.VoiceState == CompanionVoiceState.Processing
+                ? NotchGlyphView.GlyphState.Transcribing
+                : NotchGlyphView.GlyphState.Dictating;
+        }
+        return hub.VoiceState switch
+        {
+            CompanionVoiceState.Listening => NotchGlyphView.GlyphState.Listening,
+            CompanionVoiceState.Processing => NotchGlyphView.GlyphState.Thinking,
+            CompanionVoiceState.Responding => NotchGlyphView.GlyphState.Speaking,
+            _ => hub.AgentActivityText is null ? NotchGlyphView.GlyphState.None : NotchGlyphView.GlyphState.Working,
+        };
+    }
+
+    private static Color? GlyphColor(NotchGlyphView.GlyphState state) => state switch
+    {
+        NotchGlyphView.GlyphState.Listening => NotchGlyphView.Cyan,
+        NotchGlyphView.GlyphState.Dictating or NotchGlyphView.GlyphState.Transcribing => NotchGlyphView.Green,
+        NotchGlyphView.GlyphState.Thinking or NotchGlyphView.GlyphState.Working => NotchGlyphView.Magenta,
+        NotchGlyphView.GlyphState.Speaking => NotchGlyphView.Orange,
+        _ => null,
+    };
+
+    private static LinearGradientBrush EdgeGlow(Color color)
+    {
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0.5),
+            EndPoint = new Point(1, 0.5),
+        };
+        brush.GradientStops.Add(new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 0));
+        brush.GradientStops.Add(new GradientStop(Color.FromArgb(153, color.R, color.G, color.B), 1));
+        brush.Freeze();
+        return brush;
+    }
+}
+
+/// <summary>The notch's small animated mark (22 × 12), drawn by hand and driven by the strip's Tick: a wave of dots while
+/// listening, dashes sliding through dictation, dots pulsing while it thinks, bars bouncing while it speaks.</summary>
+internal sealed class NotchGlyphView : FrameworkElement
+{
+    internal enum GlyphState { None, Listening, Dictating, Transcribing, Thinking, Working, Speaking }
+
+    internal static readonly Color Cyan = Color.FromRgb(0x22, 0xD3, 0xEE);
+    internal static readonly Color Green = Color.FromRgb(0x22, 0xC5, 0x5E);
+    internal static readonly Color Magenta = Color.FromRgb(0xE0, 0x40, 0xFB);
+    internal static readonly Color Orange = Color.FromRgb(0xFB, 0x92, 0x3C);
+
+    private static readonly SolidColorBrush CyanBrush = DS.Brush(Cyan);
+    private static readonly SolidColorBrush GreenBrush = DS.Brush(Green);
+    private static readonly SolidColorBrush MagentaBrush = DS.Brush(Magenta);
+    private static readonly SolidColorBrush OrangeBrush = DS.Brush(Orange);
+
+    public NotchGlyphView()
+    {
+        Width = 22;
+        Height = 12;
+        IsHitTestVisible = false;
+    }
+
+    public GlyphState State { get; set; }
+
+    public void Tick()
+    {
+        if (State != GlyphState.None) InvalidateVisual();
+    }
+
+    protected override void OnRender(DrawingContext drawingContext)
+    {
+        var time = MotionClock.Now;
+        switch (State)
+        {
+            case GlyphState.Listening:
+                DrawDotsWave(drawingContext, time);
+                break;
+            case GlyphState.Dictating:
+            case GlyphState.Transcribing:
+                DrawSlidingDashes(drawingContext, time);
+                break;
+            case GlyphState.Thinking:
+            case GlyphState.Working:
+                DrawPulsingDots(drawingContext, time);
+                break;
+            case GlyphState.Speaking:
+                DrawLevelBars(drawingContext, time);
+                break;
+        }
+    }
+
+    /// <summary>Five dots whose height and opacity follow a gentle wave.</summary>
+    private void DrawDotsWave(DrawingContext drawingContext, double time)
+    {
+        for (var index = 0; index < 5; index++)
+        {
+            var wave = (Math.Sin(time * 3.2 + index * 0.7) + 1) / 2;
+            var center = new Point(2.25 + index * 4.375, 6 - (wave - 0.5) * 3.4);
+            drawingContext.PushOpacity(0.35 + wave * 0.65);
+            drawingContext.DrawEllipse(CyanBrush, null, center, 1.25, 1.25);
+            drawingContext.Pop();
+        }
+    }
+
+    /// <summary>Four short dashes sliding left to right.</summary>
+    private void DrawSlidingDashes(DrawingContext drawingContext, double time)
+    {
+        for (var index = 0; index < 4; index++)
+        {
+            var x = (time * 14 + index * 6.5) % 26 - 4;
+            drawingContext.DrawRoundedRectangle(GreenBrush, null, new Rect(x, 5, 3.5, 2), 1, 1);
+        }
+    }
+
+    /// <summary>Three dots pulsing in turn.</summary>
+    private void DrawPulsingDots(DrawingContext drawingContext, double time)
+    {
+        for (var index = 0; index < 3; index++)
+        {
+            var pulse = (Math.Sin(time * 3.4 - index * 0.9) + 1) / 2;
+            drawingContext.PushOpacity(0.25 + pulse * 0.75);
+            drawingContext.DrawEllipse(MagentaBrush, null, new Point(4 + index * 7, 6), 1.3 + pulse * 0.7, 1.3 + pulse * 0.7);
+            drawingContext.Pop();
+        }
+    }
+
+    /// <summary>Four vertical bars bouncing like a level meter.</summary>
+    private void DrawLevelBars(DrawingContext drawingContext, double time)
+    {
+        for (var index = 0; index < 4; index++)
+        {
+            var bounce = (Math.Sin(time * 8 + index * 0.75) + 1) / 2;
+            var height = 3 + bounce * 8;
+            drawingContext.DrawRoundedRectangle(OrangeBrush, null, new Rect(1 + index * 6, 6 - height / 2, 2, height), 1, 1);
+        }
+    }
 }
 
 /// <summary>The caption strip (the goodbye): the badge with the text typing out.</summary>

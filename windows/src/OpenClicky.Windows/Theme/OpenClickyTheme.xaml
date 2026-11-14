@@ -42,8 +42,8 @@
     <system:Double x:Key="OpenClicky.HUD.TileRadius">10</system:Double>
     <system:Double x:Key="OpenClicky.HUD.IslandRadius">22</system:Double>
     <system:Double x:Key="OpenClicky.HUD.BodySidePadding">16</system:Double>
-    <system:Double x:Key="OpenClicky.HUD.StripWidth">380</system:Double>
-    <system:Double x:Key="OpenClicky.HUD.StripHeight">37</system:Double>
+    <system:Double x:Key="OpenClicky.HUD.StripWidth">160</system:Double>
+    <system:Double x:Key="OpenClicky.HUD.StripHeight">28</system:Double>
 
     <!-- Fonts: SF Pro → Segoe UI Variable, SF Mono → Cascadia Mono, SF Symbols → Segoe Fluent Icons -->
     <FontFamily x:Key="OpenClicky.UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>

@@ -90,8 +90,8 @@ public sealed record IslandContentState(
 /// card and the open panel are 512 wide (360 in a side drawer); heights include the band the island hangs from.</summary>
 public sealed class IslandLayout
 {
-    public const double StripWidth = 380;   // DS.HUD.stripWidth
-    public const double StripHeight = 37;   // DS.HUD.stripHeight
+    public const double StripWidth = 160;   // DS.HUD.stripWidth
+    public const double StripHeight = 28;   // DS.HUD.stripHeight
     /// <summary>Nothing shows below the band while idle.</summary>
     public const double CollapsedLipHeight = 0;
     public const double CompactDetailLineHeight = 26;

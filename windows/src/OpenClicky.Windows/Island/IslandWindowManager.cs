@@ -232,7 +232,6 @@ public sealed class IslandWindowManager : IDisposable
             }
             model.SetBusy(hub.IsBusy);
             model.SetSpeaking(hub.IsSpeaking);
-            model.SetCompactDetailLine(hub.HasCompactDetailLine);
             model.SetConnectPrompt(hub.ConnectPrompt);
             model.SetPermissionPrompt(hub.PermissionPrompt);
             model.SetTourCard(hub.TourCard);
@@ -257,7 +256,6 @@ public sealed class IslandWindowManager : IDisposable
                 {
                     instance.Model.SetBusy(hub.IsBusy);
                     instance.Model.SetSpeaking(hub.IsSpeaking);
-                    instance.Model.SetCompactDetailLine(hub.HasCompactDetailLine);
                 }
                 break;
             case nameof(IslandCompanionModel.IslandContext):

@@ -24,6 +24,21 @@ public class IslandTextsTests
         Assert.Equal(expected, IslandTexts.CompactStatus(voiceState, dictating, handsFree, agentActivity, source));
     }
 
+    [Theory]
+    [InlineData(CompanionVoiceState.Listening, false, null, "Listening")]
+    [InlineData(CompanionVoiceState.Listening, true, null, "Dictating")]
+    [InlineData(CompanionVoiceState.Processing, false, null, "Thinking")]
+    [InlineData(CompanionVoiceState.Processing, true, null, "Transcribing")]
+    [InlineData(CompanionVoiceState.Processing, false, "ran: ls", "Working")]
+    [InlineData(CompanionVoiceState.Processing, true, "ran: ls", "Transcribing")]
+    [InlineData(CompanionVoiceState.Responding, false, null, "Speaking")]
+    [InlineData(CompanionVoiceState.Idle, false, "ran: ls", "Working")]
+    [InlineData(CompanionVoiceState.Idle, false, null, "OpenClicky")]
+    public void TheNotchSaysOneWord(CompanionVoiceState voiceState, bool dictating, string? agentActivity, string expected)
+    {
+        Assert.Equal(expected, IslandTexts.NotchWord(voiceState, dictating, agentActivity));
+    }
+
     [Fact]
     public void TheCaptionLineIsTheAgentsProgressOrTheQuestionBeingAnswered()
     {

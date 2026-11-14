@@ -59,6 +59,23 @@ public static class IslandTexts
         }
     }
 
+    /// <summary>The busy strip's one word (HeyClicky's notch: one capitalised word, no source suffix).</summary>
+    public static string NotchWord(CompanionVoiceState voiceState, bool isDictatingToFrontApp, string? agentActivityText)
+    {
+        switch (voiceState)
+        {
+            case CompanionVoiceState.Listening:
+                return isDictatingToFrontApp ? "Dictating" : "Listening";
+            case CompanionVoiceState.Processing:
+                if (isDictatingToFrontApp) return "Transcribing";
+                return agentActivityText is null ? "Thinking" : "Working";
+            case CompanionVoiceState.Responding:
+                return "Speaking";
+            default:
+                return agentActivityText is null ? "OpenClicky" : "Working";
+        }
+    }
+
     /// <summary>The strip's caption line, or null for a strip with only its status (NotchCompactStatusView.detailLine).</summary>
     public static string? DetailLine(CompanionVoiceState voiceState, string? agentActivityText, string? lastTranscript)
     {

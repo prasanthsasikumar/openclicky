@@ -81,8 +81,8 @@ public static class DS
         public const double TileRadius = 10;
         public const double IslandRadius = 22;
         public const double BodySidePadding = 16;
-        public const double StripWidth = 380;
-        public const double StripHeight = 37;
+        public const double StripWidth = 160;
+        public const double StripHeight = 28;
     }
 
     public static class Fonts
