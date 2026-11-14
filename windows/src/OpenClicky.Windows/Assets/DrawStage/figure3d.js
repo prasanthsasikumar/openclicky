@@ -876,10 +876,28 @@ function pieceArrived(message) {
   if (part) fillPiece(part, message);
 }
 
+// A ready-made model's licence asks for a credit (CC-BY): a small grey line in the figure's bottom-left corner, once per
+// figure (the first credited piece wins; CC0 pieces have none).
+function showCredit(figure, text) {
+  if (!text || figure.creditText) return;
+  figure.creditText = text;
+  const node = document.createElementNS(SVG_NS, 'text');
+  node.textContent = text;
+  node.setAttribute('x', String(figure.rect.x + 6));
+  node.setAttribute('y', String(figure.rect.y + figure.rect.h - 6));
+  node.style.font = '11px system-ui, sans-serif';
+  node.style.fill = 'rgba(90, 96, 108, 0.6)';
+  node.style.paintOrder = 'normal';
+  node.style.stroke = 'none';
+  figure.creditNode = node;
+  labelLayer.appendChild(node);
+}
+
 async function fillPiece(part, message) {
   if (part.filled) return;
   part.filled = true;
   const o = part.piece, figure = part.figure;
+  if (message.credit) showCredit(figure, String(message.credit));
   let model = null;
   try {
     if (message.kind === 'glb') model = await glbModel(message.data);
@@ -1503,6 +1521,7 @@ window.Figure3D = {
       figure.pmrem.dispose();
       figure.canvas.remove();
       for (const label of figure.labels) label.group.remove();
+      if (figure.creditNode) figure.creditNode.remove();
     }
     figures.clear();
     parts.clear();

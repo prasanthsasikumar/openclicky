@@ -23,9 +23,10 @@ public enum DrawStagePace
 
 /// <summary>One message from the page. <c>Id</c> and <c>Query</c> come with a photo it wants (photoWanted); <c>Bounds</c>
 /// with "bounds";
-/// <c>Size</c> and <c>Of</c> come with a 3D piece it wants made (pieceWanted: Text is what to make).</summary>
+/// <c>Size</c>, <c>Of</c> and <c>Find</c> come with a 3D piece it wants made (pieceWanted: Text is what to make, Find the
+/// words to look a ready-made model up by).</summary>
 public sealed record DrawStageEvent(string Type, int? K, string? Text, string? Id = null, string? Query = null, DrawStageBounds? Bounds = null,
-    double[]? Size = null, string? Of = null);
+    double[]? Size = null, string? Of = null, string[]? Find = null);
 
 /// <summary>What the page has drawn, as a box in page pixels (x, y, width, height) on a page of <c>PageWidth</c> ×
 /// <c>PageHeight</c> pixels; empty when nothing is drawn.</summary>
@@ -99,11 +100,13 @@ public static class DrawStageMessages
         }.ToJsonString();
 
     /// <summary>The 3D piece the page asked for (pieceWanted): a GLB as a data URL, OBJ text or a JSON array of parts; without
-    /// one, that it couldn't be made (the page then fills its box itself).</summary>
+    /// one, that it couldn't be made (the page then fills its box itself). A credit (CC-BY) rides along for the stage to
+    /// show beside the figure.</summary>
     public static string Piece(string id, DrawStagePiece? piece)
     {
         if (piece is null) return new JsonObject { ["type"] = "piece", ["id"] = id, ["failed"] = true }.ToJsonString();
         var message = new JsonObject { ["type"] = "piece", ["id"] = id, ["madeBy"] = piece.MadeBy };
+        if (piece.Credit is { Length: > 0 } credit) message["credit"] = credit;
         switch (piece.Kind)
         {
             case DrawStagePieceKind.Glb:
@@ -147,7 +150,10 @@ public static class DrawStageMessages
             double[]? size = message["size"] is JsonArray sizes && sizes.Count == 3
                 ? [.. sizes.Select(value => value is JsonValue number && number.TryGetValue<double>(out var d) && double.IsFinite(d) ? Math.Abs(d) : 1)]
                 : null;
-            return new DrawStageEvent(type, k, Str("text"), Str("id"), Str("query"), bounds, size, Str("of"));
+            string[]? find = message["find"] is JsonArray words
+                ? [.. words.OfType<JsonValue>().Select(word => word.TryGetValue<string>(out var s) ? s.Trim() : "").Where(word => word.Length > 0)]
+                : null;
+            return new DrawStageEvent(type, k, Str("text"), Str("id"), Str("query"), bounds, size, Str("of"), find);
         }
         catch (JsonException)
         {

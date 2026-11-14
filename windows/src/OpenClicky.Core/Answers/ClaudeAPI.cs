@@ -164,6 +164,12 @@ public sealed class ClaudeAPI
         {
             return "image/png";
         }
+        // WebP: "RIFF", four bytes of size, then "WEBP" (Poly Pizza's thumbnails).
+        if (imageData.Length >= 12 && imageData[0] == 0x52 && imageData[1] == 0x49 && imageData[2] == 0x46 && imageData[3] == 0x46
+            && imageData[8] == 0x57 && imageData[9] == 0x45 && imageData[10] == 0x42 && imageData[11] == 0x50)
+        {
+            return "image/webp";
+        }
         // Default to JPEG — screen captures use JPEG compression
         return "image/jpeg";
     }

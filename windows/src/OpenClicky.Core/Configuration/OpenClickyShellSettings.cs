@@ -105,6 +105,10 @@ public sealed class OpenClickyShellSettings
     [JsonPropertyName("pieceMakerUrl")] public string? PieceMakerUrl { get; set; }
     [JsonPropertyName("pieceMakerModel")] public string? PieceMakerModel { get; set; }
 
+    /// <summary>A Poly Pizza key (api.poly.pizza): with one, a piece is first looked for among its free ready-made
+    /// low-poly models before any maker builds it. Null means no ready-made search.</summary>
+    [JsonPropertyName("polyPizzaKey")] public string? PolyPizzaKey { get; set; }
+
     /// <summary>Answer through a plan the person already pays for (Claude Code / Codex). Off until switched on.</summary>
     [JsonPropertyName("useClaudeCodePlan")] public bool? UseClaudeCodePlan { get; set; }
     [JsonPropertyName("useCodexPlan")] public bool? UseCodexPlan { get; set; }

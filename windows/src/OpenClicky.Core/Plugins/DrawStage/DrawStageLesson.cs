@@ -426,10 +426,12 @@ public static partial class DrawStageLesson
         return SystemPromptText(width, height, beats, calls, parts, partsAtMost) + (pieces ? PiecesSection : "") + instructions;
     }
 
-    /// <summary>Whether drawings are offered pieces made apart (f.piece): when a 3D maker is set up, or drawings are very detailed
-    /// (the drawing model then builds each piece in a call of its own).</summary>
+    /// <summary>Whether drawings are offered pieces made apart (f.piece): when a 3D maker is set up, a Poly Pizza key is set
+    /// (ready-made models), or drawings are very detailed (the drawing model then builds each piece in a call of its own).</summary>
     public static bool OffersPieces(OpenClickyShellSettings settings) =>
-        PieceMakers.KindFrom(settings.PieceMaker) != PieceMakerKind.DrawingModel || DetailFrom(settings.DrawingDetail) == DrawingDetail.VeryDetailed;
+        PieceMakers.KindFrom(settings.PieceMaker) != PieceMakerKind.DrawingModel
+        || OpenClickyConfiguration.Cleaned(settings.PolyPizzaKey) is not null
+        || DetailFrom(settings.DrawingDetail) == DrawingDetail.VeryDetailed;
 
     /// <summary>How to build a complex real thing from pieces a 3D maker makes, one at a time.</summary>
     public const string PiecesSection = """
@@ -439,6 +441,8 @@ public static partial class DrawStageLesson
         const wing = f.piece({make, of, size: [w, h, d], at, rot, mat, mirror, copies, around, cut})   one piece of the thing, made for you by a 3D maker
         - Plan the thing as 3 to 8 pieces, the way a model kit is split: for an F-35, the fuselage, a wing (mirror: 'x'), a tail fin (mirror: 'x'), the cockpit canopy, the engine nozzle and the lift fan. Each piece is made on its own, so ask for one recognisable piece at a time, never the whole thing in one piece.
         - make: that piece alone, in plain English, with its shape, style and colour ('a thin swept trapezoid stealth fighter wing with a flap, matte grey'). of: the whole thing ('an F-35 fighter jet'). size: the box it fills, in world units, in proportion with the other pieces; the piece fills its box. at: the box's centre; rot: its turn.
+        - find (optional): up to 3 short search words for a ready-made model, most specific first and with no colours ('airliner', 'plane'); the app looks for one and uses the picture that fits it before making the piece.
+        - A whole everyday object (a car, an animal, a plane, a building) can be a single piece the size of the whole figure.
         - Lay the whole thing out first, like a blueprint: its length along x (the front at +x), y up, z across. The main body runs the full length, and every other piece's box touches or slightly overlaps the body's box where the real piece joins it (a wing's root inside the fuselage's side, the canopy sitting on top of it, the nozzle at its tail). Nothing floats apart.
         - A piece shows as a faint box at once and fills in when it is made (a few seconds to a minute), so declare all the pieces in beat 1 and explain while they arrive. Label pieces, click them, cut them and move them like any part; add ordinary parts (arrows, a glowing flame, a spinning fan) for what moves or flows.
         - Name each piece's const after it (const liftFan = f.piece(…)).

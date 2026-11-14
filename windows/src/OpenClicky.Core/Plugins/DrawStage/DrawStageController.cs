@@ -371,7 +371,7 @@ public sealed class DrawStageController
                 break;
             case "pieceWanted" when message.Id is { } pieceId && message.Text is { Length: > 0 } make:
                 var size = message.Size ?? [1, 1, 1];
-                _ = SendPieceAsync(pieceId, new PieceRequest(make, size[0], size[1], size[2], message.Of));
+                _ = SendPieceAsync(pieceId, new PieceRequest(make, size[0], size[1], size[2], message.Of, message.Find));
                 break;
             case "finished":
                 Finished?.Invoke();

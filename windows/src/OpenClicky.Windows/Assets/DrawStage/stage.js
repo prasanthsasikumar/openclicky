@@ -261,7 +261,9 @@
     // A 3D piece the app makes: asked for as soon as its statement runs, so it is being made while the voice talks.
     if (mark.do === 'part3d' && mark.kind === 'piece') {
       const p = mark.params || {};
-      send({ type: 'pieceWanted', id: mark.id, text: String(p.make || p.name || 'a part'), of: p.of ? String(p.of) : '', size: Array.isArray(p.size) ? p.size.slice(0, 3) : [1, 1, 1] });
+      // find: the words the app looks a ready-made model up by (Poly Pizza), most specific first.
+      const find = Array.isArray(p.find) ? p.find.slice(0, 4).map(word => String(word)).filter(Boolean) : null;
+      send({ type: 'pieceWanted', id: mark.id, text: String(p.make || p.name || 'a part'), of: p.of ? String(p.of) : '', size: Array.isArray(p.size) ? p.size.slice(0, 3) : [1, 1, 1], find: find && find.length ? find : undefined });
     }
     items.push({ mark, line: lines.length - 1, seconds: naturalSeconds(mark) });
   }

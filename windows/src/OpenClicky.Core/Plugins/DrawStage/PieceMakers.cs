@@ -41,11 +41,12 @@ public enum DrawStagePieceKind
 /// <param name="Data">The GLB file (Glb).</param>
 /// <param name="Text">The OBJ text (Obj) or the JSON array of parts (Parts).</param>
 /// <param name="MadeBy">Who made it, for the log.</param>
-public sealed record DrawStagePiece(DrawStagePieceKind Kind, byte[]? Data, string? Text, string MadeBy);
+/// <param name="Credit">What the stage must credit beside the figure ("Airplane by Poly by Google, CC BY 3.0"), or null.</param>
+public sealed record DrawStagePiece(DrawStagePieceKind Kind, byte[]? Data, string? Text, string MadeBy, string? Credit = null);
 
 /// <summary>One piece the drawing asked for: what it is, the box it fills (world units: width across, height up, depth),
-/// and what it is part of ("an F-35 fighter jet").</summary>
-public sealed record PieceRequest(string Make, double Width, double Height, double Depth, string? PartOf = null);
+/// what it is part of ("an F-35 fighter jet"), and the words to look a ready-made model up by (most specific first).</summary>
+public sealed record PieceRequest(string Make, double Width, double Height, double Depth, string? PartOf = null, string[]? Find = null);
 
 public interface IPieceMaker
 {
@@ -135,7 +136,8 @@ public static partial class PieceMakers
     public const string DefaultLlamaMeshModel = "hf.co/bartowski/LLaMA-Mesh-GGUF:Q8_0";
 
     /// <summary>The maker shell.json picks (`pieceMaker`, `pieceMakerUrl`, `pieceMakerModel`), falling back to the drawing
-    /// model (<paramref name="drawingModel"/>) when it fails.</summary>
+    /// model (<paramref name="drawingModel"/>) when it fails. With a Poly Pizza key (`polyPizzaKey`), a ready-made model is
+    /// looked for first, and what it can't find is made as it is without the key.</summary>
     public static IPieceMaker For(OpenClickyShellSettings settings, ClaudeAPI drawingModel, Func<string?> openAIKey, HttpClient? client = null)
     {
         var fallback = new DrawingModelPieceMaker(drawingModel);
@@ -152,7 +154,11 @@ public static partial class PieceMakers
             PieceMakerKind.Hunyuan3D => new Hunyuan3DPieceMaker(url, openAIKey, client),
             _ => null,
         };
-        return primary is null ? fallback : new FallingBackPieceMaker(primary, fallback);
+        IPieceMaker built = primary is null ? fallback : new FallingBackPieceMaker(primary, fallback);
+        // A ready-made model is tried first, with a limit short enough to leave the other makers their time.
+        return OpenClickyConfiguration.Cleaned(settings.PolyPizzaKey) is { } polyPizzaKey
+            ? new FallingBackPieceMaker(new PolyPizzaPieceMaker(polyPizzaKey, drawingModel, client), built, primaryLimit: TimeSpan.FromSeconds(25))
+            : built;
     }
 
     // MARK: - Reading what makers send back
