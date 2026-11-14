@@ -111,6 +111,9 @@ public sealed class DrawStageController
     /// <summary>The drawing's Quiz me button was clicked.</summary>
     public event Action? QuizRequested;
 
+    /// <summary>A follow-up pill on a finished drawing was clicked: the words to ask next.</summary>
+    public event Action<string>? SuggestionChosen;
+
     /// <summary>The page asks for a line to be said aloud: a quiz's question, whether the answer was right, the score.</summary>
     public event Action<string>? SayRequested;
 
@@ -353,6 +356,9 @@ public sealed class DrawStageController
                 break;
             case "quiz":
                 QuizRequested?.Invoke();
+                break;
+            case "suggestion" when message.Text is { Length: > 0 } suggestion:
+                SuggestionChosen?.Invoke(suggestion);
                 break;
             case "say" when message.Text is { Length: > 0 } said:
                 SayRequested?.Invoke(said);

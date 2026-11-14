@@ -262,6 +262,14 @@ public sealed partial class CompanionManager
         SendTranscriptToClaudeWithScreenshot(DrawStageLesson.QuizQuestion);
     }
 
+    /// <summary>A follow-up pill on a finished drawing ("Watch from the front"): asked as a follow-up to it.</summary>
+    private void AskSuggestedFollowUp(string text)
+    {
+        if (DrawStageController.Shared.Current is null) return;
+        AppLog.Write("draw: a suggested follow-up was asked");
+        SendTranscriptToClaudeWithScreenshot(text);
+    }
+
     /// <summary>A moment after <paramref name="drawing"/> is remembered, its quiz, if it is still the drawing up and nothing
     /// else has started.</summary>
     private async Task AskForQuizSoonAsync(DrawnAnswer drawing)

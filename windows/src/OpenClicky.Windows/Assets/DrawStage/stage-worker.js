@@ -13,6 +13,7 @@
 //                                           f.labels(false) hides its labels
 //   quiz([{q, choices, answer, right, wrong, part}])   a few questions on what was drawn, beside it, answered by
 //                                           tapping a choice; each is read out, then whether it was right, the score last
+//   suggest(['Watch from the front', …])    up to 2 short follow-ups offered as pills once the drawing has finished
 //   line(points, o) / curve(points, o)      a pen stroke through [[x, y], ...]; curve() is smooth
 //   arrow(points, o)                        a stroke with a head at its last point
 //   circle(x, y, r, o) / ellipse(x, y, rx, ry, o) / rect(x, y, w, h, o) / poly(points, o)
@@ -82,6 +83,7 @@ const api = {
   change: (target, o) => changeDrawn(target, options(o)),
   erase: (...targets) => { targets.forEach(target => changeDrawn(target, { hidden: true })); return null; },
   quiz: (...args) => quiz(...args),
+  suggest: (...args) => suggest(...args),
   step: n => { if (finite(n)) currentStep = n; },
   say: words => { says.push({ text: String(words), step: currentStep, at: total }); },
 
@@ -521,6 +523,23 @@ function quiz(...args) {
   }
   if (!list.length) { warn('quiz() had no questions it could ask; skipped'); return null; }
   return push({ do: 'quiz', questions: list }, o);
+}
+
+// Up to two short follow-ups the person might want next: suggest(['Watch from the front', 'Show how it turns']). The
+// page shows them as pills once the drawing has finished; clicking one asks it. Anything but a short non-empty string is
+// left out, and the first two are kept.
+function suggest(...args) {
+  const list = args.find(Array.isArray);
+  if (!Array.isArray(list)) { warn('suggest() takes a list of up to 2 short follow-up questions; skipped'); return null; }
+  const texts = [];
+  for (const raw of list) {
+    if (typeof raw !== 'string' || !raw.trim()) { warn('suggest(): each follow-up is a short string; one was skipped'); continue; }
+    const text = raw.trim().slice(0, 40);
+    if (!texts.includes(text)) texts.push(text);
+    if (texts.length === 2) break;
+  }
+  if (!texts.length) { warn('suggest() had no follow-up questions it could show; skipped'); return null; }
+  return push({ do: 'suggest', suggestions: texts });
 }
 // What part() hands back for a name it doesn't know: calls on it do nothing.
 const noPart = (who, which) => { warn(who + ': no part ' + JSON.stringify(which)); return new Proxy({}, { get: () => () => null }); };

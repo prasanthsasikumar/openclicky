@@ -306,4 +306,15 @@ public class DrawStageTests
         Assert.Equal(1, asked);
         Assert.Equal(["What pumps the blood? The heart, the lungs or the liver?"], said);
     }
+
+    [Fact]
+    public void AFollowUpSuggestionReachesTheApp()
+    {
+        var (stage, surface) = MakeStage();
+        var chosen = new List<string>();
+        stage.SuggestionChosen += chosen.Add;
+        surface.PageSays("""{"type":"suggestion","text":"Watch from the front"}""");
+        surface.PageSays("""{"type":"suggestion","text":""}""");
+        Assert.Equal(["Watch from the front"], chosen);
+    }
 }

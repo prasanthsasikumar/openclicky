@@ -97,6 +97,7 @@
     ranSent = false;
     errors = 0;
     remembered = false;
+    clearSuggestions();
     showCaption(null);
     showTools();
   }
@@ -253,6 +254,7 @@
 
   function addItem(mark) {
     markCount++;
+    if (mark.do === 'suggest') { setSuggestions(mark.suggestions); return; }
     if (mark.do === 'text') placeLabel(mark);
     else if (mark.do === 'card') addCard(mark);
     else { followLabels(mark); addStroke(mark); }
@@ -329,6 +331,7 @@
     showCaption(null);
     send({ type: 'finished' });
     for (const quiz of quizzes) if (quiz.unspoken) speakQuestion(quiz);
+    showSuggestions();
     showTools();
   }
 
@@ -714,6 +717,67 @@
     quizzes.length = 0;
   }
 
+  // ------------------------------------------------------------------ follow-ups offered at the end (suggest())
+  // Up to two pills at the bottom-left, just above the caption band, once the drawing has finished. Clicking one asks
+  // it as a follow-up to the drawing; they go when the stage is cleared or a new drawing begins.
+  let suggestions = [];
+  const suggestBar = document.createElement('div');
+  suggestBar.id = 'suggestions';
+  suggestBar.hidden = true;
+  document.body.appendChild(suggestBar);
+
+  function setSuggestions(list) {
+    suggestions = (Array.isArray(list) ? list : []).map(text => String(text).trim()).filter(Boolean).slice(0, 2);
+  }
+
+  function showSuggestions() {
+    suggestBar.textContent = '';
+    if (!suggestions.length) { suggestBar.hidden = true; reportHits(); return; }
+    for (const text of suggestions) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'suggestion';
+      button.appendChild(bubbleGlyph());
+      const label = document.createElement('span');
+      label.textContent = text;
+      button.appendChild(label);
+      button.addEventListener('click', () => chooseSuggestion(text));
+      suggestBar.appendChild(button);
+    }
+    suggestBar.hidden = false;
+    suggestBar.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, fill: 'both' });
+    reportHits();
+  }
+
+  // A small speech bubble before the words.
+  function bubbleGlyph() {
+    const glyph = document.createElementNS(SVG_NS, 'svg');
+    glyph.setAttribute('viewBox', '0 0 12 12');
+    glyph.setAttribute('aria-hidden', 'true');
+    const bubble = document.createElementNS(SVG_NS, 'path');
+    bubble.setAttribute('d', 'M2.5 1.5h7A1.5 1.5 0 0 1 11 3v3.5A1.5 1.5 0 0 1 9.5 8H6.4L3.9 10V8H2.5A1.5 1.5 0 0 1 1 6.5V3a1.5 1.5 0 0 1 1.5-1.5z');
+    bubble.setAttribute('fill', 'currentColor');
+    glyph.appendChild(bubble);
+    return glyph;
+  }
+
+  function chooseSuggestion(text) {
+    hideSuggestions();
+    send({ type: 'suggestion', text });
+  }
+
+  function hideSuggestions() {
+    clearSuggestions();
+    reportHits();
+  }
+
+  // Takes the pills away without touching the mouse rules (a new program does that when it settles).
+  function clearSuggestions() {
+    suggestions = [];
+    suggestBar.textContent = '';
+    suggestBar.hidden = true;
+  }
+
   // A follow-up's change to a 2D mark already drawn: hidden (true fades it out, false brings it back), color (its pen
   // strokes, text and fill).
   function change2d(m, seconds) {
@@ -993,6 +1057,7 @@
     const rects = window.Figure3D && !recording ? window.Figure3D.rects() : [];
     if (dragArea && !recording) rects.push(dragArea);
     if (!recording) for (const quiz of quizzes) { const box = quiz.panel.getBoundingClientRect(); rects.push({ x: box.left, y: box.top, w: box.width, h: box.height }); }
+    if (!recording && !suggestBar.hidden) { const box = suggestBar.getBoundingClientRect(); rects.push({ x: box.left, y: box.top, w: box.width, h: box.height }); }
     for (const node of [tools, grip, gripLeft]) {
       if (node.hidden || recording) continue;
       const box = node.getBoundingClientRect();

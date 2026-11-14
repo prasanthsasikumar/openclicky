@@ -469,4 +469,13 @@ public partial class DrawingAnswerTests
         Assert.Contains("m.label(atom, words, o)", prompt);
         Assert.Contains("'O#2' (the second oxygen)", prompt);
     }
+
+    [Fact]
+    public void ThePromptOffersFollowUpSuggestionsAndPuts3DFiguresStraightOnTheScreen()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("suggest([", prompt);
+        Assert.DoesNotContain("usually filling your card", prompt);
+        Assert.Contains("placed straight on the screen with NO card", prompt);
+    }
 }

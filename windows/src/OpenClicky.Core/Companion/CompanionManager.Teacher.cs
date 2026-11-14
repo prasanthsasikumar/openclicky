@@ -45,6 +45,8 @@ public sealed partial class CompanionManager
         Plugins.DrawStage.DrawStageController.Shared.OffersQuiz = () =>
             Plugins.DrawStage.DrawStageLesson.QuizFrom(OpenClickyConfiguration.Settings.DrawingQuiz) != Plugins.DrawStage.DrawingQuiz.Off;
         Plugins.DrawStage.DrawStageController.Shared.QuizRequested += () => services.MainThread.Post(AskForQuiz);
+        // A follow-up offered at the end of a drawing: asked as a follow-up to it, like the Quiz me button.
+        Plugins.DrawStage.DrawStageController.Shared.SuggestionChosen += text => services.MainThread.Post(() => AskSuggestedFollowUp(text));
         Plugins.DrawStage.DrawStageController.Shared.SayRequested += line => services.MainThread.Post(() => SayQuizLine(line));
         // 3D pieces a drawing asks for (f.piece), made by the maker Settings picks, the drawing model when it fails.
         var pieceWorkshop = new Plugins.DrawStage.PieceWorkshop(() => Plugins.DrawStage.PieceMakers.For(Configuration.OpenClickyConfiguration.Settings,

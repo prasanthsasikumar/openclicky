@@ -469,9 +469,9 @@ public static partial class DrawStageLesson
         THE CANVAS
         - The attached screenshot is the canvas: W = {{width}} by H = {{height}} units, origin at the top-left, y grows downward. What you draw lands on their real screen exactly where it is in the screenshot.
         - If the question is about something visible ("this", a photo, a part of the page), point at it where it really is: a circle(), an arrow() from your card to it, or a highlight().
-        - Draw the explanation on one card() over a calm part of the screen (empty space or less important content), sized so the whole diagram fits: usually 40-55% of W wide and 60-80% of H tall. Keep 30 units of margin inside the card. Only marks that point at the real screen go outside it.
+        - A 3D answer about one whole thing (a plane, the heart, a jet engine, the knee joint) is a figure() placed straight on the screen with NO card: centre it over the calmest part of the screen, about 50-60% of W wide and 60-70% of H tall, with its labels and a short text() title above it if needed. 2D diagrams, graphs, timelines, flat molecules and comparisons keep one card() over a calm part of the screen, sized so the whole diagram fits: usually 40-55% of W wide and 60-80% of H tall. Keep 30 units of margin inside a card. Only marks that point at the real screen go outside it.
         - Keep the bottom 14% of the screen (below y = {{(int)(height * 0.86)}}) empty: the spoken words are shown there as captions.
-        - Keep the card's box in a const and place everything relative to it: const c = {x: …, y: …, w: …, h: …}.
+        - Keep the card's box (or the box of a card-less figure) in a const and place everything relative to it: const c = {x: …, y: …, w: …, h: …}.
         - Labels are 1-4 words, size 20-28, next to the thing they name and never on top of a line or another label; use a short arrow when a label can't sit beside its thing.
         - Make a 2D drawing look finished, not like a quick sketch: give shapes a soft fill under their outline (fill with fillOpacity 0.25-0.6), a darker band of the same colour along one side for shade, real proportions, and the small details that make the thing recognisable (bolts, windows, veins, leaves, teeth).
 
@@ -486,6 +486,7 @@ public static partial class DrawStageLesson
         text(x, y, words, o)                     handwriting centred on x, y (align 'start' puts its left edge at x)
         highlight(x, y, w, h, o)                 a marker sweep behind words
         photo(x, y, w, h, {query, caption})      a real photo from Wikimedia Commons in a polaroid frame: for real things a drawing can't show well (an animal, an organ, a place, a real machine). query is a short English search ('human heart anatomy'); use at most one or two, beside the drawing, never instead of it
+        suggest(['Watch from the front', 'Show how it turns'])   at the very end of the program, up to 2 short follow-ups (2-5 words each) the person might want next; skip it when nothing obvious follows
         Options o: {color, width, fill, fillOpacity, dashed, size, align, bold}. Colors: ink, blue, red, green, orange, purple, pink, yellow, teal, brown, grey, white, or '#rrggbb'. Default stroke width 3.2, text size 26.
         Also available: W, H, PI, sin, cos, tan, atan2, sqrt, exp, log, abs, min, max, round, floor, ceil, hypot, lerp(a, b, t), mid(p, q), along(p, q, t), polar(cx, cy, r, angle), range(n).
         Plain JavaScript works too (const, let, arithmetic, for loops, arrays). Nothing else exists: no DOM, no network, no other functions. Never use Math.random. At most about {{calls}} drawing calls, plus up to {{partsAtMost}} parts for a 3D figure.
@@ -512,7 +513,7 @@ public static partial class DrawStageLesson
         ```
 
         3D FIGURES (use one when the thing has a real shape or is a machine: an engine, a plane, a rocket, a circuit board, a 3D printer, a planet, the heart, a gear train; stay 2D for processes, cycles, graphs and comparisons)
-        const f = figure(x, y, w, h, {tilt, turn, zoom, spin, ground})   a turning 3D stage in that box, usually filling your card below its title. The camera frames the parts by itself; ground: false for things that float (planets, atoms).
+        const f = figure(x, y, w, h, {tilt, turn, zoom, spin, ground})   a turning 3D stage in that box, straight on the screen with no card for one whole thing (centred, about 50-60% of W wide and 60-70% of H tall); inside a card only when it is one part of a wider 2D explanation. The camera frames the parts by itself; ground: false for things that float (planets, atoms).
         Parts, in world units (about 1-5 across), each returns a part:
           f.box({w, h, d, round}) (round: corner radius, for cases, chips, buttons, bodies) f.cyl({r, h, r2, open}) f.cone({r, h}) f.sphere({r}) f.torus({r, tube}) f.capsule({r, h})
           f.lathe({points: [[radius, y], …]}) (a turned profile: casings, nozzles, bottles, bells, a fuselage on axis: 'x')
@@ -572,9 +573,9 @@ public static partial class DrawStageLesson
         3D EXAMPLE (the first beats of "how does a jet engine work?" on a 1280 × 720 screen)
         ```js
         step(1); say("A jet engine is a tube that sucks air in at the front with a big spinning fan.")
-        const c = {x: 380, y: 40, w: 860, h: 560}
-        card(c.x, c.y, c.w, c.h, {title: 'Inside a jet engine'})
-        const f = figure(c.x + 30, c.y + 70, c.w - 60, c.h - 100, {tilt: 22, turn: -35})
+        const c = {x: 300, y: 120, w: 680, h: 470}
+        text(c.x + c.w / 2, c.y - 26, 'Inside a jet engine', {size: 26, bold: true})
+        const f = figure(c.x, c.y, c.w, c.h, {tilt: 22, turn: -35})
         const casing = f.lathe({points: [[1.05, -2.3], [1.12, -1.9], [1.1, -0.6], [0.95, 0.6], [0.95, 1.4], [0.7, 2.2]], axis: 'x', mat: 'alu', cut: 'z'})
         const shaft = f.cyl({r: 0.09, h: 4.2, axis: 'x', mat: 'steel'})
         const spinner = f.cone({r: 0.32, h: 0.55, axis: '-x', at: [-2.15, 0, 0], mat: 'paint:#30343B'})
