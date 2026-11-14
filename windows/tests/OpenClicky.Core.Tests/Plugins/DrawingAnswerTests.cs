@@ -200,6 +200,15 @@ public partial class DrawingAnswerTests
     }
 
     [Fact]
+    public void TheDrawingPromptNeverTurnsAway3DModels()
+    {
+        var prompt = DrawStageLesson.UserPrompt("make me a 3d model of my school");
+        Assert.Contains("never answer NONE", prompt);
+        Assert.Contains("Blender", prompt);
+        Assert.Contains("make me a 3d model of my school", prompt);
+    }
+
+    [Fact]
     public void ThePromptOffersGraphsAndTimelinesPlacedByValue()
     {
         var prompt = DrawStageLesson.SystemPrompt(1280, 720);
