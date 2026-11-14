@@ -147,6 +147,7 @@ public partial class DrawingAnswerTests
         var system = DrawStageLesson.SystemPrompt(1280, 720);
         Assert.Contains("f.tempo(0.5) runs every motion in the figure at half speed", system);
         Assert.Contains("erase(arrowA) takes it away", system);
+        Assert.Contains("f.part(", system);
     }
 
     // MARK: - how detailed, and their own instructions (Settings → Clicky → Drawings)

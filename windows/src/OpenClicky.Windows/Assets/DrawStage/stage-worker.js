@@ -107,8 +107,31 @@ const api = {
     const id = 'fig' + (++figureCount);
     push({ do: 'figure', id, at: [x, y], w, h }, o);
     const figure = { id };
-    for (const kind of PART_KINDS) figure[kind] = opts => part3d(id, kind, opts);
-    figure.label = (part, words, opts) => { push({ do: 'label3d', fig: id, part: part && part.id, text: String(words) }, opts); return figure; };
+    // The figure's parts by what they go by: their name option or their label text, for f.part('turbine').
+    const named = new Map();
+    const remember = (part, keys) => {
+      for (const key of keys) {
+        const k = String(key == null ? '' : key).toLowerCase().trim();
+        if (k) named.set(k, part);
+      }
+      return part;
+    };
+    // A name it doesn't know: every call on it does nothing and hands it back, so a chain still runs.
+    const noFigurePart = new Proxy({}, { get: () => () => noFigurePart });
+    for (const kind of PART_KINDS) {
+      figure[kind] = opts => {
+        const part = part3d(id, kind, opts), label = part.label;
+        part.label = (words, o) => { remember(part, [words]); return label(words, o); };
+        return remember(part, [options(opts).name]);
+      };
+    }
+    figure.part = which => {
+      const found = named.get(String(which).toLowerCase().trim());
+      if (found) return found;
+      warn("f.part('" + which + "'): no part named that; name parts with {name: 'x'} or label them");
+      return noFigurePart;
+    };
+    figure.label = (part, words, opts) => { remember(part, [words]); push({ do: 'label3d', fig: id, part: part && part.id, text: String(words) }, opts); return figure; };
     figure.view = opts => { push({ do: 'view3d', fig: id }, opts); return figure; };
     // Every motion in the figure at this speed (0.5 half, 2 twice as fast), and its labels shown or not.
     figure.tempo = (k, opts) => { if (finite(k) && k > 0) push({ do: 'tempo3d', fig: id, tempo: k }, opts); else warn('tempo() needs a speed above 0, like 0.5'); return figure; };
