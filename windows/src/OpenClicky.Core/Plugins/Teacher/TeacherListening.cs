@@ -22,8 +22,9 @@ public static class TeacherListening
         public static Output Unknown { get; } = new(null, false);
     }
 
-    /// <summary>Below this, laptop speakers are lost in any noise.</summary>
-    public const float QuietVolume = 0.4f;
+    /// <summary>Below this, the output is near-silent. A normal 30-40 % volume is heard fine in a quiet
+    /// room, so only near-silent sound counts as not hearing; a louder room is the person's own choice.</summary>
+    public const float QuietVolume = 0.08f;
 
     public static bool AnswersShouldBeWritten(bool questionWasTyped, Output output)
     {

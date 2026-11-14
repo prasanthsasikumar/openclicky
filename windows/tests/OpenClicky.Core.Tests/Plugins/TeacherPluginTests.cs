@@ -503,7 +503,8 @@ public class TeacherPluginTests
         Assert.False(TeacherListening.AnswersShouldBeWritten(false, loud));
         Assert.True(TeacherListening.AnswersShouldBeWritten(true, loud));
         Assert.True(TeacherListening.AnswersShouldBeWritten(false, new TeacherListening.Output(0.8f, true)));
-        Assert.True(TeacherListening.AnswersShouldBeWritten(false, new TeacherListening.Output(0.31f, false)));
+        Assert.True(TeacherListening.AnswersShouldBeWritten(false, new TeacherListening.Output(0.05f, false)));
+        Assert.False(TeacherListening.AnswersShouldBeWritten(false, new TeacherListening.Output(0.35f, false)));
         Assert.False(TeacherListening.AnswersShouldBeWritten(false, new TeacherListening.Output(null, false)));
     }
 
