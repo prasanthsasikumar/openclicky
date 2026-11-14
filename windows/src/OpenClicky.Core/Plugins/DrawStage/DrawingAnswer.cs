@@ -75,7 +75,10 @@ public static class DrawingAnswer
     /// whole reply) on <paramref name="capture"/>'s screen, speaking it through <paramref name="speech"/>. Stage calls go
     /// through <paramref name="onMainThread"/> in order. Cancelling <paramref name="cancellationToken"/> stops the reply and the
     /// voice; it is thrown as OperationCanceledException. <paramref name="holdLine"/> (none when null) is said when the first
-    /// line is slower than <paramref name="holdLineAfter"/> (default <see cref="HoldLineAfter"/>). With
+    /// line is slower than <paramref name="holdLineAfter"/> (default <see cref="HoldLineAfter"/>), and then only once the reply
+    /// is a program, so a reply that turns out to hold none never promised a drawing; with
+    /// <paramref name="holdLineBeforeProgram"/> (default false) it is said when the time is up even while the reply is still
+    /// empty (a thinking model streams nothing until it is done), for a question that explicitly asked for a picture. With
     /// <paramref name="followUp"/> (the drawing on the stage), a program that starts with keep() is drawn after it.
     /// </summary>
     public static async Task<DrawingAnswerResult> RunAsync(
@@ -89,6 +92,7 @@ public static class DrawingAnswer
         CancellationToken cancellationToken,
         string? holdLine = null,
         TimeSpan? holdLineAfter = null,
+        bool holdLineBeforeProgram = false,
         DrawnAnswer? followUp = null,
         TimeSpan? readyLimit = null)
     {
@@ -117,12 +121,14 @@ public static class DrawingAnswer
             }
         }
         // The hold line waits for the reply to be a program as well as for the time: one that turns out to be NONE (a
-        // picture doesn't answer it) must not have promised a drawing first.
+        // picture doesn't answer it) must not have promised a drawing first. A question that explicitly asked for a picture
+        // (holdLineBeforeProgram) doesn't wait: its model may think for a long while, streaming nothing, and the silence is
+        // what the hold line is for.
         var holdLineDue = false;
         var replyIsAProgram = false;
         void SayHoldLineIfDue()
         {
-            if (holdLineDue && replyIsAProgram) SayHoldLine();
+            if (holdLineDue && (replyIsAProgram || holdLineBeforeProgram)) SayHoldLine();
         }
         void SayHoldLine()
         {

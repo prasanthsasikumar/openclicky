@@ -305,7 +305,8 @@ public partial class DrawingAnswerTests
 
     private static async Task<(DrawingAnswerResult Result, FakePage Page, List<string> Played)> DrawAsync(
         Func<Action<string>, CancellationToken, Task<string>> writeReply, FakePage? page = null, string? failingLine = null,
-        string? holdLine = null, TimeSpan? holdLineAfter = null, DrawnAnswer? followUp = null, TimeSpan? readyLimit = null)
+        string? holdLine = null, TimeSpan? holdLineAfter = null, bool holdLineBeforeProgram = false, DrawnAnswer? followUp = null,
+        TimeSpan? readyLimit = null)
     {
         page ??= new FakePage();
         var stage = new DrawStageController { Surface = page };
@@ -315,7 +316,7 @@ public partial class DrawingAnswerTests
             (audio, _) => { lock (played) played.Add(Encoding.UTF8.GetString(audio)); return Task.CompletedTask; });
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var result = await DrawingAnswer.RunAsync(stage, Capture, writeReply, speech, action => action(), () => { }, _ => { }, timeout.Token,
-            holdLine, holdLineAfter, followUp, readyLimit);
+            holdLine, holdLineAfter, holdLineBeforeProgram, followUp, readyLimit);
         return (result, page, played);
     }
 
@@ -415,6 +416,38 @@ public partial class DrawingAnswerTests
             return DrawStageLesson.NoDrawing;
         }
         var (result, _, played) = await DrawAsync(SlowNone, holdLine: DrawingAnswer.HoldLine, holdLineAfter: TimeSpan.FromMilliseconds(50));
+        Assert.False(result.Drew);
+        Assert.Empty(played);
+    }
+
+    [Fact]
+    public async Task AQuestionThatAskedForAPictureHoldsTheSilenceBeforeTheProgramArrives()
+    {
+        static async Task<string> ThinkFirst(Action<string> onReplySoFar, CancellationToken token)
+        {
+            await Task.Delay(600, token);
+            onReplySoFar(TwoBeats);
+            return TwoBeats;
+        }
+        var (result, _, played) = await DrawAsync(ThinkFirst, holdLine: DrawingAnswer.HoldLine,
+            holdLineAfter: TimeSpan.FromMilliseconds(100), holdLineBeforeProgram: true);
+        Assert.True(result.Drew);
+        // The hold line is the first thing heard, long before the program's first say() line, and only once.
+        Assert.Equal([DrawingAnswer.HoldLine, "One.", "Two."], played);
+        Assert.Equal(["One.", "Two."], result.SpokenLines);
+    }
+
+    [Fact]
+    public async Task ASlowNonePromisesNoDrawingWhenTheHoldLineWaitsForTheProgram()
+    {
+        static async Task<string> SlowNone(Action<string> onReplySoFar, CancellationToken token)
+        {
+            await Task.Delay(300, token);
+            onReplySoFar(DrawStageLesson.NoDrawing);
+            return DrawStageLesson.NoDrawing;
+        }
+        var (result, _, played) = await DrawAsync(SlowNone, holdLine: DrawingAnswer.HoldLine,
+            holdLineAfter: TimeSpan.FromMilliseconds(100), holdLineBeforeProgram: false);
         Assert.False(result.Drew);
         Assert.Empty(played);
     }

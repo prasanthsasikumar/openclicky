@@ -190,8 +190,10 @@ public sealed partial class CompanionManager
                 }),
                 line => AppLog.Write($"draw: {line}"),
                 answerCancellation.Token,
-                // A question that may not be about the drawing at all says nothing until it is drawn.
+                // A question that may not be about the drawing at all says nothing until it is drawn. One that asked for a
+                // picture outright says the hold line even while the model is still thinking (it streams nothing first).
                 holdLine: wantsADrawing ? DrawingAnswer.HoldLine : null,
+                holdLineBeforeProgram: asked || DrawStageLesson.AsksForAPicture(transcript),
                 followUp: drawingUp);
             if (!result.Drew)
             {
