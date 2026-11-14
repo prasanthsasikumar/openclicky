@@ -22,6 +22,7 @@
 //                                           c.label(part, words), c.point(part), c.parts
 //   card(x, y, w, h, o)                     a paper card to explain on ({title})
 //   photo(x, y, w, h, {query, caption})     a real photo (Wikimedia Commons, found by the app) in a polaroid frame
+//   photo(x, y, w, h, {generate, caption})  a picture the person's image model makes from the description, in the same frame
 //   chart(x, y, w, h, {x, y, grid})         axes with numbered ticks ({from, to, step, label, format} or {labels}) → g.line/
 //                                           area/bars/dot/label/hline/vline(…) placed by value, g.at(x, y)
 //   timeline(x, y, w, {from, to, step})     a line of years → t.event(when, words), t.span(from, to, words), t.at(when)
@@ -98,7 +99,7 @@ const api = {
   text: (x, y, words, o) => needs('text', [x, y].every(finite)) ? push({ do: 'text', at: [x, y], text: String(words) }, o) : null,
   highlight: (x, y, w, h, o) => needs('highlight', [x, y, w, h].every(finite)) ? push({ do: 'highlight', at: [x, y], w, h }, o) : null,
   card: (x, y, w, h, o) => needs('card', [x, y, w, h].every(finite)) ? push({ do: 'card', at: [x, y], w, h }, o) : null,
-  photo: (x, y, w, h, o) => needs('photo', [x, y, w, h].every(finite) && options(o).query) ? push({ do: 'photo', at: [x, y], w, h }, o) : null,
+  photo: (x, y, w, h, o) => needs('photo', [x, y, w, h].every(finite) && (options(o).query || options(o).generate)) ? push({ do: 'photo', at: [x, y], w, h }, o) : null,
   chart, timeline,
 
   figure: (x, y, w, h, o) => {

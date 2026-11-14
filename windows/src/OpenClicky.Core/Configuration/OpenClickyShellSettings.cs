@@ -109,6 +109,13 @@ public sealed class OpenClickyShellSettings
     /// low-poly models before any maker builds it. Null means no ready-made search.</summary>
     [JsonPropertyName("polyPizzaKey")] public string? PolyPizzaKey { get; set; }
 
+    /// <summary>Who makes a picture the drawing asks for (photo({generate})): "openAI", "gemini" or "openRouter";
+    /// null or empty is off. Uses that source's key.</summary>
+    [JsonPropertyName("pictureSource")] public string? PictureSource { get; set; }
+
+    /// <summary>The image model that source uses (PictureMakers.DefaultModel when unset).</summary>
+    [JsonPropertyName("pictureModel")] public string? PictureModel { get; set; }
+
     /// <summary>Answer through a plan the person already pays for (Claude Code / Codex). Off until switched on.</summary>
     [JsonPropertyName("useClaudeCodePlan")] public bool? UseClaudeCodePlan { get; set; }
     [JsonPropertyName("useCodexPlan")] public bool? UseCodexPlan { get; set; }

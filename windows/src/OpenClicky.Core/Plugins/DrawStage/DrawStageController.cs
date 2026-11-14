@@ -90,6 +90,10 @@ public sealed class DrawStageController
     /// photo cards say none was found.</summary>
     public Func<string, string, CancellationToken, Task<DrawStagePhoto?>>? FindPhoto { get; set; }
 
+    /// <summary>Makes the picture a drawing asks to generate (photo({generate}), with the image model Settings picks); set
+    /// by the composition root. Without one, the card says none was made.</summary>
+    public Func<string, CancellationToken, Task<DrawStagePhoto?>>? MakePicture { get; set; }
+
     /// <summary>Makes a 3D piece a drawing asks for (f.piece); set by the companion. Without one, the page fills each piece's
     /// box itself.</summary>
     public Func<PieceRequest, Task<DrawStagePiece?>>? MakePiece { get; set; }
@@ -273,12 +277,22 @@ public sealed class DrawStageController
         return true;
     }
 
-    private async Task SendPhotoAsync(string id, string query, string caption)
+    private async Task SendPhotoAsync(string id, string query, string caption, string generate)
     {
         DrawStagePhoto? photo = null;
+        var making = generate.Trim().Length > 0;
         try
         {
-            if (FindPhoto is { } find && query.Trim().Length > 0)
+            if (making)
+            {
+                // A made picture takes longer than a search (a minute or two is normal), so it gets more time.
+                if (MakePicture is { } make)
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+                    photo = await make(generate, timeout.Token);
+                }
+            }
+            else if (FindPhoto is { } find && query.Trim().Length > 0)
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 photo = await find(query, caption, timeout.Token);
@@ -286,9 +300,12 @@ public sealed class DrawStageController
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
-            Logged?.Invoke($"photo search failed ({error.GetType().Name})");
+            Logged?.Invoke(making ? $"making the picture failed ({error.GetType().Name})" : $"photo search failed ({error.GetType().Name})");
         }
-        Logged?.Invoke(photo is null ? $"no photo for \"{query}\"" : $"photo for \"{query}\" ({photo.ImageData.Length / 1024} KB, {photo.Credit})");
+        var asked = making ? generate : query;
+        Logged?.Invoke(photo is null
+            ? (making ? $"no picture for \"{asked}\"" : $"no photo for \"{asked}\"")
+            : $"{(making ? "picture" : "photo")} for \"{asked}\" ({photo.ImageData.Length / 1024} KB, {photo.Credit})");
         var message = DrawStageMessages.Photo(id, photo);
         if (MainThread is { } mainThread) mainThread.Post(() => Surface?.Post(message));
         else Surface?.Post(message);
@@ -367,7 +384,7 @@ public sealed class DrawStageController
                 measuring?.TrySetResult(bounds);
                 break;
             case "photoWanted" when message.Id is { } photoId:
-                _ = SendPhotoAsync(photoId, message.Query ?? "", message.Text ?? "");
+                _ = SendPhotoAsync(photoId, message.Query ?? "", message.Text ?? "", message.Generate ?? "");
                 break;
             case "pieceWanted" when message.Id is { } pieceId && message.Text is { Length: > 0 } make:
                 var size = message.Size ?? [1, 1, 1];

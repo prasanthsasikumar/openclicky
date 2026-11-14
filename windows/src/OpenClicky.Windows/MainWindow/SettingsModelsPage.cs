@@ -40,6 +40,8 @@ internal sealed partial class SettingsRowFactory
                 return SpeechServerRow(item, query);
             case "clicky.drawingSource":
                 return new LiveContent(() => Ui.Card(DrawingSourceRow(item, query)), Changes.Shell);
+            case "clicky.pictures":
+                return new LiveContent(() => Ui.Card(PictureSourceRow(item, query)), Changes.Shell);
             case "clicky.drawingDetail":
                 return Ui.Card(DrawingDetailRow(item, query));
             case "clicky.drawingQuiz":
@@ -217,6 +219,53 @@ internal sealed partial class SettingsRowFactory
         modelField.LostFocus += (_, _) => SaveModel();
         modelField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) SaveModel(); };
         return Ui.Row(item.Title, item.Detail, query, Ui.HStack(8, picker, modelField));
+    }
+
+    /// <summary>Who makes a picture the drawing asks for (photo({generate})): off, OpenAI, Gemini or OpenRouter, with its
+    /// own model when one is picked.</summary>
+    private static UIElement PictureSourceRow(SettingsItem item, string query)
+    {
+        var shell = OpenClickyConfiguration.Settings;
+        var kind = PictureMakers.KindFrom(shell.PictureSource);
+        var picker = Ui.Picker(
+            [(PictureSourceKind.Off, "Off"), (PictureSourceKind.OpenAI, "OpenAI"), (PictureSourceKind.Gemini, "Google Gemini"),
+             (PictureSourceKind.OpenRouter, "OpenRouter")],
+            kind,
+            picked =>
+            {
+                OpenClickyConfiguration.Update(saved =>
+                {
+                    saved.PictureSource = PictureMakers.RawValue(picked);
+                    // Each source has its own model: a new one starts from its own default.
+                    saved.PictureModel = null;
+                });
+                ShellSettingsRevision.NoteChanged();
+            },
+            220);
+        var stack = new StackPanel();
+        stack.Children.Add(Ui.Row(item.Title, item.Detail, query, picker));
+        if (kind != PictureSourceKind.Off)
+        {
+            var modelField = new WpfUi.TextBox
+            {
+                Width = 260, Text = shell.PictureModel ?? "", PlaceholderText = PictureMakers.DefaultModel(kind), VerticalAlignment = VerticalAlignment.Center,
+            };
+            Ui.AutomationProperties(modelField, "Picture model");
+            void SaveModel()
+            {
+                var typed = modelField.Text.Trim();
+                if (typed == (OpenClickyConfiguration.Settings.PictureModel ?? "")) return;
+                OpenClickyConfiguration.Update(saved => saved.PictureModel = typed.Length == 0 ? null : typed);
+                ShellSettingsRevision.NoteChanged();
+            }
+            modelField.LostFocus += (_, _) => SaveModel();
+            modelField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) SaveModel(); };
+            var fields = Ui.HStack(8, modelField);
+            fields.Margin = new Thickness(0, 8, 0, 0);
+            stack.Children.Add(fields);
+        }
+        stack.Children.Add(Caption("Only the description is sent, never your screen. Uses the key you set for that service."));
+        return stack;
     }
 
     /// <summary>How detailed drawings are: simple, detailed or very detailed (DrawStageLesson.DetailFrom).</summary>

@@ -266,6 +266,8 @@ public sealed class SettingsCatalog
                  "phonon", "chatterbox", "gemma", "speaches", "localai", "ollama", "local", "offline", "private", "self-hosted", "server", "free"]),
             Item("clicky.drawingSource", "Drawings come from", "Who writes the answers drawn on your screen. A stronger model draws better; answers can stay quick.",
                 ["drawing", "draw", "diagram", "teacher", "3d", "model", "explain", "whiteboard"]),
+            Item("clicky.pictures", "Pictures come from", "Who makes a picture when you ask Clicky to generate or create one.",
+                ["picture", "pictures", "image", "images", "photo", "generate", "illustration", "painting", "openai", "gemini", "google", "openrouter", "image model"]),
             Item("clicky.drawingDetail", "How detailed", "More parts and finer detail take longer to draw. Very detailed suits a strong model.",
                 ["drawing", "detail", "detailed", "parts", "realistic", "real", "quality", "3d", "simple", "complex"]),
             Item("clicky.drawingQuiz", "Quiz after a drawing", "A few questions on what was drawn, answered by tapping. Offer puts a Quiz me button on each drawing; Always asks after every one, for a child or a class. Saying \"quiz me\" works whatever this is.",

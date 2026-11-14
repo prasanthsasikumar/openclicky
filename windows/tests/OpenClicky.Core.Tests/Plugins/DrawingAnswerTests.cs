@@ -150,6 +150,41 @@ public partial class DrawingAnswerTests
     }
 
     [Theory]
+    [InlineData("generate an image of a volcano erupting")]
+    [InlineData("make a picture of the human heart")]
+    [InlineData("create an illustration of mitosis")]
+    [InlineData("draw me a picture of the heart")]
+    public void AnExplicitAskForAnImageOrPictureGetsADrawing(string question)
+    {
+        Assert.True(DrawStageLesson.WantsADrawing(question));
+        Assert.True(DrawStageLesson.AsksForAPicture(question));
+    }
+
+    [Theory]
+    [InlineData("take a screenshot")]
+    [InlineData("export this image as png")]
+    [InlineData("make this image bigger")]
+    [InlineData("can you make the picture brighter")]
+    public void AScreenshotOrAnExportIsNotAPicture(string question)
+    {
+        Assert.False(DrawStageLesson.WantsADrawing(question));
+        Assert.False(DrawStageLesson.AsksForAPicture(question));
+    }
+
+    [Fact]
+    public void ThePromptKnowsHowToGenerateAPictureAndToSayWhenPicturesAreOff()
+    {
+        var on = DrawStageLesson.SystemPrompt(1280, 720, pictures: true);
+        Assert.Contains("generate:", on);
+        Assert.Contains("photo({generate", on);
+        Assert.DoesNotContain("Settings → Drawings → Pictures come from", on);
+
+        var off = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("generate:", off);
+        Assert.Contains("Settings → Drawings → Pictures come from", off);
+    }
+
+    [Theory]
     [InlineData("what is the best 3d printer")]
     [InlineData("is this game 2d or 3d")]
     [InlineData("how do i export this 3d model from blender")]

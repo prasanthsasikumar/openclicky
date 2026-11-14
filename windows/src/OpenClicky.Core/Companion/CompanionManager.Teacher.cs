@@ -53,6 +53,10 @@ public sealed partial class CompanionManager
             Plugins.DrawStage.DrawStageLesson.WriterFor(Configuration.OpenClickyConfiguration.Settings, claudeAPI),
             () => Providers.ProviderRouter.CurrentCredentials().OpenAIKey));
         Plugins.DrawStage.DrawStageController.Shared.MakePiece = pieceWorkshop.MakeAsync;
+        // A picture a drawing asks to generate (photo({generate})), made by the image model Settings picks.
+        var pictures = new Plugins.DrawStage.PictureMakers(() => Configuration.OpenClickyConfiguration.Settings,
+            () => Providers.ProviderRouter.CurrentCredentials());
+        Plugins.DrawStage.DrawStageController.Shared.MakePicture = pictures.MakeAsync;
         teacherSwitchObservation = preferences.Observe(TeacherPlugin.LessonsKey, () => services.MainThread.Post(TeacherSwitchMayHaveChanged));
     }
 

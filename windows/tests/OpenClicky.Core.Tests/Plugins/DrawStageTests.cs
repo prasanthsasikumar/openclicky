@@ -193,6 +193,28 @@ public class DrawStageTests
         Assert.True((bool)reply["failed"]!);
     }
 
+    [Fact]
+    public void APhotoTheDrawingAsksToGenerateIsMadeInsteadOfFound()
+    {
+        var (stage, surface) = MakeStage();
+        var made = new List<string>();
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 1];
+        stage.FindPhoto = (_, _, _) => throw new InvalidOperationException("a generated picture is not searched for");
+        stage.MakePicture = (description, _) =>
+        {
+            made.Add(description);
+            return Task.FromResult<DrawStagePhoto?>(new DrawStagePhoto(png, DrawStageMessages.MediaTypeOf(png), "Made with gpt-image-1"));
+        };
+        surface.PageSays("""{"type":"ready"}""");
+        surface.PageSays("""{"type":"photoWanted","id":"p3","query":"","text":"a volcano","generate":"a volcano erupting at night"}""");
+
+        Assert.Equal(["a volcano erupting at night"], made);
+        var reply = JsonNode.Parse(surface.Posted.Last())!;
+        Assert.Equal("p3", (string)reply["id"]!);
+        Assert.Equal("Made with gpt-image-1", (string)reply["credit"]!);
+        Assert.Equal("data:image/png;base64," + Convert.ToBase64String(png), (string)reply["data"]!);
+    }
+
     [Theory]
     [InlineData(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0 }, "image/jpeg")]
     [InlineData(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0 }, "image/png")]

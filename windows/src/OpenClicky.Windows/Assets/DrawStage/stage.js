@@ -943,7 +943,7 @@
           { duration: seconds * 1000, easing: 'ease-out', fill: 'both' });
         const id = 'photo' + (++uid);
         photos.set(id, { group: frame, box: { x: x + pad, y: y + pad, w: m.w - 2 * pad, h: m.h - pad - captionRoom } });
-        send({ type: 'photoWanted', id, query: String(m.query), text: String(m.caption || '') });
+        send({ type: 'photoWanted', id, query: String(m.query || ''), text: String(m.caption || ''), generate: String(m.generate || '') });
         break;
       }
       case 'card': {

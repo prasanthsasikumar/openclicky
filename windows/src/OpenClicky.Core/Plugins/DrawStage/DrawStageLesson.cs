@@ -240,9 +240,26 @@ public static partial class DrawStageLesson
             }
         }
         // What only a picture shows, asked for outright: "give me a cutaway of a jet engine", "draw a cross section of the
-        // earth" (Words() turns "cross-section" into "cross section").
-        return asks && ContainsAny(text, " model of ", " cutaway ", " cut away ", " cross section ", " exploded view ");
+        // earth" (Words() turns "cross-section" into "cross section"); or the thing itself asked for as an image, picture,
+        // photo, illustration or painting ("generate an image of a volcano erupting", "make a picture of the heart").
+        // Not one about a picture already on the screen ("make this image bigger", "draw on that photo"): that is
+        // editing, which words and pointing answer.
+        return asks && ((ContainsAny(text, PictureNouns) && !ContainsAny(text, PictureOnTheScreen))
+            || ContainsAny(text, " model of ", " cutaway ", " cut away ", " cross section ", " exploded view "));
     }
+
+    /// <summary>What an ask for a picture names: an image, a picture, a photo, an illustration, a painting.</summary>
+    private static readonly string[] PictureNouns =
+    [
+        " image ", " picture ", " photo ", " illustration ", " painting ",
+    ];
+
+    /// <summary>A picture already on the screen ("this image", "that photo"): asking to change it is editing, not a new one.</summary>
+    private static readonly string[] PictureOnTheScreen =
+    [
+        " this image ", " this picture ", " this photo ", " that image ", " that picture ", " that photo ",
+        " the image ", " the picture ", " the photo ",
+    ];
 
     /// <summary>Words that ask for a picture to be made or shown ("make me a 3d model", "show me the heart in 3d").</summary>
     private static readonly string[] PictureAskVerbs =
@@ -263,6 +280,7 @@ public static partial class DrawStageLesson
     [
         " printer ", " printers ", " printing ", " blender ", " sketchup ", " unity ", " unreal ", " game ", " games ",
         " file ", " files ", " export ", " import ", " error ", " crash ", " bug ", " app ", " software ", " program ",
+        " screenshot ", " screenshots ",
     ];
 
     /// <summary>The word after "3d" that makes it a way to show the answer: Urdu and Hindi "in" (may, mein, में, میں), or
@@ -394,10 +412,12 @@ public static partial class DrawStageLesson
     /// <paramref name="detail"/>, with the person's own instructions (Settings) at the end.</summary>
     /// <param name="languageCode">The language Clicky speaks (ReplyLanguage): the drawing's lines and words are in it.</param>
     /// <param name="answerStyle">How they asked to be answered (Answers/AnswerStyle): simpler words, shorter, yes or no first.</param>
+    /// <param name="pictures">Whether an image source is set (Settings → Drawings → Pictures come from): when it isn't, the
+    /// prompt says to tell the person pictures are off rather than draw one.</param>
     public static string SystemPrompt(int width, int height, DrawingDetail detail = DrawingDetail.Detailed, string? theirInstructions = null,
-        bool pieces = false, string? languageCode = null, IReadOnlyList<Answers.AnswerStyleChoice>? answerStyle = null)
+        bool pieces = false, string? languageCode = null, IReadOnlyList<Answers.AnswerStyleChoice>? answerStyle = null, bool pictures = false)
     {
-        var prompt = SystemPromptWithout(width, height, detail, theirInstructions, pieces) + Answers.AnswerStyle.DrawingSection(answerStyle ?? []);
+        var prompt = SystemPromptWithout(width, height, detail, theirInstructions, pieces, pictures) + Answers.AnswerStyle.DrawingSection(answerStyle ?? []);
         return languageCode is null or "en" ? prompt : prompt + "\n\n" + Configuration.ReplyLanguage.Instruction(languageCode) + LanguageSection(languageCode);
     }
 
@@ -412,7 +432,7 @@ public static partial class DrawStageLesson
             + "English ones: keep each text() to a few words and leave room around it.";
     }
 
-    private static string SystemPromptWithout(int width, int height, DrawingDetail detail, string? theirInstructions, bool pieces)
+    private static string SystemPromptWithout(int width, int height, DrawingDetail detail, string? theirInstructions, bool pieces, bool pictures)
     {
         var (beats, calls, parts, partsAtMost) = detail switch
         {
@@ -423,8 +443,13 @@ public static partial class DrawStageLesson
         var instructions = theirInstructions?.Trim() is { Length: > 0 } written
             ? $"\n\nTHEIR OWN INSTRUCTIONS FOR DRAWINGS (follow them, as long as the answer stays one program in the drawing language above)\n{written[..Math.Min(written.Length, LongestInstructions)]}"
             : "";
-        return SystemPromptText(width, height, beats, calls, parts, partsAtMost) + (pieces ? PiecesSection : "") + instructions;
+        return SystemPromptText(width, height, beats, calls, parts, partsAtMost, pictures) + (pieces ? PiecesSection : "") + instructions;
     }
+
+    /// <summary>Whether pictures can be made at all: an image source is set (Settings → Clicky → Drawings → Pictures come
+    /// from). Its key is checked when the picture is made.</summary>
+    public static bool OffersPictures(OpenClickyShellSettings settings) =>
+        PictureMakers.KindFrom(settings.PictureSource) != PictureSourceKind.Off;
 
     /// <summary>Whether drawings are offered pieces made apart (f.piece): when a 3D maker is set up, a Poly Pizza key is set
     /// (ready-made models), or drawings are very detailed (the drawing model then builds each piece in a call of its own).</summary>
@@ -458,7 +483,26 @@ public static partial class DrawStageLesson
         ```
         """;
 
-    private static string SystemPromptText(int width, int height, string beats, int calls, string parts, int partsAtMost) => AssistantName.Introduce($$"""
+    /// <summary>When they ask for a picture, how to have one made and shown: one beat, a short line and one large
+    /// photo({generate}).</summary>
+    public const string PicturesSection = """
+
+
+        PICTURES MADE FOR YOU (when they ask to generate, make or create an image, picture, photo or illustration (asked to draw something, draw it as usual))
+        Answer with ONE beat: a short say() line ("Here's a volcano erupting at night.") and one large photo({generate: 'a volcano erupting at night'}) filling most of the card. Draw nothing else: no second beat, no other marks.
+        generate is the description of the whole picture in plain English, with the things that make it recognisable ('a human heart with its four chambers, seen from the front, on a plain background'). Only that description is sent to the image model, never the screen, so leave out anything about them or their screen.
+        """;
+
+    /// <summary>Without an image source the picture can't be made: say so in one line and draw nothing else, so it is never
+    /// silent.</summary>
+    public const string NoPicturesSection = """
+
+
+        PICTURES ARE OFF (no image source is set in Settings → Drawings → Pictures come from)
+        When they ask to generate, make or create an image, picture, photo or illustration, say one line that pictures are off and can be turned on in Settings → Drawings → Pictures come from. Draw nothing else.
+        """;
+
+    private static string SystemPromptText(int width, int height, string beats, int calls, string parts, int partsAtMost, bool pictures) => AssistantName.Introduce($$"""
         You are OpenClicky, a friendly teacher who answers by drawing on the person's screen while you talk, like a teacher at a whiteboard. Your answer is spoken aloud and drawn at the same time.
 
         Reply with ONE ```js code block and nothing else. The block is a small program in the drawing language below. It runs statement by statement while you write it, so the picture appears as you speak.
@@ -490,10 +534,11 @@ public static partial class DrawStageLesson
         text(x, y, words, o)                     handwriting centred on x, y (align 'start' puts its left edge at x)
         highlight(x, y, w, h, o)                 a marker sweep behind words
         photo(x, y, w, h, {query, caption})      a real photo from Wikimedia Commons in a polaroid frame: for real things a drawing can't show well (an animal, an organ, a place, a real machine). query is a short English search ('human heart anatomy'); use at most one or two, beside the drawing, never instead of it
+        photo(x, y, w, h, {generate: 'description', caption})   a picture the person's image model makes from your description (only the description is sent, never the screen): when they ask to generate, make or create an image, picture, photo or illustration (asked to draw something, draw it as usual), one large one filling most of the card
         suggest(['Watch from the front', 'Show how it turns'])   at the very end of the program, up to 2 short follow-ups (2-5 words each) the person might want next; skip it when nothing obvious follows
         Options o: {color, width, fill, fillOpacity, dashed, size, align, bold}. Colors: ink, blue, red, green, orange, purple, pink, yellow, teal, brown, grey, white, or '#rrggbb'. Default stroke width 3.2, text size 26.
         Also available: W, H, PI, sin, cos, tan, atan2, sqrt, exp, log, abs, min, max, round, floor, ceil, hypot, lerp(a, b, t), mid(p, q), along(p, q, t), polar(cx, cy, r, angle), range(n).
-        Plain JavaScript works too (const, let, arithmetic, for loops, arrays). Nothing else exists: no DOM, no network, no other functions. Never use Math.random. At most about {{calls}} drawing calls, plus up to {{partsAtMost}} parts for a 3D figure.
+        Plain JavaScript works too (const, let, arithmetic, for loops, arrays). Nothing else exists: no DOM, no network, no other functions. Never use Math.random. At most about {{calls}} drawing calls, plus up to {{partsAtMost}} parts for a 3D figure.{{(pictures ? PicturesSection : NoPicturesSection)}}
 
         GRAPHS AND TIMELINES (when the answer has numbers that change or compare, or things that happened in order over time: they place everything by value, so the scale is right, and they keep their own labels clear)
         const g = chart(x, y, w, h, {x: {from, to, step, label}, y: {from, to, step, label}, grid: true})   axes with numbered ticks filling that box (step is optional). x: {labels: ['Mon', 'Tue', …]} names the columns instead of numbering them; format: v => v + '°C' writes the numbers your way

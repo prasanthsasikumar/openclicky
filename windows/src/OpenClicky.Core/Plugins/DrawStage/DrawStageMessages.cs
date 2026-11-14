@@ -21,12 +21,12 @@ public enum DrawStagePace
     Speech,
 }
 
-/// <summary>One message from the page. <c>Id</c> and <c>Query</c> come with a photo it wants (photoWanted); <c>Bounds</c>
-/// with "bounds";
+/// <summary>One message from the page. <c>Id</c> and <c>Query</c> come with a photo it wants (photoWanted; <c>Generate</c>
+/// when the drawing asked for one to be made instead of found); <c>Bounds</c> with "bounds";
 /// <c>Size</c>, <c>Of</c> and <c>Find</c> come with a 3D piece it wants made (pieceWanted: Text is what to make, Find the
 /// words to look a ready-made model up by).</summary>
 public sealed record DrawStageEvent(string Type, int? K, string? Text, string? Id = null, string? Query = null, DrawStageBounds? Bounds = null,
-    double[]? Size = null, string? Of = null, string[]? Find = null);
+    double[]? Size = null, string? Of = null, string[]? Find = null, string? Generate = null);
 
 /// <summary>What the page has drawn, as a box in page pixels (x, y, width, height) on a page of <c>PageWidth</c> ×
 /// <c>PageHeight</c> pixels; empty when nothing is drawn.</summary>
@@ -153,7 +153,7 @@ public static class DrawStageMessages
             string[]? find = message["find"] is JsonArray words
                 ? [.. words.OfType<JsonValue>().Select(word => word.TryGetValue<string>(out var s) ? s.Trim() : "").Where(word => word.Length > 0)]
                 : null;
-            return new DrawStageEvent(type, k, Str("text"), Str("id"), Str("query"), bounds, size, Str("of"), find);
+            return new DrawStageEvent(type, k, Str("text"), Str("id"), Str("query"), bounds, size, Str("of"), find, Str("generate"));
         }
         catch (JsonException)
         {
