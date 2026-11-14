@@ -94,8 +94,13 @@ public sealed class DrawStageController
     /// box itself.</summary>
     public Func<PieceRequest, Task<DrawStagePiece?>>? MakePiece { get; set; }
 
-    /// <summary>A part of a 3D figure was clicked: its label (or its kind when it has none).</summary>
+    /// <summary>A part of a 3D figure was clicked: its label (or its kind when it has none). Raised by
+    /// <see cref="PartClicked"/>, which holds the click until the drawing finishes when it is still being narrated.</summary>
     public event Action<string>? FigurePartClicked;
+
+    /// <summary>A part of the figure was clicked while it was still being drawn (only the latest is kept): it is
+    /// asked about once the drawing finishes, so the click doesn't turn into a new question that wipes the drawing.</summary>
+    private string? pendingPart;
 
     /// <summary>The page's Picture or Video button was clicked.</summary>
     public event Action<DrawingSaveKind>? SaveRequested;
@@ -118,12 +123,29 @@ public sealed class DrawStageController
     /// <summary>The drawing on the stage, once it has finished (null while one is being drawn, and after a clear).</summary>
     public DrawnAnswer? Current { get; private set; }
 
-    /// <summary>The drawing on the stage has finished: it is kept for a follow-up question or for saving.</summary>
+    /// <summary>The drawing on the stage has finished: it is kept for a follow-up question or for saving. A part clicked
+    /// while it was being drawn is asked about now.</summary>
     public void Remember(DrawnAnswer drawing)
     {
         if (!IsShowing) return;
         Current = drawing;
         if (IsReady) Surface?.Post(DrawStageMessages.Remembered(OffersQuiz?.Invoke() ?? false));
+        if (pendingPart is not { } part) return;
+        pendingPart = null;
+        FigurePartClicked?.Invoke(part);
+    }
+
+    /// <summary>A part of the 3D figure was clicked. While the drawing is still being narrated the click waits for it to
+    /// finish (a question asked now would clear the stage and draw again); otherwise it is passed on at once.</summary>
+    public void PartClicked(string part)
+    {
+        if (!IsShowing || Current is not null)
+        {
+            FigurePartClicked?.Invoke(part);
+            return;
+        }
+        pendingPart = part;
+        Configuration.AppLog.Write("draw: a part was clicked while the drawing talks; asking when it finishes");
     }
 
     /// <summary>The page has loaded and takes messages straight away.</summary>
@@ -169,6 +191,7 @@ public sealed class DrawStageController
     {
         IsShowing = true;
         Current = null;
+        pendingPart = null;
         Send(DrawStageMessages.BeginStream(canvasWidth, canvasHeight, pace, keepPlace,
             Configuration.OpenClickyConfiguration.Settings.DrawingScriptFont?.Trim()));
         Surface?.Present(frame, scale);
@@ -179,6 +202,7 @@ public sealed class DrawStageController
     {
         IsShowing = true;
         Current = null;
+        pendingPart = null;
         Send(DrawStageMessages.ContinueStream(pace));
         Surface?.Present(frame, scale);
     }
@@ -232,6 +256,7 @@ public sealed class DrawStageController
         Logged?.Invoke($"stage cleared ({reason})");
         IsShowing = false;
         Current = null;
+        pendingPart = null;
         waiting.Clear();
         if (IsReady) Surface?.Post(DrawStageMessages.Simple("clear"));
         Surface?.Hide();
@@ -318,7 +343,7 @@ public sealed class DrawStageController
                 ProgramRan?.Invoke(message.K ?? 0);
                 break;
             case "figurePart" when message.Text is { Length: > 0 } part:
-                FigurePartClicked?.Invoke(part);
+                PartClicked(part);
                 break;
             case "save":
                 SaveRequested?.Invoke(message.Text switch { "picture" => DrawingSaveKind.Picture, "video" => DrawingSaveKind.Video, _ => DrawingSaveKind.Both });

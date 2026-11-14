@@ -215,6 +215,68 @@ public class DrawStageTests
     }
 
     [Fact]
+    public void APartClickedWhileTheDrawingIsBeingDrawnIsAskedAboutWhenItFinishes()
+    {
+        var (stage, surface) = MakeStage();
+        var clicked = new List<string>();
+        stage.FigurePartClicked += clicked.Add;
+        surface.PageSays("""{"type":"ready"}""");
+        stage.Begin(Screen, 1, 1280, 720);
+        surface.PageSays("""{"type":"figurePart","text":"the nozzle"}""");
+        Assert.Empty(clicked);
+
+        stage.Remember(new DrawnAnswer(["how does a 3D printer work?"], "step(1); say('a')", Screen, 1, 1280, 720, []));
+        Assert.Equal(["the nozzle"], clicked);
+    }
+
+    [Fact]
+    public void OnlyTheLastPartClickedWhileTheDrawingIsDrawnIsAskedAbout()
+    {
+        var (stage, surface) = MakeStage();
+        var clicked = new List<string>();
+        stage.FigurePartClicked += clicked.Add;
+        surface.PageSays("""{"type":"ready"}""");
+        stage.Begin(Screen, 1, 1280, 720);
+        surface.PageSays("""{"type":"figurePart","text":"the nozzle"}""");
+        surface.PageSays("""{"type":"figurePart","text":"the spool"}""");
+        Assert.Empty(clicked);
+
+        stage.Remember(new DrawnAnswer(["how does a 3D printer work?"], "step(1); say('a')", Screen, 1, 1280, 720, []));
+        Assert.Equal(["the spool"], clicked);
+    }
+
+    [Fact]
+    public void APartClickedWhileTheDrawingIsDrawnIsDroppedWhenTheStageIsCleared()
+    {
+        var (stage, surface) = MakeStage();
+        var clicked = new List<string>();
+        var drawing = new DrawnAnswer(["how does a 3D printer work?"], "step(1); say('a')", Screen, 1, 1280, 720, []);
+        stage.FigurePartClicked += clicked.Add;
+        surface.PageSays("""{"type":"ready"}""");
+        stage.Begin(Screen, 1, 1280, 720);
+        surface.PageSays("""{"type":"figurePart","text":"the nozzle"}""");
+        stage.ClearIfShowing("esc");
+        Assert.Empty(clicked);
+
+        stage.Begin(Screen, 1, 1280, 720);
+        stage.Remember(drawing);
+        Assert.Empty(clicked);
+    }
+
+    [Fact]
+    public void APartClickedAfterTheDrawingFinishedIsAskedAboutAtOnce()
+    {
+        var (stage, surface) = MakeStage();
+        var clicked = new List<string>();
+        stage.FigurePartClicked += clicked.Add;
+        surface.PageSays("""{"type":"ready"}""");
+        stage.Begin(Screen, 1, 1280, 720);
+        stage.Remember(new DrawnAnswer(["how does a 3D printer work?"], "step(1); say('a')", Screen, 1, 1280, 720, []));
+        surface.PageSays("""{"type":"figurePart","text":"the nozzle"}""");
+        Assert.Equal(["the nozzle"], clicked);
+    }
+
+    [Fact]
     public void ARememberedDrawingOffersAQuizWhenSettingsDo()
     {
         var (stage, surface) = MakeStage();
