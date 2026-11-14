@@ -581,10 +581,15 @@ function createFigure(m, rect, seconds) {
     id: m.id, canvas, renderer, scene, camera, root, rect, pmrem, labels: [], sun, rim, ground, contact, cuts: new Map(),
     outlineSize: { value: new THREE.Vector2(2 * 1.4 / rect.w, 2 * 1.4 / rect.h) },
     tilt: num(m.tilt, 18), turn: num(m.turn, -28), spin: num(m.spin, 0), sway: m.spin ? 0 : 32, zoom: num(m.zoom, 1),
+    // Where the view is going, and how fast a released drag is still turning it (see updateView).
+    tiltTarget: num(m.tilt, 18), turnTarget: num(m.turn, -28), zoomTarget: num(m.zoom, 1), inertia: null, zoomEase: 0.15,
     center: new THREE.Vector3(), radius: 1, distance: 4, footprint: 1, floor: 0, framed: false, age: 0, clock: 0, tempo: 1, tempoTo: null, labelsShown: true,
-    // How the person has turned it by dragging (any way round, no limit), and the camera's right and up.
+    // The figure's own turn (identity unless something sets it; a drag turns the camera instead), and its right and up.
     held: new THREE.Quaternion(), right: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0),
   };
+  // The view it starts on, to come back to with a double-click or Home (until the person turns it themselves; a
+  // program's view3d in the same run moves it).
+  figure.start = { tilt: figure.tilt, turn: figure.turn, zoom: figure.zoom };
   figures.set(m.id, figure);
   wakeFrames();
   canvas.animate([{ opacity: 0 }, { opacity: 1 }], { duration: Math.max(150, seconds * 1000), fill: 'forwards' });
@@ -594,10 +599,14 @@ function createFigure(m, rect, seconds) {
 
 // ------------------------------------------------------------------ turning, zooming and clicking a figure
 // The stage window takes the mouse only over a figure (it asks for that with the figures' boxes, reportFigures):
-// a drag turns the figure any way round (left and right, up and down, all the way over), the wheel zooms, a part under
-// the pointer lights up, and a click on it asks about it.
+// the figure turns like a turntable — a drag swings the camera round it and up or down (never over the top; the tilt
+// stays between -10 and 60 degrees) and a released flick keeps turning, easing to a stop; the wheel zooms smoothly; a
+// part under the pointer lights up, and a click on it asks about it. A double-click on the figure (or Home while the
+// pointer is over it) eases back to the view it started on.
 const host = window.chrome && window.chrome.webview;
 const raycaster = new THREE.Raycaster(), pointerNdc = new THREE.Vector2();
+// The figure under the pointer (Home goes back to its starting view).
+let hoverFigure = null;
 
 // Where they are on the page, the board's move and size included (the page reports them with its own buttons' boxes:
 // stage.js reportHits).
@@ -664,54 +673,118 @@ function interact(figure) {
   canvas.style.pointerEvents = 'auto';
   let drag = null, hovered = null;
   canvas.addEventListener('pointerdown', event => {
-    drag = { x: event.clientX, y: event.clientY, moved: 0 };
+    // A press takes hold of it: a drag that is still easing or spinning stops, and until it is released the pointer
+    // keeps hold of this figure (even if it leaves the canvas).
+    figure.inertia = null;
+    figure.touched = true;
+    hoverFigure = figure;
+    drag = { x: event.clientX, y: event.clientY, moved: 0, last: performance.now(), vel: { turn: 0, tilt: 0 }, turning: false };
+    canvas.style.cursor = 'grabbing';
     canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener('pointermove', event => {
     if (drag) {
+      const now = performance.now();
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
       drag.x = event.clientX;
       drag.y = event.clientY;
       drag.moved += Math.hypot(dx, dy);
-      if (drag.moved >= 5) turnBy(figure, dx, dy);
+      if (drag.moved >= 5) {
+        // The first drag folds its sway and spin into the turn (so it doesn't jump), then every move swings the view.
+        if (!drag.turning) {
+          drag.turning = true;
+          figure.turn -= THREE.MathUtils.radToDeg(figure.turned || 0);
+          figure.sway = 0;
+          figure.spin = 0;
+        }
+        turnBy(figure, dx, dy);
+        // Its speed, degrees a second, smoothed over the last 80 ms: a released flick keeps turning at this.
+        const seconds = Math.max(0.001, (now - drag.last) / 1000);
+        const k = 1 - Math.exp(-seconds / 0.08);
+        drag.vel.turn += (-dx * TURN_PER_PIXEL / seconds - drag.vel.turn) * k;
+        drag.vel.tilt += (dy * TURN_PER_PIXEL / seconds - drag.vel.tilt) * k;
+        wakeFrames();
+      }
+      drag.last = now;
       return;
     }
     const part = partAt(figure, event);
     if (part !== hovered) { setGlow(hovered, 0); setGlow(part, 0.35); hovered = part; }
+    hoverFigure = figure;
     canvas.style.cursor = part ? 'pointer' : 'grab';
   });
   canvas.addEventListener('pointerup', event => {
+    const part = partAt(figure, event);
     if (drag && drag.moved < 5) {
-      const part = partAt(figure, event);
       if (part && host) {
         setGlow(part, 0.8);
         setTimeout(() => setGlow(part, part === hovered ? 0.35 : 0), 400);
         host.postMessage({ type: 'figurePart', text: partName(part) });
       }
     }
+    if (drag && drag.turning) {
+      // A pause before letting go damps the speed it was moving at (the same ~80 ms the drag's speed is smoothed over).
+      const decay = Math.exp(-Math.max(0, performance.now() - drag.last) / 1000 / 0.08);
+      const turn = drag.vel.turn * decay, tilt = drag.vel.tilt * decay;
+      if (Math.hypot(turn, tilt) > 8) {
+        figure.inertia = { turn, tilt };
+        wakeFrames();
+      }
+    }
     drag = null;
+    canvas.style.cursor = part ? 'pointer' : 'grab';
   });
-  canvas.addEventListener('pointerleave', () => { setGlow(hovered, 0); hovered = null; });
+  canvas.addEventListener('pointerleave', () => {
+    setGlow(hovered, 0);
+    hovered = null;
+    if (hoverFigure === figure) hoverFigure = null;
+  });
+  canvas.addEventListener('dblclick', event => {
+    if (!partAt(figure, event)) goHome(figure);
+  });
   canvas.addEventListener('wheel', event => {
     event.preventDefault();
-    figure.zoom = Math.max(0.4, Math.min(3, figure.zoom * (event.deltaY < 0 ? 1.1 : 0.9)));
+    // The wheel asks for a zoom and the view eases to it quickly, so a notch doesn't jump.
+    figure.touched = true;
+    figure.zoomTarget = Math.max(0.5, Math.min(2.5, figure.zoomTarget * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    figure.zoomEase = 0.035;
+    wakeFrames();
   }, { passive: false });
 }
 
-// A drag of dx, dy pixels turns the figure round the camera's up and right axes, as if the pointer rolled it. Its own
-// sway and spin stop where they are, so it doesn't jump when it is taken hold of.
-const turning = new THREE.Quaternion();
+// Home goes back to the starting view while the pointer is over a figure.
+window.addEventListener('keydown', event => {
+  if (event.key !== 'Home' || !hoverFigure) return;
+  event.preventDefault();
+  goHome(hoverFigure);
+});
+
+// A drag of dx, dy pixels swings the camera round the figure (like a turntable: horizontal turns it, vertical raises or
+// lowers the eye) at a rate of TURN_PER_PIXEL degrees a pixel. The tilt stops at -10 and 60 degrees, so the figure can
+// never end up on its side or upside down.
+const TURN_PER_PIXEL = 0.4, DRAG_TILT_MIN = -10, DRAG_TILT_MAX = 60;
 function turnBy(figure, dx, dy) {
-  if (figure.sway || figure.spin) {
-    figure.held.premultiply(turning.setFromAxisAngle(AXES.y, figure.turned || 0));
-    figure.sway = 0;
-    figure.spin = 0;
-  }
-  const perPixel = Math.PI / Math.max(240, Math.min(figure.rect.w, figure.rect.h));
-  figure.held.premultiply(turning.setFromAxisAngle(figure.up, dx * perPixel));
-  figure.held.premultiply(turning.setFromAxisAngle(figure.right, dy * perPixel));
-  figure.held.normalize();
+  figure.turn -= dx * TURN_PER_PIXEL;
+  figure.tilt = Math.max(DRAG_TILT_MIN, Math.min(DRAG_TILT_MAX, figure.tilt + dy * TURN_PER_PIXEL));
+  figure.turnTarget = figure.turn;
+  figure.tiltTarget = figure.tilt;
 }
+
+// A double-click or Home: ease back to the view it started on.
+function goHome(figure) {
+  if (figures.get(figure.id) !== figure) return;
+  figure.inertia = null;
+  figure.turnTarget = figure.turn + shortestTurn(figure.start.turn - figure.turn);
+  figure.tiltTarget = figure.start.tilt;
+  figure.zoomTarget = figure.start.zoom;
+  figure.zoomEase = 0.15;
+  wakeFrames();
+}
+
+function shortestTurn(delta) {
+  return ((delta + 180) % 360 + 360) % 360 - 180;
+}
+
 
 const degrees = v => THREE.MathUtils.degToRad(v);
 
@@ -1120,10 +1193,16 @@ function setTempo(m) {
 function setView(m) {
   const figure = figures.get(m.fig);
   if (!figure) return;
-  if (isFinite(m.tilt)) figure.tilt = Math.max(-80, Math.min(80, m.tilt));
-  if (isFinite(m.turn)) figure.turn = m.turn;
-  if (isFinite(m.zoom)) figure.zoom = Math.max(0.3, Math.min(3, m.zoom));
+  // A program's view eases into place (updateView), so a figure follows a change of view smoothly rather than jumping.
+  figure.inertia = null;
+  if (isFinite(m.tilt)) figure.tiltTarget = Math.max(-80, Math.min(80, m.tilt));
+  if (isFinite(m.turn)) figure.turnTarget = m.turn;
+  if (isFinite(m.zoom)) figure.zoomTarget = Math.max(0.3, Math.min(3, m.zoom));
+  figure.zoomEase = 0.15;
   if (isFinite(m.spin)) { figure.spin = m.spin; figure.sway = m.spin ? 0 : 32; }
+  // Until the person has turned it, the starting view is wherever the program has just sent it.
+  if (!figure.touched) figure.start = { tilt: figure.tiltTarget, turn: figure.turnTarget, zoom: figure.zoomTarget };
+  wakeFrames();
 }
 
 // ------------------------------------------------------------------ every frame
@@ -1206,8 +1285,37 @@ function updatePart(part, t, clock = t) {
   part.shown = g * scale > 0.05;
 }
 
+// The view eases to where it is wanted (a program's view3d, a double-click, Home, the wheel's zoom), and a released drag
+// keeps turning at its own speed, which damps away over about half a second.
+function updateView(figure, dt) {
+  const spin = figure.inertia;
+  if (spin) {
+    figure.turn += spin.turn * dt;
+    const tilt = figure.tilt + spin.tilt * dt;
+    figure.tilt = Math.max(DRAG_TILT_MIN, Math.min(DRAG_TILT_MAX, tilt));
+    if (figure.tilt !== tilt) spin.tilt = 0;
+    figure.turnTarget = figure.turn;
+    figure.tiltTarget = figure.tilt;
+    const decay = Math.exp(-dt / 0.12);
+    spin.turn *= decay;
+    spin.tilt *= decay;
+    if (Math.abs(spin.turn) < 1 && Math.abs(spin.tilt) < 1) figure.inertia = null;
+  }
+  // Exponential easing, frame-rate independent: about 0.8 s for a program's view, 0.15 s for the wheel's zoom.
+  const ease = (key, target, tau, wrap) => {
+    let gap = figure[target] - figure[key];
+    if (wrap) gap = shortestTurn(gap);
+    if (Math.abs(gap) < 0.01) { figure[key] += gap; return; }
+    figure[key] += gap * (1 - Math.exp(-dt / tau));
+  };
+  ease('tilt', 'tiltTarget', 0.15, false);
+  ease('turn', 'turnTarget', 0.15, true);
+  ease('zoom', 'zoomTarget', figure.zoomEase, false);
+}
+
 function updateFigure(figure, dt) {
   figure.age += dt;
+  updateView(figure, dt);
   const t = figure.age;
   if (figure.tempoTo) {
     const tw = figure.tempoTo, e = Math.min(1, (t - tw.start) / tw.seconds);
