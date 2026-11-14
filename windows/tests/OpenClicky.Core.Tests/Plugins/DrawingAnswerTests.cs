@@ -125,6 +125,39 @@ public partial class DrawingAnswerTests
     [InlineData("what is a solar cell")]
     public void OtherCellsStayOut(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
 
+    [Theory]
+    [InlineData("make me a 3d model")]
+    [InlineData("make me a 3d model of a car")]
+    [InlineData("show me a 3d car")]
+    [InlineData("build a 3d rocket")]
+    [InlineData("build a 3d model of a cell")]
+    [InlineData("how do i make a 3d model of a volcano")]
+    [InlineData("make a 3d model of my school")]
+    [InlineData("make a 3d model for my school project")]
+    [InlineData("can you show me the heart in 3d")]
+    [InlineData("show me a model of the solar system")]
+    [InlineData("open a 3d view of the engine")]
+    [InlineData("give me a cutaway of a jet engine")]
+    [InlineData("draw a cross section of the earth")]
+    [InlineData("show me the brachial plexus in 3d")]
+    [InlineData("make a 3d model of the knee joint")]
+    [InlineData("give me a cross-section of the kidney")]
+    [InlineData("help me learn the heart, show it in 3d")]
+    public void AnExplicitAskForA3DModelOrDiagramGetsADrawing(string question)
+    {
+        Assert.True(DrawStageLesson.WantsADrawing(question));
+        Assert.True(DrawStageLesson.AsksForAPicture(question));
+    }
+
+    [Theory]
+    [InlineData("what is the best 3d printer")]
+    [InlineData("is this game 2d or 3d")]
+    [InlineData("how do i export this 3d model from blender")]
+    [InlineData("why does my 3d app crash")]
+    [InlineData("how do i open settings")]
+    [InlineData("where is the save button")]
+    public void ToolsFilesAndErrorsAbout3DStayOut(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
+
     // MARK: - the program in a reply
 
     [Fact]

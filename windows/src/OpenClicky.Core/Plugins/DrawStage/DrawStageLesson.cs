@@ -155,6 +155,9 @@ public static partial class DrawStageLesson
         // Words between single spaces, with a space at each end, so " word " finds whole words ("hey, how" → " hey how ").
         var text = Words(question);
         if (text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 2) return false;
+        // Asked for a picture outright ("make me a 3d model of a car", "give me a cutaway of a jet engine"): a drawing,
+        // even when it sounds like doing something on the screen ("how do i make a 3d model of a volcano").
+        if (AsksForAPicture(question)) return true;
         // Doing something on the screen is pointing's: "how do I export this", "where is the save button".
         if (ContainsAny(text, " how do i ", " how can i ", " how should i ", " where is ", " where do i ", " click ", " open ")) return false;
         if (ContainsAny(text, OtherLanguagePointingWords)) return false;
@@ -178,7 +181,10 @@ public static partial class DrawStageLesson
         // "how do birds fly", "what happens when ice melts"): a picture explains it best. "How do you…" asks for steps.
         if (StartsAny(text, " how does ", " how do ", " how did ", " how is ", " how are ", " how can a ", " how can an ", " why ", " what happens ",
                 " what makes ", " what causes ", " what is inside ", " what's inside ", " what are the parts ")
-            && !StartsAny(text, " how do you ", " how do we ", " how is it going ", " how are you ", " why not "))
+            && !StartsAny(text, " how do you ", " how do we ", " how is it going ", " how are you ", " why not ")
+            // A why or how about their own tools and files going wrong is troubleshooting, not a picture of how the world
+            // works ("why does my 3d app crash", "why does my code break").
+            && !(ContainsAny(text, " my ", " mine ", " our ") && ContainsAny(text, AboutTheirWork)))
         {
             return true;
         }
@@ -211,6 +217,53 @@ public static partial class DrawStageLesson
         }
         return false;
     }
+
+    /// <summary>Whether <paramref name="question"/> asks outright to see or make a picture: "make me a 3d model", "show me a
+    /// 3d car", "build a 3d rocket", "give me a cutaway of a jet engine", "draw a cross section of the earth", "show me a
+    /// model of the solar system". Not one that only mentions 3D to do with their tools, files or errors ("the best 3d
+    /// printer", "why does my 3d app crash", "export this as a 3d model").</summary>
+    public static bool AsksForAPicture(string question)
+    {
+        var text = Words(question);
+        // Their tools, files and errors: "how do i export this 3d model from blender", "the best 3d printer".
+        if (ContainsAny(text, NotAPicture)) return false;
+        var asks = ContainsAny(text, PictureAskVerbs);
+        foreach (var dimension in new[] { " 3d ", " 2d ", " 3 d ", " three d " })
+        {
+            if (!text.Contains(dimension, StringComparison.Ordinal)) continue;
+            // "make me a 3d model", "can you show me the heart in 3d": asked for outright.
+            if (asks) return true;
+            // "show me a 3d car", "a 3d view of the engine": the word after it names the picture.
+            foreach (var after in PictureFollowers)
+            {
+                if (text.Contains(dimension + after + " ", StringComparison.Ordinal)) return true;
+            }
+        }
+        // What only a picture shows, asked for outright: "give me a cutaway of a jet engine", "draw a cross section of the
+        // earth" (Words() turns "cross-section" into "cross section").
+        return asks && ContainsAny(text, " model of ", " cutaway ", " cut away ", " cross section ", " exploded view ");
+    }
+
+    /// <summary>Words that ask for a picture to be made or shown ("make me a 3d model", "show me the heart in 3d").</summary>
+    private static readonly string[] PictureAskVerbs =
+    [
+        " make ", " show ", " build ", " create ", " draw ", " give ", " generate ", " render ", " design ", " sketch ",
+        " display ", " visualize ", " visualise ",
+    ];
+
+    /// <summary>The word after "3d" that names a picture ("3d model", a "3d view", a "3d figure"): the question wants one.</summary>
+    private static readonly string[] PictureFollowers =
+    [
+        "model", "models", "version", "view", "figure", "picture", "image", "drawing", "diagram", "animation", "of",
+    ];
+
+    /// <summary>Their tools, files and errors: a question mentioning 3D alongside these gets words, not a picture
+    /// ("the best 3d printer", "is this game 2d or 3d", "export this as a 3d model").</summary>
+    private static readonly string[] NotAPicture =
+    [
+        " printer ", " printers ", " printing ", " blender ", " sketchup ", " unity ", " unreal ", " game ", " games ",
+        " file ", " files ", " export ", " import ", " error ", " crash ", " bug ", " app ", " software ", " program ",
+    ];
 
     /// <summary>The word after "3d" that makes it a way to show the answer: Urdu and Hindi "in" (may, mein, में, میں), or
     /// the kind of picture ("3d drawing", "3d model of").</summary>
