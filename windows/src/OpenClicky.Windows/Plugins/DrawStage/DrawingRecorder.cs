@@ -28,8 +28,31 @@ internal sealed class DrawingRecorder(DrawStageWindow window, DrawStageControlle
     private static readonly TimeSpan FrameGap = TimeSpan.FromMilliseconds(55);
     private static readonly TimeSpan Longest = TimeSpan.FromMinutes(4);
 
-    /// <summary>Where saved drawings go: Videos\OpenClicky.</summary>
-    public static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "OpenClicky");
+    /// <summary>Where saved drawings go: Videos\OpenClicky, or LocalApplicationData\OpenClicky\Saved drawings when
+    /// Videos is protected (Controlled Folder Access). Decided once, on first use.</summary>
+    public static string Folder => SavedFolder.Value;
+
+    /// <summary>The folder, picked once by writing a probe file in the usual one (thread-safe).</summary>
+    private static readonly Lazy<string> SavedFolder = new(FindFolder);
+
+    private static string FindFolder()
+    {
+        var videos = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "OpenClicky");
+        var fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OpenClicky", "Saved drawings");
+        var folder = SaveFolder.Choose(videos, fallback, EnsureWritable);
+        if (folder != videos) AppLog.Write($"draw: Videos is protected (Controlled Folder Access?); saving to {folder}");
+        return folder;
+    }
+
+    /// <summary>Makes <paramref name="folder"/> and writes a small file in it; throws when it is not ours to write.</summary>
+    private static void EnsureWritable(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        var probe = Path.Combine(folder, ".write-test");
+        File.WriteAllText(probe, "");
+        File.Delete(probe);
+    }
 
     /// <summary>Opens Explorer on the saved file (off for the smoke command).</summary>
     public bool RevealWhenSaved { get; init; } = true;
