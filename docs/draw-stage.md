@@ -176,6 +176,8 @@ Samples: `chart-falling-ball.js`, `chart-bars-water.js`, `timeline-flight.js`.
 | `f.tube({points, r})`, `f.pipe({points, r, bend})` | a smooth tube; a pipe with straight runs and bends |
 | `f.spring({r, h, coils, wire})`, `f.gear({r, teeth, depth})`, `f.arrow({from, to, color})` | |
 | `f.blob({balls, sticks, paths, holes, smooth})` | one smooth organic surface over balls, (tapering) sticks and paths, blended where they meet: organs, animals, leaves (a distance field meshed with surface nets) |
+| `f.model('iss', {at, size, rot})` | a real model from the app's library (`iss, hubble, jwst, ingenuity, apollo-lunar-module, astronaut`), fitted into its box, credited |
+| `f.planet('saturn', {at, size, tilt, spin, rings})` | a planet from the library with NASA's surface image (`earth, moon, mars, jupiter, saturn, neptune, pluto, venus, europa, io, titan, phobos`); Saturn's ring is drawn |
 
 Every part takes `at`, `rot`, `axis`, `scale`, `parent`, `color`, `opacity` and a material: `steel, alu, titanium,
 chrome, iron, gold, copper, brass, plastic:<color>, paint:<color>, rubber, wood, stone, ceramic, glass, water,

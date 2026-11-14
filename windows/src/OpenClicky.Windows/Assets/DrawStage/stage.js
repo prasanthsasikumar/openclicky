@@ -528,6 +528,7 @@
       case 'photo': return 0.5;
       case 'figure': return 0.5;
       case 'part3d': return mark.params && mark.params.hidden ? 0.02 : mark.params && mark.params.quick ? 0.1 : 0.6; // quick: one of many small parts (a DNA's nucleotides)
+      case 'model3d': case 'planet3d': return 0.6;
       case 'label3d': return 0.45;
       case 'view3d': return 0.5;
       case 'motion3d': return 0.05;
@@ -911,7 +912,7 @@
         reveal(group, mark, { x, y, width: m.w, height: m.h }, seconds);
         break;
       }
-      case 'figure': case 'part3d': case 'label3d': case 'motion3d': case 'view3d': case 'change3d': case 'tempo3d': case 'labels3d': {
+      case 'figure': case 'part3d': case 'model3d': case 'planet3d': case 'label3d': case 'motion3d': case 'view3d': case 'change3d': case 'tempo3d': case 'labels3d': {
         if (!window.Figure3D) { log('3D is not loaded; skipped ' + m.do); break; }
         let rect = null;
         if (m.do === 'figure') {

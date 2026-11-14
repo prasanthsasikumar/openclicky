@@ -1,0 +1,243 @@
+{
+  "models": [
+    {
+      "id": "iss",
+      "names": [
+        "iss",
+        "international space station",
+        "space station"
+      ],
+      "kind": "model",
+      "file": "space/iss.glb",
+      "parts": [],
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/International%20Space%20Station%20(ISS)%20(A)/International%20Space%20Station%20(ISS)%20(A).glb"
+    },
+    {
+      "id": "hubble",
+      "names": [
+        "hubble",
+        "hubble space telescope"
+      ],
+      "kind": "model",
+      "file": "space/hubble.glb",
+      "parts": [],
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Hubble%20Space%20Telescope%20(A)/Hubble%20Space%20Telescope%20(A).glb"
+    },
+    {
+      "id": "jwst",
+      "names": [
+        "jwst",
+        "james webb",
+        "james webb space telescope",
+        "webb telescope"
+      ],
+      "kind": "model",
+      "file": "space/jwst.glb",
+      "parts": [],
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/James%20Webb%20Space%20Telescope%20(A)/James%20Webb%20Space%20Telescope%20(A).glb"
+    },
+    {
+      "id": "ingenuity",
+      "names": [
+        "ingenuity",
+        "mars helicopter",
+        "ingenuity mars helicopter"
+      ],
+      "kind": "model",
+      "file": "space/ingenuity.glb",
+      "parts": [],
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Ingenuity%20Mars%20Helicopter/Ingenuity%20Mars%20Helicopter.glb"
+    },
+    {
+      "id": "apollo-lunar-module",
+      "names": [
+        "apollo lunar module",
+        "lunar module",
+        "lem",
+        "apollo lander"
+      ],
+      "kind": "model",
+      "file": "space/apollo-lunar-module.glb",
+      "parts": [],
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Apollo%20Lunar%20Module/Apollo%20Lunar%20Module.glb"
+    },
+    {
+      "id": "astronaut",
+      "names": [
+        "astronaut",
+        "space suit",
+        "spacesuit"
+      ],
+      "kind": "model",
+      "file": "space/astronaut.glb",
+      "parts": [],
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Astronaut/Astronaut.glb"
+    }
+  ],
+  "planets": [
+    {
+      "id": "earth",
+      "names": [
+        "earth",
+        "terra"
+      ],
+      "texture": "space/earth.jpg",
+      "rings": false,
+      "radiusKm": 6371,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Earth%20(A)/Earth%20(A).jpg"
+    },
+    {
+      "id": "moon",
+      "names": [
+        "moon",
+        "the moon",
+        "luna"
+      ],
+      "texture": "space/moon.jpg",
+      "rings": false,
+      "radiusKm": 1737,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Moon/Moon.jpg"
+    },
+    {
+      "id": "mars",
+      "names": [
+        "mars",
+        "the red planet"
+      ],
+      "texture": "space/mars.jpg",
+      "rings": false,
+      "radiusKm": 3390,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Mars/Mars.jpg"
+    },
+    {
+      "id": "jupiter",
+      "names": [
+        "jupiter"
+      ],
+      "texture": "space/jupiter.jpg",
+      "rings": false,
+      "radiusKm": 69911,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Jupiter/Jupiter.jpg"
+    },
+    {
+      "id": "saturn",
+      "names": [
+        "saturn"
+      ],
+      "texture": "space/saturn.jpg",
+      "rings": true,
+      "radiusKm": 58232,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Saturn/Saturn.jpg"
+    },
+    {
+      "id": "neptune",
+      "names": [
+        "neptune"
+      ],
+      "texture": "space/neptune.jpg",
+      "rings": false,
+      "radiusKm": 24622,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Neptune/Neptune.jpg"
+    },
+    {
+      "id": "pluto",
+      "names": [
+        "pluto"
+      ],
+      "texture": "space/pluto.jpg",
+      "rings": false,
+      "radiusKm": 1188,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Pluto/Pluto.jpg"
+    },
+    {
+      "id": "venus",
+      "names": [
+        "venus"
+      ],
+      "texture": "space/venus.jpg",
+      "rings": false,
+      "radiusKm": 6052,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Venus/Venus.jpg"
+    },
+    {
+      "id": "europa",
+      "names": [
+        "europa",
+        "jupiter's moon europa"
+      ],
+      "texture": "space/europa.jpg",
+      "rings": false,
+      "radiusKm": 1561,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Jupiter%20-%20Europa/Jupiter%20-%20Europa.jpg"
+    },
+    {
+      "id": "io",
+      "names": [
+        "io",
+        "jupiter's moon io"
+      ],
+      "texture": "space/io.jpg",
+      "rings": false,
+      "radiusKm": 1822,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Jupiter%20-%20Io%20(A)/Jupiter%20-%20Io%20(A).jpg"
+    },
+    {
+      "id": "titan",
+      "names": [
+        "titan",
+        "saturn's moon titan"
+      ],
+      "texture": "space/titan.jpg",
+      "rings": false,
+      "radiusKm": 2575,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Saturn%20-%20Titan/Saturn%20-%20Titan.jpg"
+    },
+    {
+      "id": "phobos",
+      "names": [
+        "phobos",
+        "mars' moon phobos"
+      ],
+      "texture": "space/phobos.jpg",
+      "rings": false,
+      "radiusKm": 11,
+      "credit": "NASA",
+      "licence": "NASA media (no fee; no endorsement)",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Mars%20-%20Phobos/Mars%20-%20Phobos.jpg"
+    }
+  ]
+}

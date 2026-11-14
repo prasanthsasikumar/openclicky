@@ -29,7 +29,8 @@
 //   figure(x, y, w, h, o)                   a 3D stage ({tilt, turn, zoom, spin, ground}); its parts: f.box/cyl/cone/sphere/
 //                                           torus/capsule/tube/pipe/lathe/extrude/spring/gear/blob/arrow/piece({…}) (any of them
 //                                           cut open, repeated or mirrored: cut, copies, around, mirror) → part.spin/bob/
-//                                           stroke/pulse/orbit/move({…}) and part.label(words); f.label(part, words), f.view({…})
+//                                           stroke/pulse/orbit/move({…}) and part.label(words); f.label(part, words), f.view({…}),
+//                                           f.model('iss'), f.planet('saturn')
 //   molecule(x, y, w, h, {name} | {atoms, bonds})  a 3D ball-and-stick model, its shape from chemistry (VSEPR) →
 //                                           m.label(i, words), m.atom(i), m.view({…})
 //   o: {color, width, fill, dashed, size, align: 'start' | 'middle' | 'end', bold}
@@ -135,6 +136,9 @@ const api = {
       return noFigurePart;
     };
     figure.label = (part, words, opts) => { remember(part, [words]); push({ do: 'label3d', fig: id, part: part && part.id, text: String(words) }, opts); return figure; };
+    // A real model or planet from the app's own library; the page matches the name (the worker has no manifest).
+    figure.model = (wanted, opts) => libraryFigurePart(figure, 'model3d', 'model', 'model', wanted, opts, remember, noFigurePart);
+    figure.planet = (wanted, opts) => libraryFigurePart(figure, 'planet3d', 'planet', 'planet', wanted, opts, remember, noFigurePart);
     figure.view = opts => { push({ do: 'view3d', fig: id }, opts); return figure; };
     // Every motion in the figure at this speed (0.5 half, 2 twice as fast), and its labels shown or not.
     figure.tempo = (k, opts) => { if (finite(k) && k > 0) push({ do: 'tempo3d', fig: id, tempo: k }, opts); else warn('tempo() needs a speed above 0, like 0.5'); return figure; };
@@ -461,6 +465,11 @@ function part3d(fig, kind, o) {
   if (o && o.parent && o.parent.id) params.parent = o.parent.id;
   const id = 'part' + (++partCount);
   push({ do: 'part3d', fig, id, kind, params });
+  return partHandle(fig, id);
+}
+
+// What every part of a figure can do, whichever mark made it.
+function partHandle(fig, id) {
   const handle = { id };
   for (const motion of MOTIONS) handle[motion] = opts => { push({ do: 'motion3d', fig, part: id, kind: motion, params: plain(opts) }); return handle; };
   handle.label = (words, opts) => { push({ do: 'label3d', fig, part: id, text: String(words) }, opts); return handle; };
@@ -469,6 +478,23 @@ function part3d(fig, kind, o) {
   handle.hide = opts => handle.change(Object.assign({}, options(opts), { hidden: true }));
   handle.show = opts => handle.change(Object.assign({}, options(opts), { hidden: false }));
   return handle;
+}
+
+// A model or planet from the app's library: the mark carries the name, and the page finds the file in its manifest.
+// It is a part like any other (label, change, hide, show and the motions) and is remembered by its name and id.
+function libraryFigurePart(figure, doKind, kind, name, wanted, opts, remember, noFigurePart) {
+  const o = options(opts), wantedName = String(wanted == null ? '' : wanted).trim();
+  if (!wantedName) {
+    warn(kind + '() needs a name, like "' + (kind === 'model' ? 'iss' : 'saturn') + '"; skipped');
+    return noFigurePart;
+  }
+  const part = partHandle(figure.id, 'part' + (++partCount));
+  const params = plain(opts);
+  params[name] = wantedName;
+  push({ do: doKind, fig: figure.id, id: part.id, kind, name: wantedName, params });
+  const label = part.label;
+  part.label = (words, labelOpts) => { remember(part, [words]); return label(words, labelOpts); };
+  return remember(part, [o.name, wantedName]);
 }
 
 // A builder's figure switches on the builder too: cl.labels(false), b.tempo(0.5) (models write it that way).

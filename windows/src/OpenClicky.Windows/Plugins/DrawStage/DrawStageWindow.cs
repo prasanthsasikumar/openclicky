@@ -241,6 +241,13 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
             ".html" => "text/html; charset=utf-8",
             ".js" => "text/javascript; charset=utf-8",
             ".css" => "text/css; charset=utf-8",
+            // The bundled drawing library (NASA models and planet images) and its manifest.
+            ".json" => "application/json; charset=utf-8",
+            ".glb" => "model/gltf-binary",
+            ".jpg" => "image/jpeg",
+            ".jpeg" => "image/jpeg",
+            // The Draco decoder for NASA's compressed GLBs (loaded only when a model needs it).
+            ".wasm" => "application/wasm",
             // The bundled Noto Nastaliq Urdu (vendor/fonts), for Urdu words in drawings.
             ".ttf" => "font/ttf",
             _ => null,

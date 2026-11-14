@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<!-- The drawing stage. No network: the program draws with what is here. 'unsafe-eval' is for the program worker,
-     which runs the model's statements (stage-worker.js). -->
+<!-- The drawing stage. No network: the program draws with what is here (its own files, such as the drawing library,
+     are the only thing it may fetch). 'unsafe-eval' is for the program worker, which runs the model's statements
+     (stage-worker.js). -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self' 'unsafe-eval'; worker-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'">
+      content="default-src 'none'; script-src 'self' 'unsafe-eval'; worker-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenClicky drawing</title>
 <link rel="stylesheet" href="stage.css">

@@ -482,6 +482,8 @@ function cutPlanes(figure, cut) {
 function partUnit(figure, kind, o) {
   if (kind === 'arrow') return arrowObject(o);
   if (kind === 'piece') return pieceSlot(o);
+  if (kind === 'model') return slotBox(librarySize(o));
+  if (kind === 'planet') return planetUnit(o);
   const g = geometry(kind, o);
   if (!g) return null;
   const mat = material(o);
@@ -805,6 +807,10 @@ function addPart(m, seconds) {
   if (m.kind === 'piece') {
     part.piece = o;
     if (pieceResults.has(m.id)) fillPiece(part, pieceResults.get(m.id));
+  } else if (m.kind === 'model') {
+    fillModel(part, o);
+  } else if (m.kind === 'planet') {
+    fillPlanet(part, o);
   }
 }
 
@@ -859,7 +865,10 @@ function pieceSize(o) {
 }
 
 function pieceSlot(o) {
-  const box = pieceSize(o);
+  return slotBox(pieceSize(o));
+}
+
+function slotBox(box) {
   const m = new THREE.MeshStandardMaterial({ color: '#BFD0E6', transparent: true, opacity: 0.3, depthWrite: false, roughness: 0.6 });
   const mesh = new THREE.Mesh(roundedBox(box.x, box.y, box.z, Math.min(box.x, box.y, box.z) * 0.12), m);
   const slot = new THREE.Group();
@@ -912,6 +921,12 @@ async function fillPiece(part, message) {
   // proportions.
   const fitted = fitToBox(model, pieceSize(o), message.kind === 'parts');
   dressModel(figure, fitted, o, message.kind !== 'parts');
+  fillSlots(part, fitted);
+}
+
+// The slots a piece or a library model waits in take its shape (copies, around and mirror make more than one).
+function fillSlots(part, model) {
+  const figure = part.figure;
   const slots = [];
   part.object.traverse(child => { if (child.userData.pieceSlot) slots.push(child); });
   slots.forEach((slot, k) => {
@@ -919,11 +934,143 @@ async function fillPiece(part, message) {
       slot.remove(child);
       if (child.material) waitingSlots.delete(child.material);
     }
-    const shape = k === 0 ? fitted : fitted.clone();
+    const shape = k === 0 ? model : model.clone();
     slot.add(shape);
     shape.scale.multiplyScalar(0.001);
     slot.userData.grow = { start: figure.age, seconds: 0.6, scale: shape.scale.clone().divideScalar(0.001), shape };
   });
+}
+
+// ------------------------------------------------------------------ the app's library (real models and planets)
+// The manifest is fetched once from the stage's own folder (same origin) and kept: the worker has no manifest, so a
+// name is matched here against each entry's id and the other names it goes by.
+let libraryManifest = null;
+function library() {
+  if (!libraryManifest) {
+    libraryManifest = fetch('library/manifest.json')
+      .then(response => response.ok ? response.json() : Promise.reject(new Error('HTTP ' + response.status)))
+      .catch(error => {
+        if (host) host.postMessage({ type: 'log', text: 'library: manifest not loaded: ' + (error && error.message || error) });
+        return { models: [], planets: [] };
+      });
+  }
+  return libraryManifest;
+}
+
+const libraryFile = file => new URL('library/' + file, window.location.href).href;
+const plainName = value => String(value == null ? '' : value).toLowerCase().replace(/\s+/g, ' ').trim();
+
+function libraryEntry(list, name) {
+  const wanted = plainName(name);
+  return (Array.isArray(list) ? list : []).find(entry => plainName(entry.id) === wanted
+    || (Array.isArray(entry.names) && entry.names.some(one => plainName(one) === wanted))) || null;
+}
+
+// The box a library item fills: size as [x, y, z], number (a cube), or 2 across.
+function librarySize(o) {
+  const s = Array.isArray(o.size) ? o.size : typeof o.size === 'number' ? [o.size, o.size, o.size] : [];
+  return new THREE.Vector3(size(s[0], 2), size(s[1], 2), size(s[2], 2));
+}
+
+// A model waits in its faint box, then the real GLB is fitted into it like a piece. An unknown name leaves a small
+// labelled box and a log line, never an error.
+async function fillModel(part, o) {
+  if (part.filled) return;
+  part.filled = true;
+  const figure = part.figure, name = o.model;
+  const entry = libraryEntry((await library()).models, name);
+  if (figures.get(figure.id) !== figure) return;
+  if (!entry) {
+    if (host) host.postMessage({ type: 'log', text: 'library: no model named "' + name + '"' });
+    placeholder(part, name);
+    return;
+  }
+  try {
+    const response = await fetch(libraryFile(entry.file));
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const model = await glbModel(await response.arrayBuffer());
+    if (figures.get(figure.id) !== figure) return;
+    const fitted = fitToBox(model, librarySize(o), false);
+    dressModel(figure, fitted, o, true);
+    fillSlots(part, fitted);
+    if (entry.credit) showCredit(figure, entry.credit);
+  } catch (error) {
+    if (host) host.postMessage({ type: 'log', text: 'library: model "' + name + '" could not be shown: ' + (error && error.message || error) });
+    placeholder(part, name);
+  }
+}
+
+// A small labelled box where a library item could not be shown (the box stays faint, as a slot does).
+function placeholder(part, name) {
+  part.object.traverse(child => { if (child.userData.pieceSlot) child.scale.setScalar(0.4); });
+  addLabel({ fig: part.figure.id, part: part.id, text: String(name), color: 'ink', size: 16 }, 0.3);
+}
+
+// A planet: a sphere with NASA's surface image, a beige ring for Saturn, and an optional slow spin. Its axial tilt
+// (tilt) turns the ring with it.
+function planetUnit(o) {
+  const box = librarySize(o), radius = Math.min(box.x, box.y, box.z) / 2;
+  const unit = new THREE.Group();
+  const tilt = new THREE.Group();
+  tilt.rotation.z = degrees(num(o.tilt, 0));
+  tilt.scale.setScalar(radius);
+  tilt.userData.planetTilt = true;
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32),
+    new THREE.MeshStandardMaterial({ color: '#8B8E93', roughness: 1, metalness: 0 }));
+  sphere.castShadow = sphere.receiveShadow = true;
+  sphere.userData.planetSphere = true;
+  tilt.add(sphere);
+  unit.add(tilt);
+  return unit;
+}
+
+// A soft beige ring in the planet's equator, faded at both edges with a darker gap (Saturn's Cassini division).
+function planetRings() {
+  const inner = 1.3, outer = 2.35;
+  const geometry = new THREE.RingGeometry(inner, outer, 128, 1).rotateX(-Math.PI / 2);
+  const material = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+    uniforms: { inner: { value: inner }, outer: { value: outer } },
+    vertexShader: 'varying vec3 local; void main() { local = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `varying vec3 local; uniform float inner; uniform float outer;
+      void main() {
+        float t = (length(local.xz) - inner) / (outer - inner);
+        float edge = smoothstep(0.0, 0.06, t) * (1.0 - smoothstep(0.9, 1.0, t));
+        float gap = 1.0 - 0.65 * exp(-pow((t - 0.62) / 0.04, 2.0));
+        gl_FragColor = vec4(0.85, 0.78, 0.63, 0.42 * edge * gap);
+      }`,
+  });
+  const ring = new THREE.Mesh(geometry, material);
+  ring.userData.ink = true;
+  return ring;
+}
+
+async function fillPlanet(part, o) {
+  if (part.filled) return;
+  part.filled = true;
+  const figure = part.figure, name = o.planet;
+  const spheres = [], tilts = [];
+  part.object.traverse(child => {
+    if (child.userData.planetSphere) spheres.push(child);
+    if (child.userData.planetTilt) tilts.push(child);
+  });
+  const spin = typeof o.spin === 'number' && isFinite(o.spin) ? degrees(o.spin) : o.spin ? 0.12 : 0;
+  if (spin) { part.planetSpheres = spheres; part.planetSpin = spin; }
+  const entry = libraryEntry((await library()).planets, name);
+  if (figures.get(figure.id) !== figure) return;
+  if (!entry) {
+    if (host) host.postMessage({ type: 'log', text: 'library: no planet named "' + name + '"' });
+    return; // a plain grey sphere
+  }
+  if (o.rings !== false && (o.rings === true || entry.rings)) for (const tilt of tilts) tilt.add(planetRings());
+  if (entry.credit) showCredit(figure, entry.credit);
+  try {
+    const texture = await new THREE.TextureLoader().loadAsync(libraryFile(entry.texture));
+    texture.colorSpace = THREE.SRGBColorSpace;
+    for (const sphere of spheres) { sphere.material.map = texture; sphere.material.needsUpdate = true; }
+  } catch (error) {
+    if (host) host.postMessage({ type: 'log', text: 'library: planet "' + name + '" has no surface image: ' + (error && error.message || error) });
+  }
 }
 
 // The model scaled to fit the box and centred in it: evenly, or stretched to fill it in each direction.
@@ -1025,10 +1172,84 @@ function objModel(text, o) {
   return new THREE.Mesh(g, m);
 }
 
-// A GLB file (a data URL), read here: meshes with their nodes' placement, positions, normals, UVs, vertex colours and
-// indices, and each material's base colour, metalness, roughness and colour texture. (Draco-compressed files can't be.)
-async function glbModel(dataUrl) {
-  const bytes = Uint8Array.from(atob(String(dataUrl).split(',')[1] || ''), c => c.charCodeAt(0));
+// Google Draco, for GLBs whose meshes are compressed with KHR_draco_mesh_compression (NASA's bundled models are).
+// The decoder is a plain script from vendor/draco, fetched only when a compressed model is first drawn.
+const DRACO_TYPES = {
+  5120: [Int8Array, 'DT_INT8'], 5121: [Uint8Array, 'DT_UINT8'], 5122: [Int16Array, 'DT_INT16'],
+  5123: [Uint16Array, 'DT_UINT16'], 5125: [Uint32Array, 'DT_UINT32'], 5126: [Float32Array, 'DT_FLOAT32'],
+};
+const GLTF_ATTRIBUTES = { POSITION: 'position', NORMAL: 'normal', TEXCOORD_0: 'uv', COLOR_0: 'color' };
+
+let dracoPending = null;
+function dracoDecoder() {
+  if (dracoPending) return dracoPending;
+  dracoPending = new Promise((resolve, reject) => {
+    const start = () => {
+      if (!window.DracoDecoderModule) { reject(new Error('the Draco decoder did not load')); return; }
+      try {
+        window.DracoDecoderModule({
+          locateFile: file => new URL('vendor/draco/' + file, window.location.href).href,
+          onModuleLoaded: resolve,
+        });
+      } catch (error) { reject(error); }
+    };
+    if (window.DracoDecoderModule) { start(); return; }
+    const script = document.createElement('script');
+    script.src = 'vendor/draco/draco_decoder.js';
+    script.onload = start;
+    script.onerror = () => reject(new Error('the Draco decoder could not be loaded'));
+    document.head.appendChild(script);
+  });
+  return dracoPending;
+}
+
+// One compressed primitive's attributes and indices, read with the decoder's own buffers.
+async function dracoGeometry(module, extension, primitive, json, bin) {
+  const view = json.bufferViews[extension.bufferView];
+  const start = view.byteOffset || 0;
+  const bytes = bin.subarray(start, start + view.byteLength);
+  const decoder = new module.Decoder();
+  const buffer = new module.DecoderBuffer();
+  buffer.Init(new Int8Array(bytes), bytes.byteLength);
+  const mesh = new module.Mesh();
+  try {
+    const status = decoder.DecodeBufferToMesh(buffer, mesh);
+    if (!status.ok() || mesh.ptr === 0) throw new Error('the Draco data could not be decoded');
+    const attributes = {};
+    for (const [semantic, id] of Object.entries(extension.attributes)) {
+      const name = GLTF_ATTRIBUTES[semantic];
+      const accessor = json.accessors[primitive.attributes[semantic]];
+      if (!name || !accessor) continue;
+      const [ArrayType, dracoType] = DRACO_TYPES[accessor.componentType] || DRACO_TYPES[5126];
+      const attribute = decoder.GetAttributeByUniqueId(mesh, id);
+      const components = attribute.num_components(), count = mesh.num_points();
+      const byteLength = count * components * ArrayType.BYTES_PER_ELEMENT;
+      const pointer = module._malloc(byteLength);
+      decoder.GetAttributeDataArrayForAllPoints(mesh, attribute, module[dracoType], byteLength, pointer);
+      const values = new ArrayType(module.HEAPF32.buffer, pointer, count * components).slice();
+      module._free(pointer);
+      attributes[name] = new THREE.BufferAttribute(values, components, !!accessor.normalized);
+    }
+    const count = mesh.num_faces() * 3;
+    const pointer = module._malloc(count * 4);
+    decoder.GetTrianglesUInt32Array(mesh, count * 4, pointer);
+    const indices = new Uint32Array(module.HEAPF32.buffer, pointer, count).slice();
+    module._free(pointer);
+    return { attributes, indices: new THREE.BufferAttribute(indices, 1) };
+  } finally {
+    module.destroy(mesh);
+    module.destroy(buffer);
+    module.destroy(decoder);
+  }
+}
+
+// A GLB file (a data URL or its bytes), read here: meshes with their nodes' placement, positions, normals, UVs, vertex
+// colours and indices, and each material's base colour, metalness, roughness and colour texture. Draco-compressed
+// meshes (NASA's models) are decoded with the bundled Draco decoder, loaded the first time one is met.
+async function glbModel(data) {
+  const bytes = typeof data === 'string'
+    ? Uint8Array.from(atob(String(data).split(',')[1] || ''), c => c.charCodeAt(0))
+    : data instanceof Uint8Array ? data : new Uint8Array(data);
   const view = new DataView(bytes.buffer);
   if (bytes.length < 20 || view.getUint32(0, true) !== 0x46546C67) throw new Error('not a GLB file');
   let json = null, bin = null;
@@ -1040,7 +1261,6 @@ async function glbModel(dataUrl) {
     offset += 8 + length;
   }
   if (!json) throw new Error('the GLB has no JSON');
-  if ((json.extensionsUsed || []).includes('KHR_draco_mesh_compression')) throw new Error('Draco-compressed GLB files are not read');
   const COMPONENTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
   const ARRAYS = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array };
   const attribute = index => {
@@ -1090,14 +1310,22 @@ async function glbModel(dataUrl) {
     if (spec.mesh !== undefined) {
       for (const primitive of json.meshes[spec.mesh].primitives) {
         if (primitive.mode !== undefined && primitive.mode !== 4) continue;
-        const g = new THREE.BufferGeometry(), at = primitive.attributes;
+        const g = new THREE.BufferGeometry(), at = primitive.attributes || {};
+        const compression = primitive.extensions && primitive.extensions.KHR_draco_mesh_compression;
+        if (compression) {
+          const decoded = await dracoGeometry(await dracoDecoder(), compression, primitive, json, bin);
+          for (const [name, attribute] of Object.entries(decoded.attributes)) g.setAttribute(name, attribute);
+          g.setIndex(decoded.indices);
+        } else {
+          if (at.POSITION !== undefined) g.setAttribute('position', attribute(at.POSITION));
+          if (at.NORMAL !== undefined) g.setAttribute('normal', attribute(at.NORMAL));
+          if (at.TEXCOORD_0 !== undefined) g.setAttribute('uv', attribute(at.TEXCOORD_0));
+          if (at.COLOR_0 !== undefined) g.setAttribute('color', attribute(at.COLOR_0));
+          if (primitive.indices !== undefined) g.setIndex(attribute(primitive.indices));
+        }
         if (at.POSITION === undefined) continue;
-        g.setAttribute('position', attribute(at.POSITION));
-        if (at.NORMAL !== undefined) g.setAttribute('normal', attribute(at.NORMAL));
-        if (at.TEXCOORD_0 !== undefined) g.setAttribute('uv', attribute(at.TEXCOORD_0));
-        if (at.COLOR_0 !== undefined) g.setAttribute('color', attribute(at.COLOR_0));
-        if (primitive.indices !== undefined) g.setIndex(attribute(primitive.indices));
-        if (at.NORMAL === undefined) g.computeVertexNormals();
+        if (!g.getAttribute('position')) continue;
+        if (!g.getAttribute('normal')) g.computeVertexNormals();
         const m = await materialAt(primitive.material);
         if (at.COLOR_0 !== undefined) m.vertexColors = true;
         object.add(new THREE.Mesh(g, m));
@@ -1240,6 +1468,7 @@ function updatePart(part, t, clock = t) {
   }
   let scale = 1;
   object.rotation.copy(part.base.rotation);
+  if (part.planetSpheres) for (const sphere of part.planetSpheres) sphere.rotation.y = part.figure.clock * part.planetSpin;
   for (const motion of part.motions) {
     const phase = ((clock - motion.start) / motion.period) * Math.PI * 2;
     switch (motion.kind) {
@@ -1503,6 +1732,8 @@ window.Figure3D = {
     switch (m.do) {
       case 'figure': createFigure(m, rect, seconds); break;
       case 'part3d': addPart(m, seconds); break;
+      case 'model3d': addPart(Object.assign({}, m, { kind: 'model' }), seconds); break;
+      case 'planet3d': addPart(Object.assign({}, m, { kind: 'planet' }), seconds); break;
       case 'label3d': addLabel(m, seconds); break;
       case 'motion3d': addMotion(m); break;
       case 'view3d': setView(m); break;
