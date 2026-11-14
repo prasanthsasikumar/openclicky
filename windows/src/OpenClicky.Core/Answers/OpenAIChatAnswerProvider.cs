@@ -243,7 +243,32 @@ public sealed class OpenAIChatAnswerProvider(AnswerSource source, string apiKey,
 
     public async Task<AnswerResult> AnswerAsync(AnswerRequest request, Action<string> onTextChunk, CancellationToken cancellationToken = default)
     {
+        var firstAttempt = await AskOnceAsync(request, onTextChunk, cancellationToken).ConfigureAwait(false);
+
+        // A reasoning model can spend the whole token limit on hidden reasoning and stream no visible
+        // text at all; the person then hears "no answer". Giving the same question more room once
+        // lets it finish thinking and still say something out loud.
+        if (firstAttempt.CutOff && !firstAttempt.SawVisibleText && string.IsNullOrWhiteSpace(firstAttempt.Result.Text)
+            && firstAttempt.Result.ToolCalls.Count == 0)
+        {
+            var retryTokens = Math.Max(request.MaxTokens * 4, 4096);
+            AppLog.Write($"answer: {Source.Id()} {Model} spent the limit thinking; asking again with {retryTokens} tokens");
+            var retriedRequest = firstAttempt.EffectiveRequest.Copy();
+            retriedRequest.MaxTokens = retryTokens;
+            return (await AskOnceAsync(retriedRequest, onTextChunk, cancellationToken).ConfigureAwait(false)).Result;
+        }
+        return firstAttempt.Result;
+    }
+
+    /// <summary>
+    /// One send-and-stream attempt, including the ask-once-without-tools retry a self-hosted model may
+    /// need. <see cref="AttemptOutcome.EffectiveRequest"/> is the request whose body was streamed
+    /// (the copy without tools when that retry happened), so a second attempt keeps its tools state.
+    /// </summary>
+    private async Task<AttemptOutcome> AskOnceAsync(AnswerRequest request, Action<string> onTextChunk, CancellationToken cancellationToken)
+    {
         var httpRequest = MakeHttpRequest(Source, ApiKey, Model, request, ChatCompletionsUrl);
+        var effectiveRequest = request;
         var response = await transport(httpRequest, cancellationToken).ConfigureAwait(false);
 
         // Many local models take no tools (Ollama: "does not support tools"): the same question is asked once without them.
@@ -261,6 +286,7 @@ public sealed class OpenAIChatAnswerProvider(AnswerSource source, string apiKey,
             httpRequest.Dispose();
             var withoutTools = request.Copy();
             withoutTools.Tools = [];
+            effectiveRequest = withoutTools;
             httpRequest = MakeHttpRequest(Source, ApiKey, Model, withoutTools, ChatCompletionsUrl);
             response = await transport(httpRequest, cancellationToken).ConfigureAwait(false);
         }
@@ -275,6 +301,7 @@ public sealed class OpenAIChatAnswerProvider(AnswerSource source, string apiKey,
         }
 
         var streamAccumulator = new OpenAIChatStreamAccumulator();
+        var sawVisibleText = false;
         await foreach (var line in response.BodyLines.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             OpenAIChatStreamAccumulator.LineOutcome lineOutcome;
@@ -288,14 +315,21 @@ public sealed class OpenAIChatAnswerProvider(AnswerSource source, string apiKey,
                 throw new AnswerProviderException(Source, response.StatusCode, midStreamError.Message);
             }
             if (lineOutcome.Kind == OpenAIChatStreamAccumulator.LineOutcomeKind.StreamFinished) break;
-            if (lineOutcome.Kind == OpenAIChatStreamAccumulator.LineOutcomeKind.TextChunk) onTextChunk(lineOutcome.Text!);
+            if (lineOutcome.Kind == OpenAIChatStreamAccumulator.LineOutcomeKind.TextChunk)
+            {
+                if (!string.IsNullOrWhiteSpace(lineOutcome.Text)) sawVisibleText = true;
+                onTextChunk(lineOutcome.Text!);
+            }
         }
-        if (streamAccumulator.FinishReason == "length")
+        var cutOff = streamAccumulator.FinishReason == "length";
+        if (cutOff)
         {
             AppLog.Write($"answer: {Source.Id()} {Model} cut off at the token limit ({streamAccumulator.AccumulatedText.Length} chars)");
         }
-        return streamAccumulator.Result();
+        return new AttemptOutcome(streamAccumulator.Result(), effectiveRequest, sawVisibleText, cutOff);
     }
+
+    private sealed record AttemptOutcome(AnswerResult Result, AnswerRequest EffectiveRequest, bool SawVisibleText, bool CutOff);
 
     // MARK: request
 

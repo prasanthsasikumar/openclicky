@@ -73,6 +73,15 @@ public class AnswerProviderHttpTests
 
     private static JsonObject BodyOf(HttpRequestMessage request) => (JsonObject)JsonNode.Parse(request.Content!.BodyText())!;
 
+    private static async IAsyncEnumerable<string> Lines(params string[] lines)
+    {
+        foreach (var line in lines)
+        {
+            await Task.Yield();
+            yield return line;
+        }
+    }
+
     // MARK: OpenAI-compatible request
 
     [Fact]
@@ -181,6 +190,57 @@ public class AnswerProviderHttpTests
         Assert.Equal("Red, plainly.", result.Text);
         Assert.Empty(result.ToolCalls);
         Assert.Equal("Bearer sk-test", canned.SentRequest?.HeaderValue("Authorization"));
+    }
+
+    [Fact]
+    public async Task AModelThatSpendsTheLimitThinkingIsAskedAgainWithMoreTokens()
+    {
+        var bodies = new List<JsonObject>();
+        var calls = 0;
+        AnswerHttpTransport transport = (request, _) =>
+        {
+            bodies.Add(BodyOf(request));
+            return Task.FromResult(++calls == 1
+                ? new AnswerHttpResponseLines(200, Lines(
+                    """data: {"choices":[{"index":0,"delta":{"content":""},"finish_reason":"length"}]}""",
+                    "data: [DONE]"))
+                : new AnswerHttpResponseLines(200, Lines(
+                    """data: {"choices":[{"index":0,"delta":{"content":"Hello there."}}]}""",
+                    """data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}""",
+                    "data: [DONE]")));
+        };
+        var provider = new OpenAIChatAnswerProvider(AnswerSource.Groq, "gsk-test", "longcat-2.5-free", transport);
+        var request = SampleRequest();
+        request.MaxTokens = 1024;
+        var collector = new ChunkCollector();
+
+        var result = await provider.AnswerAsync(request, collector.Append);
+
+        Assert.Equal("Hello there.", result.Text);
+        Assert.Equal(["Hello there."], collector.Chunks);
+        Assert.Equal(2, calls);
+        Assert.Equal(1024, bodies[0]["max_tokens"]!.GetValue<int>());
+        Assert.Equal(4096, bodies[1]["max_tokens"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task ATokenLimitedAnswerWithVisibleTextIsReturnedAsIs()
+    {
+        var calls = 0;
+        AnswerHttpTransport transport = (_, _) =>
+        {
+            calls++;
+            return Task.FromResult(new AnswerHttpResponseLines(200, Lines(
+                """data: {"choices":[{"index":0,"delta":{"content":"Partial"}}]}""",
+                """data: {"choices":[{"index":0,"delta":{},"finish_reason":"length"}]}""",
+                "data: [DONE]")));
+        };
+        var provider = new OpenAIChatAnswerProvider(AnswerSource.Groq, "gsk-test", "longcat-2.5-free", transport);
+
+        var result = await provider.AnswerAsync(SampleRequest(), _ => { });
+
+        Assert.Equal("Partial", result.Text);
+        Assert.Equal(1, calls);
     }
 
     [Fact]
