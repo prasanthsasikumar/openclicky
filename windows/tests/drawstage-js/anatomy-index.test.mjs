@@ -57,6 +57,15 @@ test("LAD is the anterior interventricular artery", () => {
   assert.ok(nodes(result).includes("Anterior interventricular artery"));
 });
 
+test("a heart valve is its leaflets (the atlas keeps only an empty marker for the valve)", () => {
+  const aortic = anatomy.find("aortic valve");
+  assert.equal(aortic.matched, "synonym");
+  assert.deepEqual(new Set(nodes(aortic)), new Set(["Left coronary leaflet", "Right coronary leaflet", "Non-coronary leaflet"]));
+  assert.ok(nodes(anatomy.find("mitral valve")).includes("Posterior leaflet of left atrioventricular valve"), "mitral");
+  assert.ok(nodes(anatomy.find("tricuspid valve")).includes("Septal leaflet of right atrioventricular valve"), "tricuspid");
+  assert.equal(anatomy.find("pulmonary valve").structures.length, 3, "pulmonary");
+});
+
 test("kneecap is the patella", () => {
   const result = anatomy.find("kneecap");
   assert.equal(result.matched, "synonym");

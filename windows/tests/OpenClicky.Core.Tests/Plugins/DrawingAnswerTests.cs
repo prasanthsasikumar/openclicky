@@ -82,6 +82,16 @@ public partial class DrawingAnswerTests
     }
 
     [Fact]
+    public void ThePromptOffersRealAnatomyFromTheAtlas()
+    {
+        var prompt = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("f.anatomy(", prompt);
+        Assert.Contains("a.label('Left ventricle')", prompt);
+        Assert.Contains("a.highlight('Aortic valve')", prompt);
+        Assert.Contains("never build anatomy from boxes and blobs", prompt);
+    }
+
+    [Fact]
     public void ThePromptOffersDnaThatPairsAndAnimatesItself()
     {
         var prompt = DrawStageLesson.SystemPrompt(1280, 720);

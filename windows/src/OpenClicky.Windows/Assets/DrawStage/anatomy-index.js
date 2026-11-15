@@ -48,6 +48,15 @@ const SYNONYMS = {
   "voice box": { label: "Larynx", names: ["Larynx"] },
   voicebox: { label: "Larynx", names: ["Larynx"] },
   gullet: { label: "Oesophagus", names: ["Oesophagus"] },
+  // Heart valves: the atlas keeps only an empty marker for each valve ("Aortic valve.j") and names the leaflets
+  // without the valve's everyday name ("Left coronary leaflet"), so a valve is its leaflets.
+  "aortic valve": { label: "Aortic valve", names: ["Left coronary leaflet", "Right coronary leaflet", "Non-coronary leaflet"] },
+  "mitral valve": { label: "Mitral valve", names: ["Posterior leaflet of left atrioventricular valve", "Anterior leaflet of left atrioventricular valve"] },
+  "left atrioventricular valve": { label: "Mitral valve", names: ["Posterior leaflet of left atrioventricular valve", "Anterior leaflet of left atrioventricular valve"] },
+  "bicuspid valve": { label: "Mitral valve", names: ["Posterior leaflet of left atrioventricular valve", "Anterior leaflet of left atrioventricular valve"] },
+  "tricuspid valve": { label: "Tricuspid valve", names: ["Anterior leaflet of right atrioventricular valve", "Inferior leaflet of right atrioventricular valve", "Septal leaflet of right atrioventricular valve"] },
+  "right atrioventricular valve": { label: "Tricuspid valve", names: ["Anterior leaflet of right atrioventricular valve", "Inferior leaflet of right atrioventricular valve", "Septal leaflet of right atrioventricular valve"] },
+  "pulmonary valve": { label: "Pulmonary valve", names: ["Anterior semilunar leaflet of pulmonary valve", "Left semilunar leaflet of pulmonary valve", "Right semilunar leaflet of pulmonary valve"] },
   // Common lay names that are not exact atlas terms.
   "shoulder blade": { label: "Scapula", names: ["Scapula"] },
   breastbone: { label: "Sternum", groups: ["Sternum"], names: ["Sternum"] },
@@ -227,7 +236,12 @@ export function createAnatomyIndex(indexJson) {
           sort,
         );
       }
-      if (sided.length) return makeResult(sided, "exact", exactLabel(sided, side), limit, sort);
+      // Only empty markers ("Aortic valve.j", "Pulmonary valve.j"): there is nothing to show, so a synonym or the
+      // words of the name (a valve's leaflets) answer instead; the markers are the answer only when nothing else is.
+      const hasShapes = (result) => !!result && result.structures.some((entry) => !isMarker(entry));
+      if (sided.length && !(sided.every(isMarker) && (synonyms.has(text) || hasShapes(lookupWords(text, side, limit))))) {
+        return makeResult(sided, "exact", exactLabel(sided, side), limit, sort);
+      }
     }
 
     const grouped = groupMap.get(text);

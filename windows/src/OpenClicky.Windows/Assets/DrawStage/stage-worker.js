@@ -30,7 +30,8 @@
 //                                           torus/capsule/tube/pipe/lathe/extrude/spring/gear/blob/arrow/piece({…}) (any of them
 //                                           cut open, repeated or mirrored: cut, copies, around, mirror) → part.spin/bob/
 //                                           stroke/pulse/orbit/move({…}) and part.label(words); f.label(part, words), f.view({…}),
-//                                           f.model('iss'), f.planet('saturn')
+//                                           f.model('iss'), f.planet('saturn'), f.anatomy('heart') → a.label('Left
+//                                           ventricle'), a.highlight('…'), a.hide('…'), a.show('…'), a.isolate('…')
 //   molecule(x, y, w, h, {name} | {atoms, bonds})  a 3D ball-and-stick model, its shape from chemistry (VSEPR) →
 //                                           m.label(i, words), m.atom(i), m.view({…})
 //   o: {color, width, fill, dashed, size, align: 'start' | 'middle' | 'end', bold}
@@ -139,6 +140,8 @@ const api = {
     // A real model or planet from the app's own library; the page matches the name (the worker has no manifest).
     figure.model = (wanted, opts) => libraryFigurePart(figure, 'model3d', 'model', 'model', wanted, opts, remember, noFigurePart);
     figure.planet = (wanted, opts) => libraryFigurePart(figure, 'planet3d', 'planet', 'planet', wanted, opts, remember, noFigurePart);
+    // Real anatomy from the bundled atlas; it labels, highlights, hides and shows structures by their names.
+    figure.anatomy = (query, opts) => anatomyFigurePart(figure, query, opts, remember, noFigurePart);
     figure.view = opts => { push({ do: 'view3d', fig: id }, opts); return figure; };
     // Every motion in the figure at this speed (0.5 half, 2 twice as fast), and its labels shown or not.
     figure.tempo = (k, opts) => { if (finite(k) && k > 0) push({ do: 'tempo3d', fig: id, tempo: k }, opts); else warn('tempo() needs a speed above 0, like 0.5'); return figure; };
@@ -495,6 +498,45 @@ function libraryFigurePart(figure, doKind, kind, name, wanted, opts, remember, n
   const label = part.label;
   part.label = (words, labelOpts) => { remember(part, [words]); return label(words, labelOpts); };
   return remember(part, [o.name, wantedName]);
+}
+
+// Real anatomy from the bundled atlas. The mark carries the query; the page finds the structures and their file (the
+// worker has no index). The handle is a part like any other for f.part(), and it also labels, highlights, hides,
+// shows and isolates structures of its set by name, beat by beat, once the figure is there.
+function anatomyFigurePart(figure, query, opts, remember, noFigurePart) {
+  const o = options(opts);
+  const wanted = String(query == null ? '' : query).trim();
+  if (!wanted) {
+    warn('anatomy() needs a part of the body, like "heart" or "left femur"; skipped');
+    return noFigurePart;
+  }
+  const id = 'part' + (++partCount);
+  push({
+    do: 'anatomy3d', fig: figure.id, id, query: wanted,
+    side: o.side ? String(o.side) : null,
+    detail: ['auto', 'full', 'light'].includes(o.detail) ? String(o.detail) : 'auto',
+    hide: (Array.isArray(o.hide) ? o.hide : []).map(one => String(one).trim()).filter(Boolean).slice(0, 8),
+    fascia: o.fascia === true,
+    params: plain(o),
+  });
+  const handle = { id, query: wanted };
+  const op = (name, which, text, params) => {
+    push({
+      do: 'anatomyOp3d', fig: figure.id, id, op: name,
+      query: which == null ? null : String(which),
+      text: text == null ? null : String(text),
+      params: params || {},
+    });
+    return handle;
+  };
+  handle.label = (which, text) => op('label', which, text);
+  handle.highlight = which => op('highlight', which);
+  handle.isolate = which => op('isolate', which);
+  // With no name they take the whole set away and bring it back.
+  handle.hide = which => op('hide', which);
+  handle.show = which => op('show', which);
+  handle.change = change => op('change', null, null, plain(change));
+  return remember(handle, [o.name, wanted]);
 }
 
 // A builder's figure switches on the builder too: cl.labels(false), b.tempo(0.5) (models write it that way).

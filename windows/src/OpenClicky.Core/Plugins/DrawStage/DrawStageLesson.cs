@@ -586,6 +586,28 @@ public static partial class DrawStageLesson
         Name each part's const after what it is (const liftFan = f.cyl(…)): a click on the part asks about it by that name.
         MAKE IT LOOK REAL: a figure is built from many parts, like a good model kit: usually {{parts}} (bolts, ribs, ports, chips, blades, windows, seams, a lens). Get the proportions right, keep parts touching (nothing floats unless it really does), and use the real materials and colours. Show the inside with cut instead of drawing two separate pictures. Build the body in beat 1 (it may take a dozen parts), then add the moving and inner parts, motion and labels as the voice explains them. Put the figure's parts near the origin, y up, x along its length.
 
+        ANATOMY (any question about the human body: an organ, a bone, a muscle, a vessel, a nerve, a joint, a region)
+        For the body, show the atlas model instead of building it: never build anatomy from boxes and blobs.
+        const a = f.anatomy('heart', {detail, side, fascia})   the real atlas model of that part of the body in the figure, every structure a named part they can click; use the anatomical English name or the everyday word ('heart', 'skull', 'left femur', 'brachial plexus', 'knee joint', 'LAD'; detail 'auto' | 'full' | 'light', fascia: true keeps the sheets of tissue over the muscles)
+          a.label('Left ventricle') tags a structure (a.label('Femur', 'thigh bone') writes your own words)   a.highlight('Aortic valve') fades the rest and lights it up   a.isolate('Left ventricle') leaves only that   a.hide('fascia') / a.show('fascia') take parts away and bring them back   a.change({opacity: 0.5}) for the whole set
+        Show the whole thing first, then label, highlight and hide only what that line talks about; turn it with f.view({turn, tilt}). Systems: skeleton, muscles, joints, heart and vessels, nervous system and sense organs, organs, lymphoid, regions.
+        ANATOMY EXAMPLE (three beats of "how does blood flow through the heart?", no card)
+        ```js
+        step(1); say("Here is your heart, the real model, with the chambers that pump the blood round your body.")
+        const f = figure(300, 30, 680, 560, {tilt: 14, turn: 24, ground: false})
+        const a = f.anatomy('heart')
+
+        step(2); say("Blood coming back from your body fills the right atrium, and the right ventricle pushes it out to your lungs.")
+        a.label('Right atrium', 'from the body')
+        a.label('Right ventricle')
+        a.highlight('Right ventricle')
+
+        step(3); say("Oxygen-rich blood returns to the left atrium, and the left ventricle pumps it out to your body.")
+        a.label('Left atrium')
+        a.label('Left ventricle', 'to the body')
+        a.highlight('Left ventricle')
+        ```
+
         MOLECULES (when the question is about what something is made of, a chemical, a reaction, or why a substance behaves as it does)
         const m = molecule(x, y, w, h, {name: 'water'})   a 3D ball-and-stick model in that box, built atom by atom, its real shape (angles, rings, double bonds) worked out for you. Known names: water, carbon dioxide, carbon monoxide, oxygen, ozone, nitrogen, hydrogen, methane, ammonia, ethanol, ethylene, acetic acid, hydrogen peroxide, sulfuric acid, sodium chloride, benzene, glucose, caffeine, aspirin (or formulas such as 'H2O', 'CO2').
         Any other molecule: give its SMILES, the one line chemists write it in: molecule(x, y, w, h, {smiles: 'CC(=O)Oc1ccccc1C(=O)O'}) is aspirin, 'NCCc1ccc(O)c(O)c1' dopamine. Lowercase atoms are in an aromatic ring; leave the hydrogens out, they are added. Use the standard SMILES you know for it, since the shape comes from it.

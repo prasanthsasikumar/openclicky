@@ -14,6 +14,8 @@
 // and from then on it is a part like any other.
 import * as THREE from './vendor/three/three.module.min.js';
 import { RoomEnvironment } from './vendor/three/RoomEnvironment.js';
+import { createAnatomyIndex } from './anatomy-index.js';
+import { anatomyCredit, chooseDetail, dropMarkers, fasciaFilter, structureLabel } from './anatomy-load.js';
 
 const layer = document.getElementById('figures');
 const labelLayer = document.getElementById('labels3d');
@@ -483,6 +485,7 @@ function partUnit(figure, kind, o) {
   if (kind === 'arrow') return arrowObject(o);
   if (kind === 'piece') return pieceSlot(o);
   if (kind === 'model') return slotBox(librarySize(o));
+  if (kind === 'anatomy') return slotBox(librarySize(o));
   if (kind === 'planet') return planetUnit(o);
   const g = geometry(kind, o);
   if (!g) return null;
@@ -646,6 +649,9 @@ function partAt(figure, event) {
     !(h.object.material.clippingPlanes || []).some(plane => plane.distanceToPoint(h.point) < 0));
   if (!hit) return null;
   for (let object = hit.object; object; object = object.parent) {
+    // A structure inside an anatomy part is a part of its own: hovering a bone glows that bone, and a click on it
+    // asks about it by its name.
+    if (object.userData.anatomyPart) return object.userData.anatomyPart;
     for (const part of parts.values()) if (part.object === object && part.figure === figure) return part;
   }
   return null;
@@ -811,6 +817,8 @@ function addPart(m, seconds) {
     fillModel(part, o);
   } else if (m.kind === 'planet') {
     fillPlanet(part, o);
+  } else if (m.kind === 'anatomy') {
+    fillAnatomy(part, o, m);
   }
 }
 
@@ -1004,6 +1012,216 @@ async function fillModel(part, o) {
 function placeholder(part, name) {
   part.object.traverse(child => { if (child.userData.pieceSlot) child.scale.setScalar(0.4); });
   addLabel({ fig: part.figure.id, part: part.id, text: String(name), color: 'ink', size: 16 }, 0.3);
+}
+
+// ------------------------------------------------------------------ real anatomy (the bundled atlas)
+// The stage carries the Z-Anatomy atlas: one glTF per system (every bone of the body in one file) and an index of
+// every structure in it. A drawing asks for a part of the body ("heart", "left femur", "brachial plexus"); the index
+// says which structures that is and which file each one is in, and glbModel reads only those nodes.
+
+// The index (2 MB of JSON) is fetched and indexed once for the page.
+const anatomyFile = file => libraryFile('anatomy/' + file);
+let anatomyIndexPromise = null;
+function anatomyFinder() {
+  if (!anatomyIndexPromise) {
+    anatomyIndexPromise = fetch(anatomyFile('index.json'))
+      .then(response => response.ok ? response.json() : Promise.reject(new Error('HTTP ' + response.status)))
+      .then(json => createAnatomyIndex(json))
+      .catch(error => {
+        if (host) host.postMessage({ type: 'log', text: 'library: anatomy index not loaded: ' + (error && error.message || error) });
+        return null;
+      });
+  }
+  return anatomyIndexPromise;
+}
+
+// Each atlas file is fetched once, and built once per set of structure names asked of it: a later drawing that wants
+// a bone the first one left out rebuilds it with both (the file is far dearer than the index that names the nodes).
+const anatomyBytes = new Map();
+const anatomyBuilt = new Map();
+function anatomyRead(path, names) {
+  const built = anatomyBuilt.get(path);
+  if (built && [...names].every(name => built.names.has(name))) return built.model;
+  if (!anatomyBytes.has(path)) {
+    const bytes = fetch(anatomyFile(path)).then(response => {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return response.arrayBuffer();
+    }).catch(error => { anatomyBytes.delete(path); throw error; });
+    anatomyBytes.set(path, bytes);
+  }
+  const union = new Set([...(built ? built.names : []), ...names]);
+  const model = anatomyBytes.get(path).then(bytes => glbModel(bytes, { keep: name => union.has(name) }));
+  const entry = { names: union, model };
+  anatomyBuilt.set(path, entry);
+  // A file that couldn't be read is forgotten, so a later drawing can try it again.
+  model.catch(() => { if (anatomyBuilt.get(path) === entry) anatomyBuilt.delete(path); });
+  return model;
+}
+
+// The structure nodes of a read file, copied into this figure: the copies share the file's geometry but have
+// materials of their own, so fading a bone in one drawing never fades the same bone in another.
+function anatomyNodes(model, names) {
+  const found = [];
+  model.traverse(object => { if (object.name && names.has(object.name)) found.push(object); });
+  const nodes = [];
+  for (const node of found) {
+    let nested = false;
+    for (let up = node.parent; up && up !== model; up = up.parent) if (found.includes(up)) { nested = true; break; }
+    if (nested) continue;
+    const copy = node.clone(true);
+    copy.traverse(child => { if (child.isMesh && child.material) child.material = child.material.clone(); });
+    nodes.push(copy);
+  }
+  return nodes;
+}
+
+// The part of the body a drawing asked for: found in the index, read out of its system's file, and fitted into the
+// part's box like a library model, keeping the atlas's real proportions (it is modelled in metres). Every structure
+// is a part of its own for the pointer and a click. Nothing found leaves a small labelled box and a log line.
+async function fillAnatomy(part, o, m) {
+  if (part.filled) return;
+  part.filled = true;
+  const figure = part.figure, query = String(m.query == null ? '' : m.query).trim();
+  const finder = await anatomyFinder();
+  if (figures.get(figure.id) !== figure) return;
+  const found = finder ? finder.find(query, { side: m.side }) : { structures: [] };
+  const entries = fasciaFilter(dropMarkers(found.structures), query, { fascia: m.fascia === true });
+  const detail = chooseDetail(entries, { detail: m.detail });
+  if (!entries.length) {
+    if (host) host.postMessage({ type: 'log', text: 'library: no anatomy for "' + query + '"' });
+    part.failed = true;
+    placeholder(part, query);
+    return;
+  }
+  // One query can name structures of more than one system's file (a joint's bones and its ligaments).
+  const byFile = new Map();
+  for (const entry of entries) {
+    const path = detail === 'full' ? (entry.full || entry.file) : (entry.file || entry.full);
+    if (!path) continue;
+    if (!byFile.has(path)) byFile.set(path, []);
+    byFile.get(path).push(entry);
+  }
+  try {
+    const read = await Promise.all([...byFile].map(async ([path, list]) => {
+      const names = new Set(list.map(entry => entry.node));
+      return { list, nodes: anatomyNodes(await anatomyRead(path, names), names) };
+    }));
+    if (figures.get(figure.id) !== figure) return;
+    const model = new THREE.Group(), structures = [], shown = [];
+    for (const { list, nodes } of read) {
+      const byNode = new Map(list.map(entry => [entry.node, entry]));
+      for (const node of nodes) {
+        const entry = byNode.get(node.name);
+        if (!entry) continue;
+        model.add(node);
+        structures.push({ entry, node, name: structureLabel(entry), shown: true });
+        shown.push(entry);
+      }
+    }
+    if (!structures.length) throw new Error('no structure had any geometry');
+    part.structures = structures;
+    const fitted = fitToBox(model, librarySize(o), false);
+    dressModel(figure, fitted, o, true);
+    fillSlots(part, fitted);
+    for (const item of structures) item.node.userData.anatomyPart = { object: item.node, figure, name: item.name, kind: 'structure' };
+    showCredit(figure, anatomyCredit(shown));
+    // The program's own hide: list, then anything it asked for while the atlas was still being read.
+    for (const wanted of Array.isArray(m.hide) ? m.hide : []) anatomyOp(part, { op: 'hide', query: wanted, params: {} });
+    for (const queued of part.pending || []) anatomyOp(part, queued);
+    part.pending = null;
+  } catch (error) {
+    if (host) host.postMessage({ type: 'log', text: 'library: anatomy "' + query + '" could not be shown: ' + (error && error.message || error) });
+    part.failed = true;
+    if (!part.structures) placeholder(part, query);
+  }
+}
+
+// A structure's meshes, with what they looked like before any highlight faded them (a material is this figure's own).
+// Its ink outline fades with it, or the dark back of the outline would show through the faded surface.
+function anatomyMeshes(item) {
+  if (!item.meshes) {
+    const meshes = [];
+    item.node.traverse(child => {
+      if (!child.isMesh || !child.material) return;
+      const mat = child.material;
+      if (!mat.userData.anatomyBase) {
+        mat.userData.anatomyBase = {
+          opacity: mat.opacity, transparent: mat.transparent, depthWrite: mat.depthWrite,
+          emissive: mat.emissive ? mat.emissive.clone() : null, emissiveIntensity: mat.emissiveIntensity,
+        };
+      }
+      meshes.push(child);
+    });
+    item.meshes = meshes;
+  }
+  return item.meshes;
+}
+
+// Everything but what the line is about goes see-through, so the part being talked about reads at a glance.
+function anatomyFade(item, faded) {
+  for (const mesh of anatomyMeshes(item)) {
+    const mat = mesh.material, base = mat.userData.anatomyBase;
+    if (!base) continue;
+    mat.transparent = faded ? true : base.transparent;
+    mat.opacity = faded ? 0.15 : base.opacity;
+    mat.depthWrite = faded ? false : base.depthWrite;
+    mat.needsUpdate = true;
+  }
+  item.faded = faded;
+}
+
+// What the line is about keeps a soft blue glow, the way a part under the pointer does.
+function anatomyGlow(item, lit) {
+  for (const mesh of anatomyMeshes(item)) {
+    const mat = mesh.material, base = mat.userData.anatomyBase;
+    if (!base || !mat.emissive) continue;
+    if (lit) { mat.emissive.set(0x2f6bff); mat.emissiveIntensity = 0.3; }
+    else if (base.emissive) { mat.emissive.copy(base.emissive); mat.emissiveIntensity = base.emissiveIntensity; }
+  }
+}
+
+const anatomyKey = entry => (entry.system || '') + '\u0000' + entry.node;
+
+// The structures this part already shows that a query names, matched as a first query was (exact, side-aware, then
+// words). No query at all is the whole set.
+function anatomyMatches(part, query) {
+  const text = String(query == null ? '' : query).trim();
+  if (!text) return part.structures.slice();
+  const finder = createAnatomyIndex({ structures: part.structures.map(item => item.entry) });
+  const keys = new Set(finder.find(text).structures.map(anatomyKey));
+  return part.structures.filter(item => keys.has(anatomyKey(item.entry)));
+}
+
+// A follow-up on an anatomy part (anatomyOp3d): a label on a structure, a highlight that fades the rest, parts
+// hidden, shown or left alone, the whole set faded. A name it can't find warns and changes nothing.
+function anatomyOp(part, m) {
+  if (part.failed) return;   // nothing was found: there is nothing to label or hide
+  if (!part.structures) { (part.pending = part.pending || []).push(m); return; }
+  const op = String(m.op || '');
+  if (op === 'change') { changePart({ part: part.id, params: m.params || {} }); return; }
+  const matches = anatomyMatches(part, m.query);
+  if (!matches.length) {
+    if (host) host.postMessage({ type: 'log', text: 'library: no anatomy for "' + String(m.query == null ? '' : m.query) + '"' });
+    return;
+  }
+  if (op === 'label') {
+    const item = matches[0];
+    part.object.updateMatrixWorld(true);
+    const centre = new THREE.Box3().setFromObject(item.node).getCenter(new THREE.Vector3());
+    const at = part.object.worldToLocal(centre);
+    addLabel({ fig: part.figure.id, part: part.id, text: String(m.text || item.name), at: [at.x, at.y, at.z] }, 0.3);
+  } else if (op === 'highlight') {
+    for (const item of part.structures) {
+      const lit = matches.includes(item);
+      anatomyFade(item, !lit);
+      anatomyGlow(item, lit);
+    }
+  } else if (op === 'isolate') {
+    for (const item of part.structures) { const shown = matches.includes(item); item.shown = shown; item.node.visible = shown; }
+  } else if (op === 'hide' || op === 'show') {
+    const shown = op === 'show';
+    for (const item of matches) { item.shown = shown; item.node.visible = shown; }
+  }
 }
 
 // A planet: a sphere with NASA's surface image, a beige ring for Saturn, and an optional slow spin. Its axial tilt
@@ -1246,7 +1464,11 @@ async function dracoGeometry(module, extension, primitive, json, bin) {
 // A GLB file (a data URL or its bytes), read here: meshes with their nodes' placement, positions, normals, UVs, vertex
 // colours and indices, and each material's base colour, metalness, roughness and colour texture. Draco-compressed
 // meshes (NASA's models) are decoded with the bundled Draco decoder, loaded the first time one is met.
-async function glbModel(data) {
+// Each node keeps its name and extras (the anatomy atlas names its structures there). {keep: name => boolean} reads
+// only the nodes it wants: a node that fails it and has no kept descendants is skipped before its meshes are decoded,
+// which is what makes one system's atlas file (every structure in the body) usable for one small part of it.
+async function glbModel(data, options) {
+  const keep = options && typeof options.keep === 'function' ? options.keep : null;
   const bytes = typeof data === 'string'
     ? Uint8Array.from(atob(String(data).split(',')[1] || ''), c => c.charCodeAt(0))
     : data instanceof Uint8Array ? data : new Uint8Array(data);
@@ -1301,13 +1523,18 @@ async function glbModel(data) {
   };
   const node = async index => {
     const spec = json.nodes[index], object = new THREE.Group();
+    // The node's own name and extras (the anatomy atlas puts the structure's English name, side and system there).
+    object.name = typeof spec.name === 'string' ? spec.name : '';
+    if (spec.extras && typeof spec.extras === 'object') object.userData.extras = spec.extras;
     if (spec.matrix) object.applyMatrix4(new THREE.Matrix4().fromArray(spec.matrix));
     else {
       if (spec.translation) object.position.fromArray(spec.translation);
       if (spec.rotation) object.quaternion.fromArray(spec.rotation);
       if (spec.scale) object.scale.fromArray(spec.scale);
     }
-    if (spec.mesh !== undefined) {
+    // A node the filter lets through: its mesh is read. One it turns down but whose children it keeps is only the
+    // way down to them (an atlas collection's empty grouping node).
+    if (spec.mesh !== undefined && (!keep || (spec.name && keep(spec.name)))) {
       for (const primitive of json.meshes[spec.mesh].primitives) {
         if (primitive.mode !== undefined && primitive.mode !== 4) continue;
         const g = new THREE.BufferGeometry(), at = primitive.attributes || {};
@@ -1331,13 +1558,26 @@ async function glbModel(data) {
         object.add(new THREE.Mesh(g, m));
       }
     }
-    for (const child of spec.children || []) object.add(await node(child));
+    for (const child of spec.children || []) if (!keep || keeps(child)) object.add(await node(child));
     return object;
+  };
+  // Whether a node (or something below it) is kept, worked out from the file's node list alone, so a whole branch of
+  // the file is turned down without reading (or decoding) anything in it. Answers are kept: a node shared by two
+  // parents is walked once.
+  const keptNodes = new Map();
+  const keeps = index => {
+    if (!keep) return true;
+    if (keptNodes.has(index)) return keptNodes.get(index);
+    keptNodes.set(index, false);
+    const spec = json.nodes[index] || {};
+    const yes = !!(spec.name && keep(spec.name)) || (spec.children || []).some(child => keeps(child));
+    keptNodes.set(index, yes);
+    return yes;
   };
   const scene = (json.scenes || [])[json.scene || 0];
   const roots = scene ? scene.nodes : (json.nodes || []).map((_, i) => i);
   const model = new THREE.Group();
-  for (const index of roots) model.add(await node(index));
+  for (const index of roots) if (!keep || keeps(index)) model.add(await node(index));
   return model;
 }
 
@@ -1734,6 +1974,8 @@ window.Figure3D = {
       case 'part3d': addPart(m, seconds); break;
       case 'model3d': addPart(Object.assign({}, m, { kind: 'model' }), seconds); break;
       case 'planet3d': addPart(Object.assign({}, m, { kind: 'planet' }), seconds); break;
+      case 'anatomy3d': addPart(Object.assign({}, m, { kind: 'anatomy' }), seconds); break;
+      case 'anatomyOp3d': { const part = parts.get(m.id); if (part) anatomyOp(part, m); break; }
       case 'label3d': addLabel(m, seconds); break;
       case 'motion3d': addMotion(m); break;
       case 'view3d': setView(m); break;
