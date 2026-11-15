@@ -21,9 +21,11 @@ working on the script.
 
 ## Output (bundled)
 
-- `full/<system>.glb` — the atlas's original detail (≈34 MB in all), for close-ups.
-- `light/<system>.glb` — decimated to fit ≈25 MB in all, for overviews.
-- `nc/full/…`, `nc/light/…` — the inner ear and the kidney, which Z-Anatomy took from non-commercial models (see
+- `full/<system>.glb` — the atlas's original detail (≈35 MB in all). The viewer decodes only the structures a
+  drawing asks for, so this one copy serves overviews and close-ups alike.
+- `light/<system>.glb` — only with `ANATOMY_LIGHT=1`: a decimated copy (≈25 MB) for very weak graphics. Off by
+  default, to keep the app small; `file` in index.json then points at the full file too.
+- `nc/full/…` — the inner ear and the kidney, which Z-Anatomy took from non-commercial models (see
   `LICENSE.md`). Bundled because OpenClicky is free and local only; remove them before any paid use.
 - `index.json` — one entry per structure: `node`, `file` (light), `full`, `system`, `en`, `la`, `side`, `ta`, `licence`,
   `groups` (the topic collection path inside the system, e.g. `["Vessels", "Heart"]`; empty when the atlas files the

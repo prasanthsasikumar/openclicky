@@ -57,6 +57,10 @@ BUNDLE_DIR = os.path.abspath(argv[2]) if len(argv) > 2 else os.path.join(
 # Development aid: ANATOMY_ONLY=regions,joints converts a subset only.
 ONLY = {s.strip() for s in os.environ.get("ANATOMY_ONLY", "").split(",") if s.strip()}
 
+# Only the atlas's original detail ships by default (~35 MB): the viewer decodes just the structures a drawing asks
+# for, so a second, decimated copy isn't needed and only made the app bigger. ANATOMY_LIGHT=1 writes it as well.
+WRITE_LIGHT = os.environ.get("ANATOMY_LIGHT") == "1"
+
 OUTPUT_DIRS = [
     os.path.join(BUNDLE_DIR, "full"),
     os.path.join(BUNDLE_DIR, "nc", "full"),
@@ -68,6 +72,10 @@ for _dir in OUTPUT_DIRS:
     for _name in os.listdir(_dir):
         if _name.endswith(".glb"):
             os.remove(os.path.join(_dir, _name))
+if not WRITE_LIGHT:
+    for _dir in (os.path.join(BUNDLE_DIR, "nc", "light"), os.path.join(BUNDLE_DIR, "light")):
+        if os.path.isdir(_dir) and not os.listdir(_dir):
+            os.rmdir(_dir)
 
 CC_BY_SA = "CC BY-SA 4.0"
 CC_BY_NC_SA = "CC BY-NC-SA 4.0"
@@ -689,9 +697,9 @@ for slug, size in slug_full.items():
 log("light ratios (estimate):", {k: round(v, 3) for k, v in ratios.items()})
 
 light_report = {}
-# Each pass re-exports the whole light set (about an hour for the full atlas on a laptop), and the compressed size
-# follows the triangle count closely, so two passes land within a few per cent of the target.
-LIGHT_PASSES = 2
+# Each pass re-exports the whole light set, and the compressed size follows the triangle count closely, so two
+# passes land within a few per cent of the target. None without ANATOMY_LIGHT=1.
+LIGHT_PASSES = 2 if WRITE_LIGHT else 0
 for iteration in range(1, LIGHT_PASSES + 1):
     total = 0
     light_report = {}
@@ -721,8 +729,8 @@ for iteration in range(1, LIGHT_PASSES + 1):
 structures = []
 for entry in entries:
     kind = "nc" if entry["licence"] != CC_BY_SA else "cc"
-    light_rel = ("nc/light/%s.glb" % entry["slug"]) if kind == "nc" else ("light/%s.glb" % entry["slug"])
     full_rel = ("nc/full/%s.glb" % entry["slug"]) if kind == "nc" else ("full/%s.glb" % entry["slug"])
+    light_rel = (("nc/light/%s.glb" % entry["slug"]) if kind == "nc" else ("light/%s.glb" % entry["slug"])) if WRITE_LIGHT else full_rel
     match = ta2.get(ta2_key(entry["base"]))
     structures.append({
         "node": entry["node"],
