@@ -48,6 +48,16 @@ const SYNONYMS = {
   "voice box": { label: "Larynx", names: ["Larynx"] },
   voicebox: { label: "Larynx", names: ["Larynx"] },
   gullet: { label: "Oesophagus", names: ["Oesophagus"] },
+  // The joints people name by the body part; the atlas says "Knee joint", "Glenohumeral joint", "Radiocarpal joint".
+  knee: { label: "Knee joint", groups: ["Knee joint"] },
+  shoulder: { label: "Shoulder joint", groups: ["Glenohumeral joint"] },
+  "shoulder joint": { label: "Shoulder joint", groups: ["Glenohumeral joint"] },
+  hip: { label: "Hip joint", groups: ["Hip joint"] },
+  elbow: { label: "Elbow joint", groups: ["Elbow joint"] },
+  wrist: { label: "Wrist joint", groups: ["Radiocarpal joint"] },
+  "wrist joint": { label: "Wrist joint", groups: ["Radiocarpal joint"] },
+  ankle: { label: "Ankle joint", groups: ["Ankle joint"] },
+  "jaw joint": { label: "Jaw joint", groups: ["Temporomandibular joint"] },
   // Heart valves: the atlas keeps only an empty marker for each valve ("Aortic valve.j") and names the leaflets
   // without the valve's everyday name ("Left coronary leaflet"), so a valve is its leaflets.
   "aortic valve": { label: "Aortic valve", names: ["Left coronary leaflet", "Right coronary leaflet", "Non-coronary leaflet"] },

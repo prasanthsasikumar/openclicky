@@ -146,6 +146,28 @@ public static partial class DrawStageLesson
     /// <summary>The other things those words name: a phone's cell, a spreadsheet's, a battery's.</summary>
     private static readonly string[] NotLifeScience = [" phone ", " phones ", " cellphone ", " battery ", " batteries ", " tower ", " excel ", " spreadsheet ", " sheet ", " sheets ", " table ", " prison ", " jail ", " solar "];
 
+    /// <summary>How a question about part of the body is put: pointing at it by name ("where is the brachial plexus"),
+    /// naming it ("show me the heart", "what is the femur", "explain the LAD"), or just the name itself
+    /// ("brachial plexus?").</summary>
+    private static readonly string[] AnatomyAsk =
+    [
+        " where is ", " where are ", " where's ", " show ", " show me ", " what is ", " what's ", " what are ", " explain ",
+        " point to ", " point at ", " locate ", " find ", " label ", " teach ", " tell me about ", " how does ", " how do ", " draw ",
+    ];
+
+    /// <summary>Their screen and tools: an anatomy word beside one of these is about the screen ("where is the back
+    /// button", "show me the root folder", "click the arm icon"), which pointing answers.</summary>
+    private static readonly string[] AboutTheScreen =
+    [
+        " button ", " tab ", " menu ", " icon ", " file ", " folder ", " window ", " page ", " app ", " settings ", " setting ",
+        " link ", " field ", " box ", " bar ", " toolbar ", " screen ", " cursor ", " mouse ", " key ", " keyboard ", " shortcut ",
+        " option ", " error ", " code ",
+    ];
+
+    /// <summary>What a question may put before the name itself and still be just the name ("the left kidney", "my
+    /// kidney", "human eye").</summary>
+    private static readonly string[] BareNameFillers = [" the ", " a ", " an ", " my ", " our ", " human ", " left ", " right "];
+
     // MARK: - Which questions
 
     /// <summary>Whether <paramref name="question"/> is best answered with a drawing.</summary>
@@ -158,6 +180,11 @@ public static partial class DrawStageLesson
         // Asked for a picture outright ("make me a 3d model of a car", "give me a cutaway of a jet engine"): a drawing,
         // even when it sounds like doing something on the screen ("how do i make a 3d model of a volcano").
         if (AsksForAPicture(question)) return true;
+        // A question that names part of the body ("where is the brachial plexus", "show me the heart", "explain the LAD",
+        // or just "brachial plexus") is drawn from the atlas, even when it is phrased like pointing. One about their screen
+        // or tools ("where is the back button", "show me the root folder") is still pointing's.
+        if (AnatomyVocabulary.Current.Mentions(question, out var anatomy) && AsksAboutAnatomy(text, anatomy)
+            && !ContainsAny(text, AboutTheScreen)) return true;
         // Doing something on the screen is pointing's: "how do I export this", "where is the save button".
         if (ContainsAny(text, " how do i ", " how can i ", " how should i ", " where is ", " where do i ", " click ", " open ")) return false;
         if (ContainsAny(text, OtherLanguagePointingWords)) return false;
@@ -200,6 +227,19 @@ public static partial class DrawStageLesson
             " how does this work ", " how does that work ", " how does it work ", " how do these work ", " how do they work ",
             " how this works ", " how that works ", " how it works ", " what's inside ", " what is inside ", " how is this made ",
             " how is it made ", " how are these made ", " explain this ", " explain that ", " explain it ", " show me how ");
+    }
+
+    /// <summary>Whether the question asks about the body rather than only mentioning <paramref name="anatomy"/>: put one of
+    /// the ways a body question is put, or the name and nothing else ("brachial plexus").</summary>
+    private static bool AsksAboutAnatomy(string text, string anatomy)
+    {
+        if (ContainsAny(text, AnatomyAsk)) return true;
+        var name = text;
+        foreach (var filler in BareNameFillers)
+        {
+            while (name.StartsWith(filler, StringComparison.Ordinal)) name = name[filler.Length..];
+        }
+        return name.Trim() == anatomy;
     }
 
     /// <summary>Whether the question asks for the answer in 3D or 2D ("show the heart in 3D", "3d may batayein", "3D drawing

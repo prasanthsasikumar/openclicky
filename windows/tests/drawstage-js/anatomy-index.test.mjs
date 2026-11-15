@@ -66,6 +66,13 @@ test("a heart valve is its leaflets (the atlas keeps only an empty marker for th
   assert.equal(anatomy.find("pulmonary valve").structures.length, 3, "pulmonary");
 });
 
+test("a joint by its body part: knee, shoulder, wrist", () => {
+  assert.ok(nodes(anatomy.find("knee")).length > 10, "knee");
+  assert.ok(nodes(anatomy.find("shoulder")).length > 5, "shoulder");
+  assert.ok(nodes(anatomy.find("wrist")).length > 5, "wrist");
+  assert.equal(anatomy.find("left knee").label, "Left knee joint");
+});
+
 test("kneecap is the patella", () => {
   const result = anatomy.find("kneecap");
   assert.equal(result.matched, "synonym");

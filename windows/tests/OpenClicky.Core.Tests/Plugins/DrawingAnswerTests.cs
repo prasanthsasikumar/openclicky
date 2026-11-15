@@ -53,6 +53,67 @@ public partial class DrawingAnswerTests
     [InlineData("open my sales chart")]
     public void DoingThingsAndSmallTalkDoNot(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
 
+    // MARK: - the body's own names
+
+    // The atlas's index is what makes a question one about the body: the same file the Windows app loads at startup.
+    static DrawingAnswerTests() => AnatomyVocabulary.Load(AnatomyIndexPath());
+
+    private static string AnatomyIndexPath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "OpenClicky.Windows.sln")))
+        {
+            directory = directory.Parent;
+        }
+        Assert.NotNull(directory);
+        return Path.Combine(directory!.FullName, "src", "OpenClicky.Windows", "Assets", "DrawStage", "library", "anatomy", "index.json");
+    }
+
+    // A structure's own name is an anatomy question even when it is put like pointing ("where is the brachial plexus"),
+    // so it is drawn from the atlas rather than answered with a pointer.
+    [Theory]
+    [InlineData("where is the brachial plexus")]
+    [InlineData("where is the brachial plexus?")]
+    [InlineData("show me the heart")]
+    [InlineData("what is the femur")]
+    [InlineData("point to the left kidney")]
+    [InlineData("explain the LAD")]
+    [InlineData("where are the cruciate ligaments")]
+    [InlineData("show me the human eye")]
+    [InlineData("brachial plexus")]
+    [InlineData("tell me about the mitral valve")]
+    [InlineData("where is my left kidney")]
+    [InlineData("where is the knee")]
+    [InlineData("show me the shoulder")]
+    [InlineData("explain the wrist")]
+    public void AQuestionAboutPartOfTheBodyIsDrawn(string question) => Assert.True(DrawStageLesson.WantsADrawing(question));
+
+    [Theory]
+    [InlineData("where is the back button")]
+    [InlineData("show me the settings tab")]
+    [InlineData("how do I open the file")]
+    [InlineData("where is the head of the page")]
+    [InlineData("show me the root folder")]
+    [InlineData("what is the base url")]
+    [InlineData("where is my cursor")]
+    [InlineData("click the arm icon")]
+    public void AQuestionAboutTheScreenStaysWithPointing(string question) => Assert.False(DrawStageLesson.WantsADrawing(question));
+
+    [Fact]
+    public void WithoutTheAtlasNoQuestionIsAboutTheBody()
+    {
+        var loaded = AnatomyVocabulary.Current;
+        try
+        {
+            AnatomyVocabulary.Current = new AnatomyVocabulary();
+            Assert.False(DrawStageLesson.WantsADrawing("where is the brachial plexus"));
+        }
+        finally
+        {
+            AnatomyVocabulary.Current = loaded;
+        }
+    }
+
     [Fact]
     public void TheStageIsOnWithTheTeacherUnlessSwitchedOff()
     {
