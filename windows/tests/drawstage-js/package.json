@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "main": "anatomy-index.test.mjs",
+  "description": "This Node build treats an explicit test directory as a module entry, so main makes `node --test windows/tests/drawstage-js/` run the suite."
+}

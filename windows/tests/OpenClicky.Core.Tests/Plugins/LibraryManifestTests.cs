@@ -45,6 +45,27 @@ public class LibraryManifestTests
     }
 
     [Fact]
+    public void EveryAnatomyStructureHasAGroupsArray()
+    {
+        // The drawing stage's anatomy-index.js finds "heart", "cranium" and the
+        // like through these topic groups, so every generated entry needs one.
+        var path = Path.Combine(LibraryFolder(), "anatomy", "index.json");
+        var index = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        var structures = index["structures"]!.AsArray();
+        Assert.NotEmpty(structures);
+        foreach (var structure in structures)
+        {
+            var node = structure!["node"]!.GetValue<string>();
+            var groups = structure["groups"];
+            Assert.NotNull(groups);
+            foreach (var group in groups!.AsArray())
+            {
+                Assert.False(string.IsNullOrWhiteSpace(group!.GetValue<string>()), $"{node}: empty group name");
+            }
+        }
+    }
+
+    [Fact]
     public void TheSystemPromptNamesOnlyLibraryIds()
     {
         var prompt = DrawStageLesson.SystemPrompt(1280, 720);

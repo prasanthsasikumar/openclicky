@@ -25,12 +25,14 @@ working on the script.
 - `light/<system>.glb` — decimated to fit ≈25 MB in all, for overviews.
 - `nc/full/…`, `nc/light/…` — the inner ear and the kidney, which Z-Anatomy took from non-commercial models (see
   `LICENSE.md`). Bundled because OpenClicky is free and local only; remove them before any paid use.
-- `index.json` — one entry per structure: `node`, `file` (light), `full`, `system`, `en`, `la`, `side`, `ta`, `licence`.
+- `index.json` — one entry per structure: `node`, `file` (light), `full`, `system`, `en`, `la`, `side`, `ta`, `licence`,
+  `groups` (the topic collection path inside the system, e.g. `["Vessels", "Heart"]`; empty when the atlas files the
+  object only under its system).
 - `LICENSE.md` — CC BY-SA 4.0 notice and the attributions the atlas asks for.
 
 Systems: skeleton, muscle-insertions, joints, muscles, cardiovascular, lymphoid, nervous (with sense organs),
 visceral, regions. Every structure is its own named node (the atlas's English Terminologia Anatomica name, `.l` / `.r`
-for left and right) with extras `{en, side, la, ta, system}`; 97.8 % match a TA2 Latin name. Curves (most vessels and
+for left and right) with extras `{en, side, la, ta, system, groups}`; 97.8 % match a TA2 Latin name. Curves (most vessels and
 nerves) become tubes; Draco-compressed.
 
 ## What the script decides

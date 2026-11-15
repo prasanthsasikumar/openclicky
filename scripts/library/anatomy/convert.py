@@ -16,7 +16,8 @@ Outputs:
     <outDir>/summary.json                 machine-readable run report
 
 One glTF node per anatomical structure, named after the Blender object (name
-trimmed). Node extras carry the TA2 metadata. The atlas file is opened by
+trimmed). Node extras carry the TA2 metadata and the structure's topic groups
+(the collection path inside its system, e.g. ["Vessels", "Heart"]). The atlas file is opened by
 Blender and is never written back.
 
 Blender's Python only: no third-party packages.
@@ -262,6 +263,63 @@ def system_of(obj):
 
 
 # --------------------------------------------------------------------------
+# Topic groups: the atlas also files every object under "Bonus collection" in
+# a per-system topic tree ("Cardiovascular system" > "Heart", "Skeletal system"
+# > "Cranium" > "Bones of cranium", ...). The export flattens that tree, so a
+# lookup for "heart" or "cranium" would otherwise have nothing to go on: record
+# the path from the system collection down to the collection holding the object.
+# --------------------------------------------------------------------------
+
+BONUS = bpy.data.collections.get("Bonus collection")
+
+# First-level collections of the topic tree, mapped to the numbered systems.
+TOPIC_SLUGS = {
+    "Skeletal system": "skeleton",
+    "Muscular insertions": "muscle-insertions",
+    "Arthrology": "joints",
+    "Muscular system": "muscles",
+    "Cardiovascular system": "cardiovascular",
+    "Lymphoid organs": "lymphoid",
+    "Nervous system": "nervous",
+    "Visceral systems": "visceral",
+    "Regions of human body": "regions",
+}
+
+TOPIC_PATHS = {}  # object name -> [collection paths below "Bonus collection"]
+if BONUS is not None:
+    stack = [(BONUS, [])]
+    while stack:
+        coll, path = stack.pop()
+        for obj in coll.objects:
+            TOPIC_PATHS.setdefault(obj.name, []).append(path)
+        for child in coll.children:
+            stack.append((child, path + [child.name]))
+    log("topic collections:", sum(1 for _ in TOPIC_PATHS), "objects with a topic path")
+
+COLLECTION_OBJECTS = {c.name: len(c.objects) for c in bpy.data.collections}
+NUMBER_PREFIX_RE = re.compile(r"^\s*\d+(?:\.\d+)*[.):]?\s*")
+
+
+def groups_for(obj, slug):
+    """The deepest topic path of *obj* inside its own system, system name out.
+
+    An object can be filed in several places (e.g. a parietal bone is under both
+    "Axial skeleton" and "Cranium"); the deepest path wins, and equal depths go
+    to the smallest terminal collection, i.e. the most specific group.
+    """
+    paths = []
+    for path in TOPIC_PATHS.get(obj.name, []):
+        if not path or TOPIC_SLUGS.get(path[0]) != slug:
+            continue
+        groups = [NUMBER_PREFIX_RE.sub("", name).strip() for name in path[1:]]
+        paths.append([name for name in groups if name])
+    if not paths:
+        return []
+    paths.sort(key=lambda p: (-len(p), COLLECTION_OBJECTS.get(p[-1], 0) if p else 0, p))
+    return paths[0]
+
+
+# --------------------------------------------------------------------------
 # Curves without a bevel get a thin round profile so they are visible
 # --------------------------------------------------------------------------
 
@@ -320,10 +378,13 @@ for obj in list(bpy.data.objects):
         "side": side,
         "qual": qual,
         "licence": licence,
+        "groups": groups_for(obj, slug),
         "marker": obj.type == "MESH" and len(obj.data.polygons) == 0,
     })
 
 log("export candidates:", len(entries), "skipped:", skipped)
+grouped = sum(1 for entry in entries if entry["groups"])
+log("structures with topic groups: %d, without: %d" % (grouped, len(entries) - grouped))
 
 # Non-commercial list for the report.
 nc_list = sorted({e["node"] for e in entries if e["licence"] != CC_BY_SA})
@@ -493,6 +554,7 @@ def extras_for(entry):
         "la": match["la"] if match else None,
         "ta": match["ta"] if match else None,
         "system": SYSTEM_NAMES[entry["slug"]],
+        "groups": entry["groups"],
     }
 
 
@@ -672,6 +734,7 @@ for entry in entries:
         "side": entry["side"],
         "ta": match["ta"] if match else None,
         "licence": entry["licence"],
+        "groups": entry["groups"],
     })
 
 structures.sort(key=lambda s: (list(SYSTEM_NAMES.values()).index(s["system"]), s["node"]))
@@ -729,6 +792,10 @@ summary = {
     "ta2_matched": ta_matches,
     "ta2_distinct_base_names": distinct_bases,
     "non_commercial": nc_list,
+    "topic_groups": {
+        "with_groups": sum(1 for entry in entries if entry["groups"]),
+        "without_groups": sum(1 for entry in entries if not entry["groups"]),
+    },
     "renamed_nodes": [(e["renamed_from"], e["node"]) for e in renamed],
     "failures": failures,
     "systems": {},
@@ -767,5 +834,7 @@ log("light total: %.1f MB (budget %.1f MB)" % (
     sum(v["size"] for v in light_report.values()) / 1e6, LIGHT_BUDGET / 1e6))
 log("index entries: %d, TA2 matched: %d (%.1f%%), renamed nodes: %d" % (
     len(structures), ta_matches, 100.0 * ta_matches / max(1, len(entries)), len(renamed)))
+log("topic groups: %d structures with a group path, %d without" % (
+    sum(1 for e in entries if e["groups"]), sum(1 for e in entries if not e["groups"])))
 log("failures:", len(failures))
 log("total time: %.1fs" % (time.time() - T0))
