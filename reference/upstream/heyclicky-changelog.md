@@ -2,6 +2,10 @@
 
 Recorded by `scripts/upstream-watch.mjs` from https://www.heyclicky.com/changelog and the Sparkle appcast. Newest first.
 
+## v1.1.5 (Tue, 17 Nov 2026 11:50:29 -0800)
+
+Download: https://github.com/farzaa/clicky-releases/releases/download/v1.1.5/HeyClicky.dmg (build 74)
+
 ## v1.1.4 — Go deeper with your agents, support for 130+ languages, and lots of bug fixes (Nov 1, 2026)
 
 Open the notch into a big window to dig into any agent: its whole chat, the files it made, and what it's doing right now. HeyClicky also talks in 130+ languages now. For much less of an accent, pick one of the 30 new voices in Settings > Voice > Voices. Plus lots of bug fixes. Thank you to everyone who wrote in <3

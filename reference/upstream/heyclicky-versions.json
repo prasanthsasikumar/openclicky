@@ -1,5 +1,13 @@
 {
   "seen": {
+    "1.1.5": {
+      "build": "74",
+      "date": "Tue, 17 Nov 2026 11:50:29 -0800",
+      "url": "https://github.com/farzaa/clicky-releases/releases/download/v1.1.5/HeyClicky.dmg",
+      "title": "",
+      "recordedAt": "2026-11-18T15:37:45.790Z",
+      "issue": "https://github.com/prasanthsasikumar/openclicky/issues/70"
+    },
     "1.1.4": {
       "build": "",
       "date": "Nov 1, 2026",
