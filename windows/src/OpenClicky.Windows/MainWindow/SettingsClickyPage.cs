@@ -152,6 +152,23 @@ internal sealed partial class SettingsRowFactory
             case "clicky.speechVoice":
                 return new LiveContent(() => SpeechVoiceRows(item, query), Changes.Shell, Changes.Of(Settings, nameof(Core.Dictation.DictationSettings.Region)),
                     Changes.Of(services.Services.Kokoro));
+            case "clicky.captions":
+                return new LiveContent(() => Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Picker(AnswerCaptions.AllCases.Select(choice => (choice, choice.Title())), AnswerCaptions.Current, choice =>
+                    {
+                        AnswerCaptions.Set(choice);
+                        ShellSettingsRevision.NoteChanged();
+                    }, 200))), Changes.Shell);
+            case "clicky.captionColor":
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Picker(CaptionLook.Colors.Select(color => (color.Name, color.Title)),
+                        CaptionLook.ColorFrom(services.Preferences.GetString(CaptionLook.ColorPreferenceKey)),
+                        name => services.Preferences.Set(CaptionLook.ColorPreferenceKey, name), 160)));
+            case "clicky.captionGlow":
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Picker(CaptionLook.Glows.Select(glow => (glow, glow.Title())),
+                        CaptionLook.GlowFrom(services.Preferences.GetString(CaptionLook.GlowPreferenceKey)),
+                        glow => services.Preferences.Set(CaptionLook.GlowPreferenceKey, glow.RawValue()), 160)));
             case "clicky.emailApp":
                 // emailApp in shell.json: automatic saves nothing; anything unknown (the Mac's "mail") shows as automatic.
                 return new LiveContent(() =>

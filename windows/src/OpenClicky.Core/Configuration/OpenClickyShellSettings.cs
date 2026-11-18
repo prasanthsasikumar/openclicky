@@ -111,6 +111,10 @@ public sealed class OpenClickyShellSettings
     /// <summary>Who speaks answers (SpeechVoiceChoice raw value); null, "auto" or "cloud" picks in order.</summary>
     [JsonPropertyName("speechVoice")] public string? SpeechVoice { get; set; }
 
+    /// <summary>When the spoken answer is captioned beside the pointer (AnswerCaptionsChoice raw value: "always", "off");
+    /// null is "when it can't be heard".</summary>
+    [JsonPropertyName("answerCaptions")] public string? AnswerCaptions { get; set; }
+
     /// <summary>Voice-only keys: ElevenLabs, Google Cloud TTS, Amazon Polly ("accessKeyId:secretKey[:region]").</summary>
     [JsonPropertyName("elevenLabsApiKey")] public string? ElevenLabsApiKey { get; set; }
     [JsonPropertyName("googleCloudApiKey")] public string? GoogleCloudApiKey { get; set; }

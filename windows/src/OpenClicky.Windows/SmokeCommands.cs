@@ -108,6 +108,7 @@ internal static class SmokeCommands
         if (args.Contains(Plugins.Teacher.TeacherSmoke.Flag)) return Plugins.Teacher.TeacherSmoke.Run(args);
         if (args.Contains(Plugins.DrawStage.DrawStageSmoke.Flag)) return Plugins.DrawStage.DrawStageSmoke.Run(args);
         if (args.Contains(Overlay.ScreenMarkerSmoke.Flag)) return Overlay.ScreenMarkerSmoke.Run();
+        if (args.Contains(Overlay.CaptionLooksSmoke.Flag)) return Overlay.CaptionLooksSmoke.Run(args);
         if (Argument("--openclicky-action-smoke") is { } toolName)
         {
             ConsoleAttachment.Attach();

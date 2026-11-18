@@ -87,19 +87,24 @@ public sealed partial class CompanionManager
             else
             {
                 AppLog.Write($"talk: openclicky said ({text.Length} chars)");
+                ShowFastVoiceCaption(text);
                 TeacherPlugin.WriteAnswerIfTheyCannotHear(text, lastQuestionWasTyped, client.LastScreenCapture);
                 RememberExchange(LastTranscript ?? "", text);
             }
         };
         client.OnResponseStarted = () =>
         {
+            EndFastVoiceCaptions();
             if (!UsesRealtimeVoice) return;
             // The drawing's own voice is explaining: the fast voice's reply to the same question is cut.
             if (realtimeDrawing is not null || DateTimeOffset.UtcNow < fastVoiceQuietUntil) { client.StopSpeaking(); return; }
+            StartFastVoiceCaptions();
             if (VoiceState != CompanionVoiceState.Listening) VoiceState = CompanionVoiceState.Responding;
         };
+        client.OnAssistantTranscriptSoFar = ShowFastVoiceCaption;
         client.OnResponseFinished = () =>
         {
+            FadeFastVoiceCaptionOnceSaid(responseIsOver: true);
             if (!UsesRealtimeVoice || VoiceState == CompanionVoiceState.Listening) return;
             VoiceState = CompanionVoiceState.Idle;
             Overlay.ScheduleTransientHideIfNeeded();
@@ -174,6 +179,8 @@ public sealed partial class CompanionManager
         client.Pointing = MakePointingServices();
         client.PropertyChanged += (_, eventArgs) =>
         {
+            // The last of the audio has played: the caption can go.
+            if (eventArgs.PropertyName == nameof(RealtimeVoiceClient.IsSpeaking) && !client.IsSpeaking) FadeFastVoiceCaptionOnceSaid();
             if (eventArgs.PropertyName != nameof(RealtimeVoiceClient.InputLevel)) return;
             if (!UsesRealtimeVoice || VoiceState != CompanionVoiceState.Listening) return;
             CurrentAudioPowerLevel = client.InputLevel;

@@ -77,6 +77,7 @@ public sealed partial class CompanionManager
         activeAnswerPlayback?.Cancel();
         activeAnswerSpeaker = null;
         activeAnswerPlayback = null;
+        Overlay.DismissSpokenCaption();
     }
 
     // MARK: - The pipeline
@@ -403,6 +404,7 @@ public sealed partial class CompanionManager
         try
         {
             await answerPlayback;
+            Overlay.FadeSpokenCaptionAfter(AnswerCaptions.SecondsAfterTheVoice);
         }
         catch (SpeechQueueFailure failure)
         {
@@ -474,11 +476,18 @@ public sealed partial class CompanionManager
         // One session per answer, so a late or failed free voice hands the rest of this answer to the local voice
         // and the next answer tries again (AccountVoiceGuard.cs).
         var answerVoiceSession = answerVoicePlayer.MakeAnswerSession();
-        return new(new SpeechQueue(
+        StreamingAnswerSpeaker? speaker = null;
+        // Captions: each piece's words beside the pointer while it is said (AnswerCaptions).
+        Action<string>? onPieceStarts = AnswerCaptionsAreShown()
+            ? pieceText => services.MainThread.Post(() => { if (speaker?.IsCancelled == false) Overlay.ShowSpokenCaption(pieceText); })
+            : null;
+        speaker = new(new SpeechQueue(
                 answerVoiceSession.AudioAsync,
                 (audio, cancellationToken) => answerVoicePlayer.PlayToCompletionAsync(audio, cancellationToken)),
             onVoiceStarts: () => services.MainThread.Post(onVoiceStarts),
-            onPointTag: pointTag => services.MainThread.Post(() => onPointTag(pointTag)));
+            onPointTag: pointTag => services.MainThread.Post(() => onPointTag(pointTag)),
+            onPieceStarts: onPieceStarts);
+        return speaker;
     }
 
     /// <summary>
@@ -503,6 +512,7 @@ public sealed partial class CompanionManager
         try
         {
             await answerPlayback;
+            Overlay.FadeSpokenCaptionAfter(AnswerCaptions.SecondsAfterTheVoice);
         }
         catch (SpeechQueueFailure failure)
         {
@@ -538,6 +548,7 @@ public sealed partial class CompanionManager
         void NoticeEnded() => services.MainThread.Post(() => SystemVoiceNoticeEnded(noticeNumber));
         VoiceState = CompanionVoiceState.Responding;
         AppLog.Write($"voice: notice ({text.Length} chars)");
+        if (AnswerCaptionsAreShown()) Overlay.ShowSpokenCaption(text);
         // A fixed notice that has a recording plays it, in the app's own voice.
         if (RecordedVoice.LineFor(text) is { } line && RecordedVoice.Play(line, NoticeEnded)) return;
         var cancellation = new CancellationTokenSource();
@@ -567,6 +578,7 @@ public sealed partial class CompanionManager
     {
         if (noticeNumber != systemVoiceNoticeNumber || !isSystemVoiceNoticeSpeaking) return;
         isSystemVoiceNoticeSpeaking = false;
+        Overlay.FadeSpokenCaptionAfter(AnswerCaptions.SecondsAfterTheVoice);
         ResumeSystemVoiceNoticeEndWaiters();
         // A notice is the last thing a turn says: once it has been said, the turn is over.
         if (VoiceState != CompanionVoiceState.Responding) return;
@@ -583,6 +595,7 @@ public sealed partial class CompanionManager
         systemVoiceNoticeCancellation = null;
         noticePlayer.StopPlayback();
         RecordedVoice.Stop();
+        Overlay.DismissSpokenCaption();
         ResumeSystemVoiceNoticeEndWaiters();
     }
 
