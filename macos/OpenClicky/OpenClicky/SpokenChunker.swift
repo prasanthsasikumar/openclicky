@@ -8,9 +8,10 @@
 //  of the first words; later sentences are grouped (at least `laterChunkMinimum` characters) so a
 //  long answer costs a handful of speech requests, not one per sentence.
 //
-//  A sentence ends at ". " "! " "? ", at a new line, and at the danda (। ॥) and the CJK stops
-//  (。！？) with or without a space after them: Hindi, Marathi, Bengali, Japanese and Chinese answers
-//  were otherwise one piece, spoken only after the whole answer was written. No piece is longer than
+//  A sentence ends at ". " "! " "? ", at a new line, and at the danda (। ॥), the Urdu full stop and
+//  Arabic question mark (۔ ؟) and the CJK stops (。！？) with or without a space after them: Hindi,
+//  Marathi, Bengali, Urdu, Arabic, Japanese and Chinese answers were otherwise one piece, spoken only
+//  after the whole answer was written. No piece is longer than
 //  `maximumPieceLength` UTF-16 units: the backend's /tts speaks at most 400 (a JavaScript length) and
 //  silently drops the rest, so a long sentence is cut at a space or comma instead.
 //
@@ -195,8 +196,8 @@ struct SpokenChunker {
 
     /// Ends a sentence only with whitespace after it ("3.5" and "e.g" are not ends).
     private static let latinSentenceEnds: Set<Character> = [".", "!", "?"]
-    /// End a sentence on their own: danda, double danda, ideographic full stop, full-width ! and ?.
-    private static let standaloneSentenceEnds: Set<Character> = ["।", "॥", "。", "！", "？"]
+    /// End a sentence on their own: danda, double danda, Urdu full stop, Arabic question mark, ideographic full stop, full-width ! and ?.
+    private static let standaloneSentenceEnds: Set<Character> = ["।", "॥", "۔", "؟", "。", "！", "？"]
     private static let clauseBreaks: Set<Character> = [",", ";", ":", "，", "、", "；", "："]
     /// Words that end with a "." without ending the sentence ("Dr. Smith").
     private static let abbreviationsBeforePeriod: Set<String> = ["dr", "mr", "mrs", "ms", "st", "prof", "jr", "sr", "vs", "e.g", "i.e", "etc"]
