@@ -332,6 +332,12 @@ public sealed partial class CompanionManager
                 toolOutcomes.Add(rewrite.SpokenSentence());
                 continue;
             }
+            if (call.Name == AnswerStyle.ToolName)
+            {
+                // "use easier words": remembered for every lane, and said after the answer.
+                if (AnswerStyle.Perform(call.Arguments, AppLog.Write) is { } styleSentence) toolOutcomes.Add(styleSentence);
+                continue;
+            }
             if (call.Name == AskLaneClick.ToolName)
             {
                 toolOutcomes.Add(await ClickForAskLaneAsync(call.Arguments, screenCaptures, cancellationToken));

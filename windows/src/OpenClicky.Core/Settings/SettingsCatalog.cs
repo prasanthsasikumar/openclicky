@@ -216,6 +216,12 @@ public sealed class SettingsCatalog
         [
             Item("clicky.assistantName", "Its name", "What your assistant is called and answers to, like Dyna or Professor Pip.",
                 ["name", "rename", "call it", "assistant", "persona", "dyna", "nickname"]),
+            Item("clicky.answerSimpler", "Simpler words", "Everyday words a young child knows, and hard words explained. Clicky also turns this on when you ask it to.",
+                ["simple", "simpler", "easy", "easier", "words", "kids", "child", "children", "level", "explain", "style", "remember"]),
+            Item("clicky.answerShorter", "Shorter answers", "One or two sentences unless you ask for more. Clicky also turns this on when you ask it to.",
+                ["short", "shorter", "brief", "long", "length", "less", "talk less", "style", "remember"]),
+            Item("clicky.answerYesNoFirst", "Yes or no first", "A yes-or-no question gets yes or no first, then why. Clicky also turns this on when you ask it to.",
+                ["yes", "no", "first", "straight", "direct", "answer", "style", "remember"]),
             Item("clicky.answerSource", "Answers come from", "Automatic uses your own keys first, then plans you switched on, then the free credits.",
                 ["provider", "model", "openai", "anthropic", "claude", "openrouter", "gemini", "groq", "mistral", "grok", "codex", "subscription", "plan", "answers"]),
             Item("clicky.model", "Claude model", "When Claude answers: Sonnet is quicker, Opus thinks harder.",

@@ -171,7 +171,7 @@ public sealed partial class CompanionManager
                 async (onReplySoFar, token) => (await writer.AnalyzeImageStreamingAsync(
                     markCloseUp is { } closeUp ? [ImageLabeledWithItsPixelSize(capture), closeUp] : [ImageLabeledWithItsPixelSize(capture)],
                     DrawStageLesson.SystemPrompt(capture.ScreenshotWidthInPixels, capture.ScreenshotHeightInPixels, detail, settings.DrawingInstructions,
-                        DrawStageLesson.OffersPieces(settings), ReplyLanguage.CurrentCode),
+                        DrawStageLesson.OffersPieces(settings), ReplyLanguage.CurrentCode, Answers.AnswerStyle.Current),
                     history,
                     drawingUp is null ? DrawStageLesson.UserPrompt(transcript, markedAreaLine) : DrawStageLesson.FollowUpPrompt(transcript, drawingUp, markedAreaLine),
                     tools: null,

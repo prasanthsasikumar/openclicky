@@ -305,10 +305,11 @@ public static partial class DrawStageLesson
     /// <paramref name="width"/> × <paramref name="height"/> units (the screenshot sent with the question), at
     /// <paramref name="detail"/>, with the person's own instructions (Settings) at the end.</summary>
     /// <param name="languageCode">The language Clicky speaks (ReplyLanguage): the drawing's lines and words are in it.</param>
+    /// <param name="answerStyle">How they asked to be answered (Answers/AnswerStyle): simpler words, shorter, yes or no first.</param>
     public static string SystemPrompt(int width, int height, DrawingDetail detail = DrawingDetail.Detailed, string? theirInstructions = null,
-        bool pieces = false, string? languageCode = null)
+        bool pieces = false, string? languageCode = null, IReadOnlyList<Answers.AnswerStyleChoice>? answerStyle = null)
     {
-        var prompt = SystemPromptWithout(width, height, detail, theirInstructions, pieces);
+        var prompt = SystemPromptWithout(width, height, detail, theirInstructions, pieces) + Answers.AnswerStyle.DrawingSection(answerStyle ?? []);
         return languageCode is null or "en" ? prompt : prompt + "\n\n" + Configuration.ReplyLanguage.Instruction(languageCode) + LanguageSection(languageCode);
     }
 
