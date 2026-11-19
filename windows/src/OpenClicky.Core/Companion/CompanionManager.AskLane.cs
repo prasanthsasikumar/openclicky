@@ -129,7 +129,7 @@ public sealed partial class CompanionManager
         }
         catch (Exception error)
         {
-            await SayWhyTheQuestionFailedAsync(error);
+            await SayWhyTheQuestionFailedAsync(error, transcript);
         }
 
         // A notice in the system voice is still being said: the turn is over when it ends.
@@ -432,13 +432,21 @@ public sealed partial class CompanionManager
     }
 
     /// <summary>What the person hears or reads when a question fails.</summary>
-    private async Task SayWhyTheQuestionFailedAsync(Exception error)
+    private async Task SayWhyTheQuestionFailedAsync(Exception error, string transcript)
     {
         AppLog.Write($"ask: failed: {error.GetType().Name} {error.HResult}");
         LastQuestionFailed = true;
         Overlay.DismissCursorCaption();
         AgentActivityText = null;
-        if (error is AnswerProviderException providerError)
+        if (error is SafetyBlockException safetyBlock)
+        {
+            // Not a failure to retry: the same question meets the same filter. Remembered as the reply, so
+            // a "why?" or a "yes, explain it" next is answered knowing what happened.
+            AppLog.Write($"ask: stopped by a safety filter ({safetyBlock.Reason})");
+            RememberExchange(transcript, AskLaneFailures.SafetyBlockSentence);
+            SpeakWithSystemVoice(AskLaneFailures.SafetyBlockSentence);
+        }
+        else if (error is AnswerProviderException providerError)
         {
             // A key or plan the person set up refused: say which and why, in text.
             AppLog.Write($"ask: {providerError.AnswerSource.RawValue()} refused ({providerError.Status})");

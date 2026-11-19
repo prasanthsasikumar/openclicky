@@ -225,6 +225,18 @@ public class AnswerProviderHttpTests
         Assert.Equal(new AnswerProviderException(AnswerSource.OpenRouter, 200, "Upstream provider overloaded"), error);
     }
 
+    // An OpenAI-compatible content filter, or a model that writes its refusal in `refusal`, is a safety block.
+    [Theory]
+    [InlineData("""data: {"choices":[{"index":0,"delta":{},"finish_reason":"content_filter"}]}""", "content_filter")]
+    [InlineData("""data: {"choices":[{"index":0,"delta":{"refusal":"I can't help with that."}}]}""", "refusal")]
+    public async Task AnOpenAIContentFilterIsASafetyBlock(string line, string reason)
+    {
+        var canned = new CannedTransport(200, """data: {"choices":[{"index":0,"delta":{"content":"So "}}]}""", line, "data: [DONE]");
+        var provider = new OpenAIChatAnswerProvider(AnswerSource.OpenAI, "sk-test", "gpt-4.1", canned.Transport);
+        var error = await Assert.ThrowsAsync<SafetyBlockException>(() => provider.AnswerAsync(SampleRequest(), _ => { }));
+        Assert.Equal(reason, error.Reason);
+    }
+
     [Fact]
     public async Task ARefusalCarriesTheVendorsMessage()
     {
@@ -352,11 +364,39 @@ public class AnswerProviderHttpTests
         ], result.ToolCalls);
     }
 
-    [Fact]
-    public void ABlockedGeminiQuestionSaysSo()
+    // A question Gemini's filter blocked, or an answer it stopped partway, is a safety block: asking again
+    // gets the same block, so the ask lane says so plainly instead of "please ask again".
+    [Theory]
+    [InlineData("""data: {"promptFeedback":{"blockReason":"SAFETY"}}""", "Gemini SAFETY")]
+    [InlineData("""data: {"promptFeedback":{"blockReason":"PROHIBITED_CONTENT"}}""", "Gemini PROHIBITED_CONTENT")]
+    [InlineData("""data: {"candidates":[{"content":{"parts":[{"text":"well"}],"role":"model"},"finishReason":"SAFETY"}]}""", "Gemini SAFETY")]
+    [InlineData("""data: {"candidates":[{"finishReason":"BLOCKLIST"}]}""", "Gemini BLOCKLIST")]
+    public void ABlockedGeminiQuestionOrAnswerIsASafetyBlock(string line, string reason)
     {
-        Assert.Throws<GeminiStreamAccumulator.StreamRefusalException>(() =>
-            GeminiAnswerProvider.ParseStream(["""data: {"promptFeedback":{"blockReason":"SAFETY"}}"""]));
+        var error = Assert.Throws<SafetyBlockException>(() =>
+            GeminiAnswerProvider.ParseStream(["""data: {"candidates":[{"content":{"parts":[{"text":"so "}],"role":"model"}}]}""", line]));
+        Assert.Equal(reason, error.Reason);
+    }
+
+    [Theory]
+    [InlineData("STOP")]
+    [InlineData("MAX_TOKENS")]
+    [InlineData("RECITATION")]
+    public void OtherGeminiFinishReasonsAreNotASafetyBlock(string finishReason)
+    {
+        var result = GeminiAnswerProvider.ParseStream([
+            $$"""data: {"candidates":[{"content":{"parts":[{"text":"done."}],"role":"model"},"finishReason":"{{finishReason}}"}]}""",
+        ]);
+        Assert.Equal("done.", result.Text);
+    }
+
+    [Fact]
+    public async Task AGeminiSafetyBlockReachesTheAskLaneAsOne()
+    {
+        var canned = new CannedTransport(200, """data: {"promptFeedback":{"blockReason":"SAFETY"}}""");
+        var provider = new GeminiAnswerProvider("k", "gemini-2.5-flash", canned.Transport);
+        var error = await Assert.ThrowsAsync<SafetyBlockException>(() => provider.AnswerAsync(SampleRequest(), _ => { }));
+        Assert.Equal("Gemini SAFETY", error.Reason);
     }
 
     [Fact]

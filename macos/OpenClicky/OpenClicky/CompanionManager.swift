@@ -2039,7 +2039,13 @@ final class CompanionManager: ObservableObject {
                 AppLog.append("ask: failed: \((error as NSError).domain) \((error as NSError).code)")
                 lastQuestionFailed = true
                 dismissCursorCaption()
-                if let providerError = error as? AnswerProviderError {
+                if let safetyBlock = error as? SafetyBlockError {
+                    // Not a failure to retry: the same question meets the same filter. Remembered as the
+                    // reply, so a "why?" or a "yes, explain it" next is answered knowing what happened.
+                    AppLog.append("ask: stopped by a safety filter (\(safetyBlock.reason))")
+                    rememberExchange(userTranscript: transcript, assistantResponse: SafetyBlock.sentence)
+                    speakWithSystemVoice(SafetyBlock.sentence)
+                } else if let providerError = error as? AnswerProviderError {
                     // A key or plan the person set up refused: say which and why, in text.
                     AppLog.append("ask: \(providerError.source.rawValue) refused (\(providerError.status))")
                     showAskCaption("\(providerError.source.displayName) couldn’t answer: \(providerError.message)", holdSeconds: 8)

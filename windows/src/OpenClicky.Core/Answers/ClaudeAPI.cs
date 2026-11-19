@@ -342,9 +342,16 @@ public sealed class ClaudeAPI
                     throw streamFailure;
                 }
                 // A cut-off answer is still spoken as it is; the log says why it ended early.
-                if (StopReason(eventPayload) == "max_tokens")
+                var stopReason = StopReason(eventPayload);
+                if (stopReason == "max_tokens")
                 {
                     AppLog.Write($"claude: answer cut off at max_tokens ({accumulatedResponseText.Length} chars)");
+                }
+                // Claude's safety classifier stopped the answer (it may have started): said plainly, not spoken half.
+                if (stopReason == SafetyBlock.AnthropicStopReason)
+                {
+                    AppLog.Write($"claude: answer stopped by the safety filter after {accumulatedResponseText.Length} chars");
+                    throw new SafetyBlockException(stopReason);
                 }
 
                 // We care about content_block_delta events that contain text chunks

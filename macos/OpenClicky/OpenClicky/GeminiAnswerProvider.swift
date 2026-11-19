@@ -170,8 +170,8 @@ nonisolated struct GeminiAnswerProvider: AnswerProvider {
 /// GenerateContentResponse; its first candidate's parts are text (shown as it comes) or a complete
 /// `functionCall`. Gemini gives a call no id, so each gets "gemini-<n>" in the order it came.
 nonisolated struct GeminiStreamAccumulator {
-    /// A question Gemini declined after the 200: a `promptFeedback.blockReason` (safety) or an
-    /// `error` object inside the stream.
+    /// An `error` object inside the stream after the 200. A safety block (`promptFeedback.blockReason`,
+    /// or a safety `finishReason`) is a `SafetyBlockError` instead.
     struct StreamRefusal: Error, Equatable {
         let message: String
     }
@@ -189,12 +189,17 @@ nonisolated struct GeminiStreamAccumulator {
         if let streamError = event["error"] as? [String: Any] {
             throw StreamRefusal(message: streamError["message"] as? String ?? "the stream broke off")
         }
+        // The question itself was blocked: every blockReason (SAFETY, BLOCKLIST, PROHIBITED_CONTENT, OTHER…) is Gemini's filter.
         if let promptFeedback = event["promptFeedback"] as? [String: Any],
            let blockReason = promptFeedback["blockReason"] as? String {
-            throw StreamRefusal(message: "Gemini would not answer this question (\(blockReason))")
+            throw SafetyBlockError(reason: "Gemini \(blockReason)")
         }
         guard let firstCandidate = (event["candidates"] as? [[String: Any]])?.first else { return [] }
-        if let candidateFinishReason = firstCandidate["finishReason"] as? String { finishReason = candidateFinishReason }
+        if let candidateFinishReason = firstCandidate["finishReason"] as? String {
+            finishReason = candidateFinishReason
+            // The answer was stopped partway: what came is cut off mid-thought, so none of it stands as the answer.
+            if SafetyBlock.isGeminiSafetyFinish(candidateFinishReason) { throw SafetyBlockError(reason: "Gemini \(candidateFinishReason)") }
+        }
         guard let content = firstCandidate["content"] as? [String: Any],
               let parts = content["parts"] as? [[String: Any]] else { return [] }
 
