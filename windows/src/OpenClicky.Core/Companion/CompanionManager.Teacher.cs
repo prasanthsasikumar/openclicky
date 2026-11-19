@@ -41,6 +41,11 @@ public sealed partial class CompanionManager
         Plugins.DrawStage.DrawStageController.Shared.SaveRequested += what => services.MainThread.Post(() => SaveDrawing(what));
         // The drawing's close button.
         Plugins.DrawStage.DrawStageController.Shared.CloseRequested += () => services.MainThread.Post(CloseDrawing);
+        // A quiz on the drawing: its Quiz me button (shown unless Settings turns quizzes off), and the lines a quiz says.
+        Plugins.DrawStage.DrawStageController.Shared.OffersQuiz = () =>
+            Plugins.DrawStage.DrawStageLesson.QuizFrom(OpenClickyConfiguration.Settings.DrawingQuiz) != Plugins.DrawStage.DrawingQuiz.Off;
+        Plugins.DrawStage.DrawStageController.Shared.QuizRequested += () => services.MainThread.Post(AskForQuiz);
+        Plugins.DrawStage.DrawStageController.Shared.SayRequested += line => services.MainThread.Post(() => SayQuizLine(line));
         // 3D pieces a drawing asks for (f.piece), made by the maker Settings picks, the drawing model when it fails.
         var pieceWorkshop = new Plugins.DrawStage.PieceWorkshop(() => Plugins.DrawStage.PieceMakers.For(Configuration.OpenClickyConfiguration.Settings,
             Plugins.DrawStage.DrawStageLesson.WriterFor(Configuration.OpenClickyConfiguration.Settings, claudeAPI),

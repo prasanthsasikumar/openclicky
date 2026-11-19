@@ -330,6 +330,8 @@ clearing it. When the question may be about it (`DrawStageLesson.MayBeAFollowUp`
 asks for more of the drawing, another view, a part of it), the model gets the drawing's program
 (`DrawStageLesson.FollowUpPrompt`) and answers one of three ways:
 
+- **Change it in place** ("make the nucleus bigger", "colour the arteries red", "slow it down", "hide the labels"):
+  the program starts with `keep()` and changes what is already drawn instead of drawing it again. See below.
 - **Add to it**: the program starts with `keep()` and has only the new beats. The stage gets `continueStream`, and the
   new statements run in the same worker after the old ones, so `c`, `f` and the parts are still there to label, move or
   turn to (`f.view`). `DrawingAnswer` waits for the program's first statement before choosing.
@@ -337,6 +339,47 @@ asks for more of the drawing, another view, a part of it), the model gets the dr
 - **`NONE`**: it isn't about the drawing. The drawing goes, and the question is answered as usual.
 
 A question that can't be about it (opening an app, small talk, a question for the agent) clears it first.
+
+### A quiz on the drawing
+
+`quiz([{q, choices, answer, right, wrong, part}, …])` asks a few questions on what was drawn. The page shows one at a
+time in a panel beside the drawing, its choices to tap: in the screen's room left or right of the drawing's box, else
+below or above it, else over its bottom edge, following the drawing when it is moved or resized (`placeQuizzes`). It
+asks the app to say each question with its choices (`say`, once the drawing has finished speaking), then the program's
+`right` or `wrong` line (or a plain one), and the score at the end; the right choice turns green and a wrong pick red,
+and the question's `part` (a 3D part or a builder's part) swells for a moment. `answer` is the right choice's number
+from 0, or its words. The model writes a quiz as a follow-up (`keep()`, one inviting line, `quiz([…])`).
+
+When a quiz comes is Settings → Clicky → Drawings → **Quiz after a drawing** (`drawingQuiz` in shell.json):
+
+| Choice | What happens |
+|---|---|
+| Off | no quizzes, unless asked for |
+| Offer (default) | a **Quiz me** button on each finished drawing (the page shows it when `remembered` says `quiz: true`) |
+| Always | a quiz straight after every new drawing (not after a follow-up or a quiz), for a child or a class |
+
+The button and Always both ask `DrawStageLesson.QuizQuestion` ("Quiz me on this drawing.") as a follow-up to the drawing
+up. Saying "quiz me" or "test me on this" while a drawing is up does the same, whatever the setting
+(`DrawStageLesson.IsQuizRequest`). The app says the quiz's lines in the answer voice (this PC's voice if that fails); a
+new line cuts the one being said, and closing the drawing stops it. The panel is left out of a saved video.
+
+### Changing a drawing in place
+
+A follow-up's program runs in the same worker as the drawing's, so it can reach what the drawing made and change it:
+
+| Call | Changes |
+|---|---|
+| `part.change({size, color, opacity, hidden, secs})` | a 3D part, eased over `secs` (0.8): `size` is times as big as it is now, `hidden` takes it away or brings it back |
+| `part.hide()`, `part.show()` | the same as `change({hidden: true / false})` |
+| `cl.part(name)` | a builder's part by name, every piece of it together (`cell`, `circulation`, `mitosis`, `mechanism`; `molecule`'s atoms as for labels) |
+| `f.tempo(k)`, `cl.tempo(k)` | every motion in the figure at `k` times its speed (0.5: half), eased in; a figure keeps its own motion clock for this |
+| `f.labels(false)`, `cl.labels(false)` | hides the figure's labels (`true` shows them) |
+| `erase(mark)`, `change(mark, {color, hidden})` | a 2D mark already drawn, as `line()`, `arrow()`, `text()`… returned it; a list of them; or any of the above |
+
+Each mark the worker sends carries its number (`n`), so `stage.js` keeps what it drew for each and `change2d` fades or
+recolours it (pen strokes, text and fill). In `figure3d.js`, `change3d` eases a part's size, colour and opacity (its
+ink outline stays ink) and a part sized away hides its labels; `tempo3d` and `labels3d` act on a figure. A builder that
+couldn't draw hands back a `part()` that does nothing, so a follow-up's changes to it don't stop the program.
 
 ### Cells
 

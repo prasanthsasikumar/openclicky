@@ -72,6 +72,7 @@ public sealed partial class CompanionManager
     {
         AppLog.Write("draw: closed with its close button");
         StopSavingTheDrawing();
+        StopQuizVoice();
         StopRealtimeDrawing("the drawing was closed");
         var stage = DrawStageController.Shared;
         if (stage.IsShowing && stage.Current is null && AskLaneCanBeStopped) StopAskLane("the drawing was closed");
@@ -211,6 +212,13 @@ public sealed partial class CompanionManager
                     : new DrawnAnswer([transcript], result.Program, capture.DisplayFrame, capture.DisplayScale, capture.ScreenshotWidthInPixels,
                         capture.ScreenshotHeightInPixels, lines);
                 services.MainThread.Post(() => stage.Remember(drawing));
+                // Quizzes always on (Settings → Clicky → Drawings): a new drawing is followed by a few questions on it. Not
+                // a follow-up (they're about the drawing already up) and not a quiz itself.
+                if (drawingUp is null && !DrawStageLesson.IsQuizRequest(transcript)
+                    && DrawStageLesson.QuizFrom(settings.DrawingQuiz) == DrawingQuiz.Always)
+                {
+                    _ = AskForQuizSoonAsync(drawing);
+                }
             }
             AppLog.Write($"draw: done in {(DateTimeOffset.UtcNow - startedAt).TotalSeconds:0.0} s ({result.SpokenLines.Count} lines, {result.ProgramCharacters} chars)");
             return true;
@@ -237,6 +245,73 @@ public sealed partial class CompanionManager
     /// <summary>The finished drawing on the stage, when it is on <paramref name="capture"/>'s screen.</summary>
     private static DrawnAnswer? DrawingUpOn(CompanionScreenCapture capture) =>
         DrawStageController.Shared.Current is { } drawing && drawing.Frame == capture.DisplayFrame ? drawing : null;
+
+    // MARK: - A quiz on the drawing
+
+    /// <summary>The quiz line being said, while it is.</summary>
+    private CancellationTokenSource? quizVoice;
+
+    /// <summary>The Quiz me button, or a quiz after every drawing: a few questions on the drawing up, asked as a follow-up to
+    /// it (the model writes them with quiz(); the page shows them and asks for each line to be said).</summary>
+    private void AskForQuiz()
+    {
+        if (DrawStageController.Shared.Current is null) return;
+        AppLog.Write("draw: a quiz on the drawing");
+        SendTranscriptToClaudeWithScreenshot(DrawStageLesson.QuizQuestion);
+    }
+
+    /// <summary>A moment after <paramref name="drawing"/> is remembered, its quiz, if it is still the drawing up and nothing
+    /// else has started.</summary>
+    private async Task AskForQuizSoonAsync(DrawnAnswer drawing)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(1.2)).ConfigureAwait(false);
+        services.MainThread.Post(() =>
+        {
+            if (ReferenceEquals(DrawStageController.Shared.Current, drawing) && VoiceState is CompanionVoiceState.Idle or CompanionVoiceState.Responding)
+                AskForQuiz();
+        });
+    }
+
+    /// <summary>Says a quiz's line (a question with its choices, whether the answer was right, the score) in the answer voice,
+    /// this PC's voice when that fails. A new line cuts the one being said.</summary>
+    private void SayQuizLine(string text)
+    {
+        if (DrawStageController.Shared.Current is null && !DrawStageController.Shared.IsShowing) return;
+        StopQuizVoice();
+        var cancellation = new CancellationTokenSource();
+        quizVoice = cancellation;
+        _ = SayQuizLineAsync(text, cancellation);
+    }
+
+    private async Task SayQuizLineAsync(string text, CancellationTokenSource cancellation)
+    {
+        try
+        {
+            var audio = await answerVoicePlayer.MakeAnswerSession().AudioAsync(text, cancellation.Token);
+            await answerVoicePlayer.PlayToCompletionAsync(audio, cancellation.Token);
+        }
+        catch (Exception error) when (error is OperationCanceledException || cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception error)
+        {
+            AppLog.Write($"draw: the quiz line couldn't be said in the answer voice ({error.GetType().Name}); this PC's voice says it");
+            services.MainThread.Post(() => SpeakWithSystemVoice(text));
+        }
+        finally
+        {
+            if (ReferenceEquals(quizVoice, cancellation)) quizVoice = null;
+            cancellation.Dispose();
+        }
+    }
+
+    private void StopQuizVoice()
+    {
+        if (quizVoice is not { } voice) return;
+        quizVoice = null;
+        try { voice.Cancel(); }
+        catch (ObjectDisposedException) { }
+    }
 
     // MARK: - Saving the drawing
 

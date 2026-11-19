@@ -54,7 +54,7 @@ public static class SettingsLayout
         new(DictationSettingsPage.Clicky, "Pointer", ["clicky.pointer", "clicky.pointerColor", "clicky.pointerStyle"])
             { Intro = "The pointer that flies to what Clicky means." },
         new(DictationSettingsPage.Clicky, "Drawings",
-            ["plugins.teacher", "clicky.drawingSource", "clicky.drawingDetail", "clicky.pieceMaker", "clicky.drawingInstructions", "clicky.drawingScriptFont", "clicky.markerShortcut"])
+            ["plugins.teacher", "clicky.drawingSource", "clicky.drawingDetail", "clicky.drawingQuiz", "clicky.pieceMaker", "clicky.drawingInstructions", "clicky.drawingScriptFont", "clicky.markerShortcut"])
             { Intro = "Answers drawn on your screen while Clicky explains them, in 2D and 3D." },
         new(DictationSettingsPage.Clicky, "Your models", ["models.ollama", "models.lmStudio", "models.custom"])
             { Intro = "Models you run yourself, on this PC or another one on your network." },

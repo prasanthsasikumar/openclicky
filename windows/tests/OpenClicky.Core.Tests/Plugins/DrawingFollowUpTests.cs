@@ -28,6 +28,13 @@ public partial class DrawingAnswerTests
     [InlineData("make it simpler")]
     [InlineData("what's that orange part")]
     [InlineData("how does the fan work")]
+    [InlineData("make the nucleus bigger")]
+    [InlineData("colour the arteries red")]
+    [InlineData("slow it down")]
+    [InlineData("hide the labels")]
+    [InlineData("remove the lungs")]
+    [InlineData("quiz me")]
+    [InlineData("test me on this")]
     public void QuestionsAboutTheDrawingMayBeFollowUps(string question) => Assert.True(DrawStageLesson.MayBeAFollowUp(question));
 
     [Theory]
@@ -96,6 +103,50 @@ public partial class DrawingAnswerTests
         Assert.Contains("keep()", prompt);
         Assert.Contains("numbered on from step(6)", prompt);
         Assert.Contains($"only the word {DrawStageLesson.NotAFollowUp}", prompt);
+    }
+
+    [Theory]
+    [InlineData("Quiz me on this drawing.", true)]
+    [InlineData("can you quiz me", true)]
+    [InlineData("test me on the heart", true)]
+    [InlineData("ask me some questions about it", true)]
+    [InlineData("what is a quiz show", true)]
+    [InlineData("how does the heart work", false)]
+    [InlineData("is this a test", false)]
+    public void QuizRequestsAreKnown(string question, bool isQuiz) => Assert.Equal(isQuiz, DrawStageLesson.IsQuizRequest(question));
+
+    [Fact]
+    public void TheQuizSettingIsOfferUnlessSet()
+    {
+        Assert.Equal(DrawingQuiz.Offer, DrawStageLesson.QuizFrom(null));
+        Assert.Equal(DrawingQuiz.Offer, DrawStageLesson.QuizFrom("something else"));
+        foreach (var quiz in new[] { DrawingQuiz.Off, DrawingQuiz.Offer, DrawingQuiz.Always })
+            Assert.Equal(quiz, DrawStageLesson.QuizFrom(DrawStageLesson.RawValue(quiz)));
+    }
+
+    [Fact]
+    public void AQuizIsWrittenWithQuizOnTheDrawing()
+    {
+        var prompt = DrawStageLesson.FollowUpPrompt(DrawStageLesson.QuizQuestion, JetEngine);
+        Assert.Contains("- A quiz (\"quiz me\", \"test me on this\"): keep it.", prompt);
+        Assert.Contains("then in step(5) one short line inviting them", prompt);
+        var system = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("QUIZ (when they ask to be quizzed on the drawing): quiz([{q:", prompt + system);
+        Assert.Contains("The app puts it beside the drawing", system);
+        Assert.Contains("so don't say() the questions yourself", system);
+    }
+
+    [Fact]
+    public void AChangeToTheDrawingIsMadeInPlace()
+    {
+        var prompt = DrawStageLesson.FollowUpPrompt("make the fan bigger", JetEngine);
+        Assert.Contains("keep it and change it in place, without drawing it again", prompt);
+        Assert.Contains("then in step(5) one line saying what changes", prompt);
+        Assert.Contains("cl.part('nucleus').change({size: 1.5})", prompt);
+        Assert.DoesNotContain("(in 3D, as a cutaway, bigger, simpler)", prompt);
+        var system = DrawStageLesson.SystemPrompt(1280, 720);
+        Assert.Contains("f.tempo(0.5) runs every motion in the figure at half speed", system);
+        Assert.Contains("erase(arrowA) takes it away", system);
     }
 
     // MARK: - how detailed, and their own instructions (Settings → Clicky → Drawings)
