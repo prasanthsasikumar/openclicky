@@ -117,9 +117,12 @@ internal sealed partial class SettingsRowFactory
             else if (isSelected && unavailableReason is not null)
             {
                 var reason = Ui.Text(WordsPageSentences.SentenceCased(unavailableReason) + ".", SettingsLook.CaptionSize, SettingsLook.Danger);
-                var fix = choice == DictationEngineChoice.Sarvam
-                    ? Ui.Button("Add Key…", () => actions.ShowSettings(DictationSettingsPage.Account))
-                    : Ui.Button("Sign In…", () => actions.ShowSettings(DictationSettingsPage.Account));
+                var fix = choice switch
+                {
+                    DictationEngineChoice.Sarvam => Ui.Button("Add Key…", () => actions.ShowSettings(DictationSettingsPage.Account)),
+                    DictationEngineChoice.Server => Ui.Button("Set Up…", () => actions.ShowSettings(DictationSettingsPage.Clicky)),
+                    _ => Ui.Button("Sign In…", () => actions.ShowSettings(DictationSettingsPage.Account)),
+                };
                 var fixRow = new DockPanel { Margin = new Thickness(30, 10, 0, 0), LastChildFill = true };
                 DockPanel.SetDock(fix, Dock.Right);
                 fix.Margin = new Thickness(12, 0, 0, 0);

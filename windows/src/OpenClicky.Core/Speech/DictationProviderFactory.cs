@@ -28,4 +28,5 @@ public sealed class DictationProviderFactory(IOfflineSpeechRecognizer offlineRec
     public IBuddyTranscriptionProvider MakeOpenClicky(Func<string?> bareLanguageCode) => new OpenAIAudioTranscriptionProvider(bareLanguageCode);
 
     public IBuddyTranscriptionProvider MakeAssemblyAI(Func<string?> bareLanguageCode) => new AssemblyAIStreamingTranscriptionProvider(bareLanguageCode);
+    public IBuddyTranscriptionProvider MakeServer(Func<string?> bareLanguageCode) => new SpeechServerTranscriptionProvider(bareLanguageCode);
 }

@@ -70,6 +70,16 @@ public sealed class OpenClickyShellSettings
     [JsonPropertyName("customOpenAIUrl")] public string? CustomOpenAIUrl { get; set; }
     [JsonPropertyName("customOpenAIKey")] public string? CustomOpenAIKey { get; set; }
 
+    /// <summary>A speech server of the person's own (Ollama, Speaches, LocalAI, Kokoro-FastAPI…) on this PC or another
+    /// one on the network, through OpenAI's audio API: `speechServerHearingModel` hears questions (and dictation, when
+    /// picked there), `speechServerVoiceModel` speaks answers in `speechServerVoice`. Off until the URL is set; each half
+    /// is off until its model is picked. SpeechServer.From.</summary>
+    [JsonPropertyName("speechServerUrl")] public string? SpeechServerUrl { get; set; }
+    [JsonPropertyName("speechServerKey")] public string? SpeechServerKey { get; set; }
+    [JsonPropertyName("speechServerHearingModel")] public string? SpeechServerHearingModel { get; set; }
+    [JsonPropertyName("speechServerVoiceModel")] public string? SpeechServerVoiceModel { get; set; }
+    [JsonPropertyName("speechServerVoice")] public string? SpeechServerVoice { get; set; }
+
     /// <summary>Who writes drawn answers (the drawing stage): null uses whoever answers questions, else an
     /// AnswerSource raw value; `drawingModel` overrides that source's model for drawings only.</summary>
     [JsonPropertyName("drawingSource")] public string? DrawingSource { get; set; }

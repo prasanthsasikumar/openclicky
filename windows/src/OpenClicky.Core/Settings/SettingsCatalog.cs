@@ -255,6 +255,9 @@ public sealed class SettingsCatalog
                 ["lm studio", "lmstudio", "local", "offline", "private", "model", "free"]),
             Item("models.custom", "Your own server", "Any OpenAI-compatible endpoint: vLLM, llama.cpp, LocalAI, DeepSeek, Together, and others, with a key if it needs one.",
                 ["openai compatible", "custom", "server", "endpoint", "vllm", "llama.cpp", "localai", "deepseek", "together", "self-hosted", "api"]),
+            Item("models.speech", "Speech server", SpeechServerDetail,
+                ["speech", "voice", "hearing", "transcription", "speech to text", "text to speech", "tts", "stt", "whisper", "kokoro", "piper",
+                 "phonon", "chatterbox", "gemma", "speaches", "localai", "ollama", "local", "offline", "private", "self-hosted", "server", "free"]),
             Item("clicky.drawingSource", "Drawings come from", "Who writes the answers drawn on your screen. A stronger model draws better; answers can stay quick.",
                 ["drawing", "draw", "diagram", "teacher", "3d", "model", "explain", "whiteboard"]),
             Item("clicky.drawingDetail", "How detailed", "More parts and finer detail take longer to draw. Very detailed suits a strong model.",
@@ -269,6 +272,9 @@ public sealed class SettingsCatalog
                 ["marker", "mark", "circle", "highlight", "shortcut", "hotkey", "keys", "ctrl+alt+m", "screen", "ask about"]),
         ];
     }
+
+    /// <summary>The speech server row's line before it is turned on.</summary>
+    public const string SpeechServerDetail = "Hear questions and speak answers with your own models, on this PC or your network: Ollama, Speaches (Whisper, Kokoro), LocalAI. Free and private.";
 
     public IReadOnlyList<SettingsItem> VoiceItems()
     {

@@ -115,9 +115,12 @@ public sealed class LiveSettingsServices(IModelDownload kokoro, IModelDownload p
         if (picked != SpeechVoiceChoice.Automatic && picked != speaking)
         {
             var standIn = speaking == SpeechVoiceChoice.Account ? "the free voice" : "this PC’s voice";
-            sentence = picked == SpeechVoiceChoice.Kokoro
-                ? $"{standIn} until Kokoro is downloaded."
-                : $"{standIn}: {picked.Title()} needs its key under Keys & Account.";
+            sentence = picked switch
+            {
+                SpeechVoiceChoice.Kokoro => $"{standIn} until Kokoro is downloaded.",
+                SpeechVoiceChoice.Server => $"{standIn}: pick a voice model for your speech server under Your models.",
+                _ => $"{standIn}: {picked.Title()} needs its key under Keys & Account.",
+            };
         }
         else
         {
@@ -130,6 +133,7 @@ public sealed class LiveSettingsServices(IModelDownload kokoro, IModelDownload p
                 SpeechVoiceChoice.Polly => "Amazon Polly, on your own key.",
                 SpeechVoiceChoice.Sarvam => "Sarvam, on your own key.",
                 SpeechVoiceChoice.Kokoro => "Kokoro, on this PC. Free, offline, nothing counted.",
+                SpeechVoiceChoice.Server => $"{OpenClickyConfiguration.Settings.SpeechServerVoiceModel?.Trim()}, on your speech server. Free, private, nothing counted.",
                 SpeechVoiceChoice.Account => "ElevenLabs, through OpenClicky.",
                 _ => "this PC’s voice. Free, offline, nothing counted.",
             };

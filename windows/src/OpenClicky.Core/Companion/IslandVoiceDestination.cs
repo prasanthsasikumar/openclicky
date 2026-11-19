@@ -15,6 +15,7 @@ public static class IslandVoiceDestination
         return engine switch
         {
             DictationEngineChoice.Sarvam => "add sarvam key ›",
+            DictationEngineChoice.Server => "set up speech server ›",
             // Downloaded but pinned to a language it doesn't hear: downloading again would not help.
             DictationEngineChoice.Parakeet => unavailableReason == DictationEngineResolver.ParakeetLanguageNotHeardReason
                 ? "pick a language parakeet hears ›"
@@ -26,7 +27,7 @@ public static class IslandVoiceDestination
         };
     }
 
-    public enum SetupDestination { AccountSettings, KeySettings, DictationSettings, LanguageSettings }
+    public enum SetupDestination { AccountSettings, KeySettings, DictationSettings, LanguageSettings, ModelSettings }
 
     /// <summary>Where the engine is fixed, given why it can't run (null: it can, and the pill opens the engines).</summary>
     public static SetupDestination Destination(DictationEngineChoice engine, string? unavailableReason)
@@ -35,6 +36,7 @@ public static class IslandVoiceDestination
         if (unavailableReason is DictationEngineResolver.ParakeetLanguageNotHeardReason or DictationEngineResolver.MoonshineLanguageNotHeardReason)
             return SetupDestination.LanguageSettings;
         if (engine.IsOnDevice()) return SetupDestination.DictationSettings;
+        if (engine == DictationEngineChoice.Server) return SetupDestination.ModelSettings;
         // A missing key is added on Keys & Account; a missing sign-in on Account.
         if (engine == DictationEngineChoice.Sarvam || unavailableReason == "needs your own key") return SetupDestination.KeySettings;
         return SetupDestination.AccountSettings;
@@ -46,6 +48,7 @@ public static class IslandVoiceDestination
         SetupDestination.AccountSettings => "open account settings",
         SetupDestination.KeySettings => "add a key",
         SetupDestination.DictationSettings => "open dictation settings",
+        SetupDestination.ModelSettings => "open your models",
         _ => "open language settings",
     };
 
@@ -53,6 +56,7 @@ public static class IslandVoiceDestination
     {
         SetupDestination.AccountSettings => DictationSettingsPage.Account,
         SetupDestination.KeySettings => DictationSettingsPage.Account,
+        SetupDestination.ModelSettings => DictationSettingsPage.Clicky,
         _ => DictationSettingsPage.Dictation,
     };
 }
