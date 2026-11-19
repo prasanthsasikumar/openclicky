@@ -162,7 +162,7 @@ enum DrawStageLesson {
         " spin ", " inside ", " cut ", " label ", " part ", " parts ", " piece ", " what about ", " how about ", " and the ", " show ",
         " draw ", " add ", " more ", " detail ", " again ", " explain ", " this ", " that ", " those ",
         " what does ", " what do ", " what is the ", " what's the ", " which ", " where does ", " where do ", " why ", " how ", " simpler ",
-        " slower ", " next ",
+        " slower ", " next ", " faster ", " colour ", " color ", " hide ", " remove ", " without ", " change ", " make it ", " make the ", " slow ", " speed ",
     ]
 
     /// Whether `question`, asked while a drawing is open, may be about it: one a picture answers, or

@@ -55,6 +55,7 @@
   let pending = [];              // complete statements not run yet
   let lines = [], items = [], released = 0, penFreeAt = 0, finishing = false, finishedSent = false, ranSent = false;
   let markCount = 0, errors = 0, uid = 0;
+  const drawn = new Map(); // a 2D mark's number in the program → what was drawn for it (erase / change)
   let remembered = false, recording = false;
 
   const now = () => performance.now() / 1000;
@@ -65,6 +66,7 @@
     restartStream();
     markCount = 0;
     labels = [];
+    drawn.clear();
     cards = [];
     strokes = [];
     while (svg.lastChild) svg.removeChild(svg.lastChild);
@@ -500,6 +502,8 @@
       case 'label3d': return 0.45;
       case 'view3d': return 0.5;
       case 'motion3d': return 0.05;
+      case 'change3d': case 'tempo3d': case 'labels3d': return 0.15;
+      case 'change2d': return 0.4;
       default: return 0.2;
     }
   }
@@ -560,6 +564,22 @@
     if (m.dashed) pen.animate([{ opacity: 0 }, { opacity: 1 }], { duration: seconds * 1000, delay: (delay || 0) * 1000, fill: 'both' });
   }
 
+  // A follow-up's change to a 2D mark already drawn: hidden (true fades it out, false brings it back), color (its pen
+  // strokes, text and fill).
+  function change2d(m, seconds) {
+    const group = drawn.get(m.target);
+    if (!group) { log('change: no mark ' + m.target + ' on the stage'); return; }
+    const ms = Math.max(150, seconds * 1000);
+    if (m.hidden === true) group.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, fill: 'forwards' });
+    if (m.hidden === false) group.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, fill: 'forwards' });
+    const color = m.color ? tone(m.color, null) : null;
+    if (color) {
+      for (const node of group.querySelectorAll('.pen')) node.setAttribute('stroke', color);
+      for (const node of group.querySelectorAll('text')) node.setAttribute('fill', color);
+      for (const node of group.querySelectorAll('path.fade')) node.setAttribute('fill', color);
+    }
+  }
+
   function fillShape(group, d, m, delay) {
     if (!m.fill) return;
     const fill = el('path', { d, fill: tone(m.fill, TONES.yellow), stroke: 'none', class: 'fade' });
@@ -578,8 +598,10 @@
   }
 
   function paint(m, seconds, index) {
+    if (m.do === 'change2d') { change2d(m, seconds); return; }
     const group = el('g');
     if (m.do === 'text') labelLayer.appendChild(group); else svg.insertBefore(group, labelLayer);
+    if (Number.isInteger(m.n)) drawn.set(m.n, group);
     const rnd = random(index + 1);
     switch (m.do) {
       case 'line': {
@@ -643,7 +665,7 @@
         reveal(group, mark, { x, y, width: m.w, height: m.h }, seconds);
         break;
       }
-      case 'figure': case 'part3d': case 'label3d': case 'motion3d': case 'view3d': {
+      case 'figure': case 'part3d': case 'label3d': case 'motion3d': case 'view3d': case 'change3d': case 'tempo3d': case 'labels3d': {
         if (!window.Figure3D) { log('3D is not loaded; skipped ' + m.do); break; }
         let rect = null;
         if (m.do === 'figure') {

@@ -109,6 +109,7 @@ clocks:
 | `photo(x, y, w, h, {query, caption})` | a real photo from Wikimedia Commons (found by the app) in a polaroid frame |
 | `figure(x, y, w, h, {tilt, turn, zoom, spin, ground})` | a turning 3D stage; its parts are below |
 | `keep()` | first statement of a follow-up: run after the drawing on the stage, which stays |
+| `erase(mark)`, `change(mark, {color, hidden})` | a follow-up changes what is drawn in place: a 2D mark, a 3D part or a builder's part (below) |
 | `chart(x, y, w, h, o)`, `timeline(x, y, w, o)` | a graph or a timeline placed by value; below |
 | `W`, `H`, `sin`, `cos`, `exp`, `log`, `PI`, `mid`, `along`, `polar`, `lerp`, `range` | the canvas and helpers |
 
@@ -179,6 +180,16 @@ at each atom from its bonds and lone pairs (VSEPR: 180°, 120°, 117°, 109.5°,
 the flattest ring laid out as a ring and chains zigzagging out of it, relaxes for up to 1500 rounds (aspirin takes
 about 0.15 s; a statement may run 2 s), then turns the molecule so its longest axis lies across and a flat one faces
 the viewer. Samples: `molecule-water-co2.js`, `molecule-glucose.js`.
+
+### Changing a drawing in place
+
+A follow-up (`keep()`) runs in the same worker as the drawing, so it can change what is drawn instead of drawing it
+again: `part.change({size, color, opacity, hidden, secs})` (size: times as big as it is now), `part.hide()`,
+`part.show()`; a builder's part by name, all its pieces together: `cl.part('nucleus')`, `b.part('aorta')`,
+`m.part('chromosomes')`, `mol.part('O')`; `f.tempo(0.5)` (or `cl.tempo(0.5)`) runs every motion in a figure at half
+speed; `f.labels(false)` (or `cl.labels(false)`) hides its labels; and `erase(mark)` / `change(mark, {color, hidden})`
+for a 2D mark as `line()`, `arrow()`, `text()`… returned it. The follow-up prompt (`prompt/follow-up.md`) asks for this
+for "make the nucleus bigger", "colour it red", "slow it down", "hide the labels".
 
 ## Prompts
 

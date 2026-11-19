@@ -433,6 +433,7 @@ function outlineMesh(figure, geometryValue, planes) {
   };
   const mesh = new THREE.Mesh(geometryValue, m);
   mesh.raycast = () => {};
+  mesh.userData.ink = true;
   return mesh;
 }
 
@@ -580,7 +581,7 @@ function createFigure(m, rect, seconds) {
     id: m.id, canvas, renderer, scene, camera, root, rect, pmrem, labels: [], sun, rim, ground, contact, cuts: new Map(),
     outlineSize: { value: new THREE.Vector2(2 * 1.4 / rect.w, 2 * 1.4 / rect.h) },
     tilt: num(m.tilt, 18), turn: num(m.turn, -28), spin: num(m.spin, 0), sway: m.spin ? 0 : 32, zoom: num(m.zoom, 1),
-    center: new THREE.Vector3(), radius: 1, distance: 4, footprint: 1, floor: 0, framed: false, age: 0,
+    center: new THREE.Vector3(), radius: 1, distance: 4, footprint: 1, floor: 0, framed: false, age: 0, clock: 0, tempo: 1, tempoTo: null, labelsShown: true,
     // How the person has turned it by dragging (any way round, no limit), and the camera's right and up.
     held: new THREE.Quaternion(), right: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0),
   };
@@ -1072,8 +1073,47 @@ function addMotion(m) {
   // A new path takes the part over from where the old one left it: the old one goes.
   if (m.kind === 'path') part.motions = part.motions.filter(motion => motion.kind !== 'path');
   part.motions.push({ kind: m.kind, axis: ['x', 'y', 'z'].includes(o.axis) ? o.axis : 'y', period: Math.max(0.2, num(o.period, m.kind === 'spin' ? 3 : 2)),
-    amount: num(o.amount, m.kind === 'pulse' ? 0.08 : 0.3), center: vec3(o.center, new THREE.Vector3()), start: o.sync ? 0 : part.figure.age,
+    amount: num(o.amount, m.kind === 'pulse' ? 0.08 : 0.3), center: vec3(o.center, new THREE.Vector3()), start: o.sync ? 0 : part.figure.clock,
     reverse: !!o.reverse, frames, once: !!o.once });
+}
+
+// A follow-up's change to a part, in place (change3d): size (times as big as it is now; 0 hides it), color, opacity,
+// hidden (true takes it away, false brings it back), over secs.
+function changePart(m) {
+  const part = parts.get(m.part);
+  if (!part) return;
+  const o = m.params || {};
+  const t = part.figure.age, seconds = Math.max(0.05, num(o.secs, 0.8));
+  // to: the size it is going to; kept: its size while it is hidden, to come back to.
+  const k = part.sizeK = part.sizeK || { now: 1, from: 1, to: 1, start: 0, seconds: 1, kept: null };
+  let target = k.to;
+  if (o.hidden === true && k.kept === null) { k.kept = k.to; target = 0; }
+  if (o.hidden === false && k.kept !== null) { target = k.kept; k.kept = null; }
+  if (typeof o.size === 'number' && isFinite(o.size) && o.size > 0) {
+    const times = Math.min(5, o.size);
+    if (k.kept !== null) k.kept *= times; else target *= times;
+  }
+  Object.assign(k, { from: k.now, to: target, start: t, seconds });
+  const color = typeof o.color === 'string' ? colorOf(o.color, null) : null;
+  const opacity = typeof o.opacity === 'number' && isFinite(o.opacity) ? Math.max(0.05, Math.min(1, o.opacity)) : null;
+  if (color || opacity !== null) {
+    part.object.traverse(child => {
+      if (!child.isMesh || child.userData.ink) return;
+      for (const mat of Array.isArray(child.material) ? child.material : [child.material]) {
+        if (!mat || mat.map) continue;
+        if (color && mat.color) mat.userData.recolor = { from: mat.color.clone(), to: color.clone(), start: t, seconds };
+        if (opacity !== null) { mat.transparent = true; mat.depthWrite = opacity >= 0.99; mat.userData.refade = { from: mat.opacity, to: opacity, start: t, seconds }; }
+      }
+    });
+    part.tweening = true;
+  }
+}
+
+// A follow-up's tempo for every motion in a figure (tempo3d): 0.5 half speed, 2 twice as fast, eased in.
+function setTempo(m) {
+  const figure = figures.get(m.fig);
+  if (!figure || !(typeof m.tempo === 'number' && isFinite(m.tempo))) return;
+  figure.tempoTo = { from: figure.tempo, to: Math.max(0.05, Math.min(5, m.tempo)), start: figure.age, seconds: Math.max(0.1, num(m.secs, 0.8)) };
 }
 
 function setView(m) {
@@ -1089,7 +1129,7 @@ function setView(m) {
 const box = new THREE.Box3(), point = new THREE.Vector3(), away = new THREE.Vector3(), corner = new THREE.Vector3();
 const toCamera = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(), swayed = new THREE.Quaternion();
 
-function updatePart(part, t) {
+function updatePart(part, t, clock = t) {
   const object = part.object;
   const grown = part.grow ? Math.min(1, (t - part.grow.start) / part.grow.seconds) : 1;
   if (grown >= 1) part.grow = null;
@@ -1103,7 +1143,7 @@ function updatePart(part, t) {
   let scale = 1;
   object.rotation.copy(part.base.rotation);
   for (const motion of part.motions) {
-    const phase = ((t - motion.start) / motion.period) * Math.PI * 2;
+    const phase = ((clock - motion.start) / motion.period) * Math.PI * 2;
     switch (motion.kind) {
       case 'spin': object.rotation[motion.axis] += (motion.reverse ? -1 : 1) * phase; break;
       case 'bob': position[motion.axis] += Math.sin(phase) * motion.amount; break;
@@ -1121,7 +1161,7 @@ function updatePart(part, t) {
         if (!frames || !frames.length) break;
         // once: plays through a single time and holds its last frame (a strand unzipping), else it loops.
         const n = frames.length;
-        const u = motion.once ? Math.min(1, Math.max(0, (t - motion.start) / motion.period)) * (n - 1) : (((t - motion.start) / motion.period) % 1 + 1) % 1 * n;
+        const u = motion.once ? Math.min(1, Math.max(0, (clock - motion.start) / motion.period)) * (n - 1) : (((clock - motion.start) / motion.period) % 1 + 1) % 1 * n;
         const i = Math.floor(u), k = u - i;
         const a = frames[i % n], b = frames[motion.once ? Math.min(i + 1, n - 1) : (i + 1) % n];
         position.set(a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k);
@@ -1137,6 +1177,27 @@ function updatePart(part, t) {
   }
   object.position.copy(position);
   if (part.hidden && !part.motions.some(motion => motion.kind === 'path')) scale = 0;
+  if (part.sizeK) {
+    const k = part.sizeK, e = Math.min(1, (t - k.start) / k.seconds);
+    k.now = k.from + (k.to - k.from) * e * e * (3 - 2 * e);
+    scale *= k.now;
+  }
+  if (part.tweening) {
+    let busy = false;
+    part.object.traverse(child => {
+      if (!child.isMesh || child.userData.ink) return;
+      for (const mat of Array.isArray(child.material) ? child.material : [child.material]) {
+        for (const key of ['recolor', 'refade']) {
+          const tw = mat && mat.userData[key];
+          if (!tw) continue;
+          const e = Math.min(1, (t - tw.start) / tw.seconds);
+          if (key === 'recolor') mat.color.copy(tw.from).lerp(tw.to, e); else mat.opacity = tw.from + (tw.to - tw.from) * e;
+          if (e >= 1) mat.userData[key] = null; else busy = true;
+        }
+      }
+    });
+    part.tweening = busy;
+  }
   object.scale.copy(part.base.scale).multiplyScalar(Math.max(1e-3, g * scale));
   // Shrunk away (hidden, or sized 0 by its path): it isn't drawn at all (its ink outline would leave a dot) and its
   // labels go too.
@@ -1147,6 +1208,12 @@ function updatePart(part, t) {
 function updateFigure(figure, dt) {
   figure.age += dt;
   const t = figure.age;
+  if (figure.tempoTo) {
+    const tw = figure.tempoTo, e = Math.min(1, (t - tw.start) / tw.seconds);
+    figure.tempo = tw.from + (tw.to - tw.from) * e;
+    if (e >= 1) figure.tempoTo = null;
+  }
+  figure.clock += dt * figure.tempo;
   for (const m of waitingSlots) m.opacity = 0.22 + 0.12 * Math.sin(t * 4);
   figure.root.traverse(child => {
     const grow = child.userData.grow;
@@ -1155,7 +1222,7 @@ function updateFigure(figure, dt) {
     grow.shape.scale.copy(grow.scale).multiplyScalar(Math.max(1e-3, easeOutBack(k)));
     if (k >= 1) child.userData.grow = null;
   });
-  for (const part of parts.values()) if (part.figure === figure) updatePart(part, t);
+  for (const part of parts.values()) if (part.figure === figure) updatePart(part, t, figure.clock);
   const sway = figure.sway ? Math.sin((t / 14) * Math.PI * 2) * figure.sway : 0;
   const turned = THREE.MathUtils.degToRad(sway) + figure.spin * t * Math.PI * 2 / 60;
   figure.turned = turned;
@@ -1227,7 +1294,7 @@ function placeLabels(figure, dt) {
   const middle = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
   const placed = [];
   figure.labels.forEach((label, index) => {
-    const away = label.part && label.part.shown === false;
+    const away = !figure.labelsShown || (label.part && label.part.shown === false);
     label.group.style.display = away ? 'none' : '';
     if (away) return;
     if (label.part) {
@@ -1305,6 +1372,9 @@ window.Figure3D = {
       case 'label3d': addLabel(m, seconds); break;
       case 'motion3d': addMotion(m); break;
       case 'view3d': setView(m); break;
+      case 'change3d': changePart(m); break;
+      case 'tempo3d': setTempo(m); break;
+      case 'labels3d': { const figure = figures.get(m.fig); if (figure) figure.labelsShown = m.shown !== false; break; }
     }
   },
   /** The app's answer for a piece the page asked for (pieceWanted). */
