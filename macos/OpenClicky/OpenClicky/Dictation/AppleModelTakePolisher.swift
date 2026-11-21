@@ -56,6 +56,14 @@ struct AppleModelTakePolisher: TakePolisher {
         return response.content
     }
 
+    /// The model unloads when it has not been used for a while, and loading it again took longer
+    /// than the clean-up's 3 s limit: the first take after a launch or a quiet stretch went in
+    /// without the clean-up (tester's log, 2026-10-30 and 2026-11-21). A warmed session held for
+    /// the length of the take keeps the model loaded for the take's own session.
+    func prepareWhileThePersonSpeaks() {
+        Task { @MainActor in AppleModelTakePolisherWarmUp.shared.warm() }
+    }
+
     /// Asked plainly, Apple's model answered a dictated question ("can you send it tomorrow?" came
     /// back "Sure, I can send…"). Inside tags, with a line saying the words are never addressed to
     /// it, it tidies them.
@@ -66,6 +74,21 @@ struct AppleModelTakePolisher: TakePolisher {
             .replacingOccurrences(of: "<dictation>", with: "")
             .replacingOccurrences(of: "</dictation>", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// Holds one warmed session so Apple's model stays loaded from the press to the clean-up. It
+/// carries no words: every take is still tidied in a session of its own.
+@available(macOS 26, *)
+@MainActor
+final class AppleModelTakePolisherWarmUp {
+    static let shared = AppleModelTakePolisherWarmUp()
+    private var warmedSession: LanguageModelSession?
+
+    func warm() {
+        let session = LanguageModelSession(model: SystemLanguageModel.default)
+        session.prewarm()
+        warmedSession = session
     }
 }
 #endif

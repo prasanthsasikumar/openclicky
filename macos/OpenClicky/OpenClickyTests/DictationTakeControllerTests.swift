@@ -924,6 +924,28 @@ struct DictationTakeControllerTests {
         #expect(try h.store.recent().isEmpty)
     }
 
+    // MARK: the clean-up model gets ready while the person speaks
+
+    /// Apple's model took longer than the clean-up's 3 s to load, so the first take after a quiet
+    /// stretch went in without the clean-up: the model is told at the press, not at the release.
+    @Test @MainActor func theCleanUpModelIsToldToGetReadyWhenATakeStarts() async throws {
+        let polisher = CountingPolisher()
+        let h = try Harness(polisher: polisher)
+        h.controller.handle(.dictationPressed)
+        await h.waitUntil { h.controller.state == .listening }
+        #expect(polisher.preparations == 1)
+        #expect(polisher.calls == 0)
+    }
+
+    @Test @MainActor func withTheCleanUpOffNoModelIsToldToGetReady() async throws {
+        let polisher = CountingPolisher()
+        let h = try Harness(polisher: polisher)
+        h.settings.polishWithModel = false
+        h.controller.handle(.dictationPressed)
+        await h.waitUntil { h.controller.state == .listening }
+        #expect(polisher.preparations == 0)
+    }
+
     // MARK: hey clicky and the clean-up switch (F-18)
 
     @Test @MainActor func withTheCleanUpOffAHeyClickyEditSendsNothingToAModel() async throws {
@@ -1039,7 +1061,9 @@ struct DictationTakeControllerTests {
 /// A model that answers "Polished." and counts how often it was asked.
 private final class CountingPolisher: TakePolisher, @unchecked Sendable {
     private(set) var calls = 0
+    private(set) var preparations = 0
     var displayName: String { "counting" }
+    func prepareWhileThePersonSpeaks() { preparations += 1 }
     func polish(system: String, user: String) async throws -> String {
         calls += 1
         return "Polished."

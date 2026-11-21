@@ -15,6 +15,21 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
+## 0.12.1
+
+Fixes found in a tester's log.
+
+### All platforms
+
+- **3D drawings keep their arrows.** Some 3D drawings lost their arrows, because the arrows were written in a way a turning figure cannot draw. Clicky is now told to draw them on the figure itself.
+
+### Mac
+
+- **Hands-free hears the rest of your sentence.** If you paused and then went on talking, the reply to the first half could block the reply to the rest, so Clicky answered only part of what you said. A reply that is still on its way is now dropped the moment you speak again.
+- **Clicky remembers what it drew.** After a drawing, the fast voice was never told one had been made, so a follow-up had nothing to go on. It is told now.
+- **The first dictation after a quiet spell is tidied too.** On Macs that clean up dictation with Apple Intelligence, the model now wakes while you speak, instead of making the first take go in untidied because it took too long to load.
+- **"Play a song" finds the song again.** Without a Spotify key of your own, asking for a song only opened Spotify's search, because the song lookup on our server was not set up. It is now, and this one needs no update.
+
 ## 0.12.0
 
 With thanks to [darkworks](https://github.com/darkworks), who taught the drawing stage the new drawings below.
