@@ -456,6 +456,10 @@ internal static class Changes
         });
     };
 
+    /// <summary>One or more Preferences keys (the pointer's look); the handler may run off the main thread.</summary>
+    public static Func<Action, IDisposable> Preferences(Core.Configuration.Preferences preferences, params string[] keys) =>
+        changed => Core.Companion.PreferenceObservations.ObserveAll(preferences, keys, changed);
+
     public static Func<Action, IDisposable> Event(Action<Action> add, Action<Action> remove) => changed =>
     {
         void OnChanged() => changed();
