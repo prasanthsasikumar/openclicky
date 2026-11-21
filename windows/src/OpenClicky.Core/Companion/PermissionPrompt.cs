@@ -108,11 +108,15 @@ public sealed partial class PermissionPromptController : ObservableObject
 {
     [ObservableProperty] private PermissionPrompt? currentPrompt;
 
-    /// <summary>The card's "later": no more cards until the next launch.</summary>
-    public bool IsDismissedForThisLaunch { get; private set; }
+    /// <summary>The steps whose card got "later": not asked for again until the next launch. Per step, so a later
+    /// on the microphone does not hide the online speech card that appears when Windows speech first refuses.</summary>
+    private readonly HashSet<PermissionStep> dismissedSteps = new();
 
-    /// <summary>Performs the request for a step (opens ms-settings:privacy-microphone, or switches online speech
-    /// on). Injected so tests open nothing. A request that lands at once refreshes the status itself.</summary>
+    /// <summary>A card got "later" this launch.</summary>
+    public bool IsDismissedForThisLaunch => dismissedSteps.Count > 0;
+
+    /// <summary>Performs the request for a step (opens ms-settings:privacy-microphone or ms-settings:privacy-speech).
+    /// Injected so tests open nothing.</summary>
     public Action<PermissionStep> PerformRequest { get; set; } = _ => { };
 
     /// <summary>The gear on the card: the window's settings.</summary>
@@ -131,11 +135,13 @@ public sealed partial class PermissionPromptController : ObservableObject
     /// <summary>Called on every permission refresh. Keeps the stage while asking for the same permission.</summary>
     public void Update(PermissionStatus status)
     {
-        if (IsDismissedForThisLaunch || NextStep(status) is not { } step)
+        var pending = PermissionSteps.AllCases.Where(s => !status.IsGranted(s) && !dismissedSteps.Contains(s)).ToList();
+        if (pending.Count == 0)
         {
             CurrentPrompt = null;
             return;
         }
+        var step = pending[0];
         var stage = CurrentPrompt?.Step == step ? CurrentPrompt.Stage : PermissionPromptStage.Ask;
         CurrentPrompt = new PermissionPrompt(step, status, stage);
     }
@@ -145,13 +151,13 @@ public sealed partial class PermissionPromptController : ObservableObject
     {
         if (CurrentPrompt is not { } prompt) return;
         PerformRequest(prompt.Step);
-        // Online speech is switched on directly: the refresh inside the request has already dropped the card.
+        // A request that refreshed the status itself may already have dropped the card.
         if (CurrentPrompt?.Step == prompt.Step) CurrentPrompt = CurrentPrompt with { Stage = PermissionPromptStage.Waiting };
     }
 
     public void Dismiss()
     {
-        IsDismissedForThisLaunch = true;
+        if (CurrentPrompt is { } prompt) dismissedSteps.Add(prompt.Step);
         CurrentPrompt = null;
     }
 

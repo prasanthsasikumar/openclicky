@@ -42,21 +42,6 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
         }
     }
 
-    public bool AcceptOnlineSpeech()
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(OnlineSpeechPrivacyKey);
-            key.SetValue(OnlineSpeechAcceptedValue, 1, Microsoft.Win32.RegistryValueKind.DWord);
-            onlineSpeechWasRefused = false;
-            return true;
-        }
-        catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or IOException)
-        {
-            return false;
-        }
-    }
-
     public void OpenSpeechPrivacySettings()
     {
         try
@@ -135,7 +120,7 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
     {
         onlineSpeechWasRefused = true;
         return new(OfflineSpeechFailure.SpeechPrivacyPolicyNotAccepted,
-            "windows dictation needs online speech recognition. turn it on from the card on the island.", exception);
+            "windows dictation needs online speech recognition switched on in settings, privacy & security, speech.", exception);
     }
 
     /// <summary>With no capture device at all the recogniser fails with an "internal speech error" COMException.</summary>

@@ -97,25 +97,33 @@ public class PermissionPromptTests
     }
 
     [Fact]
-    public void TurningOnOnlineSpeechDropsTheCardAtOnce()
+    public void TurningOnOnlineSpeechOpensSettingsAndTheCardGoesOnceItIsOn()
     {
-        var controller = new PermissionPromptController();
-        controller.PerformRequest = _ => controller.Update(new PermissionStatus(Microphone: true));
+        var requested = new List<PermissionStep>();
+        var controller = new PermissionPromptController { PerformRequest = requested.Add };
         controller.Update(new PermissionStatus(Microphone: true, OnlineSpeech: false));
         Assert.Equal("turn on", controller.CurrentPrompt!.ButtonTitle);
         Assert.Contains("microsoft", controller.CurrentPrompt.Detail);
         controller.Grant();
+        Assert.Equal(new[] { PermissionStep.OnlineSpeech }, requested);
+        Assert.Equal(PermissionPromptStage.Waiting, controller.CurrentPrompt!.Stage);
+        Assert.Contains("in settings", controller.CurrentPrompt.Detail);
+        // The poll reads the switch as on.
+        controller.Update(new PermissionStatus(Microphone: true));
         Assert.Null(controller.CurrentPrompt);
     }
 
     [Fact]
-    public void WhenOnlineSpeechCannotBeSwitchedOnTheCardPointsAtSettings()
+    public void LaterOnTheMicrophoneDoesNotHideTheOnlineSpeechCard()
     {
         var controller = new PermissionPromptController();
+        controller.Update(new PermissionStatus());
+        controller.Dismiss();
         controller.Update(new PermissionStatus(Microphone: true, OnlineSpeech: false));
-        controller.Grant();
-        Assert.Equal(PermissionPromptStage.Waiting, controller.CurrentPrompt!.Stage);
-        Assert.Contains("in settings", controller.CurrentPrompt.Detail);
+        Assert.Equal(PermissionStep.OnlineSpeech, controller.CurrentPrompt!.Step);
+        controller.Dismiss();
+        controller.Update(new PermissionStatus(Microphone: true, OnlineSpeech: false));
+        Assert.Null(controller.CurrentPrompt);
     }
 
     [Fact]

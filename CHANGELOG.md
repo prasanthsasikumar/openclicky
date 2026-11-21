@@ -15,6 +15,13 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
+## 0.12.2
+
+### Windows
+
+- **Online speech is your switch to flip.** When Windows dictation needs online speech recognition, the card on the island now opens Settings, Privacy & security, Speech for you to turn it on, instead of changing the setting itself. The card goes away by itself once it is on.
+- **"Later" hides only that card.** Saying later to the microphone card no longer hides the online speech card when Windows dictation first asks for it.
+
 ## 0.12.1
 
 Fixes found in a tester's log.
