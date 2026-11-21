@@ -50,7 +50,7 @@ public static class WindowsDictationHost
         IsSecureInputOnAsync = async cancellationToken =>
             (await focusedElements.FocusedTextTargetAsync(cancellationToken).ConfigureAwait(false))?.IsSecure ?? false,
         IsAccessibilityTrusted = () => true,
-        Paste = textInserter.Insert,
+        Paste = text => Paste(text, textInserter),
         TypeText = textInserter.TypeAsKeystrokes,
         CopyToClipboard = textInserter.CopyToClipboard,
         Now = () => DateTimeOffset.Now,
@@ -64,6 +64,20 @@ public static class WindowsDictationHost
     };
 
     /// <summary>The image name of the process that owns the foreground window ("chrome.exe"), OpenClicky's own included.</summary>
+    /// <summary>
+    /// Ctrl+V into the app in front, except a classic console window (ConsoleWindowClass), which ignores a
+    /// Ctrl+V another program sends: there the words are typed as keystrokes instead. Line breaks and tabs
+    /// go in as spaces, so a dictated take never presses Enter (runs a command) or Tab (completes one) in
+    /// a terminal.
+    /// </summary>
+    internal static TextInsertionOutcome Paste(string text, ITextInserter textInserter)
+    {
+        var window = NativeMethods.GetForegroundWindow();
+        if (window == 0 || NativeMethods.WindowClassName(window) != "ConsoleWindowClass") return textInserter.Insert(text);
+        var oneLine = string.Join(" ", text.Split(new[] { '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries)).Trim();
+        return textInserter.TypeAsKeystrokes(oneLine) ? TextInsertionOutcome.Typed : TextInsertionOutcome.LeftOnClipboard;
+    }
+
     public static string? ForegroundProcessName()
     {
         var window = NativeMethods.GetForegroundWindow();
