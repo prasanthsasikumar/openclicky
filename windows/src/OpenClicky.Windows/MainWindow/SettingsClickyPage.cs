@@ -25,15 +25,10 @@ internal sealed partial class SettingsRowFactory
         switch (item.Id)
         {
             case "clicky.pointerColor":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
-                    Ui.Picker(PointerLook.Colors.Select(color => (color.Name, color.Title)),
-                        services.Preferences.GetString(PointerLook.ColorPreferenceKey) ?? PointerLook.DefaultColor,
-                        name => services.Preferences.Set(PointerLook.ColorPreferenceKey, name), 160)));
             case "clicky.pointerStyle":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
-                    Ui.Picker(PointerLook.Styles.Select(style => (style, style.Title())),
-                        PointerLook.StyleFrom(services.Preferences.GetString(PointerLook.StylePreferenceKey)),
-                        style => services.Preferences.Set(PointerLook.StylePreferenceKey, style.RawValue()), 160)));
+                // Tiles, each a glowing pointer: the colour row in the chosen shape, the shape row in the chosen colour.
+                return new LiveContent(() => Ui.Card(PointerTiles.Row(item, query, services.Preferences)),
+                    Changes.Preferences(services.Preferences, PointerLook.ColorPreferenceKey, PointerLook.StylePreferenceKey));
             case "keyboard.mouseTalk":
             {
                 var picked = MouseTalkButtons.FromRawValue(services.Preferences.GetString(MouseTalkButtons.PreferenceKey));
