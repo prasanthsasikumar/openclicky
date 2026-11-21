@@ -19,6 +19,9 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ### Windows
 
+- **Dictation types into Command Prompt and PowerShell windows.** Words said in a classic console window were left on the clipboard, or "moved to text box" with nothing arriving. They are now typed at the prompt, on one line, so a take never presses Enter for you.
+- **A quick tap of the dictation key does nothing.** With hold to talk, a tap (or Ctrl+C with a Ctrl key dictating) no longer beeps, flashes the orb or says "cancelled". The orb and the sound come once the key is held.
+- **Windows speech listens in your speech language.** Where Windows has no speech pack for your region (English in Singapore, say), Windows speech now listens in your Windows speech language instead of whichever English came first.
 - **Online speech is your switch to flip.** When Windows dictation needs online speech recognition, the card on the island now opens Settings, Privacy & security, Speech for you to turn it on, instead of changing the setting itself. The card goes away by itself once it is on.
 - **"Later" hides only that card.** Saying later to the microphone card no longer hides the online speech card when Windows dictation first asks for it.
 
