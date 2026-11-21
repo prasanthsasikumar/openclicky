@@ -126,8 +126,10 @@ private final class HeardLog: @unchecked Sendable {
         return false
     }
 
+    /// Up to 15 s: a hosted runner stalls whole tests for ten seconds, and one second was not
+    /// enough there (CI, 2026-11-21, twice in a row). It returns as soon as the final is in.
     func waitForFinal() async -> String? {
-        for _ in 0..<50 {
+        for _ in 0..<750 {
             if let first = finals.first { return first }
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
