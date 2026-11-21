@@ -803,7 +803,7 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
         if (formattingDegraded && landed) pasteMessage = "moved to text box · cleaned up locally";
         if (historyNote is not null) pasteMessage += $" · {historyNote}";
         Orb.Phase = DictationOrbPhase.Done(pasteMessage);
-        AppLog.Write($"take {Short(thisTakeId)} done: {outputText.Length} chars, paste={pasteOutcome}, engine={Settings.Engine.Id()}, degraded={formattingDegraded}");
+        AppLog.Write($"take {Short(thisTakeId)} done: {outputText.Length} chars, paste={pasteOutcome}{(pasteOutcome == TakePasteOutcome.LeftOnPasteboard ? $" ({deliveryMessage})" : "")}, engine={Settings.Engine.Id()}, degraded={formattingDegraded}");
         EndTake();
         ScheduleIdle(TimeSpan.FromSeconds(1.8));
     }

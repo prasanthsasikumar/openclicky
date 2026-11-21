@@ -68,6 +68,10 @@ public static class WindowsDictationHost
     {
         var window = NativeMethods.GetForegroundWindow();
         if (window == 0) return null;
+        // A classic console window reports its client (cmd.exe, powershell.exe) as its process, but UI
+        // Automation, which read the text box at press, reports conhost.exe, which draws it. Answer as UI
+        // Automation does, or every take in a console looks like "the app changed" and is never pasted.
+        if (NativeMethods.WindowClassName(window) == "ConsoleWindowClass") return "conhost.exe";
         NativeMethods.GetWindowThreadProcessId(window, out var processId);
         return processId == 0 ? null : ProcessDescriber.ImageName((int)processId);
     }
