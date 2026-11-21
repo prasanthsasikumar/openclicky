@@ -131,6 +131,8 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         // Its drawings are saved to Videos\OpenClicky as a picture and a video.
         var drawStageWindow = new DrawStageWindow();
         DrawStageController.Shared.Surface = drawStageWindow;
+        // The stage covers the whole screen and comes up over our floating windows; the pointer and the island stay above it.
+        drawStageWindow.CameToFront += companionUi.BringAboveDrawings;
         DrawStageController.Shared.Saver = new DrawingRecorder(drawStageWindow, DrawStageController.Shared);
         // Marking part of the screen to ask about (the island's marker button, Ctrl+Alt+M); its state is Core's ScreenMarker.
         // Its shortcut is held only while drawn answers are on, and follows the Teacher's switch, the drawing switch and Settings.

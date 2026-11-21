@@ -84,6 +84,18 @@ public sealed class CompanionUi : IDisposable
         OrbWindow.Start();
     }
 
+    /// <summary>
+    /// Raises the orb, the islands, then the pointer's overlays, above every other topmost window without activating them:
+    /// a drawing's stage covers the whole screen and comes up over them when it is shown, which hid the pointer pointing
+    /// at the drawing, its caption, the island and the orb. Only windows already showing are raised.
+    /// </summary>
+    public void BringAboveDrawings()
+    {
+        if (OrbWindow.IsVisible) FloatingWindowSupport.BringToTopWithoutActivating(OrbWindow);
+        foreach (var window in IslandWindows.Windows.Where(window => window.IsVisible)) FloatingWindowSupport.BringToTopWithoutActivating(window);
+        foreach (var window in OverlayWindows.Windows.Where(window => window.IsVisible)) FloatingWindowSupport.BringToTopWithoutActivating(window);
+    }
+
     public void Dispose()
     {
         OverlayWindows.Dispose();
