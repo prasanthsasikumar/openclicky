@@ -253,6 +253,23 @@ public sealed class DictationTakeControllerTests
         // Quietly: straight back to rest with the hint, no "cancelled" on the orb.
         Assert.Equal(DictationOrbPhase.Idle, h.Orb.Phase);
         Assert.Equal("hold right Ctrl to talk", h.Orb.Hint);
+        // The orb never showed the take, even after the tap window.
+        await Task.Delay(TimeSpan.FromSeconds(CompanionShortcutRecognizer.TapMaxHoldSeconds + 0.15));
+        Assert.Equal(DictationOrbPhase.Idle, h.Orb.Phase);
+    });
+
+    [Fact]
+    public Task WithHoldToTalkTheOrbShowsOnceTheKeyIsHeldPastATap() => TakeHarness.Run(async h =>
+    {
+        h.Settings.TapKeepsListening = false;
+        var before = h.Orb.Phase;
+        h.Handle(Pressed);
+        // Listening already (the microphone opens at once), but the orb waits out the tap window.
+        await h.WaitForState(TakeState.Listening);
+        Assert.Equal(before, h.Orb.Phase);
+        await TakeHarness.WaitUntil(() => h.Orb.Phase == DictationOrbPhase.Listening, 4);
+        Assert.Equal(DictationOrbPhase.Listening, h.Orb.Phase);
+        Assert.Equal("release to transcribe", h.Orb.Hint);
     });
 
     [Fact]

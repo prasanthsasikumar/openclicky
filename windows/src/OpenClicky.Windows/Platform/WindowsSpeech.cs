@@ -69,7 +69,8 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
             .Where(tag => !string.IsNullOrWhiteSpace(tag))
             .Cast<string>();
         var supported = SupportedLanguages();
-        var languageTag = candidates.Select(tag => BestSupported(tag, supported)).FirstOrDefault(tag => tag is not null)
+        var systemLanguage = SystemSpeechLanguageTag();
+        var languageTag = candidates.Select(tag => BestSupported(tag, supported, systemLanguage)).FirstOrDefault(tag => tag is not null)
             ?? throw new OfflineSpeechException(OfflineSpeechFailure.LanguageNotInstalled,
                 $"dictation cannot listen in {requested} on this pc. add its speech pack in settings, time & language, speech.");
 
@@ -155,13 +156,34 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
         _ => new OfflineSpeechException(OfflineSpeechFailure.Other, $"dictation is not available on this pc ({status})."),
     };
 
-    /// <summary>The installed tag equal to <paramref name="tag"/>, else the first with the same language ("en" → "en-US").</summary>
-    internal static string? BestSupported(string tag, IReadOnlyList<string> supported)
+    /// <summary>The installed tag equal to <paramref name="tag"/>; else, for the same language, the system speech
+    /// language (Settings → Time &amp; language → Speech) when it is one; else the first with the same language.
+    /// So a region with no speech pack of its own (en-SG) listens in the person's speech language (en-US), not
+    /// whichever English happens to be listed first (en-GB).</summary>
+    internal static string? BestSupported(string tag, IReadOnlyList<string> supported, string? systemLanguage = null)
     {
         var exact = supported.FirstOrDefault(candidate => string.Equals(candidate, tag, StringComparison.OrdinalIgnoreCase));
         if (exact is not null) return exact;
         var primary = tag.Split('-')[0];
-        return supported.FirstOrDefault(candidate => string.Equals(candidate.Split('-')[0], primary, StringComparison.OrdinalIgnoreCase));
+        bool SameLanguage(string candidate) => string.Equals(candidate.Split('-')[0], primary, StringComparison.OrdinalIgnoreCase);
+        if (systemLanguage is not null && SameLanguage(systemLanguage))
+        {
+            var system = supported.FirstOrDefault(candidate => string.Equals(candidate, systemLanguage, StringComparison.OrdinalIgnoreCase));
+            if (system is not null) return system;
+        }
+        return supported.FirstOrDefault(SameLanguage);
+    }
+
+    private static string? SystemSpeechLanguageTag()
+    {
+        try
+        {
+            return SpeechRecognizer.SystemSpeechLanguage?.LanguageTag;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private sealed class WindowsSpeechSession : IOfflineSpeechSession
