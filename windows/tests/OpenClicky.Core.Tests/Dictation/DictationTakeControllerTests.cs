@@ -250,6 +250,9 @@ public sealed class DictationTakeControllerTests
         await TakeHarness.WaitUntil(() => h.State == TakeState.Idle, 4);
         Assert.Equal(TakeState.Idle, h.State);
         Assert.Equal("hold right Ctrl to talk", h.Controller.IdleHint);
+        // Quietly: straight back to rest with the hint, no "cancelled" on the orb.
+        Assert.Equal(DictationOrbPhase.Idle, h.Orb.Phase);
+        Assert.Equal("hold right Ctrl to talk", h.Orb.Hint);
     });
 
     [Fact]

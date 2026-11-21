@@ -364,8 +364,9 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
                     }
                     else if (shortcutEvent.WasTap && !Settings.TapKeepsListening)
                     {
-                        // Hold to talk: a tap is too short to have said anything.
-                        CancelTake("cancelled, a tap (hold the key to talk)");
+                        // Hold to talk: a tap is too short to have said anything. Quietly: no error
+                        // sound or "cancelled", just the resting hint that says to hold the key.
+                        CancelTake("a tap (hold the key to talk)", quiet: true);
                     }
                     else if (shortcutEvent.WasTap)
                     {
@@ -569,7 +570,9 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
         Capture.StopPushToTalkFromKeyboardShortcut();
     }
 
-    public void CancelTake(string reason)
+    /// <param name="quiet">No sound and no "cancelled": the orb goes straight back to rest (a tap with
+    /// hold-to-talk on, which is not a mistake worth flagging).</param>
+    public void CancelTake(string reason, bool quiet = false)
     {
         if (!IsTakeInProgress) return;
         var thisTakeId = takeId;
@@ -577,10 +580,10 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
         pendingStartCancellation?.Cancel();
         pendingStartTask = null;
         Capture.CancelCurrentDictation(preserveDraftText: false);
-        Play(DictationEarcon.Blocked);
-        Orb.Phase = DictationOrbPhase.Failed(reason);
+        if (!quiet) Play(DictationEarcon.Blocked);
+        Orb.Phase = quiet ? DictationOrbPhase.Idle : DictationOrbPhase.Failed(reason);
         Orb.LiveTranscript = "";
-        Orb.Hint = null;
+        Orb.Hint = quiet ? IdleHint : null;
         AppLog.Write($"take {Short(thisTakeId)} cancelled: {reason}");
         _ = AudioStore.EndCapture();
         // Words already typed live stay in the app (deleting in a terminal is unsafe); history
@@ -594,7 +597,7 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
             }
         }
         EndTake();
-        ScheduleIdle(TimeSpan.FromSeconds(1.4));
+        if (!quiet) ScheduleIdle(TimeSpan.FromSeconds(1.4));
     }
 
     private void FailTake(string message, Guid failedTakeId)

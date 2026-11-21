@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using Windows.Globalization;
 using Windows.Media.SpeechRecognition;
@@ -170,18 +171,28 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
         private string finishedStretchesText = string.Empty;
         private string latestText = string.Empty;
         private bool stopped;
+        // For the log: a take that came back empty says whether the engine heard anything at all.
+        private int hypothesisCount;
+        private int resultCount;
 
         public WindowsSpeechSession(SpeechRecognizer recognizer, string languageTag)
         {
             this.recognizer = recognizer;
             LanguageTag = languageTag;
-            recognizer.HypothesisGenerated += (_, args) => Update(args.Hypothesis.Text, isFinal: false);
+            recognizer.HypothesisGenerated += (_, args) =>
+            {
+                Interlocked.Increment(ref hypothesisCount);
+                Update(args.Hypothesis.Text, isFinal: false);
+            };
             recognizer.ContinuousRecognitionSession.ResultGenerated += (_, args) =>
             {
+                Interlocked.Increment(ref resultCount);
                 if (args.Result.Status == SpeechRecognitionResultStatus.Success) Update(args.Result.Text, isFinal: true);
+                else AppLog.Write($"windows speech: a result came back {args.Result.Status}");
             };
             recognizer.ContinuousRecognitionSession.Completed += (_, args) =>
             {
+                AppLog.Write($"windows speech: session ended {args.Status} ({LanguageTag}, {hypothesisCount} partial, {resultCount} final)");
                 if (args.Status is SpeechRecognitionResultStatus.Success or SpeechRecognitionResultStatus.UserCanceled) return;
                 bool hasText;
                 lock (textLock) hasText = latestText.Trim().Length > 0;
@@ -226,7 +237,11 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
             {
                 // Already stopped (silence timeout or an error).
             }
-            lock (textLock) return latestText;
+            string text;
+            lock (textLock) text = latestText;
+            if (text.Trim().Length == 0)
+                AppLog.Write($"windows speech: stopped with no words ({LanguageTag}, {hypothesisCount} partial, {resultCount} final, state {recognizer.State})");
+            return text;
         }
 
         public void Cancel()
