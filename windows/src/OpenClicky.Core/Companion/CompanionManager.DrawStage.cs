@@ -10,7 +10,8 @@
 //
 //  A drawing that finished stays up (DrawStageController.Current). A question asked while it is up
 //  may be a follow-up: the model reads the drawing's program and adds to it or draws it again, or
-//  hands the question back. "Save it", or the page's Save button, saves it (IDrawingSaver).
+//  hands the question back. "Save it", or the page's Save button, saves it (IDrawingSaver). "Play it again", or the page's
+//  Play again button, draws it again with its voice (DrawingReplay), without asking anything.
 //
 
 using System.Collections.Concurrent;
@@ -306,6 +307,78 @@ public sealed partial class CompanionManager
         finally
         {
             if (ReferenceEquals(drawingSave, cancellation)) drawingSave = null;
+            cancellation.Dispose();
+        }
+    }
+
+    // MARK: - Playing the drawing again
+
+    /// <summary>The drawing being played again, while it is.</summary>
+    private CancellationTokenSource? drawingReplay;
+
+    /// <summary>"Play it again" while a finished drawing is up: it is drawn again with its voice, and true; otherwise false
+    /// (the request is answered as usual, "draw it again bigger" as a follow-up).</summary>
+    private bool TryReplayDrawing(string request)
+    {
+        if (!DrawingReplay.IsReplayRequest(request) || DrawStageController.Shared.Current is null) return false;
+        AppLog.Write("draw: asked to play the drawing again");
+        ReplayDrawing();
+        return true;
+    }
+
+    /// <summary>How long playing the drawing up again takes, roughly (the fast voice keeps quiet for it).</summary>
+    private static TimeSpan ReplayLength(DrawnAnswer drawing) =>
+        DrawingReplay.Lead + TimeSpan.FromSeconds(drawing.Lines.Select((line, k) => DrawingReplay.PauseBefore(drawing, k) + line.Seconds).Sum());
+
+    /// <summary>Draws the finished drawing up again where it is, with the voice it had. Stopped like any answer (esc, the
+    /// island's stop, a new question); nothing is asked of the model and no voice is fetched.</summary>
+    private void ReplayDrawing()
+    {
+        var stage = DrawStageController.Shared;
+        if (drawingReplay is not null || drawingSave is not null) return;
+        if (stage.Current is not { } drawing)
+        {
+            ShowAskCaption("There's no finished drawing to play again.", 4);
+            return;
+        }
+        InterruptCurrentAnswer(includingAgentWork: false);
+        StopRealtimeDrawing("the drawing is played again");
+        var cancellation = new CancellationTokenSource();
+        drawingReplay = cancellation;
+        activeAnswerSpeaker = null;
+        activeAnswerPlayback = cancellation;
+        _ = ReplayDrawingAsync(stage, drawing, cancellation);
+    }
+
+    private async Task ReplayDrawingAsync(DrawStageController stage, DrawnAnswer drawing, CancellationTokenSource cancellation)
+    {
+        var startedAt = DateTimeOffset.UtcNow;
+        Overlay.CancelTransientHide();
+        VoiceState = CompanionVoiceState.Responding;
+        try
+        {
+            await DrawingReplay.PlayAsync(stage, drawing, (audio, token) => answerVoicePlayer.PlayToCompletionAsync(audio, token), cancellation.Token);
+            AppLog.Write($"draw: played again in {(DateTimeOffset.UtcNow - startedAt).TotalSeconds:0.0} s ({drawing.Lines.Count} lines)");
+        }
+        catch (Exception error) when (error is OperationCanceledException || cancellation.IsCancellationRequested)
+        {
+            AppLog.Write("draw: playing it again stopped");
+        }
+        catch (Exception error)
+        {
+            AppLog.Write($"draw: playing it again failed ({error.GetType().Name}: {error.Message})");
+            stage.FinishNow();
+            stage.Remember(drawing);
+        }
+        finally
+        {
+            if (ReferenceEquals(drawingReplay, cancellation)) drawingReplay = null;
+            if (ReferenceEquals(activeAnswerPlayback, cancellation))
+            {
+                activeAnswerPlayback = null;
+                VoiceState = CompanionVoiceState.Idle;
+                Overlay.ScheduleTransientHideIfNeeded();
+            }
             cancellation.Dispose();
         }
     }

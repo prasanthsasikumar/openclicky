@@ -146,6 +146,13 @@ public sealed partial class CompanionManager
     {
         var trimmedText = text.Trim();
         if (trimmedText.Length == 0) return;
+        // "Play it again" with a drawing up: no question goes anywhere (the fast voice would otherwise answer it in words).
+        if (TryReplayDrawing(trimmedText))
+        {
+            lastQuestionWasTyped = true;
+            AppLog.Write($"ask: typed request ({trimmedText.Length} chars), a replay of the drawing");
+            return;
+        }
         Overlay.CancelTransientHide();
         if (!IsClickyCursorEnabled && !Overlay.IsOverlayVisible) Overlay.ShowOverlayOnAllScreens();
         InterruptCurrentAnswer(includingAgentWork: true);

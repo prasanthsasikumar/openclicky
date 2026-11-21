@@ -88,6 +88,12 @@ public sealed partial class CompanionManager
     private void SendTranscriptToClaudeWithScreenshot(string transcript, bool isGuidedStepContinuation = false)
     {
         StopSavingTheDrawing();
+        // "Play it again" with a drawing up draws it again with its voice; nothing is asked.
+        if (!isGuidedStepContinuation && TryReplayDrawing(transcript))
+        {
+            IsAskInFlight = false;
+            return;
+        }
         // "Save it" with a drawing up saves the drawing; nothing is asked.
         if (!isGuidedStepContinuation && TrySaveDrawing(transcript))
         {

@@ -121,7 +121,7 @@ internal sealed class DrawingRecorder(DrawStageWindow window, DrawStageControlle
         for (var k = 0; k < drawing.Lines.Count; k++)
         {
             var line = drawing.Lines[k];
-            at += k == 0 ? Math.Min(line.PauseBefore, 1) : line.PauseBefore;
+            at += DrawingReplay.PauseBefore(drawing, k);
             cues.Add((at, k, true));
             at += line.Seconds;
             cues.Add((at, k, false));

@@ -7,7 +7,7 @@
 // The page answers ready, line (each say() as it runs), programRan (all of it ran), lineDue, finished, log and error.
 //
 // continueStream runs a follow-up's program after the one drawn (the drawing and its names stay). Once the app has
-// remembered a finished drawing, Picture and Video buttons sit in its corner (they say save); a close button (it says
+// remembered a finished drawing, Play again (it says replay), Picture and Video buttons sit in its corner (they say save); a close button (it says
 // close) is there from the first stroke, and for a drawing on a card a PiP button (shrinks it into the screen's corner
 // and back) and resize grips in both bottom corners. measure answers with the drawing's box (bounds), recording hides
 // the caption and the buttons while the app records the drawing, and saving shows what the app is doing just outside
@@ -810,8 +810,9 @@
     const finished = remembered && finishedSent && !recording;
     const canMove = movable();
     const box = recording ? null : contentBounds();
-    // Picture and Video show from the start too, waiting (dimmed) until the drawing has finished and while a save runs.
-    for (const button of tools.querySelectorAll('[data-save]')) {
+    // Play again, Picture and Video show from the start too, waiting (dimmed) until the drawing has finished and while a
+    // save runs.
+    for (const button of tools.querySelectorAll('[data-save], [data-replay]')) {
       button.dataset.title = button.dataset.title || button.title;
       button.disabled = !finished || savingBusy;
       button.title = finished ? button.dataset.title : 'Ready when the drawing has finished';
@@ -854,7 +855,8 @@
   for (const button of tools.querySelectorAll('button')) {
     button.addEventListener('click', () => {
       if (button.disabled) return;
-      if (button.dataset.save) send({ type: 'save', text: button.dataset.save });
+      if (button.dataset.replay) send({ type: 'replay' });
+      else if (button.dataset.save) send({ type: 'save', text: button.dataset.save });
       else if (button.dataset.act === 'close') send({ type: 'close' });
       else if (button.dataset.act === 'pip') togglePip();
     });

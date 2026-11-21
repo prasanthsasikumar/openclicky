@@ -39,6 +39,8 @@ public sealed partial class CompanionManager
         Plugins.DrawStage.DrawStageController.Shared.FigurePartClicked += part => services.MainThread.Post(() => AskAboutFigurePart(part));
         // The drawing's Save button.
         Plugins.DrawStage.DrawStageController.Shared.SaveRequested += what => services.MainThread.Post(() => SaveDrawing(what));
+        // The drawing's Play again button.
+        Plugins.DrawStage.DrawStageController.Shared.ReplayRequested += () => services.MainThread.Post(ReplayDrawing);
         // The drawing's close button.
         Plugins.DrawStage.DrawStageController.Shared.CloseRequested += () => services.MainThread.Post(CloseDrawing);
         // 3D pieces a drawing asks for (f.piece), made by the maker Settings picks, the drawing model when it fails.

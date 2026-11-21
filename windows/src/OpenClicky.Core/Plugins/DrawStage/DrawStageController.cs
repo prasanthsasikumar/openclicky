@@ -100,6 +100,9 @@ public sealed class DrawStageController
     /// <summary>The page's Picture or Video button was clicked.</summary>
     public event Action<DrawingSaveKind>? SaveRequested;
 
+    /// <summary>The page's Play again button was clicked: the drawing is drawn again with its voice (DrawingReplay).</summary>
+    public event Action? ReplayRequested;
+
     /// <summary>The drawing's close button was clicked: it goes, as with esc.</summary>
     public event Action? CloseRequested;
 
@@ -316,6 +319,9 @@ public sealed class DrawStageController
                 break;
             case "close":
                 CloseRequested?.Invoke();
+                break;
+            case "replay":
+                ReplayRequested?.Invoke();
                 break;
             case "bounds" when message.Bounds is { } bounds:
                 measuring?.TrySetResult(bounds);
