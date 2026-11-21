@@ -287,15 +287,26 @@ public sealed partial class CompanionManager
 
         string fullResponseText;
         IReadOnlyList<Answers.ClaudeToolCall> toolCalls;
+        // An outage before any of the answer arrived is tried once more, quietly; a second one is said plainly.
+        var answerArrived = 0;
         try
         {
-            (fullResponseText, toolCalls, _) = await claudeAPI.AnalyzeImageStreamingAsync(
-                labeledImages,
-                systemPrompt,
-                historyForApi,
-                AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText, pointer, isRepeatedQuestion, markedAreaLine),
-                askTools,
-                accumulatedAnswer => services.MainThread.Post(() => answerSpeaker.Receive(accumulatedAnswer)),
+            (fullResponseText, toolCalls, _) = await AskLaneFailures.RetryOnceAfterOutageAsync(
+                () => claudeAPI.AnalyzeImageStreamingAsync(
+                    labeledImages,
+                    systemPrompt,
+                    historyForApi,
+                    AskLanePrompts.AskUserPrompt(transcript, writingTarget, selectedText, pointer, isRepeatedQuestion, markedAreaLine),
+                    askTools,
+                    accumulatedAnswer =>
+                    {
+                        Interlocked.Exchange(ref answerArrived, 1);
+                        services.MainThread.Post(() => answerSpeaker.Receive(accumulatedAnswer));
+                    },
+                    cancellationToken),
+                () => Volatile.Read(ref answerArrived) == 1,
+                AskLaneFailures.OutageRetryDelay,
+                error => AppLog.Write($"ask: the AI had an outage ({error.GetType().Name} {error.HResult}); trying once more"),
                 cancellationToken);
         }
         catch
@@ -438,7 +449,13 @@ public sealed partial class CompanionManager
         LastQuestionFailed = true;
         Overlay.DismissCursorCaption();
         AgentActivityText = null;
-        if (error is AnswerProviderException providerError)
+        if (error is AnswerProviderException outage && AskLaneFailures.IsOutage(outage))
+        {
+            // An own key's provider is down or overloaded, not refusing the key: said plainly, like the account's.
+            AppLog.Write($"ask: {outage.AnswerSource.RawValue()} is having an outage ({outage.Status})");
+            SpeakWithSystemVoice(AskLaneFailures.OutageSentence);
+        }
+        else if (error is AnswerProviderException providerError)
         {
             // A key or plan the person set up refused: say which and why, in text.
             AppLog.Write($"ask: {providerError.AnswerSource.RawValue()} refused ({providerError.Status})");

@@ -39,14 +39,93 @@ public class AskLaneFailureTests
         Assert.DoesNotContain("token", permissionOn);
     }
 
+    /// <summary>The AI that answers being down or overloaded is said plainly; refusals and limits are not outages.</summary>
+    [Fact]
+    public void AnOutageIsSaidPlainly()
+    {
+        foreach (var status in new[] { 500, 502, 503, 504, 529 })
+        {
+            var serverError = new BackendHttpException(BackendHttpException.ServiceKind.Answers, status, []);
+            Assert.True(AskLaneFailures.IsOutage(serverError), $"backend {status}");
+            Assert.Equal(AskLaneFailures.OutageSentence, AskLaneFailures.AskFailureSentence(serverError));
+            Assert.True(AskLaneFailures.IsOutage(new AnswerProviderException(AnswerSource.Gemini, status, "The model is overloaded.")), $"own key {status}");
+        }
+        Assert.True(AskLaneFailures.IsOutage(new ClaudeApiException(ClaudeAPI.MidStreamErrorCode, "Stream error (overloaded_error): Overloaded")));
+        Assert.True(AskLaneFailures.IsOutage(new ClaudeApiException(ClaudeAPI.MidStreamErrorCode, "Stream error (api_error): Internal server error")));
+        Assert.True(AskLaneFailures.IsOutage(new AnswerProviderException(AnswerSource.Gemini, 0, "UNAVAILABLE: The service is currently unavailable.")));
+        Assert.True(AskLaneFailures.IsOutage(new AnswerProviderException(AnswerSource.OpenAI, 0, "The server is overloaded, try again later")));
+
+        // Not outages: a refused key, a limit, a bad request, a mid-stream error of another kind, the network.
+        Assert.False(AskLaneFailures.IsOutage(new AnswerProviderException(AnswerSource.OpenAI, 401, "Incorrect API key provided")));
+        Assert.False(AskLaneFailures.IsOutage(new AnswerProviderException(AnswerSource.Gemini, 429, "RESOURCE_EXHAUSTED")));
+        Assert.False(AskLaneFailures.IsOutage(new AnswerProviderException(AnswerSource.Gemini, 0, "\"gemini-x\" is not a model name Gemini can be asked for")));
+        Assert.False(AskLaneFailures.IsOutage(new BackendHttpException(BackendHttpException.ServiceKind.Answers, 429, [])));
+        Assert.False(AskLaneFailures.IsOutage(new BackendHttpException(BackendHttpException.ServiceKind.Voice, 503, [])));
+        Assert.False(AskLaneFailures.IsOutage(new ClaudeApiException(ClaudeAPI.MidStreamErrorCode, "Stream error (invalid_request_error): bad")));
+        Assert.False(AskLaneFailures.IsOutage(new HttpRequestException(HttpRequestError.ConnectionError, "no route")));
+        // Partway into the stream it is said as the Mac says it, outage or not (it is still tried once more first).
+        Assert.Equal("the answer stopped partway. please ask again.",
+            AskLaneFailures.AskFailureSentence(new ClaudeApiException(ClaudeAPI.MidStreamErrorCode, "Stream error (overloaded_error): Overloaded")));
+    }
+
+    [Fact]
+    public async Task AnOutageBeforeTheAnswerIsTriedOnceMore()
+    {
+        var attempts = 0;
+        var retries = new List<Exception>();
+        var waits = new List<TimeSpan>();
+        var answer = await AskLaneFailures.RetryOnceAfterOutageAsync(
+            () => ++attempts == 1 ? throw new BackendHttpException(BackendHttpException.ServiceKind.Answers, 529, []) : Task.FromResult("the sky is blue."),
+            () => false, TimeSpan.FromSeconds(2), retries.Add, CancellationToken.None,
+            (delay, _) => { waits.Add(delay); return Task.CompletedTask; });
+        Assert.Equal("the sky is blue.", answer);
+        Assert.Equal(2, attempts);
+        Assert.Single(retries);
+        Assert.Equal([TimeSpan.FromSeconds(2)], waits);
+    }
+
+    [Fact]
+    public async Task OnlyOneRetryAndNoneOnceTheAnswerHasStartedOrForOtherFailures()
+    {
+        static Task NoWait(TimeSpan _, CancellationToken __) => Task.CompletedTask;
+        var outage = new BackendHttpException(BackendHttpException.ServiceKind.Answers, 503, []);
+
+        // Down twice: the second failure is thrown (and said plainly).
+        var attempts = 0;
+        await Assert.ThrowsAsync<BackendHttpException>(() => AskLaneFailures.RetryOnceAfterOutageAsync<string>(
+            () => { attempts++; throw outage; }, () => false, TimeSpan.Zero, _ => { }, CancellationToken.None, NoWait));
+        Assert.Equal(2, attempts);
+
+        // Part of the answer had arrived: a retry would say it twice.
+        attempts = 0;
+        await Assert.ThrowsAsync<BackendHttpException>(() => AskLaneFailures.RetryOnceAfterOutageAsync<string>(
+            () => { attempts++; throw outage; }, () => true, TimeSpan.Zero, _ => { }, CancellationToken.None, NoWait));
+        Assert.Equal(1, attempts);
+
+        // Not an outage: no retry.
+        attempts = 0;
+        await Assert.ThrowsAsync<AnswerProviderException>(() => AskLaneFailures.RetryOnceAfterOutageAsync<string>(
+            () => { attempts++; throw new AnswerProviderException(AnswerSource.OpenAI, 401, "bad key"); }, () => false, TimeSpan.Zero, _ => { },
+            CancellationToken.None, NoWait));
+        Assert.Equal(1, attempts);
+
+        // Stopped meanwhile: no retry.
+        attempts = 0;
+        using var stopped = new CancellationTokenSource();
+        stopped.Cancel();
+        await Assert.ThrowsAsync<BackendHttpException>(() => AskLaneFailures.RetryOnceAfterOutageAsync<string>(
+            () => { attempts++; throw outage; }, () => false, TimeSpan.Zero, _ => { }, stopped.Token, NoWait));
+        Assert.Equal(1, attempts);
+    }
+
     [Fact]
     public void TheTokenSentenceIsKeptForARefusedToken()
     {
         var forbidden = new BackendHttpException(BackendHttpException.ServiceKind.Answers, 403, []);
         Assert.Equal("something went wrong talking to the openclicky backend. check the backend and your token in the settings file.",
                      AskLaneFailures.AskFailureSentence(forbidden));
-        var serverError = new BackendHttpException(BackendHttpException.ServiceKind.Answers, 500, []);
-        Assert.Equal("something went wrong getting your answer. please ask again.", AskLaneFailures.AskFailureSentence(serverError));
+        var badRequest = new BackendHttpException(BackendHttpException.ServiceKind.Answers, 400, []);
+        Assert.Equal("something went wrong getting your answer. please ask again.", AskLaneFailures.AskFailureSentence(badRequest));
         Assert.Contains("internet", AskLaneFailures.AskFailureSentence(new HttpRequestException(HttpRequestError.ConnectionError, "no route")));
         Assert.Contains("internet", AskLaneFailures.AskFailureSentence(new HttpRequestException(HttpRequestError.NameResolutionError, "no such host")));
         Assert.Contains("internet", AskLaneFailures.AskFailureSentence(new TimeoutException()));
