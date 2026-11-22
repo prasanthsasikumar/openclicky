@@ -455,10 +455,15 @@ public class RealtimeTurnTests : IDisposable
     {
         var (client, socket, _) = await ConnectedClientAsync();
         var action = new TaskCompletionSource<RealtimeToolResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var actionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var screensAttached = 0;
         await mainThread.InvokeAsync(() =>
         {
-            client.OnDesktopAction = (_, _) => action.Task;
+            client.OnDesktopAction = (_, _) =>
+            {
+                actionStarted.TrySetResult();
+                return action.Task;
+            };
             client.ScreenContextProvider = () =>
             {
                 screensAttached++;
@@ -468,13 +473,10 @@ public class RealtimeTurnTests : IDisposable
         socket.Receive("""{"type":"response.created","response":{"id":"r1"}}""");
         socket.Receive("""{"type":"response.done","response":{"id":"r1","status":"completed"}}""");
         socket.Receive("""{"type":"response.function_call_arguments.done","name":"open_url","call_id":"c1","response_id":"r1","arguments":"{\"url\":\"https://mail.google.com\"}"}""");
-        var busy = false;
-        for (var attempt = 0; attempt < 500 && !busy; attempt++)
-        {
-            busy = await mainThread.InvokeAsync(() => client.IsBusy);
-            if (!busy) await Task.Delay(10);
-        }
-        Assert.True(busy);
+        // Wait for the action itself: IsBusy is also true while r1 is still open, and an Esc before the call is
+        // picked up belongs to the turn before it, so the call's continuation would rightly go out (CI, 2026-11-22).
+        await actionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(await mainThread.InvokeAsync(() => client.IsBusy));
 
         await mainThread.InvokeAsync(client.StopSpeaking);
         action.SetResult(new RealtimeToolResult("Opened Gmail.", ThenLooksAtScreen: true));
