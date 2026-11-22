@@ -245,7 +245,13 @@ struct PermissionPromptTests {
         model.setBusy(true)
         model.setSpeaking(true)
         model.setHovering(true)
-        try await Task.sleep(nanoseconds: 600_000_000)
+        // The strip comes after the island's 400 ms grace period, which a busy CI runner running the tests in
+        // parallel stretched past the 0.6 s this used to wait (2026-11-21, "failed" after 3.5 s): wait for it, up to
+        // ten seconds, and check hovering never peeked meanwhile.
+        for _ in 0..<500 where model.expansion != .compact {
+            #expect(model.expansion != .peek)
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
         #expect(model.expansion == .compact)
 
         model.setSpeaking(false)

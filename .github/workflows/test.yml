@@ -64,8 +64,12 @@ jobs:
         if: failure()
         working-directory: macos/OpenClicky
         run: |
-          # Swift Testing says which check failed in "recorded an issue" / "Expectation failed" lines.
-          grep -E "error:|failed on|recorded an issue|Expectation failed" build.log test.log 2>/dev/null | sort -u | head -60 || true
+          # The tests first: Swift Testing names a failed test in a "failed on" line, and the check in "recorded an
+          # issue" / "Expectation failed" lines. Then the compiler's own errors (": error:"): a bare "error:" also
+          # matches test sources the build log echoes (FakeModel(error: …)), which filled the 60 lines before the
+          # test log was reached, so a failed test never showed here.
+          grep -E "failed on|recorded an issue|Expectation failed" test.log 2>/dev/null | head -40 || true
+          grep -E ": error:" build.log 2>/dev/null | sort -u | head -40 || true
       # The grep above can miss why a test failed (no issue line); the whole log says.
       - name: Keep the test log when the tests failed
         if: failure()
