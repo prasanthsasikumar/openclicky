@@ -92,6 +92,8 @@ enum NotchHUDExpansion: Equatable {
     case plate
     /// A one-off card with a countdown ring (`IslandNotices.swift`).
     case notice
+    /// The reply card: a typed question's or a job's answer in words, and the next questions.
+    case reply
     case full
 }
 
@@ -148,6 +150,9 @@ final class NotchHUDModel: ObservableObject {
     @Published var tourCard: FirstRunTourCard?
     /// The suggested tasks' card, if one is up; set by `PlateController`.
     @Published var plateCard: PlateIslandCard?
+    /// The reply card, if one is up; set by `IslandReplyController`.
+    @Published var reply: IslandReplyState?
+    var replyHeight: CGFloat { cardTopInset + (reply.map(IslandReplyLayout.contentHeight(for:)) ?? 0) }
     /// The one-off card showing, if any, with what is left of its ring; set by `IslandNoticeCenter`.
     @Published var notice: IslandNoticeState?
     var noticeHeight: CGFloat { cardTopInset + IslandNoticeState.contentHeight }
@@ -348,6 +353,7 @@ final class NotchHUDModel: ObservableObject {
         case .tour: return tourWidth
         case .plate: return plateWidth
         case .notice: return plateWidth
+        case .reply: return plateWidth
         case .full: return fullWidth
         }
     }
@@ -363,6 +369,7 @@ final class NotchHUDModel: ObservableObject {
         case .tour: return tourHeight
         case .plate: return plateHeight
         case .notice: return noticeHeight
+        case .reply: return replyHeight
         case .full: return fullHeight
         }
     }
@@ -577,7 +584,7 @@ final class NotchHUDModel: ObservableObject {
         switch expansion {
         case .compact:
             guard !isSpeaking, guideStep == nil else { return }
-        case .connect, .permission, .composer, .tour, .plate, .notice:
+        case .connect, .permission, .composer, .tour, .plate, .notice, .reply:
             return
         case .collapsed, .peek, .full:
             break
@@ -662,6 +669,22 @@ final class NotchHUDModel: ObservableObject {
         if sizeChanged && expansion == .plate { onLayoutChanged?() }
     }
 
+    /// Shows (or clears) the reply card, or updates what it holds. With the answer's words on it
+    /// the card outranks the busy strip (it is where the answer is read); with only next questions
+    /// it waits for the strip to finish.
+    func setReply(_ state: IslandReplyState?) {
+        guard reply != state else { return }
+        let sizeChanged = reply.map(IslandReplyLayout.contentHeight(for:)) != state.map(IslandReplyLayout.contentHeight(for:))
+        reply = state
+        reconcile(immediately: true)
+        if sizeChanged && expansion == .reply { onLayoutChanged?() }
+    }
+
+    private var showsReply: Bool {
+        guard let reply else { return false }
+        return reply.showsAnswer || (!isBusy && captionText == nil && guideStep == nil)
+    }
+
     /// Shows (or clears) a one-off card, or moves its ring. It ranks below every other card.
     func setNotice(_ state: IslandNoticeState?) {
         guard notice != state else { return }
@@ -683,6 +706,7 @@ final class NotchHUDModel: ObservableObject {
         if permissionPrompt != nil { return .permission }
         if tourCard != nil && !isBusy { return .tour }
         if plateCard != nil && !isBusy { return .plate }
+        if showsReply { return .reply }
         if connectPrompt != nil { return .connect }
         if notice != nil && !isBusy && captionText == nil && guideStep == nil { return .notice }
         if isBusy || captionText != nil || guideStep != nil { return .compact }
@@ -711,6 +735,8 @@ final class NotchHUDModel: ObservableObject {
             target = .tour
         } else if plateCard != nil && !isBusy {
             target = .plate
+        } else if showsReply {
+            target = .reply
         } else if connectPrompt != nil {
             // Hovering the connect card must not swap it for the full panel while the user is
             // reaching for its buttons; a click on the island still pins the full panel open.
@@ -730,7 +756,7 @@ final class NotchHUDModel: ObservableObject {
         } else {
             target = restingExpansion
         }
-        if target == .full || target == .peek || target == .connect || target == .permission || target == .composer || target == .tour || target == .plate || target == .notice || immediately {
+        if target == .full || target == .peek || target == .connect || target == .permission || target == .composer || target == .tour || target == .plate || target == .notice || target == .reply || immediately {
             setExpansion(target)
             return
         }
@@ -1128,6 +1154,17 @@ final class NotchHUDManager {
         let primary = primaryInstance
         instances.forEach { $0.model.setNotice($0 === primary ? state : nil) }
     }
+
+    /// Shows the reply card on the main screen's island (nil hides it).
+    func setReply(_ state: IslandReplyState?) {
+        let primary = primaryInstance
+        instances.forEach { $0.model.setReply($0 === primary ? state : nil) }
+    }
+
+    var isShowingReply: Bool { primaryInstance?.model.expansion == .reply }
+
+    /// What was typed into the composer and not sent, kept for the next time it opens.
+    var composerDraft = ""
 
     /// The one-off card is up (not waiting behind the busy strip or another card).
     var isShowingNotice: Bool { primaryInstance?.model.expansion == .notice }
@@ -1688,6 +1725,12 @@ struct NotchHUDView: View {
                         .frame(width: model.plateWidth, height: model.plateHeight)
                         .transition(IslandMotion.contentTransition)
                 }
+            case .reply:
+                if let reply = model.reply {
+                    IslandReplyView(state: reply, controller: companionManager.islandReply, topInset: model.cardTopInset, reduceMotion: model.reduceMotion)
+                        .frame(width: model.plateWidth, height: model.replyHeight)
+                        .transition(IslandMotion.contentTransition)
+                }
             case .notice:
                 if let notice = model.notice {
                     IslandNoticeView(state: notice, center: companionManager.islandNotices, topInset: model.cardTopInset, reduceMotion: model.reduceMotion)
@@ -2000,12 +2043,17 @@ struct NotchComposerView: View {
                 .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.white.opacity(0.12)))
         }
         .padding(.horizontal, 18)
-        .onAppear { requestText = "" }
+        // What was typed and not sent last time is still there (a follow-up to an agent starts clean).
+        .onAppear { requestText = companionManager.notchHUDManager.composerThreadId == nil ? companionManager.notchHUDManager.composerDraft : "" }
+        .onChange(of: requestText) { _, newValue in
+            if companionManager.notchHUDManager.composerThreadId == nil { companionManager.notchHUDManager.composerDraft = newValue }
+        }
     }
 
     private func submitRequest() {
         let trimmedRequestText = requestText.trimmingCharacters(in: .whitespacesAndNewlines)
         let threadId = companionManager.notchHUDManager.composerThreadId
+        companionManager.notchHUDManager.composerDraft = ""
         companionManager.notchHUDManager.closeTextComposer()
         guard !trimmedRequestText.isEmpty else { return }
         if let threadId {

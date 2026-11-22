@@ -23,6 +23,9 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 - **The island moves as one piece.** Opening, closing and every card now reshape on the same quick curve, with the contents fading in as it opens. While Clicky listens, thinks, speaks or has an agent working, a soft light in that state's colour shows under the island's corners.
 - **Rest the pointer on the notch to open the island.** Hold it there for a moment and the island opens, and closes when you move away; a click still keeps it open. Switch it off in Settings → Island → *Open when the pointer rests on it*.
 - **A card when a job is done.** When an agent finishes, the island says so with an *Open* button, and the card goes away by itself (rest the pointer on it to keep it).
+- **Typed questions get their answer in words too.** Ask with ⌃ twice and the island opens a reply card: a typing bubble that becomes the answer as it arrives, read aloud as before. Hand a job to the agent and the card shows its steps ticking off, then the result with an *Open* button. The card goes away by itself once you have had time to read it; rest the pointer on it to keep it.
+- **Next questions.** After an answer the island offers up to three questions you might ask next; a click asks one. It costs one small extra request on your own key or plan and never uses the free credits. Switch it off in Settings → Clicky → *Next questions*.
+- **The text box remembers.** What you typed and did not send is still there the next time you open it.
 
 ## 0.12.2
 

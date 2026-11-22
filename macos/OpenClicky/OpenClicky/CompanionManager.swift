@@ -418,6 +418,8 @@ final class CompanionManager: ObservableObject {
     let plateController = PlateController()
     /// One-off cards on the island with a countdown ring (a job finished).
     let islandNotices = IslandNoticeCenter()
+    /// The reply card: a typed question's or a job's answer in words, and the next questions.
+    let islandReply = IslandReplyController()
 
     /// The leg of a buddy flight in progress, if any. Each display has its own overlay, so a
     /// flight to another display is split at the display edges; the overlay whose screen matches
@@ -691,6 +693,7 @@ final class CompanionManager: ObservableObject {
         stopWatchingForGuidedStep()
         settingsTour.stop()
         stopActiveAnswer()
+        islandReply.withdraw()
         currentResponseTask?.cancel()
         isAskInFlight = false
         askIslandStatus = nil
@@ -952,6 +955,7 @@ final class CompanionManager: ObservableObject {
         appConnectPromptController.stop()
         plateController.stop()
         islandNotices.stop()
+        islandReply.withdraw()
         notchHUDManager.hide()
         realtimeVoiceClient.disconnect(reason: nil)
         globalPushToTalkShortcutMonitor.stop()
@@ -1045,6 +1049,7 @@ final class CompanionManager: ObservableObject {
         firstRunTour.start(companionManager: self)
         plateController.start(companionManager: self)
         islandNotices.start(companionManager: self)
+        islandReply.start(companionManager: self)
         // Kokoro comes into memory only when a question starts: pressing the ask shortcut or sending
         // a typed question. Hands-free answers in OpenAI's realtime voice and never needs it.
         kokoroPreparationCancellable = $voiceState
@@ -1509,6 +1514,7 @@ final class CompanionManager: ObservableObject {
         TeacherPlugin.clearBoard(reason: "a new question")
         lastQuestionWasTyped = true
         lastTranscript = trimmedText
+        islandReply.begin(question: trimmedText)
         ClickyAnalytics.trackUserMessageSent(characterCount: trimmedText.count)
         print("⌨️ Typed request: \(trimmedText)")
 
@@ -1948,6 +1954,7 @@ final class CompanionManager: ObservableObject {
                         tools: askTools,
                         onTextChunk: { accumulatedAnswer in
                             answerSpeaker.receive(accumulatedAnswer: accumulatedAnswer)
+                            self.islandReply.receive(text: IslandReplyController.shown(accumulatedAnswer))
                         }
                     )
                 } catch {
@@ -2518,6 +2525,7 @@ final class CompanionManager: ObservableObject {
         }
 
         agentActivityText = "starting agent…"
+        islandReply.begin(question: transcript)
         print("🤖 OpenClicky agent lane: \(transcript)")
         let result = try await openClickyAgentClient.runAgent(
             task: transcript,
@@ -2525,6 +2533,7 @@ final class CompanionManager: ObservableObject {
             threadId: lastAgentThreadId,
             onEvent: { [weak self] milestone in
                 self?.agentActivityText = milestone
+                self?.islandReply.addStep(milestone)
             }
         )
 
@@ -3134,6 +3143,9 @@ final class CompanionManager: ObservableObject {
     /// context does not grow without bound over a long session.
     func rememberExchange(userTranscript: String, assistantResponse: String) {
         conversationHistory.append((userTranscript: userTranscript, assistantResponse: assistantResponse))
+        // The reply card gets the whole answer (a job's with its thread), then the next questions.
+        let finishedJob = lastAgentResult.flatMap { Date().timeIntervalSince($0.finishedAt) < 2 ? $0.threadId : nil }
+        islandReply.finish(question: userTranscript, answer: assistantResponse, threadId: finishedJob)
         if conversationHistory.count > Self.maximumRememberedExchanges {
             conversationHistory.removeFirst(conversationHistory.count - Self.maximumRememberedExchanges)
         }

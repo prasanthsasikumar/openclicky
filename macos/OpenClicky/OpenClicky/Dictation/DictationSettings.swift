@@ -275,6 +275,7 @@ final class DictationSettings: ObservableObject {
         answerSimpleRequestsOnThisMac = defaults.object(forKey: Keys.answerSimpleRequestsOnThisMac) == nil ? true : defaults.bool(forKey: Keys.answerSimpleRequestsOnThisMac)
         drawToExplain = defaults.object(forKey: Keys.drawToExplain) == nil ? true : defaults.bool(forKey: Keys.drawToExplain)
         suggestTasks = defaults.bool(forKey: Keys.suggestTasks)
+        nextQuestions = defaults.object(forKey: Keys.nextQuestions) == nil ? true : defaults.bool(forKey: Keys.nextQuestions)
         hasCompletedDictationOnboarding = defaults.bool(forKey: Keys.hasCompletedDictationOnboarding)
         preferredMicrophoneUID = defaults.string(forKey: Keys.preferredMicrophoneUID)
         orbPosition = Self.decodePoint(defaults.string(forKey: Keys.orbPosition))
@@ -315,6 +316,7 @@ final class DictationSettings: ObservableObject {
         static let answerSimpleRequestsOnThisMac = "openclicky.ask.onThisMac"
         static let drawToExplain = "openclicky.ask.drawToExplain"
         static let suggestTasks = "openclicky.plate.suggestTasks"
+        static let nextQuestions = "openclicky.ask.nextQuestions"
         static let hasCompletedDictationOnboarding = "dictation.onboarded"
         static let preferredMicrophoneUID = "dictation.preferredMicrophoneUID"
     }
@@ -444,6 +446,8 @@ final class DictationSettings: ObservableObject {
     /// "Things I can take off your plate": once a day, tasks Clicky could do on its own. Off until
     /// switched on, because the digest it is written from goes to the answer source.
     @Published var suggestTasks: Bool { didSet { defaults.set(suggestTasks, forKey: Keys.suggestTasks) } }
+    /// Up to three next questions offered as pills after an answer (own key or plan only).
+    @Published var nextQuestions: Bool { didSet { defaults.set(nextQuestions, forKey: Keys.nextQuestions) } }
     @Published var hasCompletedDictationOnboarding: Bool { didSet { defaults.set(hasCompletedDictationOnboarding, forKey: Keys.hasCompletedDictationOnboarding) } }
 
     /// Settings → general → reset, and the orb page's reset: back to a fresh install's values.

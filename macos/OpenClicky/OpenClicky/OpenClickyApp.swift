@@ -635,6 +635,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
         #if DEBUG
+        if let renderIndex = launchArguments.firstIndex(of: "--openclicky-render-cards"), renderIndex + 1 < launchArguments.count {
+            // The island's cards as PNG files, drawn off screen, then exit (see IslandCardRender).
+            let folder = launchArguments[renderIndex + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [companionManager] in
+                IslandCardRender.run(folder: folder, companionManager: companionManager)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+            }
+        }
         if launchArguments.contains("--openclicky-island-smoke") {
             // The island's states played by the app itself (see IslandSmoke).
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in

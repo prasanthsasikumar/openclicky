@@ -146,6 +146,8 @@ final class IslandNoticeCenter {
     }
 
     private func postJobFinished(_ result: OpenClickyAgentResultSummary) {
+        // The reply card already carries this job's answer and its Open button.
+        guard companionManager?.islandReply.isShowingAnAnswer != true else { return }
         let threadId = result.threadId
         post(Self.jobFinishedNotice(result)) { [weak self] in
             guard !threadId.isEmpty else { return }
