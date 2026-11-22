@@ -158,6 +158,12 @@ public sealed partial class CompanionManager
             SetAskIslandStatus(null);
             ShowAskCaption($"“{transcript}” · thinking…", 30);
         }
+        // Nothing can answer yet (no key, no plan, no account): start the free guest the welcome
+        // tour would have made, so the question is answered instead of refused. Before the capture,
+        // which sends fewer screens on an account.
+        await OpenClickyAuthSession.Shared.StartGuestIfNothingCanAnswerAsync();
+        cancellationToken.ThrowIfCancellationRequested();
+
         // Captured after the pause, so what is sent is what is on screen now.
         // Every screen (an account sends at most two), told apart from a backend failure.
         IReadOnlyList<CompanionScreenCapture> allScreenCaptures;

@@ -254,6 +254,25 @@ final class OpenClickyAuthSession: ObservableObject {
         }
     }
 
+    /// Whether a question should start a guest first: nothing can answer it (no own key, no plan,
+    /// no answer source) and nobody is signed in. Someone who answers through a key or a plan has a
+    /// route and never gets a guest.
+    nonisolated static func shouldStartGuestBeforeAsking(answerRoute: ProviderRoute, hasAccountToken: Bool) -> Bool {
+        guard !hasAccountToken, case .unavailable = answerRoute else { return false }
+        return true
+    }
+
+    /// A question with nothing to answer it starts a guest first, the one the welcome tour makes, so
+    /// someone who skipped or finished the tour without signing in gets an answer instead of "add
+    /// your email". When the backend wants an email after all (a guest that already ran out on this
+    /// Mac, the guest room full) the question goes on and is refused as before.
+    func startGuestIfNothingCanAnswer() async {
+        guard Self.shouldStartGuestBeforeAsking(answerRoute: ProviderRouter.current(for: .claude),
+                                                hasAccountToken: OpenClickyConfiguration.hasAccountToken) else { return }
+        AppLog.append("sign-in: nothing can answer this question; starting a guest first")
+        await startGuestWithoutEmail()
+    }
+
     /// Signed in as a guest that has not given an email yet.
     var isGuestWithoutEmail: Bool { OpenClickyConfiguration.hasAccountToken && accountEmail == nil }
 

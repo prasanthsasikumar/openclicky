@@ -39,9 +39,13 @@ protocol TakePolisher: Sendable {
     /// Tidies one take. A polisher whose model tends to answer the words instead of tidying them
     /// (a small on-device one) frames them here; the others just polish.
     func polishTake(system: String, take: String) async throws -> String
+    /// Called when a take starts, so a model that has to load does it while the person speaks
+    /// instead of inside the clean-up's time limit. Nothing to do for a model behind an API.
+    func prepareWhileThePersonSpeaks()
 }
 
 extension TakePolisher {
+    func prepareWhileThePersonSpeaks() {}
     func polishTake(system: String, take: String) async throws -> String {
         try await polish(system: system, user: take)
     }

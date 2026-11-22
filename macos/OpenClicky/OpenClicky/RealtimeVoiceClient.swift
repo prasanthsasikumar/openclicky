@@ -230,6 +230,17 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     /// Id of the response the server is generating right now (`response.created`), so tool calls
     /// can be matched to it; nil between responses.
     private var activeResponseId: String?
+    /// A `response.create` went out and its `response.created` has not come back yet. Such a
+    /// reply is as real as one in progress: the server refuses a second request while it exists
+    /// ("Conversation already has an active response in progress"), and when the person was
+    /// already talking before the request arrived the server interrupts nothing, so only a cancel
+    /// from here stops it.
+    private var replyIsOnItsWay = false
+    /// Replies cancelled while still on their way. Each still sends its `response.created` (then
+    /// `response.done`, cancelled), which must not be taken for the reply requested after it.
+    private var cancelledRepliesNotYetAnnounced = 0
+    /// A reply exists on the server, being made or about to be.
+    private var hasReplyToCancel: Bool { responseInProgress || replyIsOnItsWay }
     /// Responses we cancelled (barge-in). Their late tool calls still get an output item, but
     /// must never arm a continuation — the server's `response.done` for them is status "cancelled".
     private var cancelledResponseIds: Set<String> = []
@@ -459,6 +470,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         isSocketOpen = false
         if isConnected { isConnected = false }
         responseInProgress = false
+        replyIsOnItsWay = false
+        cancelledRepliesNotYetAnnounced = 0
         needsContinuationAfterResponse = false
         activeResponseId = nil
         cancelledResponseIds.removeAll()
@@ -780,7 +793,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         pushToTalkTailTask = nil
         idlePauseTask?.cancel()
         idlePauseTask = nil
-        if responseInProgress { cancelActiveResponse() }
+        if hasReplyToCancel { cancelActiveResponse() }
         flushPlayback()
         try? send(["type": "input_audio_buffer.clear"])
         pushToTalkArmed = true
@@ -841,7 +854,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         pushToTalkTailTask = nil
         idlePauseTask?.cancel()
         idlePauseTask = nil
-        if responseInProgress { cancelActiveResponse() }
+        if hasReplyToCancel { cancelActiveResponse() }
         flushPlayback()
         Task { [weak self] in try? await self?.startAudioIfNeeded() }
         refreshInstructionsIfNeeded()
@@ -866,7 +879,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         let item: [String: Any] = [
             "type": "message",
             "role": "assistant",
-            "content": [["type": "text", "text": text]],
+            // An assistant message's text is "output_text"; "text" is refused ("Invalid value").
+            "content": [["type": "output_text", "text": text]],
         ]
         try? send(["type": "conversation.item.create", "item": item])
         log("assistant note: \(text.prefix(120))")
@@ -976,7 +990,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         Task { [weak self] in try? await self?.startAudioIfNeeded() }
         var body: [String: Any] = ["type": "response.create"]
         if let instructions { body["response"] = ["instructions": instructions] }
-        try? send(body)
+        try? sendResponseCreate(body)
     }
 
     // MARK: - Audio (delegated to RealtimeAudioEngine on its own queue)
@@ -1183,6 +1197,8 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         connectedAt = nil
         stopForwardingMicrophone()
         responseInProgress = false
+        replyIsOnItsWay = false
+        cancelledRepliesNotYetAnnounced = 0
         log("realtime disconnected: \(reason)")
         if wasConnected { onConnectionLost?(reason) }
     }
@@ -1195,7 +1211,14 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             onSpeechStarted?()
             flushPlayback()
             turnGeneration += 1
-            if responseInProgress { cancelActiveResponse() }
+            if responseInProgress, dialect.cancelsItsOwnReplyWhenThePersonSpeaks {
+                // The server has cancelled that reply already; only the bookkeeping is left.
+                cancelActiveResponse(theServerCancelledItAlready: true)
+            } else if hasReplyToCancel {
+                // Still on its way (the person spoke before the request arrived, so the server
+                // interrupted nothing), or a vendor that leaves the cancel to us.
+                cancelActiveResponse()
+            }
             if currentMode == .alwaysOn { refreshInstructionsIfNeeded() }
             // A vendor that replies on its own gets the screen while the person is still talking.
             if currentMode == .alwaysOn, dialect.respondsWithoutRequest { await attachScreenContext() }
@@ -1223,11 +1246,21 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case "input_audio_buffer.speech_stopped", "session.created", "session.updated":
             log(type)
         case "response.created":
+            let createdResponseId = (event["response"] as? [String: Any])?["id"] as? String
+            if cancelledRepliesNotYetAnnounced > 0 {
+                // A reply cancelled before it began: its cancelled `response.done` follows.
+                cancelledRepliesNotYetAnnounced -= 1
+                if let createdResponseId { cancelledResponseIds.insert(createdResponseId) }
+                break
+            }
+            replyIsOnItsWay = false
             responseInProgress = true
-            activeResponseId = (event["response"] as? [String: Any])?["id"] as? String
+            activeResponseId = createdResponseId
             assistantTranscriptBuffer = ""
             onResponseStarted?()
         case "response.output_audio.delta", "response.audio.delta":
+            // Nothing of a reply cancelled before it began is played.
+            if let responseId = event["response_id"] as? String, cancelledResponseIds.contains(responseId) { break }
             if let delta = event["delta"] as? String { enqueuePlayback(base64: delta) }
         case "response.output_audio_transcript.delta", "response.audio_transcript.delta":
             assistantTranscriptBuffer += event["delta"] as? String ?? ""
@@ -1244,10 +1277,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
             let wantsContinuation = needsContinuationAfterResponse
             needsContinuationAfterResponse = false
             var continued = false
-            if wantsContinuation, status != "cancelled" {
+            if wantsContinuation, status != "cancelled", replyIsOnItsWay {
+                // A reply is already on its way and will read the tool outputs.
+                continued = true
+            } else if wantsContinuation, status != "cancelled" {
                 // Tool outputs were added during this response: ask for the follow-up once.
                 do {
-                    try send(["type": "response.create"])
+                    try sendResponseCreate()
                     continued = true
                 } catch {
                     log("continuation failed: \(error.localizedDescription)")
@@ -1265,6 +1301,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         case "error":
             let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? "\(event)"
             log("realtime error: \(message)")
+            // A refused `response.create` never gets its `response.created`. Which request an
+            // error answers is not said, so the reply is taken as refused: if it was not, its
+            // `response.created` says so; left set after a refusal, it would cancel nothing later.
+            replyIsOnItsWay = false
         default:
             break
         }
@@ -1618,9 +1658,12 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 // the active response will pick the output up; requesting now would collide.
                 log("tool output for inactive response \(responseId ?? "?"): no continuation")
             }
+        } else if replyIsOnItsWay {
+            // A reply is already on its way and will read this output; a second request would be refused.
+            log("tool output while a reply is on its way: no continuation")
         } else {
             // No response is active (event ordering can put arguments.done after done): continue now.
-            try? send(["type": "response.create"])
+            try? sendResponseCreate()
         }
     }
 
@@ -1633,25 +1676,38 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
         flushPlayback()
     }
 
-    private func cancelActiveResponse() {
+    private func cancelActiveResponse(theServerCancelledItAlready: Bool = false) {
         turnGeneration += 1
         needsContinuationAfterResponse = false
-        // Only cancel what is in progress: the server answers a cancel with nothing active with
-        // an error ("no active response found"), and the generation bump above is what stops a
-        // late action from continuing.
-        let hadActiveResponse = responseInProgress
+        // Only cancel what exists: the server answers a cancel with nothing active with an error
+        // ("no active response found"), and the generation bump above is what stops a late action
+        // from continuing. A reply still on its way counts: the server takes events in order, so
+        // the cancel reaches it after the request that makes that reply.
+        let hadReplyToCancel = hasReplyToCancel
         if let activeResponseId { cancelledResponseIds.insert(activeResponseId) }
         activeResponseId = nil
+        if replyIsOnItsWay, !responseInProgress { cancelledRepliesNotYetAnnounced += 1 }
+        replyIsOnItsWay = false
         responseInProgress = false
-        if hadActiveResponse { try? send(["type": "response.cancel"]) }
+        if hadReplyToCancel, !theServerCancelledItAlready { try? send(["type": "response.cancel"]) }
+    }
+
+    /// The one place a reply is requested, so each request is known about until its `response.created`.
+    private func sendResponseCreate(_ body: [String: Any] = ["type": "response.create"]) throws {
+        try send(body)
+        // A vendor that replies on its own makes no reply per request, so there is nothing to count.
+        if !dialect.respondsWithoutRequest { replyIsOnItsWay = true }
     }
 
     /// Request the reply for a committed user turn. Any continuation queued for tool outputs of
     /// the previous response is dropped: this create supersedes it (one create per turn).
     private func requestTurnResponse() {
+        // A reply nobody cancelled (requested just before the person went on talking, or made
+        // after their `speech_started` was handled) would make the server refuse this request.
+        if hasReplyToCancel { cancelActiveResponse() }
         turnGeneration += 1
         needsContinuationAfterResponse = false
-        try? send(["type": "response.create"])
+        try? sendResponseCreate()
     }
 
     private func log(_ line: String) {

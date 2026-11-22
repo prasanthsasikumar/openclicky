@@ -425,24 +425,14 @@ public sealed partial class CompanionManager : ObservableObject, ICompanionSetti
     }
 
     /// <summary>Wires the permission card's buttons; the microphone's grant opens Settings → Privacy → Microphone,
-    /// online speech's "turn on" switches it on directly (Settings → Privacy → Speech when that fails).</summary>
+    /// online speech's "turn on" opens Settings → Privacy → Speech. The person flips the switch themselves (it is
+    /// their privacy setting, and a policy may own it); the poll drops the card once it reads as on.</summary>
     private void StartPermissionPrompts()
     {
         PermissionPromptController.PerformRequest = step =>
         {
-            if (step != PermissionStep.OnlineSpeech)
-            {
-                services.MicrophonePermission.OpenPrivacySettings();
-                return;
-            }
-            if (services.OfflineSpeech.AcceptOnlineSpeech())
-            {
-                AppLog.Write("permissions: online speech recognition switched on from the island");
-                RefreshAllPermissions();
-                return;
-            }
-            AppLog.Write("permissions: could not switch online speech recognition on; opening speech settings");
-            services.OfflineSpeech.OpenSpeechPrivacySettings();
+            if (step == PermissionStep.OnlineSpeech) services.OfflineSpeech.OpenSpeechPrivacySettings();
+            else services.MicrophonePermission.OpenPrivacySettings();
         };
         PermissionPromptController.OpenSettings = () => ShowSettings();
         PermissionPromptController.Update(PermissionStatus);

@@ -259,10 +259,80 @@ struct RealtimeSessionHandshakeOrderTests {
         // The person starts talking again before the page settled.
         await Self.deliver(#"{"type":"input_audio_buffer.speech_started"}"#, on: socket)
         await Self.waitUntil { socket.sentTexts.contains { $0.contains("function_call_output") } }
-        let cancelIndex = try #require(socket.sentTexts.firstIndex { $0.contains("response.cancel") })
         let outputIndex = try #require(socket.sentTexts.firstIndex { $0.contains("function_call_output") })
-        #expect(cancelIndex < outputIndex)
         #expect(!socket.sentTexts[outputIndex...].contains { $0.contains("response.create") })
+        client.disconnect(reason: nil)
+    }
+
+    /// With `interrupt_response` on, OpenAI cancels the reply itself the moment the person speaks.
+    /// A second cancel from here was answered "Cancellation failed: no active response found",
+    /// 51 times in one tester's log (2026-11-21).
+    @Test func aReplyTheServerInterruptsItselfIsNotCancelledAgain() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        await Self.deliver(#"{"type":"response.created","response":{"id":"r1"}}"#, on: socket)
+        await Self.deliver(#"{"type":"input_audio_buffer.speech_started"}"#, on: socket)
+        await Self.deliver(#"{"type":"input_audio_buffer.speech_stopped"}"#, on: socket)
+        await Self.waitUntil { socket.isWaitingToReceive }
+        #expect(!socket.sentTexts.contains { $0.contains("response.cancel") })
+        client.disconnect(reason: nil)
+    }
+
+    /// The person pauses and goes on: the first half's reply was requested, but the server heard
+    /// the second half begin before that request arrived, so it interrupts nothing and
+    /// `response.created` has not come back yet. Nobody cancelled that reply, and the request for
+    /// the second half was refused ("Conversation already has an active response in progress").
+    @Test func aReplyStillOnItsWayIsCancelledWhenThePersonGoesOnTalking() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        await Self.deliver(#"{"type":"input_audio_buffer.committed"}"#, on: socket)
+        await Self.waitUntil { socket.sentTexts.contains { $0.contains("response.create") } }
+        await Self.deliver(#"{"type":"input_audio_buffer.speech_started"}"#, on: socket)
+        await Self.deliver(#"{"type":"input_audio_buffer.committed"}"#, on: socket)
+        await Self.waitUntil { socket.sentTexts.filter { $0.contains("response.create") }.count == 2 }
+        let responseEvents = socket.sentTexts.compactMap { text -> String? in
+            if text.contains("response.create") { return "create" }
+            if text.contains("response.cancel") { return "cancel" }
+            return nil
+        }
+        #expect(responseEvents == ["create", "cancel", "create"])
+        client.disconnect(reason: nil)
+    }
+
+    /// A turn is committed while a reply is still being made (its `speech_started` was handled
+    /// before that reply existed): the old reply is cancelled first, then the new one requested.
+    @Test func aNewTurnCancelsTheReplyInProgressBeforeAskingForItsOwn() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        await Self.deliver(#"{"type":"response.created","response":{"id":"r1"}}"#, on: socket)
+        await Self.deliver(#"{"type":"input_audio_buffer.committed"}"#, on: socket)
+        await Self.waitUntil { socket.sentTexts.contains { $0.contains("response.create") } }
+        let cancelIndex = try #require(socket.sentTexts.firstIndex { $0.contains("response.cancel") })
+        let createIndex = try #require(socket.sentTexts.firstIndex { $0.contains("response.create") })
+        #expect(cancelIndex < createIndex)
+        client.disconnect(reason: nil)
+    }
+
+    /// A tool output must not ask for a second reply while one is already on its way.
+    @Test func aToolOutputAsksForNothingWhileAReplyIsOnItsWay() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        await Self.deliver(#"{"type":"input_audio_buffer.committed"}"#, on: socket)
+        await Self.waitUntil { socket.sentTexts.contains { $0.contains("response.create") } }
+        await Self.deliver(#"{"type":"response.function_call_arguments.done","name":"unknown_tool","call_id":"c9","response_id":"r0","arguments":"{}"}"#, on: socket)
+        await Self.waitUntil { socket.sentTexts.contains { $0.contains("function_call_output") } }
+        await Self.waitUntil { socket.isWaitingToReceive }
+        #expect(socket.sentTexts.filter { $0.contains("response.create") }.count == 1)
+        client.disconnect(reason: nil)
+    }
+
+    /// OpenAI refuses an assistant message whose content type is "text" ("Invalid value: 'text'.
+    /// Value must be 'output_text'."), so the note about a drawing never reached the fast voice.
+    @Test func anAssistantNoteIsSentAsOutputText() async throws {
+        let (client, socket) = try await Self.connectedClient(mode: .alwaysOn)
+        client.addAssistantNote("I drew how a laptop works.")
+        let note = try #require(socket.sentTexts.first { $0.contains("I drew how a laptop works.") })
+        let event = try #require(try JSONSerialization.jsonObject(with: Data(note.utf8)) as? [String: Any])
+        let item = try #require(event["item"] as? [String: Any])
+        let content = try #require(item["content"] as? [[String: Any]])
+        #expect(item["role"] as? String == "assistant")
+        #expect(content.first?["type"] as? String == "output_text")
         client.disconnect(reason: nil)
     }
 

@@ -66,10 +66,6 @@ public interface IOfflineSpeechRecognizer
     /// <summary>Whether Windows' "Online speech recognition" is on; null when it cannot be read.</summary>
     bool? IsOnlineSpeechAccepted() => null;
 
-    /// <summary>Switches "Online speech recognition" on for this user, once the person said yes on the island's
-    /// card. False when it could not be written (the card then opens Windows' speech settings).</summary>
-    bool AcceptOnlineSpeech() => false;
-
     /// <summary>Opens Settings → Privacy &amp; security → Speech.</summary>
     void OpenSpeechPrivacySettings() { }
 }
