@@ -1,6 +1,6 @@
 // Sparkle's update alerts on the Mac (SPUStandardUserDriver), as sheets: "A new version is
-// available" with Install Update / Skip This Version / Remind Me Later, the download's progress,
-// "You're up to date", and a check that failed. Before this, "Check Now" downloaded and restarted
+// available" with Install Update / Skip This Version / Remind Me Later, "You're up to date", and a
+// check that failed. The download's progress is the update window's now (UpdateWindows). Before this, "Check Now" downloaded and restarted
 // into the new version without asking (2026-10-29).
 
 using System.Windows;
@@ -61,32 +61,6 @@ public sealed class UpdatePromptSheets(Dispatcher dispatcher, DictationSettings 
         sheet.AddFooterButton("OK", sheet.Close, isDefault: true, isCancel: true);
         sheet.ShowDialog();
     }).Task;
-
-    /// <summary>
-    /// A small window with the download's progress, shown while the update downloads. The returned
-    /// actions set the percentage and close it; closing it does not cancel the download.
-    /// </summary>
-    public async Task<(Action<int> Report, Action Close)> ShowDownloadingAsync(string version)
-    {
-        return await dispatcher.InvokeAsync<(Action<int>, Action)>(() =>
-        {
-            var sheet = new SheetWindow(Owner(), settings, "Software Update", 420);
-            var bar = new ProgressBar { Minimum = 0, Maximum = 100, Height = 6, Margin = new Thickness(0, 8, 0, 0) };
-            var status = Ui.Text("Starting the download…", 12, SettingsLook.TextSecondary);
-            sheet.SetBody(Ui.VStack(8,
-                Ui.Text($"Downloading OpenClicky {version}", 16, SettingsLook.TextPrimary, FontWeights.SemiBold),
-                bar, status), new Thickness(24, 4, 24, 18));
-            sheet.HideFooter();
-            sheet.Show();
-            return (
-                percent => dispatcher.BeginInvoke(() =>
-                {
-                    bar.Value = percent;
-                    status.Text = percent >= 100 ? "Installing; OpenClicky restarts in a moment." : $"{percent}%";
-                }),
-                () => dispatcher.BeginInvoke(sheet.Close));
-        });
-    }
 
     private static Window? Owner() =>
         Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive && window is not SheetWindow);
