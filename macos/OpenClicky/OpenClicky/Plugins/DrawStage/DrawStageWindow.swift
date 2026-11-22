@@ -102,6 +102,8 @@ final class DrawStageWindow: NSObject, DrawStageSurface, DrawStagePreparing {
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(self, forURLScheme: DrawStageScheme.scheme)
         configuration.userContentController.add(self, name: "stage")
+        // The pen's sound is made by the page (Web Audio) with no click on it to start from.
+        configuration.mediaTypesRequiringUserActionForPlayback = []
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         webView.uiDelegate = self

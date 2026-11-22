@@ -96,6 +96,26 @@ struct DrawStageControllerTests {
         #expect(bounds == DrawStageBounds(x: 10, y: 20, width: 300, height: 200, pageWidth: 1440, pageHeight: 900))
     }
 
+    @Test func theSoundAndMotionSettingsAreReadAsEachDrawingBegins() {
+        let (controller, fake) = makeController()
+        controller.receive(#"{"type":"ready"}"#)
+        controller.begin(displayFrame: screen, canvasWidth: 1280, canvasHeight: 800)
+        #expect(fake.postedObjects(ofType: "beginStream").last?["sound"] == nil)
+        #expect(fake.postedObjects(ofType: "beginStream").last?["reduceMotion"] == nil)
+
+        var soundsOn = true
+        controller.soundsOn = { soundsOn }
+        controller.reducesMotion = { true }
+        controller.begin(displayFrame: screen, canvasWidth: 1280, canvasHeight: 800)
+        #expect(fake.postedObjects(ofType: "beginStream").last?["sound"] as? Bool == true)
+        #expect(fake.postedObjects(ofType: "beginStream").last?["reduceMotion"] as? Bool == true)
+
+        soundsOn = false
+        controller.continueDrawing()
+        #expect(fake.postedObjects(ofType: "continueStream").last?["sound"] == nil)
+        #expect(fake.postedObjects(ofType: "continueStream").last?["reduceMotion"] as? Bool == true)
+    }
+
     @Test func clearWipesAndHidesTheStage() {
         let (controller, fake) = makeController()
         controller.receive(#"{"type":"ready"}"#)

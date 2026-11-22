@@ -5,7 +5,7 @@ screen while it talks**: a hand-drawn diagram that appears stroke by stroke, or 
 by part, each beat in step with the sentence being spoken.
 
 This folder is the stage itself, shared by every OpenClicky app: the page (`index.html`, `stage.js`,
-`stage.css`), the sandboxed worker that runs the model's program (`stage-worker.js`), the 3D figure engine
+`stage.css`, with the pen's arithmetic in `stage-pen.js` and its sound in `stage-sound.js`), the sandboxed worker that runs the model's program (`stage-worker.js`), the 3D figure engine
 (`figure3d.js`, on three.js r172 in `vendor/three`, MIT, see its LICENSE), the sample programs
 (`samples/`) and the prompts that teach a model the drawing language (`prompt/`). An app loads the page in a
 web view, feeds it the model's reply as it streams, speaks each `say()` line, and tells the page when each
@@ -28,9 +28,9 @@ Windows app keeps its own copy under `windows/src/OpenClicky.Windows/Assets/Draw
                                              stage-worker.js  runs one statement at a time → marks (plain data)
                                                 │
                                                 ▼
-                                             stage.js paints the marks as SVG pen strokes, each beat's strokes
-                                             spread over the time its say() line is spoken; figure3d.js renders
-                                             the 3D figures
+                                             stage.js paints the marks as pen strokes (stage-pen.js), each
+                                             beat's strokes spread over the time its say() line is spoken;
+                                             figure3d.js renders the 3D figures
 ```
 
 **The model writes a program, not a picture.** An answer is a list of beats:
@@ -57,21 +57,50 @@ so far when it can be. It keeps its place above or below the label it met, so a 
 order, and an `arrow()` with an end at it moves that end too. Labels draw over every stroke, so a later stroke
 never covers one. `samples/labels-crowded.js` is a drawing whose labels crowd each other.
 
-**Pacing.** Every mark belongs to the `say()` line before it. The pen draws a line's marks within that line's
-time, running up to about 3× faster or 2× slower than its natural speed so they finish as the line does. Two
-clocks:
+**Pacing.** Every mark belongs to the `say()` line before it, and a line's marks are spread so the last one
+ends as the line does (`planLine` in `stage-pen.js`, worked out again as each mark starts). With time to spare
+the pen slows down (to 1.5×; 1.3× on a line still being written), then the marks move apart (to 3× their usual
+gap), and what is left is a rest at the end of the line. With too little, the pen and its flights speed up (to
+0.35×), then the marks crowd closer together. Two clocks:
 
 - `estimate` (default): each line lasts its word count / 2.6 seconds.
 - `speech`: the page sends `lineDue(k)` when line *k* is next. The app speaks it and answers
   `lineStarted(k)` / `lineEnded(k)`. An app that plays the lines in order from its own queue can ignore
-  `lineDue` and send `lineStarted` / `lineEnded` as each line's audio starts and ends (the Mac does).
+  `lineDue` and send `lineStarted` / `lineEnded` as each line's audio starts and ends (the Mac does). Until
+  a line's `lineEnded` arrives the page guesses its length from its words, at the speed the voice has spoken
+  the lines before it (2.6 words a second before any has been heard).
+
+**The pen.** A stroke takes `clamp(0.25 + length / 1400, 0.3, 1.4)` seconds (length in canvas units) on
+`cubic-bezier(.35, .2, .55, .95)`, and the next mark may start when it is 0.7 of the way through, so strokes
+run into each other the way a quick hand's do. A stroke is ink, not an SVG stroke: a hand's centreline through
+the mark's points (each edge bows and wobbles a little, a closed shape runs a little past its start, an ellipse
+is not quite round), with a filled outline round it that is thinner where the pen comes down and thinner still
+where it lifts off; a mask with the centreline drawn in it uncovers the ink along its length and is removed
+once the stroke is drawn. The wobble is seeded by the mark's place in the program, so a drawing looks the same
+every time it is drawn. A pen cursor draws each stroke: it flies to a mark more than 110 units from where it
+is (`min(0.5, 0.18 + distance / 2600)` s; 0.3 s to touch down for the first), the ink waiting for it to land
+and the stroke before it to end; to a nearer mark it hops while the ink starts. It writes along under words,
+leaves the page 1.2 s after its last mark, and is in a layer of its own (`#pen`), so it is never in the
+drawing's box, its picture or its video.
+
+**Reduce Motion.** With the system's Reduce Motion setting on (`prefers-reduced-motion`), or
+`reduceMotion: true` from the app, marks appear in place with a short fade, still in step with the spoken
+lines: no pen cursor, no strokes travelling, no cards sliding in. (3D figures still turn and build as before.)
+
+**Sound.** Off unless the app asks (`sound` below). Made in the page with Web Audio, with no audio file: a
+quiet hiss while a stroke is drawn, whose level and brightness follow the pen's speed through the stroke
+(nothing as it sets off, most in mid-stroke, nothing as it lifts); a thinner one for handwriting and a lower
+one for the marker; and a soft tick when a dot, a card, a photo, a 3D part or an arrow's head lands. The audio
+clock is suspended a second after a drawing finishes and whenever the stage sleeps or is wiped, and
+`finishNow` silences it at once. An app whose web view only plays audio after a click has to allow it without
+one (the Mac sets `mediaTypesRequiringUserActionForPlayback = []`).
 
 ## Messages
 
 | App → page | |
 |---|---|
-| `beginStream {w, h, pace, keepPlace?}` | a new program on a `w`×`h` canvas; wipes the old drawing (and where it was moved, unless `keepPlace`) |
-| `continueStream {pace}` | a follow-up's program, run after the one drawn: the drawing and the program's names stay |
+| `beginStream {w, h, pace, keepPlace?, sound?, reduceMotion?}` | a new program on a `w`×`h` canvas; wipes the old drawing (and where it was moved, unless `keepPlace`). Optional, for this drawing: `sound` (`true`, or a level from 0 to 1) turns on the pen's sound, silent without it; `reduceMotion` (`true` / `false`) overrides the system's Reduce Motion setting, which the page follows without it |
+| `continueStream {pace, sound?, reduceMotion?}` | a follow-up's program, run after the one drawn: the drawing and the program's names stay; `sound` and `reduceMotion` as above, for the follow-up |
 | `feed {code, done}` | the whole program so far; `done` on the last |
 | `lineStarted {k}` / `lineEnded {k}` | the voice's timing for line `k` (pace `speech`) |
 | `finishNow` | draw everything still waiting, quickly (the voice was cut short) |
@@ -305,4 +334,15 @@ Samples: `cell-animal.js`, `cell-plant-animal.js`, `cell-bacterium.js`.
 Serve this folder over http (`python3 -m http.server`) and open `index.html`, then in the console:
 `drawStage.handle({type: 'beginStream', w: 1280, h: 720})` and
 `drawStage.handle({type: 'feed', code: <a sample's text>, done: true})`. Without an app the page logs its
-messages instead of posting them.
+messages instead of posting them. `index.html?sound=1` turns the pen's sound on for the preview (click the
+page once: a browser plays no sound before that) and `?motion=reduce` shows it as with Reduce Motion.
+
+## Tests
+
+`npm run test:stage` at the repository's root (node's own test runner, no browser; it is part of `npm test`):
+`tests/stage-pen.test.mjs` checks the pen's arithmetic (pen time, pacing a line, flights, the centreline and
+outline of a stroke, the sound's curves), and `tests/stage-page.test.mjs` runs `stage.js` with the real worker
+on a stand-in page and a clock turned by hand (`tests/page-harness.mjs`), checking what the page schedules:
+that a sample draws to the end, strokes overlap, a line's marks end with it, the cursor's flights, Reduce
+Motion, and when sound is and is not scheduled. Nothing there renders or plays anything: how it looks and
+sounds is checked on a screen (`--openclicky-drawstage-smoke --sound` on the Mac).
