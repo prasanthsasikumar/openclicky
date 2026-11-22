@@ -2,13 +2,15 @@
 //  DrawStageSmoke.swift
 //  OpenClicky
 //
-//  `--openclicky-drawstage-smoke [program.js | reply:<file> | "lesson:<question>"] [--voice] [--hide-after-finish]`
+//  `--openclicky-drawstage-smoke [program.js | reply:<file> | "lesson:<question>"] [--voice] [--sound] [--reduce-motion] [--hide-after-finish]`
 //
 //  Draws on the cursor's screen without a voice turn, then exits: with no argument the bundled
 //  rocket (2D) and 3D printer samples on the page's own clock; a program file the same way; a
 //  written reply (`reply:`) through the whole DrawingAnswer path, spoken by this Mac's voice with
 //  `--voice` or silently paced; a question (`lesson:`) asked of the routed answer model with the
-//  drawing prompt on a real screenshot. `--hide-after-finish` hides the stage two seconds after
+//  drawing prompt on a real screenshot. `--sound` turns on the pen's sound and `--reduce-motion`
+//  makes marks appear in place (a smoke run reads neither setting; without `--reduce-motion` the
+//  page follows the system's). `--hide-after-finish` hides the stage two seconds after
 //  the drawing ends and stays alive ten more, for measuring that a hidden stage costs nothing.
 //
 
@@ -30,6 +32,10 @@ enum DrawStageSmoke {
             return DrawStagePhoto(picture: picture)
         }
         controller.logged = { print("smoke page: \($0)") }
+        let wantsSound = arguments.contains("--sound")
+        let reducesMotion = arguments.contains("--reduce-motion")
+        controller.soundsOn = { wantsSound }
+        controller.reducesMotion = { reducesMotion }
         controller.prepare()
 
         let context = await CompanionScreenCaptureUtility.captureCursorScreenContext()

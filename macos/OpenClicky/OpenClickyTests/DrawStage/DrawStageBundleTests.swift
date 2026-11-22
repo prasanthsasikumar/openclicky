@@ -15,10 +15,15 @@ import Testing
     private var appBundle: Bundle { Bundle(for: CompanionManager.self) }
 
     @Test func theStagePageAndPromptsAreBundled() {
-        for path in ["index.html", "stage.js", "stage-worker.js", "figure3d.js", "vendor/three/three.module.min.js",
+        for path in ["index.html", "stage.js", "stage-pen.js", "stage-sound.js", "stage-worker.js", "figure3d.js", "vendor/three/three.module.min.js",
                      "prompt/drawing-language.md", "prompt/follow-up.md", "prompt/question.md", "samples/rocket.js"] {
             #expect(appBundle.url(forResource: path, withExtension: nil, subdirectory: "draw-stage") != nil, "\(path)")
         }
+    }
+
+    /// The page's own node tests stay in the repository.
+    @Test func theStageTestsAreNotBundled() {
+        #expect(appBundle.url(forResource: "tests/stage-pen.test.mjs", withExtension: nil, subdirectory: "draw-stage") == nil)
     }
 
     @Test func theWorkerFencesNestedWorkersAndBlobs() throws {

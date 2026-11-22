@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces",
+    "test": "npm run test --workspaces && npm run test:stage",
+    "test:stage": "node --test \"draw-stage/tests/*.test.mjs\"",
     "typecheck": "npm run typecheck --workspaces",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

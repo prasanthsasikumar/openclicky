@@ -56,6 +56,11 @@ final class DrawStageSession {
             guard let picture = await TeacherPictureFinder.find(query: query, caption: caption) else { return nil }
             return DrawStagePhoto(picture: picture)
         }
+        // The pen's sound follows the app's sounds setting, and its travel the reduce-animation one.
+        stage.soundsOn = { [weak companionManager] in companionManager?.dictationSettings.sounds ?? false }
+        stage.reducesMotion = { [weak companionManager] in
+            (companionManager?.dictationSettings.reduceAnimation ?? false) || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        }
         stage.figurePartClicked = { [weak companionManager] part in
             companionManager?.submitTypedRequest("what does the \(part) do?")
         }
