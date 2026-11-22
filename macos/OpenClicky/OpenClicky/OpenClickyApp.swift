@@ -652,6 +652,16 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        if let buddyIndex = launchArguments.firstIndex(of: "--openclicky-buddy-smoke") {
+            // The pointer plays its states by itself (flights, listening, thinking, speaking,
+            // idle), about 30 s, logged step by step:
+            //   OpenClicky --openclicky-buddy-smoke [stay|exit]
+            let quitsWhenDone = buddyIndex + 1 < launchArguments.count && launchArguments[buddyIndex + 1] == "exit"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in
+                companionManager.permissionPromptController.dismiss()
+                BuddySmoke.play(on: companionManager, quitsWhenDone: quitsWhenDone)
+            }
+        }
         if let tourIndex = launchArguments.firstIndex(of: "--openclicky-ui-tour"), tourIndex + 1 < launchArguments.count {
             UITour(companionManager: companionManager, logPath: launchArguments[tourIndex + 1]).run()
         }

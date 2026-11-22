@@ -166,6 +166,9 @@ final class CompanionManager: ObservableObject {
     #if DEBUG
     /// The UI tour shows the busy strip without talking.
     func debugSetVoiceState(_ state: CompanionVoiceState) { voiceState = state }
+    /// `BuddySmoke` plays the pointer's states without a microphone or a question.
+    func debugSetAudioPowerLevel(_ level: CGFloat) { currentAudioPowerLevel = level }
+    func debugShowPointerOverlay() { if !isOverlayVisible { showOverlayOnAllScreens() } }
     #endif
 
     // MARK: - Quitting
@@ -589,7 +592,7 @@ final class CompanionManager: ObservableObject {
             AppLog.append("point: not shown, it was on a macOS permission prompt")
             return
         }
-        // The spinner (processing) hides the triangle, so the flight would be invisible; the
+        // The thinking dots (processing) hide the triangle, so the flight would be invisible; the
         // buddy is visible in idle and responding.
         if voiceState == .processing { voiceState = .idle }
 

@@ -92,6 +92,40 @@ enum Motion {
     /// How far a pressed control shrinks.
     static let pressScale: CGFloat = 0.97
 
+    // The pointer beside the mouse.
+    /// The pointer and its captions keeping up with the mouse: quick, with a little give.
+    static let pointerFollow = SpringSpec(response: 0.26, damping: 0.72)
+    /// The pointer growing back to full size when it wakes.
+    static let pointerScale = SpringSpec(response: 0.34, damping: 0.62)
+    /// The pulse and the label when the pointer reaches what it points at.
+    static let pointerArrive = SpringSpec(response: 0.42, damping: 0.78)
+    /// The pointer landing slightly small after a flight, then filling out.
+    static let pointerLandingDuration = 0.16
+    /// One direction of a slow loop: the listening halo, the glow while the pointer holds on a target.
+    static let haloBeat = 0.9
+    /// One direction of the pointer's idle bob.
+    static let bobBeat = 0.8
+
+    /// Following the mouse is the person's own movement, so Reduce Motion keeps it and only
+    /// drops the overshoot.
+    static func pointerFollow(reduceMotion: Bool) -> Animation { reduceMotion ? hover : pointerFollow.animation }
+    static func pointerScale(reduceMotion: Bool) -> Animation { reduceMotion ? fade : pointerScale.animation }
+    static func pointerArrive(reduceMotion: Bool) -> Animation { reduceMotion ? fade : pointerArrive.animation }
+    static func pointerLanding(reduceMotion: Bool) -> Animation { reduceMotion ? fade : .easeOut(duration: pointerLandingDuration) }
+    /// A caption or label beside the pointer appearing or leaving.
+    static var captionFade: Animation { .easeOut(duration: 0.46) }
+    /// A ring spreading from a point (a click, an arrival).
+    static var ripple: Animation { .easeOut(duration: 0.45) }
+    /// The pointer's very first appearance: slow, once.
+    static var firstAppearance: Animation { .easeIn(duration: 2.0) }
+    /// Waveform bars moving to a new loudness reading.
+    static var levelEase: Animation { .linear(duration: 0.08) }
+    /// A loop that breathes out and back for ever. Reduce Motion has no form of this: the caller
+    /// shows a still picture instead (see `LoopingPhase`).
+    static func loop(beat: Double) -> Animation { .easeInOut(duration: beat).repeatForever(autoreverses: true) }
+    /// A spinner's turn. Callers show something still under Reduce Motion.
+    static var spin: Animation { .linear(duration: 0.8).repeatForever(autoreverses: false) }
+
     /// A point on a thrown arc from `start` to `end`: straight-line travel with a lift that
     /// peaks midway. `lift` is how far above the straight line the peak is.
     static func arcPoint(from start: CGPoint, to end: CGPoint, lift: CGFloat, progress: CGFloat) -> CGPoint {
