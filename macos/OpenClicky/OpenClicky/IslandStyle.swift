@@ -19,7 +19,7 @@ enum IslandCorners {
         // In the band beside the camera the peek and the busy strip are the notch's own height:
         // they keep a corner close to the notch's.
         case .peek, .compact: return 12
-        case .connect, .permission, .composer, .tour, .full: return min(max(width * 0.05, 20), 30)
+        case .connect, .permission, .composer, .tour, .plate, .full: return min(max(width * 0.05, 20), 30)
         }
     }
 
@@ -30,7 +30,7 @@ enum IslandCorners {
         switch expansion {
         case .collapsed, .peek: return 6
         case .full: return 12
-        case .compact, .connect, .permission, .composer, .tour: return 10
+        case .compact, .connect, .permission, .composer, .tour, .plate: return 10
         }
     }
 }

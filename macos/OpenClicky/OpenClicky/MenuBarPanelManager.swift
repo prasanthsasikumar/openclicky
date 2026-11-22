@@ -68,6 +68,7 @@ final class MenuBarPanelManager: NSObject {
         addItem(to: menu, title: "Open OpenClicky", action: #selector(openWindow))
         addItem(to: menu, title: "Open the Island", action: #selector(openIsland))
         addItem(to: menu, title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        addItem(to: menu, title: PlateMenu.title(waiting: companionManager.plateController.waitingCount), action: #selector(showPlate))
         addItem(to: menu, title: "Replay Welcome…", action: #selector(replayWelcome))
         menu.addItem(.separator())
         addItem(to: menu, title: "Quit OpenClicky", action: #selector(quit), keyEquivalent: "q")
@@ -99,6 +100,7 @@ final class MenuBarPanelManager: NSObject {
     @objc private func openIsland() { companionManager.notchHUDManager.openPanel() }
     @objc private func openSettings() { companionManager.showSettings() }
     @objc private func replayWelcome() { companionManager.firstRunTour.replay() }
+    @objc private func showPlate() { companionManager.plateController.showOnRequest() }
     @objc private func quit() { companionManager.quitWithFarewell() }
 
     /// The mark, as a template image: the ring and its pointer, matching the app icon.

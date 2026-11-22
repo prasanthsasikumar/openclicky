@@ -28,6 +28,11 @@ extension SettingsCatalog {
                 keywords: ["draw", "drawing", "3d", "diagram", "explain", "teach", "stage", "picture", "sketch", "model"],
                 view: AnyView(DrawToExplainRow(settings: settings))),
             SettingsItem(
+                id: "clicky.suggestTasks",
+                title: SuggestTasksRow.title, detail: SuggestTasksRow.detail,
+                keywords: ["suggest", "suggestions", "offers", "jobs", "tasks", "proactive", "ideas", "morning", "agent", "cards"],
+                view: AnyView(SuggestTasksRow(settings: settings))),
+            SettingsItem(
                 id: "clicky.model",
                 title: "Claude model", detail: "When Claude answers: Sonnet is quicker, Opus thinks harder.",
                 keywords: ["model", "claude", "sonnet", "opus", "smarter", "quicker"],
@@ -331,6 +336,21 @@ struct DrawToExplainRow: View {
     var body: some View {
         SettingsRow(title: Self.title, detail: Self.detail) {
             SettingsToggle(settings: settings, keyPath: \.drawToExplain)
+        }
+    }
+}
+
+/// Settings → Clicky: the day's suggested tasks. Off until switched on: the cards are written
+/// from a summary of this Mac's recent work, and that summary goes to the answer source.
+struct SuggestTasksRow: View {
+    @ObservedObject var settings: DictationSettings
+
+    static let title = "Offer to take jobs on"
+    static let detail = "Once a day Clicky offers up to six jobs it could do by itself, as cards you can accept, change or bin. To write them it sends your calendar's next days, your notes pad and the titles of your recent Claude Code and Codex sessions to whoever answers your questions. Needs your own key or plan."
+
+    var body: some View {
+        SettingsRow(title: Self.title, detail: Self.detail) {
+            SettingsToggle(settings: settings, keyPath: \.suggestTasks)
         }
     }
 }

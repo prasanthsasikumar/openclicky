@@ -414,6 +414,8 @@ final class CompanionManager: ObservableObject {
 
     /// Opens the "Connect <app> to OpenClicky" card in the HUD when a supported app or site comes to the front.
     let appConnectPromptController = AppConnectPromptController()
+    /// "Things I can take off your plate": the day's suggested tasks (Plate/).
+    let plateController = PlateController()
 
     /// The leg of a buddy flight in progress, if any. Each display has its own overlay, so a
     /// flight to another display is split at the display edges; the overlay whose screen matches
@@ -507,7 +509,9 @@ final class CompanionManager: ObservableObject {
     /// screen like the voice path does, resumes `threadId` when given, and speaks the result.
     /// `startsNewThread` (the Agents tab's composer with no thread selected) forgets the thread the
     /// last turn ran on, so the request opens a fresh one instead of continuing it.
-    func submitTextToAgent(_ text: String, threadId: String? = nil, startsNewThread: Bool = false) {
+    /// `attachesScreen` false (a task Clicky suggested itself) sends no screenshot: what happens to be
+    /// on the screen when a suggested task starts has nothing to do with it.
+    func submitTextToAgent(_ text: String, threadId: String? = nil, startsNewThread: Bool = false, attachesScreen: Bool = true) {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty, OpenClickyConfiguration.isConfigured else { return }
         // An account has no agent: the backend would refuse it with not_on_plan, so say that plainly.
@@ -520,7 +524,7 @@ final class CompanionManager: ObservableObject {
         lastTranscript = trimmedText
         currentResponseTask = Task {
             voiceState = .processing
-            let screenCaptures = (try? await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()) ?? []
+            let screenCaptures = attachesScreen ? ((try? await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()) ?? []) : []
             do {
                 try await runOpenClickyAgentLane(transcript: trimmedText, screenCaptures: screenCaptures)
             } catch is CancellationError {
@@ -939,6 +943,7 @@ final class CompanionManager: ObservableObject {
         clipboardHistoryMonitor.stop()
         permissionPromptController.stop()
         appConnectPromptController.stop()
+        plateController.stop()
         notchHUDManager.hide()
         realtimeVoiceClient.disconnect(reason: nil)
         globalPushToTalkShortcutMonitor.stop()
@@ -1030,6 +1035,7 @@ final class CompanionManager: ObservableObject {
         permissionPromptController.update(with: permissionStatus)
         // The welcome tour waits for the last permission, then takes the island.
         firstRunTour.start(companionManager: self)
+        plateController.start(companionManager: self)
         // Kokoro comes into memory only when a question starts: pressing the ask shortcut or sending
         // a typed question. Hands-free answers in OpenAI's realtime voice and never needs it.
         kokoroPreparationCancellable = $voiceState

@@ -274,6 +274,7 @@ final class DictationSettings: ObservableObject {
         pauseBeforeSendingScreen = defaults.object(forKey: Keys.pauseBeforeSendingScreen) == nil ? true : defaults.bool(forKey: Keys.pauseBeforeSendingScreen)
         answerSimpleRequestsOnThisMac = defaults.object(forKey: Keys.answerSimpleRequestsOnThisMac) == nil ? true : defaults.bool(forKey: Keys.answerSimpleRequestsOnThisMac)
         drawToExplain = defaults.object(forKey: Keys.drawToExplain) == nil ? true : defaults.bool(forKey: Keys.drawToExplain)
+        suggestTasks = defaults.bool(forKey: Keys.suggestTasks)
         hasCompletedDictationOnboarding = defaults.bool(forKey: Keys.hasCompletedDictationOnboarding)
         preferredMicrophoneUID = defaults.string(forKey: Keys.preferredMicrophoneUID)
         orbPosition = Self.decodePoint(defaults.string(forKey: Keys.orbPosition))
@@ -313,6 +314,7 @@ final class DictationSettings: ObservableObject {
         static let pauseBeforeSendingScreen = "openclicky.ask.pauseBeforeSendingScreen"
         static let answerSimpleRequestsOnThisMac = "openclicky.ask.onThisMac"
         static let drawToExplain = "openclicky.ask.drawToExplain"
+        static let suggestTasks = "openclicky.plate.suggestTasks"
         static let hasCompletedDictationOnboarding = "dictation.onboarded"
         static let preferredMicrophoneUID = "dictation.preferredMicrophoneUID"
     }
@@ -439,6 +441,9 @@ final class DictationSettings: ObservableObject {
     /// work?") is drawn on the stage while Clicky talks (`DrawStageLesson`). On by default; off,
     /// every question is answered in words as before.
     @Published var drawToExplain: Bool { didSet { defaults.set(drawToExplain, forKey: Keys.drawToExplain) } }
+    /// "Things I can take off your plate": once a day, tasks Clicky could do on its own. Off until
+    /// switched on, because the digest it is written from goes to the answer source.
+    @Published var suggestTasks: Bool { didSet { defaults.set(suggestTasks, forKey: Keys.suggestTasks) } }
     @Published var hasCompletedDictationOnboarding: Bool { didSet { defaults.set(hasCompletedDictationOnboarding, forKey: Keys.hasCompletedDictationOnboarding) } }
 
     /// Settings → general → reset, and the orb page's reset: back to a fresh install's values.

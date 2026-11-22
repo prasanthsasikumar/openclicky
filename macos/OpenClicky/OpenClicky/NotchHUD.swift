@@ -88,6 +88,8 @@ enum NotchHUDExpansion: Equatable {
     case composer
     /// The first-run tour's card: one step at a time, after the permission cards.
     case tour
+    /// The day's suggested tasks: the announcement, the header over the open deck, the question after.
+    case plate
     case full
 }
 
@@ -142,6 +144,10 @@ final class NotchHUDModel: ObservableObject {
 
     /// The first-run tour's card, if the tour is on; set by `FirstRunTourController`.
     @Published var tourCard: FirstRunTourCard?
+    /// The suggested tasks' card, if one is up; set by `PlateController`.
+    @Published var plateCard: PlateIslandCard?
+    var plateWidth: CGFloat { placement.isSideDrawer ? 360 : 512 }
+    var plateHeight: CGFloat { cardTopInset + (plateCard?.contentHeight ?? 0) }
 
     /// The permission cards or the tour are up: hovering or clicking the island must not open the
     /// panel over them (the pointer drifts there while setting up), even while the busy strip shows.
@@ -328,6 +334,7 @@ final class NotchHUDModel: ObservableObject {
         case .permission: return permissionWidth
         case .composer: return composerWidth
         case .tour: return tourWidth
+        case .plate: return plateWidth
         case .full: return fullWidth
         }
     }
@@ -341,6 +348,7 @@ final class NotchHUDModel: ObservableObject {
         case .permission: return permissionHeight
         case .composer: return composerHeight
         case .tour: return tourHeight
+        case .plate: return plateHeight
         case .full: return fullHeight
         }
     }
@@ -545,7 +553,7 @@ final class NotchHUDModel: ObservableObject {
         switch expansion {
         case .compact:
             guard !isSpeaking, guideStep == nil else { return }
-        case .connect, .permission, .composer, .tour:
+        case .connect, .permission, .composer, .tour, .plate:
             return
         case .collapsed, .peek, .full:
             break
@@ -618,6 +626,16 @@ final class NotchHUDModel: ObservableObject {
         if sizeChanged && expansion == .tour { onLayoutChanged?() }
     }
 
+    /// Shows (or clears) the suggested tasks' card. Like the tour card it yields to the busy strip
+    /// and comes back; setup (permissions, the tour) outranks it.
+    func setPlateCard(_ card: PlateIslandCard?) {
+        guard plateCard != card else { return }
+        let sizeChanged = plateCard?.contentHeight != card?.contentHeight
+        plateCard = card
+        reconcile(immediately: true)
+        if sizeChanged && expansion == .plate { onLayoutChanged?() }
+    }
+
     /// Shows (or clears) the permission card. Nothing the app can do works without these, so the
     /// card outranks every other island state until the last permission lands.
     func setPermissionPrompt(_ prompt: PermissionPrompt?) {
@@ -630,6 +648,7 @@ final class NotchHUDModel: ObservableObject {
     private var restingExpansion: NotchHUDExpansion {
         if permissionPrompt != nil { return .permission }
         if tourCard != nil && !isBusy { return .tour }
+        if plateCard != nil && !isBusy { return .plate }
         if connectPrompt != nil { return .connect }
         if isBusy || captionText != nil || guideStep != nil { return .compact }
         return .collapsed
@@ -655,6 +674,8 @@ final class NotchHUDModel: ObservableObject {
         } else if tourCard != nil && !isBusy {
             // Like the connect card: hovering it must not swap it for the panel.
             target = .tour
+        } else if plateCard != nil && !isBusy {
+            target = .plate
         } else if connectPrompt != nil {
             // Hovering the connect card must not swap it for the full panel while the user is
             // reaching for its buttons; a click on the island still pins the full panel open.
@@ -668,7 +689,7 @@ final class NotchHUDModel: ObservableObject {
         } else {
             target = restingExpansion
         }
-        if target == .full || target == .peek || target == .connect || target == .permission || target == .composer || target == .tour || immediately {
+        if target == .full || target == .peek || target == .connect || target == .permission || target == .composer || target == .tour || target == .plate || immediately {
             setExpansion(target)
             return
         }
@@ -1052,6 +1073,20 @@ final class NotchHUDManager {
     }
     private var tourCard: FirstRunTourCard?
 
+    /// Shows the suggested tasks' card on the main screen's island (nil hides it).
+    func setPlateCard(_ card: PlateIslandCard?) {
+        plateCard = card
+        let primary = primaryInstance
+        instances.forEach { $0.model.setPlateCard($0 === primary ? card : nil) }
+    }
+    private var plateCard: PlateIslandCard?
+
+    /// The screen the main island is on, in AppKit coordinates: where the deck of suggestions opens.
+    var primaryScreenFrame: CGRect? { primaryInstance?.model.geometry.screenFrame }
+
+    /// The permission cards or the welcome tour have the island.
+    var isSetupInProgress: Bool { primaryInstance?.model.isSetupInProgress ?? false }
+
     /// Shows the permission card on every screen's island (nil hides it).
     func setPermissionPrompt(_ prompt: PermissionPrompt?) {
         permissionPrompt = prompt
@@ -1404,7 +1439,7 @@ struct NotchHUDView: View {
 
     /// Opening unfolds width first and drops the height a beat later; everything else moves on
     /// the short peek spring. Reduce motion makes all of it a fade.
-    private var isOpening: Bool { expansion == .full || expansion == .connect || expansion == .permission || expansion == .tour || expansion == .composer }
+    private var isOpening: Bool { expansion == .full || expansion == .connect || expansion == .permission || expansion == .tour || expansion == .plate || expansion == .composer }
     private var widthAnimation: Animation {
         isOpening ? IslandMotion.unfoldWidth(reduceMotion: model.reduceMotion) : IslandMotion.peek(reduceMotion: model.reduceMotion)
     }
@@ -1561,6 +1596,12 @@ struct NotchHUDView: View {
                 if let tourCard = model.tourCard {
                     FirstRunTourCardView(card: tourCard, controller: companionManager.firstRunTour, topInset: model.cardTopInset)
                         .frame(width: model.tourWidth, height: model.tourHeight)
+                        .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                }
+            case .plate:
+                if let plateCard = model.plateCard {
+                    PlateIslandCardView(card: plateCard, controller: companionManager.plateController, topInset: model.cardTopInset, reduceMotion: model.reduceMotion)
+                        .frame(width: model.plateWidth, height: model.plateHeight)
                         .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
                 }
             case .full:

@@ -635,6 +635,23 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
         #if DEBUG
+        if let plateIndex = launchArguments.firstIndex(of: "--openclicky-plate-smoke") {
+            // The suggested tasks with six sample cards (nothing saved, nothing run):
+            //   OpenClicky --openclicky-plate-smoke [announce|deck|demo|live]
+            // "live" asks the answer source for real cards, as the menu bar item does.
+            let mode = plateIndex + 1 < launchArguments.count ? launchArguments[plateIndex + 1] : "announce"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in
+                // A Debug build often lacks permissions; its cards would outrank these.
+                companionManager.permissionPromptController.dismiss()
+                if mode == "live" {
+                    companionManager.plateController.showOnRequest()
+                } else if mode == "demo" {
+                    companionManager.plateController.playDemo()
+                } else {
+                    companionManager.plateController.showSample(openingDeck: mode == "deck")
+                }
+            }
+        }
         if let tourIndex = launchArguments.firstIndex(of: "--openclicky-ui-tour"), tourIndex + 1 < launchArguments.count {
             UITour(companionManager: companionManager, logPath: launchArguments[tourIndex + 1]).run()
         }
