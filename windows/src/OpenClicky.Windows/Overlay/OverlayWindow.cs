@@ -21,6 +21,7 @@
 //  laid out in full-monitor coordinates and shifted by the viewport's origin, so nothing else changes.
 //
 
+using OpenClicky.Core.Localization;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
@@ -47,8 +48,9 @@ internal enum BuddyNavigationMode
 
 public sealed class OverlayWindow : Window
 {
-    private const string FullWelcomeMessage = "Hi, I'm OpenClicky.";
-    private static readonly string[] NavigationPointerPhrases = { "right here!", "this one!", "over here!", "click this!", "here it is!", "found it!" };
+    private static string FullWelcomeMessage => L.T("Hi, I'm OpenClicky.");
+    private static string[] NavigationPointerPhrases =>
+        [L.T("right here!"), L.T("this one!"), L.T("over here!"), L.T("click this!"), L.T("here it is!"), L.T("found it!")];
     private static readonly Random PhraseRandom = new();
 
     /// <summary>How far the viewport reaches around the buddy: the caption wraps at 300 and may flip to the left, the
@@ -197,6 +199,9 @@ public sealed class OverlayWindow : Window
         lastFrameTime = MotionClock.Now;
     }
 
+    /// <summary>Urdu (any right-to-left text) reads from the right in its bubble.</summary>
+    private static FlowDirection DirectionOf(string text) => TextDirection.IsRightToLeft(text) ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+
     private static (Border Bubble, TextBlock Text) MakeBubble(bool wraps, double verticalPadding)
     {
         var text = new TextBlock
@@ -285,6 +290,7 @@ public sealed class OverlayWindow : Window
             if (isClosed) return;
             welcomeText = typed;
             welcomeTextBlock.Text = typed;
+            welcomeTextBlock.FlowDirection = DirectionOf(typed);
         }, Task.Delay, CancellationToken.None);
         if (isClosed) return;
         // Hold the text for 2 seconds, then fade it out.
@@ -507,7 +513,11 @@ public sealed class OverlayWindow : Window
         captionBubble.Opacity = captionShows ? captionOpacity.Value : 0;
         if (captionShows)
         {
-            if (captionTextBlock.Text != captionText) captionTextBlock.Text = captionText;
+            if (captionTextBlock.Text != captionText)
+            {
+                captionTextBlock.Text = captionText;
+                captionTextBlock.FlowDirection = DirectionOf(captionText);
+            }
             var size = Measure(captionBubble);
             var fitsToTheRight = bubblePosition.X + 10 + size.Width <= screenWidth - 12;
             var left = fitsToTheRight ? bubblePosition.X + 10 : bubblePosition.X - 10 - size.Width;
@@ -519,7 +529,11 @@ public sealed class OverlayWindow : Window
         navigationBubble.Opacity = navigationShows ? navigationBubbleOpacity.Value : 0;
         if (navigationShows)
         {
-            if (navigationTextBlock.Text != navigationBubbleText) navigationTextBlock.Text = navigationBubbleText;
+            if (navigationTextBlock.Text != navigationBubbleText)
+            {
+                navigationTextBlock.Text = navigationBubbleText;
+                navigationTextBlock.FlowDirection = DirectionOf(navigationBubbleText);
+            }
             var scale = navigationBubbleScale.Value;
             navigationBubbleScaleTransform.ScaleX = scale;
             navigationBubbleScaleTransform.ScaleY = scale;

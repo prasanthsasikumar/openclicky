@@ -7,6 +7,7 @@
 //  starts, runs the quick actions and write_in_place, and waits for a guided step to be done.
 //
 
+using OpenClicky.Core.Localization;
 using OpenClicky.Core.Actions;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
@@ -538,18 +539,22 @@ public sealed partial class CompanionManager
         void NoticeEnded() => services.MainThread.Post(() => SystemVoiceNoticeEnded(noticeNumber));
         VoiceState = CompanionVoiceState.Responding;
         AppLog.Write($"voice: notice ({text.Length} chars)");
-        // A fixed notice that has a recording plays it, in the app's own voice.
-        if (RecordedVoice.LineFor(text) is { } line && RecordedVoice.Play(line, NoticeEnded)) return;
+        // A fixed notice that has a recording plays it, in the app's own voice; the recordings are English, so in
+        // another screen language the notice is said in that language by the answer voice.
+        if (L.Language == "en" && RecordedVoice.LineFor(text) is { } line && RecordedVoice.Play(line, NoticeEnded)) return;
         var cancellation = new CancellationTokenSource();
         systemVoiceNoticeCancellation = cancellation;
-        _ = SpeakNoticeAsync(text, cancellation.Token, NoticeEnded);
+        _ = SpeakNoticeAsync(L.Sentence(text), cancellation.Token, NoticeEnded);
     }
 
     private async Task SpeakNoticeAsync(string text, CancellationToken cancellationToken, Action noticeEnded)
     {
         try
         {
-            var audio = await systemVoice.AudioAsync(text, cancellationToken: cancellationToken);
+            // This PC's voice only speaks English here; Urdu (and any other screen language) is said by the answer voice.
+            var audio = L.Language == "en"
+                ? await systemVoice.AudioAsync(text, cancellationToken: cancellationToken)
+                : await answerVoicePlayer.FetchAudioAsync(text, cancellationToken);
             await noticePlayer.PlayToCompletionAsync(audio, cancellationToken);
         }
         catch (Exception error) when (error is not OperationCanceledException)

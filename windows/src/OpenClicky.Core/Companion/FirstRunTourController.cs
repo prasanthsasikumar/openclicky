@@ -13,6 +13,7 @@
 //  "free fn" cards are gone. The cards' words are FirstRunTourCards (IslandCards.cs).
 //
 
+using OpenClicky.Core.Localization;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Providers;
@@ -165,11 +166,11 @@ public sealed class FirstRunTourController
         // A real first take: a sentence (one word like "no" is what silence turns into) from a microphone that heard a voice.
         if (take.Status == TakeStatus.Complete && wordCount >= 2 && loudestLevelThisTake >= VoiceLevel)
         {
-            Succeed($"✓ heard you: “{(words.Length > 60 ? words[..60] + "…" : words)}”", RecordedVoice.Line.TourDictateDone);
+            Succeed(L.F("✓ heard you: “{0}”", words.Length > 60 ? words[..60] + "…" : words), RecordedVoice.Line.TourDictateDone);
         }
         else if (take.Status == TakeStatus.Complete && wordCount < 2 && loudestLevelThisTake >= VoiceLevel)
         {
-            status = $"i only got “{words}”. say a whole sentence, like the one above.";
+            status = L.F("i only got “{0}”. say a whole sentence, like the one above.", words);
             statusIsGood = false;
             offersMicrophoneChange = false;
             Publish();
@@ -184,7 +185,7 @@ public sealed class FirstRunTourController
     private void CouldNotHear()
     {
         if (step != FirstRunTourStep.Dictate) return;
-        status = $"i couldn’t hear you through {companion.MicrophoneName()}. choose the microphone you’re using.";
+        status = L.F("i couldn’t hear you through {0}. choose the microphone you’re using.", companion.MicrophoneName());
         statusIsGood = false;
         offersMicrophoneChange = true;
         Publish();
@@ -214,7 +215,7 @@ public sealed class FirstRunTourController
         try { await Task.Delay(TimeSpan.FromSeconds(4), cancellationToken); }
         catch (OperationCanceledException) { return; }
         if (step != FirstRunTourStep.Dictate || !isWatchingForSilence || loudestLevelThisTake >= VoiceLevel) return;
-        status = $"i can’t hear anything through {companion.MicrophoneName()}. choose the microphone you’re using.";
+        status = L.F("i can’t hear anything through {0}. choose the microphone you’re using.", companion.MicrophoneName());
         statusIsGood = false;
         offersMicrophoneChange = true;
         Publish();
@@ -226,7 +227,7 @@ public sealed class FirstRunTourController
         // An answer was spoken and finished: that is asking Clicky, working.
         if (step == FirstRunTourStep.Talk && previousVoiceState == CompanionVoiceState.Responding && voiceState == CompanionVoiceState.Idle && !companion.LastQuestionFailed)
         {
-            Succeed("✓ that’s asking clicky. it can point at things too.", RecordedVoice.Line.TourTalkDone);
+            Succeed(L.T("✓ that’s asking clicky. it can point at things too."), RecordedVoice.Line.TourTalkDone);
         }
         previousVoiceState = voiceState;
     }
@@ -239,19 +240,19 @@ public sealed class FirstRunTourController
             case OpenClickyAuthSession.EmailFlowState.SignedInState:
                 FieldText = "";
                 companion.Island.TourFieldText = "";
-                Succeed("✓ saved. there’s a code in your inbox to confirm it whenever you like.");
+                Succeed(L.T("✓ saved. there’s a code in your inbox to confirm it whenever you like."));
                 break;
             case OpenClickyAuthSession.EmailFlowState.NeedsCodeState needsCode:
                 FieldText = "";
                 companion.Island.TourFieldText = "";
-                status = $"that email has an account. type the 6-digit code i sent to {needsCode.Email}.";
+                status = L.F("that email has an account. type the 6-digit code i sent to {0}.", needsCode.Email);
                 statusIsGood = false;
                 Publish();
                 FocusField();
                 break;
             case OpenClickyAuthSession.EmailFlowState.SendingState:
             case OpenClickyAuthSession.EmailFlowState.CheckingCodeState:
-                status = "one moment…";
+                status = L.T("one moment…");
                 statusIsGood = false;
                 Publish();
                 break;
@@ -266,7 +267,7 @@ public sealed class FirstRunTourController
     private void TaskStarted()
     {
         if (step != FirstRunTourStep.Act) return;
-        Succeed("✓ on it. results show up in the island.", RecordedVoice.Line.TourActDone);
+        Succeed(L.T("✓ on it. results show up in the island."), RecordedVoice.Line.TourActDone);
     }
 
     /// <summary>The tour's last note before "all set", on a free account: questions are answered on OpenClicky's credits.</summary>
@@ -533,7 +534,7 @@ public sealed class FirstRunTourController
                 break;
             case FirstRunTourStep.OpenAtLogin:
                 var isOn = companion.SetOpenAtLogin(true);
-                status = isOn ? "✓ done. i’ll be here whenever your pc starts." : "windows didn’t allow it. you can switch it on in settings → general.";
+                status = isOn ? L.T("✓ done. i’ll be here whenever your pc starts.") : L.T("windows didn’t allow it. you can switch it on in settings → general.");
                 statusIsGood = isOn;
                 Publish();
                 if (isOn) ScheduleAdvance(TimeSpan.FromSeconds(2.4));
@@ -568,7 +569,7 @@ public sealed class FirstRunTourController
         {
             if (!EmailAccountFormRules.CanSubmitCode(typed))
             {
-                status = "the code is the 6 digits in the email.";
+                status = L.T("the code is the 6 digits in the email.");
                 Publish();
                 return;
             }
@@ -578,7 +579,7 @@ public sealed class FirstRunTourController
         {
             if (!EmailAccountFormRules.CanSubmitEmail(typed))
             {
-                status = "that doesn’t look like an email yet.";
+                status = L.T("that doesn’t look like an email yet.");
                 Publish();
                 return;
             }
@@ -596,7 +597,7 @@ public sealed class FirstRunTourController
         if (key == DictationHotkey.LeftControl)
         {
             AppLog.Write("tour: left Ctrl held alone on the dictate step; pointed at right Alt");
-            status = "left ctrl stays free for copy and paste. no right ctrl? hold right alt, just right of the space bar.";
+            status = L.T("left ctrl stays free for copy and paste. no right ctrl? hold right alt, just right of the space bar.");
             statusIsGood = false;
             offersMicrophoneChange = false;
             Publish();
@@ -618,7 +619,7 @@ public sealed class FirstRunTourController
         {
             // A take still listening keeps the microphone it opened; end it so the next one uses the new one.
             if (companion.DictationSettings.PreferredMicrophoneUID != microphoneBefore) companion.CancelTakeInProgress();
-            status = $"now listening through {companion.MicrophoneName()}. try again.";
+            status = L.F("now listening through {0}. try again.", companion.MicrophoneName());
             statusIsGood = false;
             offersMicrophoneChange = true;
             Publish();

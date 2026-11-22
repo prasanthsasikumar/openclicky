@@ -3,6 +3,7 @@
 //  OpenClicky (Windows port of CompanionManager.swift: the shortcuts, push-to-talk, hands-free)
 //
 
+using OpenClicky.Core.Localization;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Plugins.DrawStage;
@@ -323,5 +324,5 @@ public sealed partial class CompanionManager
     }
 
     /// <summary>A caption by the pointer for the ask lane.</summary>
-    private void ShowAskCaption(string message, double holdSeconds) => Overlay.ShowCaption(message, holdSeconds);
+    private void ShowAskCaption(string message, double holdSeconds) => Overlay.ShowCaption(L.Sentence(message), holdSeconds);
 }

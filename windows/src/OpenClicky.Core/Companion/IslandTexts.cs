@@ -7,6 +7,7 @@
 //  button, the shortcut grid (Windows keys, PORTING.md), the engine warning, the explanation (i).
 //
 
+using OpenClicky.Core.Localization;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Shortcuts;
 
@@ -29,10 +30,10 @@ public sealed record IslandEngineWarning(string Heading, string Message, string 
     public static IslandEngineWarning? Make(string engineDisplayName, string? unavailableReason, string buttonTitle)
     {
         if (unavailableReason is null) return null;
-        var heading = $"{engineDisplayName.ToUpperInvariant()} CAN'T HEAR YOU YET";
+        var heading = L.F("{0} CAN'T HEAR YOU YET", engineDisplayName.ToUpperInvariant());
         var message = unavailableReason.StartsWith("needs", StringComparison.Ordinal)
-            ? $"{engineDisplayName.ToLowerInvariant()} {unavailableReason}. dictation stays off until then."
-            : $"{unavailableReason}. dictation stays off until then.";
+            ? L.F("{0} {1}. dictation stays off until then.", engineDisplayName.ToLowerInvariant(), unavailableReason)
+            : L.F("{0}. dictation stays off until then.", unavailableReason);
         return new IslandEngineWarning(heading, message, buttonTitle);
     }
 }
@@ -46,16 +47,16 @@ public static class IslandTexts
         switch (voiceState)
         {
             case CompanionVoiceState.Idle:
-                if (agentActivityText is not null) return "an agent is working";
-                return isAlwaysListening ? "hands-free · just talk" : "openclicky";
+                if (agentActivityText is not null) return L.T("an agent is working");
+                return isAlwaysListening ? L.T("hands-free · just talk") : "openclicky";
             case CompanionVoiceState.Listening:
-                if (isDictatingToFrontApp) return "dictating";
-                return isAlwaysListening ? "listening · hands-free" : "listening";
+                if (isDictatingToFrontApp) return L.T("dictating");
+                return isAlwaysListening ? L.T("listening · hands-free") : L.T("listening");
             case CompanionVoiceState.Processing:
-                if (isDictatingToFrontApp) return "typing it in";
-                return agentActivityText is null ? "looking at your screen" : "working";
+                if (isDictatingToFrontApp) return L.T("typing it in");
+                return agentActivityText is null ? L.T("looking at your screen") : L.T("working");
             default:
-                return answeringSourceName is null ? "speaking" : $"speaking · {answeringSourceName}";
+                return answeringSourceName is null ? L.T("speaking") : L.F("speaking · {0}", answeringSourceName);
         }
     }
 
@@ -71,12 +72,12 @@ public static class IslandTexts
     /// <summary>One line saying what the pointer is doing (NotchPointerStatus).</summary>
     public static string PointerStatus(bool isClickyCursorEnabled, PointerPresence presence, bool isPointerAwake)
     {
-        if (!isClickyCursorEnabled) return "pointer shows while you talk";
+        if (!isClickyCursorEnabled) return L.T("pointer shows while you talk");
         return presence switch
         {
-            PointerPresence.Always => "pointer follows your mouse",
-            PointerPresence.WhileMoving => "pointer follows while moving",
-            _ => isPointerAwake ? "pointer follows your mouse" : "shake the mouse for the pointer",
+            PointerPresence.Always => L.T("pointer follows your mouse"),
+            PointerPresence.WhileMoving => L.T("pointer follows while moving"),
+            _ => isPointerAwake ? L.T("pointer follows your mouse") : L.T("shake the mouse for the pointer"),
         };
     }
 
@@ -87,12 +88,12 @@ public static class IslandTexts
     /// <summary>The pointer's status in fewer words, so it fits beside "click to open" on the peek's one line.</summary>
     public static string PeekStatus(bool isClickyCursorEnabled, PointerPresence presence, bool isPointerAwake)
     {
-        if (!isClickyCursorEnabled) return "pointer while you talk";
+        if (!isClickyCursorEnabled) return L.T("pointer while you talk");
         return presence switch
         {
-            PointerPresence.Always => "pointer follows you",
-            PointerPresence.WhileMoving => "pointer while moving",
-            _ => isPointerAwake ? "pointer follows you" : "shake for the pointer",
+            PointerPresence.Always => L.T("pointer follows you"),
+            PointerPresence.WhileMoving => L.T("pointer while moving"),
+            _ => isPointerAwake ? L.T("pointer follows you") : L.T("shake for the pointer"),
         };
     }
 
@@ -102,10 +103,10 @@ public static class IslandTexts
         var dictationKeyLabel = ShortKeycapLabel(dictationKey);
         return new[]
         {
-            new IslandShortcut("talk", dictationKey.TalkKeycapLabels(), "hold", false),
-            new IslandShortcut("type", new[] { "Ctrl" }, "tap ×2", false),
-            new IslandShortcut("dictate", new[] { dictationKeyLabel }, "hold", false),
-            new IslandShortcut("hands-free", new[] { dictationKeyLabel, "Ctrl" }, "tap ×2", isAlwaysListening),
+            new IslandShortcut(L.T("talk"), dictationKey.TalkKeycapLabels(), L.T("hold"), false),
+            new IslandShortcut(L.T("type"), new[] { "Ctrl" }, L.T("tap ×2"), false),
+            new IslandShortcut(L.T("dictate"), new[] { dictationKeyLabel }, L.T("hold"), false),
+            new IslandShortcut(L.T("hands-free"), new[] { dictationKeyLabel, "Ctrl" }, L.T("tap ×2"), isAlwaysListening),
         };
     }
 
@@ -124,23 +125,23 @@ public static class IslandTexts
     /// <summary>The (i): what OpenClicky does, typed out beside the pointer (CompanionManager.explainWhatOpenClickyDoes,
     /// with the Windows keys).</summary>
     public static string ExplainMessage(DictationHotkey dictationKey) =>
-        $"hi, i'm openclicky. hold {dictationKey.TalkKeysText()} and ask about anything on your screen. "
-        + "i'll answer out loud and point at what you need. tap control twice to type instead, "
-        + $"hold {dictationKey.DisplayName()} to dictate into any app, and real work goes to the agent.";
+        L.F("hi, i'm openclicky. hold {0} and ask about anything on your screen. i'll answer out loud and point at what you need. "
+            + "tap control twice to type instead, hold {1} to dictate into any app, and real work goes to the agent.",
+            dictationKey.TalkKeysText(), dictationKey.DisplayName());
 
-    public const string ComposerPlaceholder = "ask clicky anything about your screen…";
-    public const string ComposerSendHint = "↵ send";
-    public const string ComposerEscapeHint = "esc";
-    public const string StopSpeakingToolTip = "click to stop speaking";
+    public static string ComposerPlaceholder => L.T("ask clicky anything about your screen…");
+    public static string ComposerSendHint => L.T("↵ send");
+    public static string ComposerEscapeHint => L.T("esc");
+    public static string StopSpeakingToolTip => L.T("click to stop speaking");
     /// <summary>The strip's hover text while a question is on its way (it stops it, as esc does).</summary>
-    public const string StopAskToolTip = "click to stop";
+    public static string StopAskToolTip => L.T("click to stop");
 
-    public const string InfoToolTip = "what can you do?";
-    public const string SettingsToolTip = "settings";
-    public const string QuitToolTip = "quit openclicky";
-    public const string PermissionLaterToolTip = "hide these cards until openclicky next opens";
+    public static string InfoToolTip => L.T("what can you do?");
+    public static string SettingsToolTip => L.T("settings");
+    public static string QuitToolTip => L.T("quit openclicky");
+    public static string PermissionLaterToolTip => L.T("hide these cards until openclicky next opens");
 
     /// <summary>The voice pill's hover text while the engine can run.</summary>
     public static string VoicePillToolTip(string engineDisplayName) =>
-        $"dictation is heard by {engineDisplayName.ToLowerInvariant()}. click to change.";
+        L.F("dictation is heard by {0}. click to change.", engineDisplayName.ToLowerInvariant());
 }
