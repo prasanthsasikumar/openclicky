@@ -152,6 +152,9 @@ internal sealed partial class SettingsRowFactory
             case "clicky.speechVoice":
                 return new LiveContent(() => SpeechVoiceRows(item, query), Changes.Shell, Changes.Of(Settings, nameof(Core.Dictation.DictationSettings.Region)),
                     Changes.Of(services.Services.Kokoro));
+            case "clicky.nextQuestions":
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Toggle(Core.Answers.NextQuestions.IsOn(services.Preferences), isOn => Core.Answers.NextQuestions.SetOn(services.Preferences, isOn))));
             case "clicky.emailApp":
                 // emailApp in shell.json: automatic saves nothing; anything unknown (the Mac's "mail") shows as automatic.
                 return new LiveContent(() =>

@@ -73,6 +73,8 @@ public sealed partial class CompanionManager
             {
                 LastTranscript = text;
                 AppLog.Write($"talk: you said ({text.Length} chars)");
+                // A new question: the last answer's next questions go.
+                WithdrawNextQuestions();
                 // "Save it" saves the drawing up; the fast voice keeps quiet about it.
                 if (TrySaveDrawing(text))
                 {

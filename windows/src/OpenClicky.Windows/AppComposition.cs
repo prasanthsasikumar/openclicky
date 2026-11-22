@@ -51,6 +51,7 @@ public sealed class AppComposition : ICompanionHost, IDisposable
     private readonly IDisposable pointerStyleObservation;
     private readonly GuidedStepInputSource guidedStepInput;
     private readonly VelopackAppUpdater updater;
+    private readonly NextQuestionsWindow nextQuestionsWindow;
     private readonly TrayIcon trayIcon;
     private readonly DispatcherTimer memoryWatch;
     private readonly nint lowMemoryNotification;
@@ -146,6 +147,10 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         OpenClickyConfiguration.SettingsChanged += refreshMarkerKeys;
         Companion = new CompanionManager(services,
             new CompanionModels(companionUi.Overlay, companionUi.Island, companionUi.Orb, companionUi.AgentCard), this);
+        // Questions to ask next after an answer, as buttons under the island; a tap asks it.
+        nextQuestionsWindow = new NextQuestionsWindow(dispatcher);
+        Companion.NextQuestionsOffered += questions => nextQuestionsWindow.Show(questions, Companion.AskNextQuestion);
+        Companion.NextQuestionsWithdrawn += nextQuestionsWindow.Hide;
 
         updater = new VelopackAppUpdater(preferences, new UpdatePromptSheets(dispatcher, dictationSettings));
         trayIcon = new TrayIcon(ReadTrayState);
