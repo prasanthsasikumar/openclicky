@@ -1444,7 +1444,7 @@ struct NotchHUDView: View {
         isOpening ? IslandMotion.unfoldWidth(reduceMotion: model.reduceMotion) : IslandMotion.peek(reduceMotion: model.reduceMotion)
     }
     private var heightAnimation: Animation {
-        if model.isSettlingGracefully { return .spring(response: 1.3, dampingFraction: 0.92) }
+        if model.isSettlingGracefully { return Motion.graceful.animation }
         return isOpening
             ? IslandMotion.unfoldHeight(reduceMotion: model.reduceMotion).delay(model.reduceMotion ? 0 : IslandMotion.heightDelay)
             : IslandMotion.peek(reduceMotion: model.reduceMotion)
@@ -1611,12 +1611,12 @@ struct NotchHUDView: View {
             }
         }
         .scaleEffect(model.isPressed ? IslandMotion.pressScale(reduceMotion: model.reduceMotion) : 1, anchor: .top)
-        .animation(.easeOut(duration: IslandMotion.pressDuration), value: model.isPressed)
+        .animation(Motion.hover, value: model.isPressed)
         .padding(.top, model.placement.isSideDrawer ? model.windowMargin : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: islandAlignment)
         .contentShape(Rectangle())
-        .animation(model.isSettlingGracefully ? .spring(response: 1.3, dampingFraction: 0.92) : (model.reduceMotion ? IslandMotion.fade : .spring(response: 0.42, dampingFraction: 0.84)), value: expansion)
-        .animation(.easeInOut(duration: 0.2), value: companionManager.voiceState)
+        .animation(model.isSettlingGracefully ? Motion.graceful.animation : (model.reduceMotion ? IslandMotion.fade : .spring(response: 0.42, dampingFraction: 0.84)), value: expansion)
+        .animation(Motion.swap, value: companionManager.voiceState)
         // The whole island (the notch, the peek, the open panel) takes drops for the shelf.
         .onDrop(of: IslandDropDelegate.acceptedTypes, delegate: IslandDropDelegate(model: model, shelf: companionManager.notchHUDManager.shelf))
     }
@@ -1719,7 +1719,7 @@ struct NotchCompactStatusView: View {
                     // The live words arrive a partial at a time; a short cross-fade instead of a
                     // hard swap keeps the line from flickering as each one lands.
                     .contentTransition(.opacity)
-                    .animation(.easeOut(duration: 0.16), value: detailLine)
+                    .animation(Motion.swap, value: detailLine)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
             Spacer(minLength: 0)

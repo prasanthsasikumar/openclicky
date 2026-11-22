@@ -38,7 +38,7 @@ enum IslandDash {
 
     /// Layout springs; Reduce motion makes each a short ease.
     static func columnSpring(reduceMotion: Bool) -> Animation {
-        reduceMotion ? .easeInOut(duration: 0.16) : .spring(response: 0.32, dampingFraction: 0.88)
+        Motion.settle(reduceMotion: reduceMotion)
     }
 }
 
@@ -94,7 +94,7 @@ private struct IslandIconButtonBody: View {
             .background(Circle().fill(isActive || isHovered || configuration.isPressed ? IslandDash.hoverFill : Color.clear))
             .contentShape(Circle())
             .scaleEffect(configuration.isPressed ? 0.88 : 1)
-            .animation(.easeOut(duration: 0.12), value: isHovered)
+            .animation(Motion.hover, value: isHovered)
             .onHover { isHovered = $0 }
             .pointerCursor()
     }

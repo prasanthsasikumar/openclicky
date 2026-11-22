@@ -81,6 +81,16 @@ enum Motion {
     static var swap: Animation { .easeOut(duration: swapDuration) }
     static var exit: Animation { .easeIn(duration: exitDuration) }
     static var fade: Animation { .easeInOut(duration: fadeDuration) }
+    /// A meter, ring or bar moving to a new reading.
+    static var gauge: Animation { .easeOut(duration: 0.45) }
+    /// A picture or a block of content replacing another.
+    static var crossfade: Animation { .easeOut(duration: 0.3) }
+    /// Something leaving slowly on purpose (the pointer fading out when it rests).
+    static var slowExit: Animation { .easeIn(duration: 0.4) }
+    /// The island folding away after the welcome tour: once, and unhurried.
+    static let graceful = SpringSpec(response: 1.3, damping: 0.92)
+    /// How far a pressed control shrinks.
+    static let pressScale: CGFloat = 0.97
 
     /// A point on a thrown arc from `start` to `end`: straight-line travel with a lift that
     /// peaks midway. `lift` is how far above the straight line the peak is.

@@ -50,7 +50,7 @@ private struct SystemRingGauge: View {
                     .trim(from: 0, to: visibleFill)
                     .stroke(ringColor, style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .animation(.easeOut(duration: 0.5), value: visibleFill)
+                    .animation(Motion.gauge, value: visibleFill)
                 Image(systemName: symbolName)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.white)

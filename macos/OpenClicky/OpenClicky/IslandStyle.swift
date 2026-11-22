@@ -37,10 +37,10 @@ enum IslandCorners {
 
 /// The island's motion. Reduce motion turns every spring into a short fade and drops the press.
 enum IslandMotion {
-    static let fade = Animation.easeInOut(duration: 0.15)
+    static let fade = Motion.fade
     static let heightDelay: TimeInterval = 0.06
-    static let pressScale: CGFloat = 0.97
-    static let pressDuration: TimeInterval = 0.12
+    static let pressScale: CGFloat = Motion.pressScale
+    static let pressDuration: TimeInterval = Motion.hoverDuration
 
     static func unfoldWidth(reduceMotion: Bool) -> Animation {
         reduceMotion ? fade : .spring(response: 0.36, dampingFraction: 0.82)

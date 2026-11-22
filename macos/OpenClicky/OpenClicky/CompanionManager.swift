@@ -2983,7 +2983,7 @@ final class CompanionManager: ObservableObject {
         isCursorCaptionVisible = true
         cursorCaptionOpacity = 0.0
 
-        withAnimation(.easeIn(duration: 0.4)) {
+        withAnimation(Motion.slowExit) {
             cursorCaptionOpacity = 1.0
         }
 
@@ -3014,7 +3014,7 @@ final class CompanionManager: ObservableObject {
         cursorCaptionDismissWorkItem?.cancel()
         cursorCaptionDismissWorkItem = nil
         guard isCursorCaptionVisible else { return }
-        withAnimation(.easeOut(duration: 0.3)) {
+        withAnimation(Motion.crossfade) {
             cursorCaptionOpacity = 0.0
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in

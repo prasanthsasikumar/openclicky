@@ -40,7 +40,7 @@ struct NotchFullPanelView: View {
                 .id(model.selection.active)
                 .transition(.opacity)
         }
-        .animation(.easeInOut(duration: 0.18), value: model.selection)
+        .animation(Motion.swap, value: model.selection)
     }
 }
 

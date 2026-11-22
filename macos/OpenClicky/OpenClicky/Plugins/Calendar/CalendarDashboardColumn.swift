@@ -69,7 +69,7 @@ struct CalendarDashboardColumn: View {
                         isSelected: day.start == selectedDay?.start,
                         showsDots: store.access == .allowed
                     ) {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        withAnimation(Motion.pop.animation) {
                             selectedDayStart = day.start
                         }
                     }
@@ -78,7 +78,7 @@ struct CalendarDashboardColumn: View {
             .frame(maxWidth: .infinity)
             if canQuickAdd {
                 Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isQuickAddOpen.toggle() }
+                    withAnimation(Motion.pop.animation) { isQuickAddOpen.toggle() }
                 } label: {
                     Image(systemName: isQuickAddOpen ? "xmark" : "plus")
                 }
@@ -110,7 +110,7 @@ struct CalendarDashboardColumn: View {
             noAccessView
         } else if isQuickAddOpen, let selectedDay {
             CalendarQuickAddField(store: store, dayStart: selectedDay.start) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isQuickAddOpen = false }
+                withAnimation(Motion.pop.animation) { isQuickAddOpen = false }
             }
         } else if let selectedDay, !selectedDay.events.isEmpty {
             eventList(for: selectedDay)
