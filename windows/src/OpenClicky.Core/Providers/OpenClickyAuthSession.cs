@@ -317,6 +317,27 @@ public sealed partial class OpenClickyAuthSession : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Whether a question should start a guest first: nothing can answer it (no own key, no plan, no
+    /// answer source) and nobody is signed in. Someone who answers through a key or a plan has a route
+    /// and never gets a guest.
+    /// </summary>
+    public static bool ShouldStartGuestBeforeAsking(ProviderRoute answerRoute, bool hasAccountToken) =>
+        !hasAccountToken && answerRoute.Kind == ProviderRouteKind.Unavailable;
+
+    /// <summary>
+    /// A question with nothing to answer it starts a guest first, the one the welcome tour makes, so
+    /// someone who skipped or finished the tour without signing in gets an answer instead of "add your
+    /// email". When the backend wants an email after all (a guest that already ran out on this PC, the
+    /// guest room full) the question goes on and is refused as before.
+    /// </summary>
+    public async Task StartGuestIfNothingCanAnswerAsync()
+    {
+        if (!ShouldStartGuestBeforeAsking(ProviderRouter.Current(ProviderCapability.Claude), OpenClickyConfiguration.HasAccountToken)) return;
+        AppLog.Write("sign-in: nothing can answer this question; starting a guest first");
+        await StartGuestWithoutEmailAsync();
+    }
+
     /// <summary>Signed in as a guest that has not given an email yet.</summary>
     public bool IsGuestWithoutEmail => OpenClickyConfiguration.HasAccountToken && AccountEmail is null;
 

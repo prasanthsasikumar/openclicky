@@ -364,8 +364,9 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
                     }
                     else if (shortcutEvent.WasTap && !Settings.TapKeepsListening)
                     {
-                        // Hold to talk: a tap is too short to have said anything.
-                        CancelTake("cancelled, a tap (hold the key to talk)");
+                        // Hold to talk: a tap is too short to have said anything. Quietly: no error
+                        // sound or "cancelled", just the resting hint that says to hold the key.
+                        CancelTake("a tap (hold the key to talk)", quiet: true);
                     }
                     else if (shortcutEvent.WasTap)
                     {
@@ -458,10 +459,18 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
         boxCloseCancellation?.Cancel();
         Capture.UpdateContextualKeyterms(SpaceStore.Space.Dictionary.Select(term => term.Written).ToList());
         Orb.LiveTranscript = "";
-        Orb.IsBoxOpen = Settings.OrbRestsExpanded && Orb.BoxText is not null;
-        Orb.Phase = mode == TakeMode.Edit ? DictationOrbPhase.EditListening : DictationOrbPhase.Listening;
-        Orb.Hint = mode == TakeMode.Edit ? "say your edit, then let go" : "tap / release to transcribe";
-        Play(DictationEarcon.Start);
+        takeShown = false;
+        // Hold to talk: the microphone opens at once (no first word is lost), but the sound and the orb
+        // wait until the key has been held past a tap, so a quick tap (or Ctrl pressed for a shortcut
+        // with Ctrl dictating) shows and plays nothing.
+        if (mode == TakeMode.Dictate && !Settings.TapKeepsListening)
+        {
+            After(TimeSpan.FromSeconds(CompanionShortcutRecognizer.TapMaxHoldSeconds), () => ShowTake(thisTakeId));
+        }
+        else
+        {
+            ShowTake(thisTakeId);
+        }
         StartInactivityTimer();
 
         pendingStartCancellation?.Cancel();
@@ -471,6 +480,24 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
     }
 
     private bool IsStarting(Guid id) => takeId == id && State == TakeState.Starting;
+
+    /// <summary>Whether the take's start sound and listening orb are out yet (see BeginTake).</summary>
+    private bool takeShown;
+
+    private void ShowTake(Guid id)
+    {
+        if (takeShown || takeId != id || State is not (TakeState.Starting or TakeState.Listening)) return;
+        takeShown = true;
+        Orb.IsBoxOpen = Settings.OrbRestsExpanded && Orb.BoxText is not null;
+        // A Ctrl that joined while the orb waited already made it an edit, with its own orb.
+        if (takeMode == TakeMode.Dictate || Orb.Phase != DictationOrbPhase.EditListening)
+        {
+            Orb.Phase = takeMode == TakeMode.Edit ? DictationOrbPhase.EditListening : DictationOrbPhase.Listening;
+            if (Orb.Hint is null || Orb.Hint == IdleHint)
+                Orb.Hint = takeMode == TakeMode.Edit ? "say your edit, then let go" : Settings.TapKeepsListening ? "tap / release to transcribe" : "release to transcribe";
+        }
+        Play(DictationEarcon.Start);
+    }
 
     private async Task RunTakeStartAsync(Guid thisTakeId, TakeMode mode, CancellationToken cancellationToken)
     {
@@ -569,18 +596,22 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
         Capture.StopPushToTalkFromKeyboardShortcut();
     }
 
-    public void CancelTake(string reason)
+    /// <param name="quiet">No sound and no "cancelled": the orb goes straight back to rest (a tap with
+    /// hold-to-talk on, which is not a mistake worth flagging).</param>
+    public void CancelTake(string reason, bool quiet = false)
     {
         if (!IsTakeInProgress) return;
+        // A take the person never saw or heard start (cancelled inside the tap window) ends as quietly.
+        if (!takeShown) quiet = true;
         var thisTakeId = takeId;
         StopInactivityTimer();
         pendingStartCancellation?.Cancel();
         pendingStartTask = null;
         Capture.CancelCurrentDictation(preserveDraftText: false);
-        Play(DictationEarcon.Blocked);
-        Orb.Phase = DictationOrbPhase.Failed(reason);
+        if (!quiet) Play(DictationEarcon.Blocked);
+        Orb.Phase = quiet ? DictationOrbPhase.Idle : DictationOrbPhase.Failed(reason);
         Orb.LiveTranscript = "";
-        Orb.Hint = null;
+        Orb.Hint = quiet ? IdleHint : null;
         AppLog.Write($"take {Short(thisTakeId)} cancelled: {reason}");
         _ = AudioStore.EndCapture();
         // Words already typed live stay in the app (deleting in a terminal is unsafe); history
@@ -594,7 +625,7 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
             }
         }
         EndTake();
-        ScheduleIdle(TimeSpan.FromSeconds(1.4));
+        if (!quiet) ScheduleIdle(TimeSpan.FromSeconds(1.4));
     }
 
     private void FailTake(string message, Guid failedTakeId)
@@ -772,7 +803,7 @@ public sealed class DictationTakeController : ObservableObject, IDisposable
         if (formattingDegraded && landed) pasteMessage = "moved to text box · cleaned up locally";
         if (historyNote is not null) pasteMessage += $" · {historyNote}";
         Orb.Phase = DictationOrbPhase.Done(pasteMessage);
-        AppLog.Write($"take {Short(thisTakeId)} done: {outputText.Length} chars, paste={pasteOutcome}, engine={Settings.Engine.Id()}, degraded={formattingDegraded}");
+        AppLog.Write($"take {Short(thisTakeId)} done: {outputText.Length} chars, paste={pasteOutcome}{(pasteOutcome == TakePasteOutcome.LeftOnPasteboard ? $" ({deliveryMessage})" : "")}, engine={Settings.Engine.Id()}, degraded={formattingDegraded}");
         EndTake();
         ScheduleIdle(TimeSpan.FromSeconds(1.8));
     }

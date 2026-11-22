@@ -14,8 +14,13 @@ public sealed class SkillLibraryStoreTests : IDisposable
 
     public void Dispose()
     {
-        try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
-        catch (IOException) { }
+        // Cleanup only. A just-removed junction can be held open for a moment (antivirus, the search
+        // indexer) and refuse with access denied, so try a few times and never fail the test over it.
+        for (var attempt = 0; attempt < 5 && Directory.Exists(root); attempt++)
+        {
+            try { Directory.Delete(root, recursive: true); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { Thread.Sleep(100); }
+        }
     }
 
     private static string Markdown(string name, string? surfaces = null)

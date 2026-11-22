@@ -15,9 +15,34 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
+## 0.12.2
+
+### Windows
+
+- **Dictation types into Command Prompt and PowerShell windows.** Words said in a classic console window were left on the clipboard, or "moved to text box" with nothing arriving. They are now typed at the prompt, on one line, so a take never presses Enter for you.
+- **A quick tap of the dictation key does nothing.** With hold to talk, a tap (or Ctrl+C with a Ctrl key dictating) no longer beeps, flashes the orb or says "cancelled". The orb and the sound come once the key is held.
+- **Windows speech listens in your speech language.** Where Windows has no speech pack for your region (English in Singapore, say), Windows speech now listens in your Windows speech language instead of whichever English came first.
+- **Online speech is your switch to flip.** When Windows dictation needs online speech recognition, the card on the island now opens Settings, Privacy & security, Speech for you to turn it on, instead of changing the setting itself. The card goes away by itself once it is on.
+- **"Later" hides only that card.** Saying later to the microphone card no longer hides the online speech card when Windows dictation first asks for it.
+
+## 0.12.1
+
+Fixes found in a tester's log.
+
+### All platforms
+
+- **3D drawings keep their arrows.** Some 3D drawings lost their arrows, because the arrows were written in a way a turning figure cannot draw. Clicky is now told to draw them on the figure itself.
+
+### Mac
+
+- **Hands-free hears the rest of your sentence.** If you paused and then went on talking, the reply to the first half could block the reply to the rest, so Clicky answered only part of what you said. A reply that is still on its way is now dropped the moment you speak again.
+- **Clicky remembers what it drew.** After a drawing, the fast voice was never told one had been made, so a follow-up had nothing to go on. It is told now.
+- **The first dictation after a quiet spell is tidied too.** On Macs that clean up dictation with Apple Intelligence, the model now wakes while you speak, instead of making the first take go in untidied because it took too long to load.
+- **"Play a song" finds the song again.** Without a Spotify key of your own, asking for a song only opened Spotify's search, because the song lookup on our server was not set up. It is now, and this one needs no update.
+
 ## 0.12.0
 
-With thanks to [darkworks](https://github.com/darkworks), who taught the drawing stage everything new below.
+With thanks to [darkworks](https://github.com/darkworks), who taught the drawing stage the new drawings below.
 
 ### All platforms
 
@@ -27,6 +52,8 @@ With thanks to [darkworks](https://github.com/darkworks), who taught the drawing
 - **Graphs and timelines.** "How has the world's population grown?" or "the big moments in the history of computers" are drawn to scale, with labels kept clear of the lines. By darkworks (PR #49).
 - **Labels that don't overlap.** A drawing's labels now move out of each other's way. By darkworks (PR #48).
 - **"3D" alone no longer means a drawing.** "What's the best 3D printer?" gets a plain answer; "show me in 3D" still draws.
+- **Ask first, sign up later.** With no key and no account, your first question starts the free trial the welcome tour offers and gets an answer, instead of being told to add your email. Add your email in Settings later to keep going.
+- **No robotic voice for account notes.** Notes like "your sign-in has expired" or "you've used today's free allowance" are now recorded in Clicky's own voice, so they sound right even before there is a voice to answer in. A voice you picked yourself still says them.
 
 ### Mac
 

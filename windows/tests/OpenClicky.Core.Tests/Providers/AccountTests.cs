@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Providers;
 using static OpenClicky.Core.Providers.OpenClickyAuthSession;
@@ -12,6 +13,25 @@ namespace OpenClicky.Core.Tests.Providers;
 
 public sealed class AccountAuthTests
 {
+    [Fact]
+    public void AQuestionNothingCanAnswerStartsAGuestFirst()
+    {
+        var nothingCanAnswer = ProviderRoute.Unavailable(ProviderRouter.NeedsAnthropicKeySentence);
+        Assert.True(ShouldStartGuestBeforeAsking(nothingCanAnswer, hasAccountToken: false));
+        // Signed in already (a guest whose route went away is refused by the backend, not replaced).
+        Assert.False(ShouldStartGuestBeforeAsking(nothingCanAnswer, hasAccountToken: true));
+    }
+
+    [Fact]
+    public void AKeyOrAPlanNeverGetsAGuest()
+    {
+        foreach (var route in new[] { ProviderRoute.AnthropicDirect, ProviderRoute.AnswerProvider(AnswerSource.ClaudeCodePlan),
+                                      ProviderRoute.AnswerProvider(AnswerSource.OpenAI), ProviderRoute.Backend })
+        {
+            Assert.False(ShouldStartGuestBeforeAsking(route, hasAccountToken: false));
+        }
+    }
+
     [Fact]
     public void OldBackendsWithoutTheFieldDecode()
     {
