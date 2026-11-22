@@ -416,6 +416,8 @@ final class CompanionManager: ObservableObject {
     let appConnectPromptController = AppConnectPromptController()
     /// "Things I can take off your plate": the day's suggested tasks (Plate/).
     let plateController = PlateController()
+    /// One-off cards on the island with a countdown ring (a job finished).
+    let islandNotices = IslandNoticeCenter()
 
     /// The leg of a buddy flight in progress, if any. Each display has its own overlay, so a
     /// flight to another display is split at the display edges; the overlay whose screen matches
@@ -504,6 +506,11 @@ final class CompanionManager: ObservableObject {
             submitTextToAgent(task)
         }
     }
+
+    #if DEBUG
+    /// The island smoke's agent milestones, without an agent.
+    func debugSetAgentActivity(_ text: String?) { agentActivityText = text }
+    #endif
 
     /// Text entry point into the agent lane (result-card follow-ups, future text mode). Captures the
     /// screen like the voice path does, resumes `threadId` when given, and speaks the result.
@@ -944,6 +951,7 @@ final class CompanionManager: ObservableObject {
         permissionPromptController.stop()
         appConnectPromptController.stop()
         plateController.stop()
+        islandNotices.stop()
         notchHUDManager.hide()
         realtimeVoiceClient.disconnect(reason: nil)
         globalPushToTalkShortcutMonitor.stop()
@@ -1036,6 +1044,7 @@ final class CompanionManager: ObservableObject {
         // The welcome tour waits for the last permission, then takes the island.
         firstRunTour.start(companionManager: self)
         plateController.start(companionManager: self)
+        islandNotices.start(companionManager: self)
         // Kokoro comes into memory only when a question starts: pressing the ask shortcut or sending
         // a typed question. Hands-free answers in OpenAI's realtime voice and never needs it.
         kokoroPreparationCancellable = $voiceState

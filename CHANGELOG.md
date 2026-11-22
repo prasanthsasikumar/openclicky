@@ -20,6 +20,9 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 ### Mac
 
 - **Clicky offers to take jobs on.** Once a day Clicky can offer up to six jobs it could do by itself: a draft, some reading, a list, a check. The island says how many, and *Show me* deals them out of the notch as paper cards. Rest the pointer on one and its plan slides out from under it: the steps, about how long, and what you get back. *Go ahead* stamps the card and hands it to the agent, *Change it* lets you type what should be different first, and *Bin it* crumples it into the bin. Jobs you accept run one after another, and nothing is sent, posted or changed for you: you get drafts and reports. Afterwards Clicky asks once whether the set was worth offering, and tomorrow's follows your answer. Off until you switch it on in Settings → Clicky → *Offer to take jobs on*, because the cards are written from your calendar's next days, your notes pad and the titles of your recent Claude Code and Codex sessions, and that summary goes to whoever answers your questions. Needs your own key or plan. The menu bar's *What Could You Take On Today?* asks for a set any time.
+- **The island moves as one piece.** Opening, closing and every card now reshape on the same quick curve, with the contents fading in as it opens. While Clicky listens, thinks, speaks or has an agent working, a soft light in that state's colour shows under the island's corners.
+- **Rest the pointer on the notch to open the island.** Hold it there for a moment and the island opens, and closes when you move away; a click still keeps it open. Switch it off in Settings → Island → *Open when the pointer rests on it*.
+- **A card when a job is done.** When an agent finishes, the island says so with an *Open* button, and the card goes away by itself (rest the pointer on it to keep it).
 
 ## 0.12.2
 

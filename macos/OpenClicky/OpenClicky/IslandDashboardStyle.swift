@@ -93,8 +93,9 @@ private struct IslandIconButtonBody: View {
             .frame(width: size * frameScale, height: size * frameScale)
             .background(Circle().fill(isActive || isHovered || configuration.isPressed ? IslandDash.hoverFill : Color.clear))
             .contentShape(Circle())
-            .scaleEffect(configuration.isPressed ? 0.88 : 1)
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .animation(Motion.hover, value: isHovered)
+            .animation(Motion.hover, value: configuration.isPressed)
             .onHover { isHovered = $0 }
             .pointerCursor()
     }
@@ -109,6 +110,8 @@ struct IslandPillButtonStyle: ButtonStyle {
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .background(Capsule().fill(Color.white.opacity(configuration.isPressed ? 0.25 : 0.16)))
+            .scaleEffect(configuration.isPressed ? Motion.pressScale : 1)
+            .animation(Motion.hover, value: configuration.isPressed)
             .pointerCursor()
     }
 }

@@ -189,18 +189,22 @@ struct NotchPeekLine: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.trailing, 10)
                     Color.clear.frame(width: cameraGap)
-                    Text("click to open")
-                        .foregroundColor(DS.HUD.text3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 10)
+                    HStack(spacing: 6) {
+                        Text(model.opensOnRest ? "opening" : "click to open")
+                            .foregroundColor(DS.HUD.text3)
+                        if model.opensOnRest { IslandDwellRing(seconds: IslandMotion.dwellSeconds, reduceMotion: model.reduceMotion) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 10)
                 }
             } else {
                 HStack(spacing: 6) {
                     NotchPointerMark(isDimmed: false)
                     Text(text)
                         .foregroundColor(DS.HUD.text2)
-                    Text("· click to open")
+                    Text(model.opensOnRest ? "· opening" : "· click to open")
                         .foregroundColor(DS.HUD.text3)
+                    if model.opensOnRest { IslandDwellRing(seconds: IslandMotion.dwellSeconds, reduceMotion: model.reduceMotion) }
                 }
             }
         }

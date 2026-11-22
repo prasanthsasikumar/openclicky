@@ -328,3 +328,107 @@ struct PlateSoundTests {
         }
     }
 }
+
+struct IslandNoticeTests {
+    private func notice(_ id: String, seconds: Double = 8) -> IslandNotice { IslandNotice(id: id, title: id, seconds: seconds) }
+
+    @Test func noticesShowOneAtATimeAndRunOut() {
+        var queue = IslandNoticeQueue()
+        #expect(queue.current == nil && queue.fraction == 0)
+        queue.enqueue(notice("a", seconds: 2))
+        queue.enqueue(notice("b", seconds: 4))
+        #expect(queue.current?.id == "a" && queue.fraction == 1)
+        let first = queue.advance(by: 1, isHeld: false)
+        #expect(!first && queue.fraction == 0.5)
+        let held = queue.advance(by: 5, isHeld: true)          // the pointer holds the clock
+        #expect(!held && queue.fraction == 0.5)
+        let ranOut = queue.advance(by: 1, isHeld: false)
+        #expect(ranOut)
+        #expect(queue.current?.id == "b" && queue.fraction == 1)
+        queue.dismissCurrent()
+        #expect(queue.current == nil)
+    }
+
+    @Test func theSameNoticeAgainReplacesItAndTheQueueIsBounded() {
+        var queue = IslandNoticeQueue()
+        queue.enqueue(notice("a", seconds: 2))
+        queue.advance(by: 1.5, isHeld: false)
+        queue.enqueue(IslandNotice(id: "a", title: "again", seconds: 6))
+        #expect(queue.waiting.count == 1 && queue.current?.title == "again" && queue.fraction == 1)
+        for index in 0..<10 { queue.enqueue(notice("n\(index)")) }
+        #expect(queue.waiting.count == IslandNoticeQueue.maximumWaiting)
+        #expect(queue.current?.id == "a" && queue.waiting.last?.id == "n9")
+    }
+
+    @MainActor @Test func aFinishedJobSaysSoWithItsFirstLine() {
+        let done = IslandNoticeCenter.jobFinishedNotice(OpenClickyAgentResultSummary(
+            threadId: "t1", title: "Compare tools", text: "The table is ready.\nSecond line.", artifacts: ["a.md", "b.md"], status: "completed", finishedAt: Date()))
+        #expect(done.title == "A job is done" && done.tone == .done && done.actionTitle == "Open")
+        #expect(done.detail == "The table is ready. \u{B7} 2 files")
+        let stopped = IslandNoticeCenter.jobFinishedNotice(OpenClickyAgentResultSummary(
+            threadId: "", title: "Compare tools", text: "", artifacts: [], status: "failed", finishedAt: Date()))
+        #expect(stopped.title == "A job stopped early" && stopped.tone == .trouble && stopped.actionTitle == nil && stopped.detail == "Compare tools")
+    }
+}
+
+struct IslandGlowTests {
+    @Test func theGlowExistsOnlyWhileSomethingIsGoingOn() {
+        #expect(IslandGlowTone.tone(voiceState: .idle, isAgentWorking: false) == nil)
+        #expect(IslandGlowTone.tone(voiceState: .listening, isAgentWorking: false) == .listening)
+        #expect(IslandGlowTone.tone(voiceState: .processing, isAgentWorking: false) == .thinking)
+        #expect(IslandGlowTone.tone(voiceState: .processing, isAgentWorking: true) == .working)
+        #expect(IslandGlowTone.tone(voiceState: .idle, isAgentWorking: true) == .working)
+        #expect(IslandGlowTone.tone(voiceState: .responding, isAgentWorking: true) == .speaking)
+        #expect(IslandGlowMetrics.sweepSeconds < IslandGlowMetrics.sweepCycleSeconds)
+    }
+}
+
+@MainActor
+struct IslandRestAndNoticeModelTests {
+    private func notchModel() -> NotchHUDModel {
+        NotchHUDModel(geometry: NotchGeometry(screenFrame: CGRect(x: 0, y: 0, width: 1512, height: 982), hasHardwareNotch: true, notchWidth: 190, notchHeight: 33, visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 949)))
+    }
+
+    private func waitFor(_ model: NotchHUDModel, _ expansion: NotchHUDExpansion) async throws {
+        for _ in 0..<200 where model.expansion != expansion { try await Task.sleep(nanoseconds: 20_000_000) }
+    }
+
+    @Test func restingThePointerOpensThePanelAndLeavingClosesIt() async throws {
+        let model = notchModel()
+        model.opensOnRest = true
+        var taps = 0
+        model.onOpenedByRest = { taps += 1 }
+        model.setHovering(true)
+        #expect(model.expansion == .peek)
+        try await waitFor(model, .full)
+        #expect(model.expansion == .full && model.isDwellOpen && taps == 1)
+        model.setHovering(false)
+        try await waitFor(model, .collapsed)
+        #expect(model.expansion == .collapsed && !model.isDwellOpen)
+    }
+
+    @Test func withTheSwitchOffHoveringOnlyPeeks() async throws {
+        let model = notchModel()
+        model.opensOnRest = false
+        model.setHovering(true)
+        try await Task.sleep(nanoseconds: UInt64((IslandMotion.dwellSeconds + 0.3) * 1_000_000_000))
+        #expect(model.expansion == .peek)
+    }
+
+    @Test func aNoticeShowsBelowOtherCardsAndHoldsUnderThePointer() {
+        let model = notchModel()
+        model.opensOnRest = false
+        let state = IslandNoticeState(notice: IslandNotice(id: "a", title: "A job is done"), fraction: 1)
+        model.setNotice(state)
+        #expect(model.expansion == .notice)
+        #expect(model.height == model.cardTopInset + IslandNoticeState.contentHeight)
+        model.setHovering(true)                          // hovering holds the card, it does not peek
+        #expect(model.expansion == .notice)
+        model.setPlateCard(.feedback)
+        #expect(model.expansion == .plate)
+        model.setPlateCard(nil)
+        model.setNotice(nil)
+        model.setHovering(false)
+        #expect(model.expansion != .notice)
+    }
+}

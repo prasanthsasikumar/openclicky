@@ -635,6 +635,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
         #if DEBUG
+        if launchArguments.contains("--openclicky-island-smoke") {
+            // The island's states played by the app itself (see IslandSmoke).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in
+                companionManager.permissionPromptController.dismiss()
+                IslandSmoke.run(companionManager: companionManager)
+            }
+        }
         if let plateIndex = launchArguments.firstIndex(of: "--openclicky-plate-smoke") {
             // The suggested tasks with six sample cards (nothing saved, nothing run):
             //   OpenClicky --openclicky-plate-smoke [announce|deck|demo|live]
