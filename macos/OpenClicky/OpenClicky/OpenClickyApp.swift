@@ -635,6 +635,55 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
         #if DEBUG
+        if let renderIndex = launchArguments.firstIndex(of: "--openclicky-render-cards"), renderIndex + 1 < launchArguments.count {
+            // The island's cards as PNG files, drawn off screen, then exit (see IslandCardRender).
+            let folder = launchArguments[renderIndex + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [companionManager] in
+                IslandCardRender.run(folder: folder, companionManager: companionManager)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+            }
+        }
+        if let settingsIndex = launchArguments.firstIndex(of: "--openclicky-open-settings") {
+            // Drops settings down from the island at a page (general when none is named), to look at it.
+            let page = settingsIndex + 1 < launchArguments.count ? DictationSettingsPage(rawValue: launchArguments[settingsIndex + 1]) : nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in
+                companionManager.notchHUDManager.debugHoldSettingsOpen(page ?? .general)
+            }
+        }
+        if launchArguments.contains("--openclicky-island-smoke") {
+            // The island's states played by the app itself (see IslandSmoke).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in
+                companionManager.permissionPromptController.dismiss()
+                IslandSmoke.run(companionManager: companionManager)
+            }
+        }
+        if let plateIndex = launchArguments.firstIndex(of: "--openclicky-plate-smoke") {
+            // The suggested tasks with six sample cards (nothing saved, nothing run):
+            //   OpenClicky --openclicky-plate-smoke [announce|deck|demo|live]
+            // "live" asks the answer source for real cards, as the menu bar item does.
+            let mode = plateIndex + 1 < launchArguments.count ? launchArguments[plateIndex + 1] : "announce"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in
+                // A Debug build often lacks permissions; its cards would outrank these.
+                companionManager.permissionPromptController.dismiss()
+                if mode == "live" {
+                    companionManager.plateController.showOnRequest()
+                } else if mode == "demo" {
+                    companionManager.plateController.playDemo()
+                } else {
+                    companionManager.plateController.showSample(openingDeck: mode == "deck")
+                }
+            }
+        }
+        if let buddyIndex = launchArguments.firstIndex(of: "--openclicky-buddy-smoke") {
+            // The pointer plays its states by itself (flights, listening, thinking, speaking,
+            // idle), about 30 s, logged step by step:
+            //   OpenClicky --openclicky-buddy-smoke [stay|exit]
+            let quitsWhenDone = buddyIndex + 1 < launchArguments.count && launchArguments[buddyIndex + 1] == "exit"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in
+                companionManager.permissionPromptController.dismiss()
+                BuddySmoke.play(on: companionManager, quitsWhenDone: quitsWhenDone)
+            }
+        }
         if let tourIndex = launchArguments.firstIndex(of: "--openclicky-ui-tour"), tourIndex + 1 < launchArguments.count {
             UITour(companionManager: companionManager, logPath: launchArguments[tourIndex + 1]).run()
         }

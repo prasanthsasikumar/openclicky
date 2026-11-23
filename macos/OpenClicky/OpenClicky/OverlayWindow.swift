@@ -6,8 +6,15 @@
 //  One OverlayWindow is created per screen so the cursor buddy
 //  seamlessly follows the cursor across multiple monitors.
 //
+//  How it moves is in two other files: the animations are `Motion` tokens, and the flight arc,
+//  the streak, the waveform shaping, the thinking dots and the idle bob are the pure functions
+//  in `CursorBuddyMotion.swift`. Every loop here (bob, halo, dots, the glow while holding on a
+//  target) runs only while it can be seen and has a still form under Reduce Motion.
+//
 
 import AppKit
+import Combine
+import QuartzCore
 import SwiftUI
 
 class OverlayWindow: NSWindow {
@@ -113,12 +120,19 @@ enum BuddyNavigationMode {
 // Each screen gets its own BlueCursorView. The view checks whether
 // the cursor is currently on THIS screen and only shows the buddy
 // triangle when it is. During voice interaction, the triangle is
-// replaced by a waveform (listening), spinner (processing), or
+// replaced by a waveform (listening), thinking dots (processing), or
 // streaming text bubble (responding).
 struct BlueCursorView: View {
     let screenFrame: CGRect
     let isFirstAppearance: Bool
     @ObservedObject var companionManager: CompanionManager
+    /// Observed for "reduce animation", so a loop stops the moment it is switched on.
+    @ObservedObject private var dictationSettings: DictationSettings
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+
+    /// Reduce Motion, from macOS or from OpenClicky's own setting: flights go straight and keep
+    /// their size, and nothing loops.
+    private var reduceMotion: Bool { systemReduceMotion || dictationSettings.reduceAnimation }
 
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool
@@ -127,6 +141,7 @@ struct BlueCursorView: View {
         self.screenFrame = screenFrame
         self.isFirstAppearance = isFirstAppearance
         self.companionManager = companionManager
+        self.dictationSettings = companionManager.dictationSettings
 
         // Seed the cursor position from the current mouse location so the
         // buddy doesn't flash at (0,0) before onAppear fires.
@@ -152,7 +167,7 @@ struct BlueCursorView: View {
 
     /// The rotation angle of the triangle in degrees. Default is -35° (cursor-like).
     /// Changes to face the direction of travel when navigating to a target.
-    @State private var triangleRotationDegrees: Double = -35.0
+    @State private var triangleRotationDegrees: Double = CursorFlightPath.restingRotationDegrees
 
     /// Speech bubble text shown when pointing at a detected element.
     @State private var navigationBubbleText: String = ""
@@ -186,6 +201,18 @@ struct BlueCursorView: View {
     /// The Settings tour's simulated click: a ring that grows and fades where the pointer's tip is.
     @State private var clickRippleScale: CGFloat = 0.3
     @State private var clickRippleOpacity: Double = 0
+    /// The flight being drawn, for the streak behind the pointer; nil when it leaves none.
+    @State private var flightStreak: FlightStreak?
+    /// Bumped each time the pointer reaches what it points at; `ArrivalPulse` plays once per bump.
+    @State private var arrivalToken = 0
+    /// True for a few seconds once the mouse has been still: the pointer bobs (`CursorIdleBob`).
+    @State private var isMouseSettled = false
+    @State private var mouseRestClock = MouseRestClock()
+
+    private struct FlightStreak: Equatable {
+        let path: CursorFlightPath
+        let progress: Double
+    }
 
     private let fullWelcomeMessage = "Hi, I'm OpenClicky."
 
@@ -224,8 +251,8 @@ struct BlueCursorView: View {
                     )
                     .opacity(bubbleOpacity)
                     .position(x: cursorPosition.x + 10 + (bubbleSize.width / 2), y: cursorPosition.y + 18)
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                    .animation(.easeOut(duration: 0.5), value: bubbleOpacity)
+                    .animation(Motion.pointerFollow(reduceMotion: reduceMotion), value: cursorPosition)
+                    .animation(Motion.captionFade, value: bubbleOpacity)
                     .onPreferenceChange(SizePreferenceKey.self) { newSize in
                         bubbleSize = newSize
                     }
@@ -260,8 +287,8 @@ struct BlueCursorView: View {
                         x: fitsToTheRight ? cursorPosition.x + 10 + 150 : cursorPosition.x - 10 - 150,
                         y: cursorPosition.y + 12 + (captionBubbleSize.height / 2)
                     )
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                    .animation(.easeOut(duration: 0.4), value: companionManager.cursorCaptionOpacity)
+                    .animation(Motion.pointerFollow(reduceMotion: reduceMotion), value: cursorPosition)
+                    .animation(Motion.captionFade, value: companionManager.cursorCaptionOpacity)
                     .onPreferenceChange(CaptionBubbleSizePreferenceKey.self) { newSize in
                         captionBubbleSize = newSize
                     }
@@ -288,7 +315,7 @@ struct BlueCursorView: View {
                         }
                     )
                     .position(x: cursorPosition.x - 12 - (guideStopHintSize.width / 2), y: cursorPosition.y + 14)
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                    .animation(Motion.pointerFollow(reduceMotion: reduceMotion), value: cursorPosition)
                     .transition(.opacity)
                     .onPreferenceChange(GuideStopHintSizePreferenceKey.self) { newSize in
                         guideStopHintSize = newSize
@@ -323,42 +350,74 @@ struct BlueCursorView: View {
                     .scaleEffect(navigationBubbleScale)
                     .opacity(navigationBubbleOpacity)
                     .position(x: cursorPosition.x + 10 + (navigationBubbleSize.width / 2), y: cursorPosition.y + 18)
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: navigationBubbleScale)
-                    .animation(.easeOut(duration: 0.5), value: navigationBubbleOpacity)
+                    .animation(Motion.pointerFollow(reduceMotion: reduceMotion), value: cursorPosition)
+                    .animation(Motion.pointerArrive(reduceMotion: reduceMotion), value: navigationBubbleScale)
+                    .animation(Motion.captionFade, value: navigationBubbleOpacity)
                     .onPreferenceChange(NavigationBubbleSizePreferenceKey.self) { newSize in
                         navigationBubbleSize = newSize
                     }
             }
 
+            // The streak the pointer leaves behind it on a long flight.
+            if let flightStreak {
+                TravelStreakView(
+                    points: CursorTravelStreak.points(on: flightStreak.path, atProgress: flightStreak.progress),
+                    opacity: CursorTravelStreak.opacity(atProgress: flightStreak.progress)
+                )
+                .allowsHitTesting(false)
+            }
+
             // Blue triangle cursor — shown when idle or while TTS is playing (responding).
-            // All three states (triangle, waveform, spinner) stay in the view tree
+            // All three states (triangle, waveform, dots) stay in the view tree
             // permanently and cross-fade via opacity so SwiftUI doesn't remove/re-insert
             // them (which caused a visible cursor "pop").
             //
-            // During cursor following: fast spring animation for snappy tracking.
-            // During navigation: NO implicit animation — the frame-by-frame bezier
-            // timer controls position directly at 60fps for a smooth arc flight.
-            Triangle()
-                .fill(DS.Colors.overlayCursorColor)
-                .frame(width: 16, height: 16)
-                .rotationEffect(.degrees(triangleRotationDegrees))
-                .shadow(color: DS.Colors.overlayCursorColor, radius: 8 + (buddyFlightScale - 1.0) * 20, x: 0, y: 0)
-                .scaleEffect(buddyFlightScale)
-                .opacity(buddyIsVisibleOnThisScreen && presenceAllowsPointer && (companionManager.voiceState == .idle || companionManager.voiceState == .responding) ? cursorOpacity : 0)
-                .position(cursorPosition)
-                .animation(
-                    buddyNavigationMode == .followingCursor
-                        ? .spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0)
-                        : nil,
-                    value: cursorPosition
-                )
-                .animation(.easeIn(duration: 0.25), value: companionManager.voiceState)
-                .animation(.easeInOut(duration: companionManager.isPointerAwake ? 0.2 : 0.6), value: companionManager.isPointerAwake)
-                .animation(
-                    buddyNavigationMode == .navigatingToTarget ? nil : .easeInOut(duration: 0.3),
-                    value: triangleRotationDegrees
-                )
+            // During cursor following: spring animation for snappy tracking.
+            // During navigation: NO implicit animation — the flight timer sets position, turn and
+            // size directly each frame. Each animation sits right after what it animates, because
+            // the innermost one wins: the landing settle and the turn back to rest must not be
+            // cancelled by the "no animation" that position has outside following.
+            LoopingPhase(isRunning: holdGlowIsOn, beat: Motion.haloBeat) { breath in
+                LoopingPhase(isRunning: bobIsOn, beat: Motion.bobBeat) { bob in
+                    Triangle()
+                        .fill(DS.Colors.overlayCursorColor)
+                        .frame(width: 16, height: 16)
+                        .rotationEffect(.degrees(triangleRotationDegrees))
+                        .animation(
+                            buddyNavigationMode == .navigatingToTarget ? nil : Motion.structural(reduceMotion: reduceMotion),
+                            value: triangleRotationDegrees
+                        )
+                        .shadow(
+                            color: DS.Colors.overlayCursorColor,
+                            radius: CursorFlightPath.glowRadius(forScale: buddyFlightScale) + holdGlowExtra + breath * 6,
+                            x: 0, y: 0
+                        )
+                        .scaleEffect(buddyFlightScale * (presenceAllowsPointer ? 1 : 0.7))
+                        .animation(
+                            buddyNavigationMode == .navigatingToTarget ? nil : Motion.pointerLanding(reduceMotion: reduceMotion),
+                            value: buddyFlightScale
+                        )
+                        .animation(Motion.pointerScale(reduceMotion: reduceMotion), value: presenceAllowsPointer)
+                        .scaleEffect(1 + breath * 0.033)
+                        .offset(y: -CursorIdleBob.rise * bob)
+                }
+            }
+            .opacity(triangleIsShown ? cursorOpacity : 0)
+            .position(cursorPosition)
+            .animation(
+                buddyNavigationMode == .followingCursor
+                    ? Motion.pointerFollow(reduceMotion: reduceMotion)
+                    : nil,
+                value: cursorPosition
+            )
+            .animation(Motion.swap, value: companionManager.voiceState)
+            .animation(companionManager.isPointerAwake ? Motion.swap : Motion.slowExit, value: companionManager.isPointerAwake)
+
+            // A ring where the pointer's tip is, once, when it reaches what it points at. The
+            // pointer sits 8 pt right and 12 pt below that place.
+            ArrivalPulse(token: arrivalToken, reduceMotion: reduceMotion)
+                .position(x: cursorPosition.x - 8, y: cursorPosition.y - 12)
+                .allowsHitTesting(false)
 
             // The Settings tour's "click": the pointer sits 8 pt right and 12 pt below what it points at.
             Circle()
@@ -369,19 +428,34 @@ struct BlueCursorView: View {
                 .position(x: cursorPosition.x - 8, y: cursorPosition.y - 12)
                 .allowsHitTesting(false)
 
-            // Blue waveform — replaces the triangle while listening
-            BlueCursorWaveformView(audioPowerLevel: companionManager.currentAudioPowerLevel)
-                .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .listening ? cursorOpacity : 0)
-                .position(cursorPosition)
-                .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                .animation(.easeIn(duration: 0.15), value: companionManager.voiceState)
+            // Blue waveform in a soft halo — replaces the triangle while listening. The halo
+            // breathes; under Reduce Motion it is a still disc.
+            ZStack {
+                LoopingPhase(isRunning: isListeningHere && !reduceMotion, beat: Motion.haloBeat) { beat in
+                    Circle()
+                        .fill(DS.Colors.overlayCursorColor.opacity(0.22))
+                        .frame(width: 28, height: 28)
+                        .scaleEffect(1 + beat * 0.16)
+                        .opacity(reduceMotion ? 0.5 : 0.72 - beat * 0.44)
+                }
+                BlueCursorWaveformView(
+                    audioPowerLevel: companionManager.currentAudioPowerLevel,
+                    isActive: isListeningHere,
+                    reduceMotion: reduceMotion
+                )
+            }
+            .opacity(isListeningHere ? cursorOpacity : 0)
+            .position(cursorPosition)
+            .animation(Motion.pointerFollow(reduceMotion: reduceMotion), value: cursorPosition)
+            .animation(Motion.swap, value: companionManager.voiceState)
 
-            // Blue spinner — shown while the AI is processing (transcription + Claude + waiting for TTS)
-            BlueCursorSpinnerView()
-                .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .processing ? cursorOpacity : 0)
+            // Three dots taking turns — shown while the AI is processing (transcription, the
+            // answer, waiting for the voice). They draw together into the pointer when it is done.
+            CursorThinkingDotsView(isActive: isThinkingHere, reduceMotion: reduceMotion)
+                .opacity(isThinkingHere ? cursorOpacity : 0)
                 .position(cursorPosition)
-                .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                .animation(.easeIn(duration: 0.15), value: companionManager.voiceState)
+                .animation(Motion.pointerFollow(reduceMotion: reduceMotion), value: cursorPosition)
+                .animation(Motion.swap, value: companionManager.voiceState)
 
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
@@ -412,7 +486,7 @@ struct BlueCursorView: View {
             // Only show welcome message on first appearance (app start)
             // and only if the cursor starts on this screen
             if isFirstAppearance && isCursorOnThisScreen {
-                withAnimation(.easeIn(duration: 2.0)) {
+                withAnimation(Motion.firstAppearance) {
                     self.cursorOpacity = 1.0
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
@@ -446,7 +520,7 @@ struct BlueCursorView: View {
         .onChange(of: companionManager.pointerClickToken) { _ in
             clickRippleScale = 0.3
             clickRippleOpacity = 0.9
-            withAnimation(.easeOut(duration: 0.45)) {
+            withAnimation(Motion.ripple) {
                 clickRippleScale = 1.4
                 clickRippleOpacity = 0
             }
@@ -455,6 +529,36 @@ struct BlueCursorView: View {
             guard let flightLeg, flightLeg.screenFrame == screenFrame else { return }
             performFlightLeg(flightLeg)
         }
+    }
+
+    private var triangleIsShown: Bool {
+        buddyIsVisibleOnThisScreen && presenceAllowsPointer
+            && (companionManager.voiceState == .idle || companionManager.voiceState == .responding)
+    }
+
+    private var isListeningHere: Bool {
+        buddyIsVisibleOnThisScreen && companionManager.voiceState == .listening
+    }
+
+    private var isThinkingHere: Bool {
+        buddyIsVisibleOnThisScreen && companionManager.voiceState == .processing
+    }
+
+    /// The pointer bobs beside a mouse that has just come to rest, and all the while Clicky
+    /// speaks. Never in flight, never while it rests out of sight, never under Reduce Motion.
+    private var bobIsOn: Bool {
+        guard !reduceMotion, triangleIsShown, cursorOpacity > 0, buddyNavigationMode == .followingCursor else { return false }
+        return companionManager.voiceState == .responding || isMouseSettled
+    }
+
+    /// While the pointer holds on what it points at, its glow breathes.
+    private var holdGlowIsOn: Bool {
+        !reduceMotion && buddyNavigationMode == .pointingAtTarget
+    }
+
+    /// The still form of that glow under Reduce Motion: a little wider, not moving.
+    private var holdGlowExtra: CGFloat {
+        reduceMotion && buddyNavigationMode == .pointingAtTarget ? 4 : 0
     }
 
     /// The presence setting only governs plain following: a pointer that is flying, pointing at
@@ -496,6 +600,9 @@ struct BlueCursorView: View {
         timer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { _ in
             let mouseLocation = NSEvent.mouseLocation
             self.isCursorOnThisScreen = self.screenFrame.contains(mouseLocation)
+
+            let settled = self.mouseRestClock.note(mouseLocation, at: ProcessInfo.processInfo.systemUptime)
+            if settled != self.isMouseSettled { self.isMouseSettled = settled }
 
             // During forward flight or pointing, the buddy is NOT interrupted by
             // mouse movement — it completes its full animation and return flight.
@@ -581,82 +688,41 @@ struct BlueCursorView: View {
         }
     }
 
-    /// Animates the buddy along a quadratic bezier arc from its current position
-    /// to the specified destination. The triangle rotates to face its direction
-    /// of travel (tangent to the curve) each frame, scales up at the midpoint
-    /// for a "swooping" feel, and the glow intensifies during flight.
+    /// Animates the buddy along its arc (`CursorFlightPath`) from where it is to `destination`:
+    /// it turns to face where it is going, swells in the middle, leaves a streak on a long
+    /// flight and lands slightly small, filling out as the flight ends. Under Reduce Motion it
+    /// glides straight there at its normal size and lean. Progress is read from the clock, so a
+    /// busy main thread drops frames rather than slowing the flight.
     private func animateBezierFlightArc(
         to destination: CGPoint,
         onComplete: @escaping () -> Void
     ) {
         navigationAnimationTimer?.invalidate()
 
-        let startPosition = cursorPosition
-        let endPosition = destination
+        let calm = reduceMotion
+        let path = CursorFlightPath(from: cursorPosition, to: destination, straight: calm)
+        let leavesStreak = !calm && CursorTravelStreak.isShown(forDistance: path.distance)
+        let startedAt = CACurrentMediaTime()
 
-        let deltaX = endPosition.x - startPosition.x
-        let deltaY = endPosition.y - startPosition.y
-        let distance = hypot(deltaX, deltaY)
+        navigationAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
+            let progress = path.progress(afterSeconds: CACurrentMediaTime() - startedAt)
 
-        // Flight duration scales with distance: short hops are quick, long
-        // flights are more dramatic. Clamped to 0.6s–1.4s.
-        let flightDurationSeconds = min(max(distance / 800.0, 0.6), 1.4)
-        let frameInterval: Double = 1.0 / 60.0
-        let totalFrames = Int(flightDurationSeconds / frameInterval)
-        var currentFrame = 0
-
-        // Control point for the quadratic bezier arc. Offset the midpoint
-        // upward (negative Y in SwiftUI) so the buddy flies in a parabolic arc.
-        let midPoint = CGPoint(
-            x: (startPosition.x + endPosition.x) / 2.0,
-            y: (startPosition.y + endPosition.y) / 2.0
-        )
-        let arcHeight = min(distance * 0.2, 80.0)
-        let controlPoint = CGPoint(x: midPoint.x, y: midPoint.y - arcHeight)
-
-        navigationAnimationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { _ in
-            currentFrame += 1
-
-            if currentFrame > totalFrames {
+            if progress >= 1 {
                 self.navigationAnimationTimer?.invalidate()
                 self.navigationAnimationTimer = nil
-                self.cursorPosition = endPosition
+                self.flightStreak = nil
+                self.cursorPosition = path.end
+                // From the landing size back to full; animated because the mode changes below.
                 self.buddyFlightScale = 1.0
                 onComplete()
                 return
             }
 
-            // Linear progress 0→1 over the flight duration
-            let linearProgress = Double(currentFrame) / Double(totalFrames)
-
-            // Smoothstep easeInOut: 3t² - 2t³ (Hermite interpolation)
-            let t = linearProgress * linearProgress * (3.0 - 2.0 * linearProgress)
-
-            // Quadratic bezier: B(t) = (1-t)²·P0 + 2(1-t)t·P1 + t²·P2
-            let oneMinusT = 1.0 - t
-            let bezierX = oneMinusT * oneMinusT * startPosition.x
-                        + 2.0 * oneMinusT * t * controlPoint.x
-                        + t * t * endPosition.x
-            let bezierY = oneMinusT * oneMinusT * startPosition.y
-                        + 2.0 * oneMinusT * t * controlPoint.y
-                        + t * t * endPosition.y
-
-            self.cursorPosition = CGPoint(x: bezierX, y: bezierY)
-
-            // Rotation: face the direction of travel by computing the tangent
-            // to the bezier curve. B'(t) = 2(1-t)(P1-P0) + 2t(P2-P1)
-            let tangentX = 2.0 * oneMinusT * (controlPoint.x - startPosition.x)
-                         + 2.0 * t * (endPosition.x - controlPoint.x)
-            let tangentY = 2.0 * oneMinusT * (controlPoint.y - startPosition.y)
-                         + 2.0 * t * (endPosition.y - controlPoint.y)
-            // +90° offset because the triangle's "tip" points up at 0° rotation,
-            // and atan2 returns 0° for rightward movement
-            self.triangleRotationDegrees = atan2(tangentY, tangentX) * (180.0 / .pi) + 90.0
-
-            // Scale pulse: sin curve peaks at midpoint of the flight.
-            // Buddy grows to ~1.3x at the apex, then shrinks back to 1.0x on landing.
-            let scalePulse = sin(linearProgress * .pi)
-            self.buddyFlightScale = 1.0 + scalePulse * 0.3
+            let pose = path.pose(atProgress: progress, calm: calm)
+            self.cursorPosition = pose.position
+            self.triangleRotationDegrees = pose.rotationDegrees
+            self.buddyFlightScale = pose.scale
+            self.flightStreak = leavesStreak ? FlightStreak(path: path, progress: progress) : nil
         }
     }
 
@@ -668,7 +734,8 @@ struct BlueCursorView: View {
         let generation = pointingGeneration
 
         // Rotate back to default pointer angle now that we've arrived
-        triangleRotationDegrees = -35.0
+        triangleRotationDegrees = CursorFlightPath.restingRotationDegrees
+        arrivalToken &+= 1
 
         // Reset navigation bubble state — start small for the scale-bounce entrance
         navigationBubbleText = ""
@@ -785,7 +852,7 @@ struct BlueCursorView: View {
                 // Slip off this display's edge; the destination display's overlay continues.
                 self.buddyNavigationMode = .followingCursor
                 self.isReturningToCursor = false
-                self.triangleRotationDegrees = -35.0
+                self.triangleRotationDegrees = CursorFlightPath.restingRotationDegrees
                 self.companionManager.continueCursorFlight(afterLeg: flightLeg)
                 return
             }
@@ -808,10 +875,13 @@ struct BlueCursorView: View {
     private func finishNavigationAndResumeFollowing() {
         navigationAnimationTimer?.invalidate()
         navigationAnimationTimer = nil
+        flightStreak = nil
         buddyNavigationMode = .followingCursor
         isReturningToCursor = false
-        triangleRotationDegrees = -35.0
+        triangleRotationDegrees = CursorFlightPath.restingRotationDegrees
         buddyFlightScale = 1.0
+        // Back beside the mouse: it may bob for a moment, as after any pause.
+        mouseRestClock.restart(at: ProcessInfo.processInfo.systemUptime)
         navigationBubbleText = ""
         navigationBubbleOpacity = 0.0
         navigationBubbleScale = 1.0
@@ -824,7 +894,7 @@ struct BlueCursorView: View {
     // MARK: - Welcome Animation
 
     private func startWelcomeAnimation() {
-        withAnimation(.easeIn(duration: 0.4)) {
+        withAnimation(Motion.captionFade) {
             self.bubbleOpacity = 1.0
         }
 
@@ -851,50 +921,168 @@ struct BlueCursorView: View {
     }
 }
 
+// MARK: - Loops
+
+/// Runs a value between 0 and 1 and back for as long as `isRunning` is true, and eases it back
+/// to 0 when it is not. The one place the pointer's loops start and stop, so none is left running
+/// out of sight: pass `false` under Reduce Motion and draw the still form from phase 0.
+struct LoopingPhase<Content: View>: View {
+    let isRunning: Bool
+    /// Seconds for one direction.
+    let beat: Double
+    @ViewBuilder let content: (CGFloat) -> Content
+
+    @State private var phase: CGFloat = 0
+    /// Counts starts and stops, so a start that was put off a turn is dropped if a stop came first.
+    @State private var change = 0
+
+    var body: some View {
+        content(phase)
+            .onAppear { if isRunning { startSoon() } }
+            .onChange(of: isRunning) { _, running in
+                if running { startSoon() } else { stop() }
+            }
+    }
+
+    /// A turn later, in a transaction of its own: started together with whatever switched it on
+    /// (a landing, a first layout), the loop would take that change with it and repeat it too.
+    private func startSoon() {
+        change += 1
+        let expected = change
+        DispatchQueue.main.async {
+            guard change == expected else { return }
+            withAnimation(Motion.loop(beat: beat)) { phase = 1 }
+        }
+    }
+
+    private func stop() {
+        change += 1
+        withAnimation(Motion.swap) { phase = 0 }
+    }
+}
+
+// MARK: - Travel streak
+
+/// The stretch of arc just behind a flying pointer, drawn as short pieces that thin and fade
+/// towards the old end.
+struct TravelStreakView: View {
+    let points: [CGPoint]
+    let opacity: Double
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<max(points.count - 1, 0), id: \.self) { index in
+                let share = Double(index + 1) / Double(max(points.count - 1, 1))
+                Path { path in
+                    path.move(to: points[index])
+                    path.addLine(to: points[index + 1])
+                }
+                .stroke(
+                    DS.Colors.overlayCursorColor.opacity(opacity * share),
+                    style: StrokeStyle(lineWidth: 1.5 + 3.5 * share, lineCap: .round)
+                )
+            }
+        }
+        // No shadow here: this view is as large as the display, and a blur that size on every
+        // frame of a flight costs far more than the streak is worth.
+    }
+}
+
+// MARK: - Arrival pulse
+
+/// A thin ring that opens and fades once each time `token` changes. Under Reduce Motion the ring
+/// only fades.
+struct ArrivalPulse: View {
+    let token: Int
+    let reduceMotion: Bool
+
+    @State private var scale: CGFloat = 0.5
+    @State private var opacity: Double = 0
+
+    var body: some View {
+        Circle()
+            .stroke(DS.Colors.overlayCursorColor, lineWidth: 1.5)
+            .frame(width: 26, height: 26)
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .onChange(of: token) { _, _ in
+                // The starting look first, the animation a turn later: set together they cancel out.
+                scale = reduceMotion ? 1 : 0.5
+                opacity = 0.75
+                DispatchQueue.main.async {
+                    withAnimation(Motion.pointerArrive(reduceMotion: reduceMotion)) { scale = reduceMotion ? 1 : 1.6 }
+                    withAnimation(Motion.captionFade) { opacity = 0 }
+                }
+            }
+    }
+}
+
 // MARK: - Blue Cursor Waveform
 
 /// A small blue waveform that replaces the triangle cursor while
-/// the user is holding the push-to-talk shortcut and speaking.
+/// the user is holding the push-to-talk shortcut and speaking. `isActive` false stops its clock
+/// (it stays in the view tree while hidden); under Reduce Motion the bars follow the voice but do
+/// not sway by themselves.
 struct BlueCursorWaveformView: View {
     let audioPowerLevel: CGFloat
-
-    private let barCount = 5
-    private let listeningBarProfile: [CGFloat] = [0.4, 0.7, 1.0, 0.7, 0.4]
+    var isActive = true
+    var reduceMotion = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 36.0)) { timelineContext in
+        TimelineView(.animation(minimumInterval: 1.0 / 36.0, paused: !isActive || reduceMotion)) { timelineContext in
             HStack(alignment: .center, spacing: 2) {
-                ForEach(0..<barCount, id: \.self) { barIndex in
+                ForEach(0..<CursorWaveform.barProfile.count, id: \.self) { barIndex in
                     RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                         .fill(DS.Colors.overlayCursorColor)
                         .frame(
                             width: 2,
-                            height: barHeight(
-                                for: barIndex,
-                                timelineDate: timelineContext.date
+                            height: CursorWaveform.barHeight(
+                                bar: barIndex,
+                                level: audioPowerLevel,
+                                time: timelineContext.date.timeIntervalSinceReferenceDate,
+                                sways: !reduceMotion
                             )
                         )
                 }
             }
             .shadow(color: DS.Colors.overlayCursorColor.opacity(0.6), radius: 6, x: 0, y: 0)
-            .animation(.linear(duration: 0.08), value: audioPowerLevel)
+            .animation(Motion.levelEase, value: audioPowerLevel)
         }
     }
+}
 
-    private func barHeight(for barIndex: Int, timelineDate: Date) -> CGFloat {
-        let animationPhase = CGFloat(timelineDate.timeIntervalSinceReferenceDate * 3.6) + CGFloat(barIndex) * 0.35
-        let normalizedAudioPowerLevel = max(audioPowerLevel - 0.008, 0)
-        let easedAudioPowerLevel = pow(min(normalizedAudioPowerLevel * 2.85, 1), 0.76)
-        let reactiveHeight = easedAudioPowerLevel * 10 * listeningBarProfile[barIndex]
-        let idlePulse = (sin(animationPhase) + 1) / 2 * 1.5
-        return 3 + reactiveHeight + idlePulse
+// MARK: - Thinking dots
+
+/// Three dots beside the mouse while an answer is on its way, lighting one after another. When
+/// the thinking ends they draw together as they fade, into where the pointer comes back. Under
+/// Reduce Motion they are three still dots.
+struct CursorThinkingDotsView: View {
+    let isActive: Bool
+    let reduceMotion: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive || reduceMotion)) { timelineContext in
+            let time = timelineContext.date.timeIntervalSinceReferenceDate
+            HStack(spacing: isActive ? 3 : 0) {
+                ForEach(0..<CursorThinkingDots.count, id: \.self) { dot in
+                    let brightness = reduceMotion ? 1 : CursorThinkingDots.brightness(dot: dot, time: time)
+                    Circle()
+                        .fill(DS.Colors.overlayCursorColor)
+                        .frame(width: 4.5, height: 4.5)
+                        .scaleEffect(0.82 + 0.18 * brightness)
+                        .opacity(reduceMotion ? 1 : CursorThinkingDots.opacity(dot: dot, time: time))
+                }
+            }
+            .shadow(color: DS.Colors.overlayCursorColor.opacity(0.6), radius: 6, x: 0, y: 0)
+            .animation(Motion.swap, value: isActive)
+        }
     }
 }
 
 // MARK: - Blue Cursor Spinner
 
-/// A small blue spinning indicator that replaces the triangle cursor
-/// while the AI is processing a voice input.
+/// A small blue spinning indicator, used by the island's badge while the AI is processing a
+/// voice input. (Beside the mouse this state is `CursorThinkingDotsView`.)
 struct BlueCursorSpinnerView: View {
     @State private var isSpinning = false
 
@@ -915,7 +1103,7 @@ struct BlueCursorSpinnerView: View {
             .rotationEffect(.degrees(isSpinning ? 360 : 0))
             .shadow(color: DS.Colors.overlayCursorColor.opacity(0.6), radius: 6, x: 0, y: 0)
             .onAppear {
-                withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
+                withAnimation(Motion.spin) {
                     isSpinning = true
                 }
             }

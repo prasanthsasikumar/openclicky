@@ -62,10 +62,30 @@ html, body {
   opacity: 0.85;
 }
 
-#stage .pen {
+/* A stroke's ink is a filled outline; the pen's line in its mask uncovers it along its length (stage.js ink). */
+#stage .ink {
+  stroke: none;
+}
+
+#stage .reveal {
   fill: none;
+  stroke: #ffffff;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The pen's cursor, over the drawing and its figures; never takes the mouse, never in a video. */
+#pen {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+body.recording #pen {
+  display: none;
 }
 
 #stage .fade {

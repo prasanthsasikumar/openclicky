@@ -40,7 +40,7 @@ struct NotchFullPanelView: View {
                 .id(model.selection.active)
                 .transition(.opacity)
         }
-        .animation(.easeInOut(duration: 0.18), value: model.selection)
+        .animation(Motion.swap, value: model.selection)
     }
 }
 
@@ -97,12 +97,8 @@ struct NotchBandRow: View {
                         .accessibilityAddTraits(isActive ? .isSelected : [])
                     }
                 }
-                // Settings live in the window only: an island page of switches was a second,
-                // smaller settings that stayed open behind the pointer.
-                Button(action: {
-                    model.dismiss()
-                    companionManager.showSettings()
-                }) { Image(systemName: "gearshape.fill") }
+                // Settings drop down from the island: the same pages as the window, in place.
+                Button(action: { companionManager.showSettings() }) { Image(systemName: "gearshape.fill") }
                     .buttonStyle(IslandIconButtonStyle(size: 12, frameScale: 2))
                     .help("settings")
                     .accessibilityLabel("settings")
@@ -189,18 +185,22 @@ struct NotchPeekLine: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.trailing, 10)
                     Color.clear.frame(width: cameraGap)
-                    Text("click to open")
-                        .foregroundColor(DS.HUD.text3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 10)
+                    HStack(spacing: 6) {
+                        Text(model.opensOnRest ? "opening" : "click to open")
+                            .foregroundColor(DS.HUD.text3)
+                        if model.opensOnRest { IslandDwellRing(seconds: IslandMotion.dwellSeconds, reduceMotion: model.reduceMotion) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 10)
                 }
             } else {
                 HStack(spacing: 6) {
                     NotchPointerMark(isDimmed: false)
                     Text(text)
                         .foregroundColor(DS.HUD.text2)
-                    Text("· click to open")
+                    Text(model.opensOnRest ? "· opening" : "· click to open")
                         .foregroundColor(DS.HUD.text3)
+                    if model.opensOnRest { IslandDwellRing(seconds: IslandMotion.dwellSeconds, reduceMotion: model.reduceMotion) }
                 }
             }
         }

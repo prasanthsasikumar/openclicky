@@ -2,7 +2,8 @@
 # Copies the repository's shared drawing stage (draw-stage/: the page, its worker, three.js, the
 # samples and the prompts) into the app's Contents/Resources/draw-stage, so an install from the dmg
 # has it (DrawStageWindow serves it over its own URL scheme; DrawStageLesson reads prompt/*.md).
-# Run by the OpenClicky target's "Embed draw stage" build phase. The folder's README stays behind.
+# Run by the OpenClicky target's "Embed draw stage" build phase. The folder's README and its node
+# tests (tests/) stay behind.
 set -euo pipefail
 
 project_dir="${PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
@@ -19,7 +20,7 @@ mkdir -p "$destination"
 copied_file_count=0
 while IFS= read -r -d '' source_file; do
   relative_path="${source_file#"$source_directory"/}"
-  [[ "$relative_path" == "README.md" ]] && continue
+  [[ "$relative_path" == "README.md" || "$relative_path" == tests/* ]] && continue
   mkdir -p "$destination/$(dirname "$relative_path")"
   cp "$source_file" "$destination/$relative_path"
   copied_file_count=$((copied_file_count + 1))

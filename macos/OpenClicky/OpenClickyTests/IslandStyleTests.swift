@@ -66,5 +66,8 @@ struct IslandStyleTests {
         #expect(IslandMotion.unfoldHeight(reduceMotion: true) == .easeInOut(duration: 0.15))
         #expect(IslandMotion.peek(reduceMotion: true) == .easeInOut(duration: 0.15))
         #expect(IslandMotion.unfoldWidth(reduceMotion: false) != IslandMotion.unfoldWidth(reduceMotion: true))
+        // One curve for every change of shape.
+        #expect(IslandMotion.unfoldWidth(reduceMotion: false) == Motion.structural.animation)
+        #expect(IslandMotion.unfoldHeight(reduceMotion: false) == IslandMotion.peek(reduceMotion: false))
     }
 }

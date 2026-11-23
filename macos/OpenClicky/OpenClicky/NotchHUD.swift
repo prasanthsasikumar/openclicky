@@ -88,6 +88,14 @@ enum NotchHUDExpansion: Equatable {
     case composer
     /// The first-run tour's card: one step at a time, after the permission cards.
     case tour
+    /// The day's suggested tasks: the announcement, the header over the open deck, the question after.
+    case plate
+    /// A one-off card with a countdown ring (`IslandNotices.swift`).
+    case notice
+    /// The reply card: a typed question's or a job's answer in words, and the next questions.
+    case reply
+    /// Settings, dropped down from the island (`IslandSettings.swift`).
+    case settings
     case full
 }
 
@@ -142,6 +150,34 @@ final class NotchHUDModel: ObservableObject {
 
     /// The first-run tour's card, if the tour is on; set by `FirstRunTourController`.
     @Published var tourCard: FirstRunTourCard?
+    /// The suggested tasks' card, if one is up; set by `PlateController`.
+    @Published var plateCard: PlateIslandCard?
+    /// The settings page showing in the island's drop-down; nil when settings are closed.
+    @Published private(set) var settingsPage: DictationSettingsPage?
+    var settingsHeight: CGFloat { cardTopInset + IslandSettingsLayout.height(visibleHeight: geometry.visibleFrame.height) }
+
+    /// Opens the drop-down at a page, or turns to it.
+    func showSettings(_ page: DictationSettingsPage) {
+        guard settingsPage != page else { return }
+        settingsPage = page
+        reconcile(immediately: true)
+    }
+
+    /// The reply card, if one is up; set by `IslandReplyController`.
+    @Published var reply: IslandReplyState?
+    var replyHeight: CGFloat { cardTopInset + (reply.map(IslandReplyLayout.contentHeight(for:)) ?? 0) }
+    /// The one-off card showing, if any, with what is left of its ring; set by `IslandNoticeCenter`.
+    @Published var notice: IslandNoticeState?
+    var noticeHeight: CGFloat { cardTopInset + IslandNoticeState.contentHeight }
+    /// The pointer has rested on the island long enough: the panel is open until it leaves.
+    @Published private(set) var isDwellOpen = false
+    /// Settings → Island: resting the pointer on the island opens it (a click always does).
+    var opensOnRest = IslandRestOpens.current()
+    /// Called when a rest opens the panel (the haptic tap).
+    var onOpenedByRest: (() -> Void)?
+    private var dwellTask: Task<Void, Never>?
+    var plateWidth: CGFloat { placement.isSideDrawer ? 360 : 512 }
+    var plateHeight: CGFloat { cardTopInset + (plateCard?.contentHeight ?? 0) }
 
     /// The permission cards or the tour are up: hovering or clicking the island must not open the
     /// panel over them (the pointer drifts there while setting up), even while the busy strip shows.
@@ -328,6 +364,10 @@ final class NotchHUDModel: ObservableObject {
         case .permission: return permissionWidth
         case .composer: return composerWidth
         case .tour: return tourWidth
+        case .plate: return plateWidth
+        case .notice: return plateWidth
+        case .reply: return plateWidth
+        case .settings: return IslandSettingsLayout.width
         case .full: return fullWidth
         }
     }
@@ -341,6 +381,10 @@ final class NotchHUDModel: ObservableObject {
         case .permission: return permissionHeight
         case .composer: return composerHeight
         case .tour: return tourHeight
+        case .plate: return plateHeight
+        case .notice: return noticeHeight
+        case .reply: return replyHeight
+        case .settings: return settingsHeight
         case .full: return fullHeight
         }
     }
@@ -418,6 +462,16 @@ final class NotchHUDModel: ObservableObject {
         }
         guard isHovering != hovering else { return }
         isHovering = hovering
+        dwellTask?.cancel()
+        if hovering, opensOnRest, !placement.isSideDrawer {
+            dwellTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(IslandMotion.dwellSeconds * 1_000_000_000))
+                guard !Task.isCancelled, let self, self.isHovering, self.expansion == .peek else { return }
+                self.isDwellOpen = true
+                self.onOpenedByRest?()
+                self.reconcile()
+            }
+        }
         // A drop's hold lasts while the pointer stays; it ends when the pointer leaves.
         if !hovering, isHoldingAfterDrop {
             holdAfterDropTask?.cancel()
@@ -545,7 +599,7 @@ final class NotchHUDModel: ObservableObject {
         switch expansion {
         case .compact:
             guard !isSpeaking, guideStep == nil else { return }
-        case .connect, .permission, .composer, .tour:
+        case .connect, .permission, .composer, .tour, .plate, .notice, .reply, .settings:
             return
         case .collapsed, .peek, .full:
             break
@@ -585,8 +639,11 @@ final class NotchHUDModel: ObservableObject {
     }
 
     func close() {
+        settingsPage = nil
         isPinnedOpen = false
         isHovering = false
+        isDwellOpen = false
+        dwellTask?.cancel()
         reconcile(immediately: true)
     }
 
@@ -618,6 +675,40 @@ final class NotchHUDModel: ObservableObject {
         if sizeChanged && expansion == .tour { onLayoutChanged?() }
     }
 
+    /// Shows (or clears) the suggested tasks' card. Like the tour card it yields to the busy strip
+    /// and comes back; setup (permissions, the tour) outranks it.
+    func setPlateCard(_ card: PlateIslandCard?) {
+        guard plateCard != card else { return }
+        let sizeChanged = plateCard?.contentHeight != card?.contentHeight
+        plateCard = card
+        reconcile(immediately: true)
+        if sizeChanged && expansion == .plate { onLayoutChanged?() }
+    }
+
+    /// Shows (or clears) the reply card, or updates what it holds. With the answer's words on it
+    /// the card outranks the busy strip (it is where the answer is read); with only next questions
+    /// it waits for the strip to finish.
+    func setReply(_ state: IslandReplyState?) {
+        guard reply != state else { return }
+        let sizeChanged = reply.map(IslandReplyLayout.contentHeight(for:)) != state.map(IslandReplyLayout.contentHeight(for:))
+        reply = state
+        reconcile(immediately: true)
+        if sizeChanged && expansion == .reply { onLayoutChanged?() }
+    }
+
+    private var showsReply: Bool {
+        guard let reply else { return false }
+        return reply.showsAnswer || (!isBusy && captionText == nil && guideStep == nil)
+    }
+
+    /// Shows (or clears) a one-off card, or moves its ring. It ranks below every other card.
+    func setNotice(_ state: IslandNoticeState?) {
+        guard notice != state else { return }
+        let changedCard = notice?.notice.id != state?.notice.id
+        notice = state
+        if changedCard { reconcile(immediately: true) }
+    }
+
     /// Shows (or clears) the permission card. Nothing the app can do works without these, so the
     /// card outranks every other island state until the last permission lands.
     func setPermissionPrompt(_ prompt: PermissionPrompt?) {
@@ -630,7 +721,10 @@ final class NotchHUDModel: ObservableObject {
     private var restingExpansion: NotchHUDExpansion {
         if permissionPrompt != nil { return .permission }
         if tourCard != nil && !isBusy { return .tour }
+        if plateCard != nil && !isBusy { return .plate }
+        if showsReply { return .reply }
         if connectPrompt != nil { return .connect }
+        if notice != nil && !isBusy && captionText == nil && guideStep == nil { return .notice }
         if isBusy || captionText != nil || guideStep != nil { return .compact }
         return .collapsed
     }
@@ -647,6 +741,9 @@ final class NotchHUDModel: ObservableObject {
         } else if permissionPrompt != nil {
             // Without permissions there is nothing else worth opening the island for.
             target = .permission
+        } else if settingsPage != nil && !isSetupInProgress {
+            // Settings stay open while they are used, wherever the pointer goes.
+            target = .settings
         } else if isPinnedOpen && !isSetupInProgress {
             target = .full
         } else if (isDragHovering || isDraggingOut || isHoldingAfterDrop) && !isSetupInProgress {
@@ -655,10 +752,20 @@ final class NotchHUDModel: ObservableObject {
         } else if tourCard != nil && !isBusy {
             // Like the connect card: hovering it must not swap it for the panel.
             target = .tour
+        } else if plateCard != nil && !isBusy {
+            target = .plate
+        } else if showsReply {
+            target = .reply
         } else if connectPrompt != nil {
             // Hovering the connect card must not swap it for the full panel while the user is
             // reaching for its buttons; a click on the island still pins the full panel open.
             target = .connect
+        } else if notice != nil && !isBusy && captionText == nil && guideStep == nil {
+            // Hovering a one-off card holds its clock; it does not swap it for the peek.
+            target = .notice
+        } else if isDwellOpen && isHovering && !isSetupInProgress && !isSpeaking && guideStep == nil {
+            // The pointer rested on the island: the panel stays open while it is there.
+            target = .full
         } else if isHovering && !isSetupInProgress && !isSpeaking && guideStep == nil && placement.isSideDrawer {
             // A drawer's handle is too small to peek: hovering it opens the drawer.
             target = .full
@@ -668,7 +775,7 @@ final class NotchHUDModel: ObservableObject {
         } else {
             target = restingExpansion
         }
-        if target == .full || target == .peek || target == .connect || target == .permission || target == .composer || target == .tour || immediately {
+        if target == .full || target == .peek || target == .connect || target == .permission || target == .composer || target == .tour || target == .plate || target == .notice || target == .reply || target == .settings || immediately {
             setExpansion(target)
             return
         }
@@ -678,6 +785,7 @@ final class NotchHUDModel: ObservableObject {
             // Hovering or a pinned panel holds the island open, except during setup, where the
             // pointer resting on the tour card must not keep the busy strip from showing.
             guard !Task.isCancelled, let self, self.isSetupInProgress || ((self.isSpeaking || self.guideStep != nil) && !self.isPinnedOpen) || (!self.isHovering && !self.isPinnedOpen), !self.isComposerOpen else { return }
+            self.isDwellOpen = false
             self.setExpansion(self.restingExpansion)
         }
     }
@@ -894,7 +1002,7 @@ final class NotchHUDManager {
 
     /// Closes every open panel because a window it opened is coming forward.
     func dismissPanels() {
-        for instance in instances where instance.model.expansion == .full {
+        for instance in instances where instance.model.expansion == .full || instance.model.expansion == .settings {
             instance.model.dismiss()
         }
     }
@@ -1052,6 +1160,66 @@ final class NotchHUDManager {
     }
     private var tourCard: FirstRunTourCard?
 
+    /// Shows the suggested tasks' card on the main screen's island (nil hides it).
+    func setPlateCard(_ card: PlateIslandCard?) {
+        plateCard = card
+        let primary = primaryInstance
+        instances.forEach { $0.model.setPlateCard($0 === primary ? card : nil) }
+    }
+    private var plateCard: PlateIslandCard?
+
+    /// Shows a one-off card on the main screen's island (nil hides it).
+    func setNotice(_ state: IslandNoticeState?) {
+        let primary = primaryInstance
+        instances.forEach { $0.model.setNotice($0 === primary ? state : nil) }
+    }
+
+    /// Shows the reply card on the main screen's island (nil hides it).
+    func setReply(_ state: IslandReplyState?) {
+        let primary = primaryInstance
+        instances.forEach { $0.model.setReply($0 === primary ? state : nil) }
+    }
+
+    var isShowingReply: Bool { primaryInstance?.model.expansion == .reply }
+
+    /// Drops settings down from the island under the pointer (or the main one) at a page. The
+    /// island's window takes the keyboard so the search box and the key fields can be typed in.
+    /// False when there is no island to open them on (it is hidden, or setup has it).
+    @discardableResult
+    func openSettings(_ page: DictationSettingsPage, takesKeyboard: Bool = true) -> Bool {
+        let mouseLocation = NSEvent.mouseLocation
+        guard let instance = instances.first(where: { $0.model.geometry.screenFrame.contains(mouseLocation) }) ?? primaryInstance,
+              !instance.model.isInvisible, !instance.model.isSetupInProgress, !instance.model.placement.isSideDrawer else { return false }
+        for other in instances where other !== instance { other.model.close() }
+        instance.model.showSettings(page)
+        AppLog.append("island: settings opened at \(page.rawValue)")
+        if takesKeyboard {
+            NSApp.activate(ignoringOtherApps: true)
+            instance.window.makeKeyAndOrderFront(nil)
+        }
+        return true
+    }
+
+    var isShowingSettings: Bool { instances.contains { $0.model.expansion == .settings } }
+
+    /// What was typed into the composer and not sent, kept for the next time it opens.
+    var composerDraft = ""
+
+    /// The one-off card is up (not waiting behind the busy strip or another card).
+    var isShowingNotice: Bool { primaryInstance?.model.expansion == .notice }
+
+    /// The pointer is on the main island: a one-off card's clock holds.
+    var isPointerOnPrimaryIsland: Bool {
+        guard let model = primaryInstance?.model else { return false }
+        return model.islandFrame.insetBy(dx: -14, dy: -14).contains(NSEvent.mouseLocation)
+    }
+
+    /// The screen the main island is on, in AppKit coordinates: where the deck of suggestions opens.
+    var primaryScreenFrame: CGRect? { primaryInstance?.model.geometry.screenFrame }
+
+    /// The permission cards or the welcome tour have the island.
+    var isSetupInProgress: Bool { primaryInstance?.model.isSetupInProgress ?? false }
+
     /// Shows the permission card on every screen's island (nil hides it).
     func setPermissionPrompt(_ prompt: PermissionPrompt?) {
         permissionPrompt = prompt
@@ -1080,6 +1248,11 @@ final class NotchHUDManager {
             model.placement = placement
             model.look = IslandLook.current()
             model.peekDirection = IslandPeekDirection.current()
+            model.opensOnRest = IslandRestOpens.current()
+            model.onOpenedByRest = { [weak companionManager] in
+                guard companionManager?.dictationSettings.haptics ?? true else { return }
+                NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+            }
             model.reduceMotionProvider = { [settings = companionManager.dictationSettings] in settings.reduceAnimation }
             model.setBusy(isBusy)
             model.setSpeaking(isSpeaking)
@@ -1218,6 +1391,7 @@ final class NotchHUDManager {
                         instance.model.peekDirection = direction
                         instance.model.onLayoutChanged?()
                     }
+                    instance.model.opensOnRest = IslandRestOpens.current()
                     instance.model.refreshComponentSettings()
                 }
                 self.syncOptionalComponents()
@@ -1270,7 +1444,7 @@ final class NotchHUDManager {
                 #if DEBUG
                 if self.debugKeepsPanelsOpen { return }
                 #endif
-                for instance in self.instances where instance.model.expansion == .full {
+                for instance in self.instances where instance.model.expansion == .full || instance.model.expansion == .settings {
                     instance.model.close()
                 }
                 self.closeTextComposer()
@@ -1349,10 +1523,26 @@ extension NotchHUDManager {
 
     func debugCloseAll() { instances.forEach { $0.model.close() } }
 
+    /// Settings dropped down and held open without taking the keyboard, for a screenshot.
+    func debugHoldSettingsOpen(_ page: DictationSettingsPage) {
+        debugKeepsPanelsOpen = true
+        openSettings(page, takesKeyboard: false)
+    }
+
     func debugOpenPrimaryPanel() { primaryInstance?.model.openPinned() }
 
     /// The hover tease, without a pointer: the primary island peeks until `debugCloseAll`.
-    func debugPeekPrimary() { primaryInstance?.model.setHovering(true) }
+    func debugPeekPrimary() {
+        primaryInstance?.model.opensOnRest = false
+        primaryInstance?.model.setHovering(true)
+    }
+
+    /// The pointer resting on the island, without a pointer: the peek, its ring, then the panel.
+    func debugRestOnPrimary() {
+        debugKeepsPanelsOpen = true
+        primaryInstance?.model.opensOnRest = true
+        primaryInstance?.model.setHovering(true)
+    }
 
     /// A moment for the slot (a live take, a working agent) without the real thing happening.
     func debugSetPrimaryContext(_ context: IslandContext) { primaryInstance?.model.setContext(context) }
@@ -1402,18 +1592,18 @@ struct NotchHUDView: View {
         }
     }
 
-    /// Opening unfolds width first and drops the height a beat later; everything else moves on
-    /// the short peek spring. Reduce motion makes all of it a fade.
-    private var isOpening: Bool { expansion == .full || expansion == .connect || expansion == .permission || expansion == .tour || expansion == .composer }
+    /// The island reshapes on one curve, width and height together; only the slow fold after the
+    /// welcome tour differs. Reduce motion makes all of it a fade.
+    @State private var isNudged = false
+
+    private var glowTone: IslandGlowTone? {
+        IslandGlowTone.tone(voiceState: companionManager.voiceState, isAgentWorking: companionManager.agentActivityText != nil)
+    }
+
     private var widthAnimation: Animation {
-        isOpening ? IslandMotion.unfoldWidth(reduceMotion: model.reduceMotion) : IslandMotion.peek(reduceMotion: model.reduceMotion)
+        model.isSettlingGracefully ? Motion.graceful.animation : IslandMotion.reshape(reduceMotion: model.reduceMotion)
     }
-    private var heightAnimation: Animation {
-        if model.isSettlingGracefully { return .spring(response: 1.3, dampingFraction: 0.92) }
-        return isOpening
-            ? IslandMotion.unfoldHeight(reduceMotion: model.reduceMotion).delay(model.reduceMotion ? 0 : IslandMotion.heightDelay)
-            : IslandMotion.peek(reduceMotion: model.reduceMotion)
-    }
+    private var heightAnimation: Animation { widthAnimation }
 
     /// Where the island sits in its window: centred at the top under the notch, or against the
     /// screen edge a side drawer hangs from (the window's margin is on the other three sides).
@@ -1443,6 +1633,17 @@ struct NotchHUDView: View {
             // Collapsed the island is the notch itself: black, no shadow, no outline. On a display
             // without a notch nothing is drawn while collapsed (no fake notch over the menu bar): only
             // the thin handle below marks where to hover.
+            // The light under the busy strip's corners, and the sweep along its edge while an agent
+            // works. Neither exists while nothing is going on.
+            if expansion == .compact, !model.placement.isSideDrawer, let tone = glowTone {
+                IslandGlowView(tone: tone, reduceMotion: model.reduceMotion)
+                    .frame(width: surfaceWidth + 2 * IslandGlowMetrics.reach, height: surfaceHeight + IslandGlowMetrics.reach)
+                    .animation(widthAnimation, value: surfaceWidth)
+                    .animation(heightAnimation, value: surfaceHeight)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.animation(Motion.swap))
+                    .accessibilityHidden(true)
+            }
             if expansion != .collapsed || (model.placement == .notch && model.geometry.hasHardwareNotch) {
                 islandBackground
                     .frame(width: surfaceWidth)
@@ -1531,12 +1732,12 @@ struct NotchHUDView: View {
                         .frame(width: model.compactWidth, height: model.compactHeight)
                     }
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                .transition(IslandMotion.contentTransition)
             case .composer:
                 NotchComposerView(companionManager: companionManager)
                     .frame(width: model.composerWidth, height: model.composerContentHeight)
                     .padding(.top, notchHeight)
-                    .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                    .transition(IslandMotion.contentTransition)
             case .connect:
                 if let connectPrompt = model.connectPrompt {
                     AppConnectPromptView(
@@ -1545,7 +1746,7 @@ struct NotchHUDView: View {
                         topInset: model.cardTopInset
                     )
                         .frame(width: model.connectWidth, height: model.connectHeight)
-                        .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                        .transition(IslandMotion.contentTransition)
                 }
             case .permission:
                 if let permissionPrompt = model.permissionPrompt {
@@ -1555,27 +1756,68 @@ struct NotchHUDView: View {
                         topInset: model.cardTopInset
                     )
                         .frame(width: model.permissionWidth, height: model.permissionHeight)
-                        .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                        .transition(IslandMotion.contentTransition)
                 }
             case .tour:
                 if let tourCard = model.tourCard {
                     FirstRunTourCardView(card: tourCard, controller: companionManager.firstRunTour, topInset: model.cardTopInset)
                         .frame(width: model.tourWidth, height: model.tourHeight)
-                        .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                        .transition(IslandMotion.contentTransition)
+                }
+            case .plate:
+                if let plateCard = model.plateCard {
+                    PlateIslandCardView(card: plateCard, controller: companionManager.plateController, topInset: model.cardTopInset, reduceMotion: model.reduceMotion)
+                        .frame(width: model.plateWidth, height: model.plateHeight)
+                        .transition(IslandMotion.contentTransition)
+                }
+            case .settings:
+                IslandSettingsView(model: model, companionManager: companionManager)
+                    .frame(width: IslandSettingsLayout.width, height: model.settingsHeight)
+                    .transition(IslandMotion.contentTransition)
+            case .reply:
+                if let reply = model.reply {
+                    IslandReplyView(state: reply, controller: companionManager.islandReply, topInset: model.cardTopInset, reduceMotion: model.reduceMotion)
+                        .frame(width: model.plateWidth, height: model.replyHeight)
+                        .transition(IslandMotion.contentTransition)
+                }
+            case .notice:
+                if let notice = model.notice {
+                    IslandNoticeView(state: notice, center: companionManager.islandNotices, topInset: model.cardTopInset, reduceMotion: model.reduceMotion)
+                        .frame(width: model.plateWidth, height: model.noticeHeight)
+                        .transition(IslandMotion.contentTransition)
                 }
             case .full:
                 NotchFullPanelView(model: model, companionManager: companionManager)
                     .frame(width: model.fullWidth, height: model.fullHeight)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    .transition(IslandMotion.contentTransition)
+            }
+        }
+        .overlay(alignment: .top) {
+            if expansion == .compact, glowTone == .working, !model.placement.isSideDrawer {
+                IslandWorkingSweep(reduceMotion: model.reduceMotion)
+                    .frame(width: max(0, surfaceWidth - 44), height: 1.5)
+                    .offset(y: surfaceHeight - 1.5)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                    .accessibilityHidden(true)
             }
         }
         .scaleEffect(model.isPressed ? IslandMotion.pressScale(reduceMotion: model.reduceMotion) : 1, anchor: .top)
-        .animation(.easeOut(duration: IslandMotion.pressDuration), value: model.isPressed)
+        .animation(Motion.hover, value: model.isPressed)
+        // A new line of activity (the agent's next milestone) bumps the island once.
+        .scaleEffect(isNudged ? 1.035 : 1, anchor: .top)
+        .onChange(of: companionManager.agentActivityText) { _, newValue in
+            guard newValue != nil, expansion == .compact, !model.reduceMotion else { return }
+            withAnimation(Motion.SpringSpec(response: 0.24, damping: 0.76).animation) { isNudged = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                withAnimation(.easeOut(duration: 0.5)) { isNudged = false }
+            }
+        }
         .padding(.top, model.placement.isSideDrawer ? model.windowMargin : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: islandAlignment)
         .contentShape(Rectangle())
-        .animation(model.isSettlingGracefully ? .spring(response: 1.3, dampingFraction: 0.92) : (model.reduceMotion ? IslandMotion.fade : .spring(response: 0.42, dampingFraction: 0.84)), value: expansion)
-        .animation(.easeInOut(duration: 0.2), value: companionManager.voiceState)
+        .animation(widthAnimation, value: expansion)
+        .animation(Motion.swap, value: companionManager.voiceState)
         // The whole island (the notch, the peek, the open panel) takes drops for the shelf.
         .onDrop(of: IslandDropDelegate.acceptedTypes, delegate: IslandDropDelegate(model: model, shelf: companionManager.notchHUDManager.shelf))
     }
@@ -1678,7 +1920,7 @@ struct NotchCompactStatusView: View {
                     // The live words arrive a partial at a time; a short cross-fade instead of a
                     // hard swap keeps the line from flickering as each one lands.
                     .contentTransition(.opacity)
-                    .animation(.easeOut(duration: 0.16), value: detailLine)
+                    .animation(Motion.swap, value: detailLine)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
             Spacer(minLength: 0)
@@ -1850,12 +2092,17 @@ struct NotchComposerView: View {
                 .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.white.opacity(0.12)))
         }
         .padding(.horizontal, 18)
-        .onAppear { requestText = "" }
+        // What was typed and not sent last time is still there (a follow-up to an agent starts clean).
+        .onAppear { requestText = companionManager.notchHUDManager.composerThreadId == nil ? companionManager.notchHUDManager.composerDraft : "" }
+        .onChange(of: requestText) { _, newValue in
+            if companionManager.notchHUDManager.composerThreadId == nil { companionManager.notchHUDManager.composerDraft = newValue }
+        }
     }
 
     private func submitRequest() {
         let trimmedRequestText = requestText.trimmingCharacters(in: .whitespacesAndNewlines)
         let threadId = companionManager.notchHUDManager.composerThreadId
+        companionManager.notchHUDManager.composerDraft = ""
         companionManager.notchHUDManager.closeTextComposer()
         guard !trimmedRequestText.isEmpty else { return }
         if let threadId {

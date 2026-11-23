@@ -52,14 +52,26 @@ struct DrawStageEvent: Equatable {
 }
 
 enum DrawStageMessages {
-    /// A new program on a canvas of that size; the old drawing is wiped.
-    static func beginStream(canvasWidth: Int, canvasHeight: Int, pace: DrawStagePace) -> String {
-        json(["type": "beginStream", "w": max(1, canvasWidth), "h": max(1, canvasHeight), "pace": pace.rawValue])
+    /// A new program on a canvas of that size; the old drawing is wiped. `sound` turns on the pen's
+    /// sound for this drawing (the page is silent without it); `reduceMotion` makes marks appear in
+    /// place with no pen travelling. Both are sent only when true, so a page that has never heard of
+    /// them gets the message it always got, and without `reduceMotion` the page follows the system's
+    /// own Reduce Motion setting.
+    static func beginStream(canvasWidth: Int, canvasHeight: Int, pace: DrawStagePace, sound: Bool = false, reduceMotion: Bool = false) -> String {
+        json(withOptions(["type": "beginStream", "w": max(1, canvasWidth), "h": max(1, canvasHeight), "pace": pace.rawValue],
+                         sound: sound, reduceMotion: reduceMotion))
     }
 
     /// A follow-up's program, run after the one on the stage: the drawing and the program's names stay.
-    static func continueStream(pace: DrawStagePace) -> String {
-        json(["type": "continueStream", "pace": pace.rawValue])
+    static func continueStream(pace: DrawStagePace, sound: Bool = false, reduceMotion: Bool = false) -> String {
+        json(withOptions(["type": "continueStream", "pace": pace.rawValue], sound: sound, reduceMotion: reduceMotion))
+    }
+
+    private static func withOptions(_ message: [String: Any], sound: Bool, reduceMotion: Bool) -> [String: Any] {
+        var message = message
+        if sound { message["sound"] = true }
+        if reduceMotion { message["reduceMotion"] = true }
+        return message
     }
 
     static func feed(programSoFar: String, done: Bool) -> String {

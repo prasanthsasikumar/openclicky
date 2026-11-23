@@ -56,7 +56,7 @@ struct MediaDashboardColumn: View {
                     .offset(x: 6, y: 6)
             }
         }
-        .animation(.easeOut(duration: 0.3), value: media.artwork)
+        .animation(Motion.crossfade, value: media.artwork)
         .accessibilityHidden(true)
     }
 
@@ -176,7 +176,7 @@ private struct DashboardScrubber: View {
                 .font(.system(size: 10, weight: .medium).monospacedDigit())
                 .foregroundColor(.white.opacity(0.55))
             }
-            .animation(.easeOut(duration: 0.12), value: dragFraction)
+            .animation(Motion.hover, value: dragFraction)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(MediaFormatter.clock(snapshot.position)) of \(MediaFormatter.clock(snapshot.duration))")

@@ -166,6 +166,9 @@ final class CompanionManager: ObservableObject {
     #if DEBUG
     /// The UI tour shows the busy strip without talking.
     func debugSetVoiceState(_ state: CompanionVoiceState) { voiceState = state }
+    /// `BuddySmoke` plays the pointer's states without a microphone or a question.
+    func debugSetAudioPowerLevel(_ level: CGFloat) { currentAudioPowerLevel = level }
+    func debugShowPointerOverlay() { if !isOverlayVisible { showOverlayOnAllScreens() } }
     #endif
 
     // MARK: - Quitting
@@ -414,6 +417,12 @@ final class CompanionManager: ObservableObject {
 
     /// Opens the "Connect <app> to OpenClicky" card in the HUD when a supported app or site comes to the front.
     let appConnectPromptController = AppConnectPromptController()
+    /// "Things I can take off your plate": the day's suggested tasks (Plate/).
+    let plateController = PlateController()
+    /// One-off cards on the island with a countdown ring (a job finished).
+    let islandNotices = IslandNoticeCenter()
+    /// The reply card: a typed question's or a job's answer in words, and the next questions.
+    let islandReply = IslandReplyController()
 
     /// The leg of a buddy flight in progress, if any. Each display has its own overlay, so a
     /// flight to another display is split at the display edges; the overlay whose screen matches
@@ -503,11 +512,18 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    #if DEBUG
+    /// The island smoke's agent milestones, without an agent.
+    func debugSetAgentActivity(_ text: String?) { agentActivityText = text }
+    #endif
+
     /// Text entry point into the agent lane (result-card follow-ups, future text mode). Captures the
     /// screen like the voice path does, resumes `threadId` when given, and speaks the result.
     /// `startsNewThread` (the Agents tab's composer with no thread selected) forgets the thread the
     /// last turn ran on, so the request opens a fresh one instead of continuing it.
-    func submitTextToAgent(_ text: String, threadId: String? = nil, startsNewThread: Bool = false) {
+    /// `attachesScreen` false (a task Clicky suggested itself) sends no screenshot: what happens to be
+    /// on the screen when a suggested task starts has nothing to do with it.
+    func submitTextToAgent(_ text: String, threadId: String? = nil, startsNewThread: Bool = false, attachesScreen: Bool = true) {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty, OpenClickyConfiguration.isConfigured else { return }
         // An account has no agent: the backend would refuse it with not_on_plan, so say that plainly.
@@ -520,7 +536,7 @@ final class CompanionManager: ObservableObject {
         lastTranscript = trimmedText
         currentResponseTask = Task {
             voiceState = .processing
-            let screenCaptures = (try? await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()) ?? []
+            let screenCaptures = attachesScreen ? ((try? await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()) ?? []) : []
             do {
                 try await runOpenClickyAgentLane(transcript: trimmedText, screenCaptures: screenCaptures)
             } catch is CancellationError {
@@ -585,7 +601,7 @@ final class CompanionManager: ObservableObject {
             AppLog.append("point: not shown, it was on a macOS permission prompt")
             return
         }
-        // The spinner (processing) hides the triangle, so the flight would be invisible; the
+        // The thinking dots (processing) hide the triangle, so the flight would be invisible; the
         // buddy is visible in idle and responding.
         if voiceState == .processing { voiceState = .idle }
 
@@ -680,6 +696,7 @@ final class CompanionManager: ObservableObject {
         stopWatchingForGuidedStep()
         settingsTour.stop()
         stopActiveAnswer()
+        islandReply.withdraw()
         currentResponseTask?.cancel()
         isAskInFlight = false
         askIslandStatus = nil
@@ -939,6 +956,9 @@ final class CompanionManager: ObservableObject {
         clipboardHistoryMonitor.stop()
         permissionPromptController.stop()
         appConnectPromptController.stop()
+        plateController.stop()
+        islandNotices.stop()
+        islandReply.withdraw()
         notchHUDManager.hide()
         realtimeVoiceClient.disconnect(reason: nil)
         globalPushToTalkShortcutMonitor.stop()
@@ -1030,6 +1050,9 @@ final class CompanionManager: ObservableObject {
         permissionPromptController.update(with: permissionStatus)
         // The welcome tour waits for the last permission, then takes the island.
         firstRunTour.start(companionManager: self)
+        plateController.start(companionManager: self)
+        islandNotices.start(companionManager: self)
+        islandReply.start(companionManager: self)
         // Kokoro comes into memory only when a question starts: pressing the ask shortcut or sending
         // a typed question. Hands-free answers in OpenAI's realtime voice and never needs it.
         kokoroPreparationCancellable = $voiceState
@@ -1283,6 +1306,10 @@ final class CompanionManager: ObservableObject {
     /// The window at a settings page (General when none is named): ⌘,, "Settings…", the island.
     /// Opened at General for the first time after the welcome tour, it plays the Settings tour once.
     func showSettings(_ page: DictationSettingsPage = .general) {
+        // Settings drop down from the island where there is one to open them on; the window has
+        // them otherwise (the island hidden or on a screen edge, or setup still running), and
+        // when it is already open at settings.
+        if dictationWindowController?.window?.isVisible != true, notchHUDManager.openSettings(page) { return }
         showDictationWindow(settingsPage: page)
         if page == .general, firstRunTour.isFinished, !SettingsTourController.hasPlayed {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.startSettingsTour() }
@@ -1494,6 +1521,7 @@ final class CompanionManager: ObservableObject {
         TeacherPlugin.clearBoard(reason: "a new question")
         lastQuestionWasTyped = true
         lastTranscript = trimmedText
+        islandReply.begin(question: trimmedText)
         ClickyAnalytics.trackUserMessageSent(characterCount: trimmedText.count)
         print("⌨️ Typed request: \(trimmedText)")
 
@@ -1933,6 +1961,7 @@ final class CompanionManager: ObservableObject {
                         tools: askTools,
                         onTextChunk: { accumulatedAnswer in
                             answerSpeaker.receive(accumulatedAnswer: accumulatedAnswer)
+                            self.islandReply.receive(text: IslandReplyController.shown(accumulatedAnswer))
                         }
                     )
                 } catch {
@@ -2503,6 +2532,7 @@ final class CompanionManager: ObservableObject {
         }
 
         agentActivityText = "starting agent…"
+        islandReply.begin(question: transcript)
         print("🤖 OpenClicky agent lane: \(transcript)")
         let result = try await openClickyAgentClient.runAgent(
             task: transcript,
@@ -2510,6 +2540,7 @@ final class CompanionManager: ObservableObject {
             threadId: lastAgentThreadId,
             onEvent: { [weak self] milestone in
                 self?.agentActivityText = milestone
+                self?.islandReply.addStep(milestone)
             }
         )
 
@@ -2977,7 +3008,7 @@ final class CompanionManager: ObservableObject {
         isCursorCaptionVisible = true
         cursorCaptionOpacity = 0.0
 
-        withAnimation(.easeIn(duration: 0.4)) {
+        withAnimation(Motion.slowExit) {
             cursorCaptionOpacity = 1.0
         }
 
@@ -3008,7 +3039,7 @@ final class CompanionManager: ObservableObject {
         cursorCaptionDismissWorkItem?.cancel()
         cursorCaptionDismissWorkItem = nil
         guard isCursorCaptionVisible else { return }
-        withAnimation(.easeOut(duration: 0.3)) {
+        withAnimation(Motion.crossfade) {
             cursorCaptionOpacity = 0.0
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
@@ -3119,6 +3150,9 @@ final class CompanionManager: ObservableObject {
     /// context does not grow without bound over a long session.
     func rememberExchange(userTranscript: String, assistantResponse: String) {
         conversationHistory.append((userTranscript: userTranscript, assistantResponse: assistantResponse))
+        // The reply card gets the whole answer (a job's with its thread), then the next questions.
+        let finishedJob = lastAgentResult.flatMap { Date().timeIntervalSince($0.finishedAt) < 2 ? $0.threadId : nil }
+        islandReply.finish(question: userTranscript, answer: assistantResponse, threadId: finishedJob)
         if conversationHistory.count > Self.maximumRememberedExchanges {
             conversationHistory.removeFirst(conversationHistory.count - Self.maximumRememberedExchanges)
         }

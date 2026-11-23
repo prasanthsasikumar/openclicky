@@ -99,7 +99,7 @@ private struct SystemTileView: View {
                 .trim(from: 0, to: fill)
                 .stroke(ringColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .animation(.easeInOut(duration: 0.4), value: fill)
+                .animation(Motion.gauge, value: fill)
             Text(tile.short)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(DS.HUD.text)

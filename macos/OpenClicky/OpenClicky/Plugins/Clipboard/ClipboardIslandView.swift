@@ -65,7 +65,7 @@ struct ClipboardIslandView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .animation(.easeInOut(duration: 0.15), value: store.history.entries.map(\.id))
+        .animation(Motion.swap, value: store.history.entries.map(\.id))
     }
 
     private func row(for entry: ClipboardEntry) -> some View {

@@ -89,9 +89,42 @@ enum IslandPeekDirection: String, CaseIterable, Identifiable {
     }
 }
 
+/// Settings → Island: resting the pointer on the island opens it without a click. On unless
+/// switched off; a click opens the island either way.
+enum IslandRestOpens {
+    static let defaultsKey = "openclicky.island.opensOnRest"
+
+    static func current(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: defaultsKey) == nil ? true : defaults.bool(forKey: defaultsKey)
+    }
+}
+
+private struct IslandRestOpensRow: View {
+    @State private var isOn = IslandRestOpens.current()
+
+    var body: some View {
+        SettingsRow(title: IslandRestOpensRow.title, detail: IslandRestOpensRow.detail) {
+            Toggle("", isOn: Binding(get: { isOn }, set: { newValue in
+                isOn = newValue
+                UserDefaults.standard.set(newValue, forKey: IslandRestOpens.defaultsKey)
+            }))
+            .labelsHidden()
+            .toggleStyle(.switch)
+        }
+    }
+
+    static let title = "Open when the pointer rests on it"
+    static let detail = "Hold the pointer on the notch for a moment and the island opens, and closes again when you move away. Off, only a click opens it."
+}
+
 extension SettingsCatalog {
     func islandAppearanceItems() -> [SettingsItem] {
         [
+            SettingsItem(
+                id: "appearance.restOpens",
+                title: IslandRestOpensRow.title, detail: IslandRestOpensRow.detail,
+                keywords: ["hover", "rest", "dwell", "open", "pointer", "click", "notch", "automatic"],
+                view: AnyView(IslandRestOpensRow())),
             SettingsItem(
                 id: "appearance.peekDirection",
                 title: "When you hover the notch",

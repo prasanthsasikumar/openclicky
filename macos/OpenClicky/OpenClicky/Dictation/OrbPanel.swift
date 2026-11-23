@@ -299,7 +299,7 @@ struct OrbRootView: View {
             }
         }
         .padding(OrbMetrics.padding)
-        .animation(settings.reduceAnimation ? nil : .easeOut(duration: 0.18), value: model.phase)
+        .animation(settings.reduceAnimation ? nil : Motion.swap, value: model.phase)
     }
 }
 
