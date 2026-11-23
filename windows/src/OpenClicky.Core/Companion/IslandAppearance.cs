@@ -32,7 +32,9 @@ public enum IslandPeekDirection
 public static class IslandLooks
 {
     public const string DefaultsKey = "openclicky.island.style";
-    public const IslandLook DefaultLook = IslandLook.Glass;
+    public const IslandLook DefaultLook = IslandLook.Black;
+    /// <summary>Set once the style has been put back to black (<see cref="ResetToBlackOnce"/>).</summary>
+    public const string BlackResetKey = "openclicky.island.style.blackReset";
     /// <summary>The old glass slider (0 all black, above 0 a melt), read once for someone who set it by hand.</summary>
     public const string LegacyGlassLevelKey = "openclicky.island.glassLevel";
 
@@ -78,6 +80,16 @@ public static class IslandLooks
         if (preferences.GetOptionalDouble(LegacyGlassLevelKey) is { } level) return level > 0 ? IslandLook.Blend : IslandLook.Black;
         return DefaultLook;
     }
+
+    /// <summary>Black became the default style for everyone: the first start of a build with this in it forgets an
+    /// earlier choice (and the old slider), once. A style picked afterwards is kept.</summary>
+    public static void ResetToBlackOnce(Preferences preferences)
+    {
+        if (preferences.GetBool(BlackResetKey)) return;
+        preferences.Remove(DefaultsKey);
+        preferences.Remove(LegacyGlassLevelKey);
+        preferences.Set(BlackResetKey, true);
+    }
 }
 
 public static class IslandPeekDirections
@@ -102,7 +114,7 @@ public sealed class IslandAppearanceSettings(Preferences preferences)
 {
     public static IReadOnlyList<string> Keys { get; } = [IslandLooks.DefaultsKey, IslandLooks.LegacyGlassLevelKey, IslandPeekDirections.DefaultsKey];
 
-    /// <summary>"Style": blend, liquid glass (the default) or black.</summary>
+    /// <summary>"Style": blend, liquid glass or black (the default).</summary>
     public IslandLook Look
     {
         get => IslandLooks.Current(preferences);

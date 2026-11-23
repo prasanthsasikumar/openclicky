@@ -77,6 +77,7 @@ public sealed class IslandWindowManager : IDisposable
                 })));
             }
             // The style and the hover's direction (Settings → Island).
+            IslandLooks.ResetToBlackOnce(preferences);
             appearance = new IslandAppearanceSettings(preferences);
             componentSettingsObservations.Add(appearance.Observe(() => dispatcher.BeginInvoke(ApplyAppearance)));
         }

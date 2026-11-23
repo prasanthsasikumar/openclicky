@@ -1535,7 +1535,11 @@ final class CompanionManager: ObservableObject {
             do {
                 try await self.realtimeVoiceClient.connectIfNeeded(mode: self.isAlwaysListening ? .alwaysOn : .pushToTalk)
                 await self.realtimeVoiceClient.sendTextTurn(trimmedText)
-                TeacherPlugin.startLesson(for: trimmedText, capture: self.realtimeVoiceClient.lastScreenCapture)
+                // A typed question is drawn like a spoken one: the draw gate first (the turn above
+                // attached the screen it needs), then the Teacher's own lesson.
+                if !self.tryRealtimeDrawing(transcript: trimmedText) {
+                    TeacherPlugin.startLesson(for: trimmedText, capture: self.realtimeVoiceClient.lastScreenCapture)
+                }
             } catch {
                 print("⚠️ Realtime unavailable for the typed request (\(error.localizedDescription)); using the teacher lane")
                 self.sendTranscriptToClaudeWithScreenshot(transcript: trimmedText)

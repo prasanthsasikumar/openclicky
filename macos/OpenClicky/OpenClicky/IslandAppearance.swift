@@ -3,8 +3,8 @@
 //  OpenClicky
 //
 //  The island's style (Settings → Appearance): blend, black melting into glass; liquid glass, the
-//  whole open island glass under a light tint; or solid black like the notch. The closed island is
-//  always the notch's own black, whatever the style.
+//  whole open island glass under a light tint; or solid black like the notch (the default). The
+//  closed island is always the notch's own black, whatever the style.
 //
 
 import AppKit
@@ -16,7 +16,9 @@ enum IslandLook: String, CaseIterable, Identifiable {
     case black
 
     static let defaultsKey = "openclicky.island.style"
-    static let defaultLook: IslandLook = .glass
+    static let defaultLook: IslandLook = .black
+    /// Set once the style has been put back to black (`resetToBlackOnce`).
+    static let blackResetKey = "openclicky.island.style.blackReset"
     /// The old glass slider (0 all black, above 0 a melt), read once for someone who set it by hand.
     static let legacyGlassLevelKey = "openclicky.island.glassLevel"
 
@@ -48,6 +50,15 @@ enum IslandLook: String, CaseIterable, Identifiable {
         if let raw = defaults.string(forKey: defaultsKey), let look = IslandLook(rawValue: raw) { return look }
         if let level = defaults.object(forKey: legacyGlassLevelKey) as? Double { return level > 0 ? .blend : .black }
         return defaultLook
+    }
+
+    /// Black became the default style for everyone: the first launch of a build with this in it
+    /// forgets an earlier choice (and the old slider), once. A style picked afterwards is kept.
+    static func resetToBlackOnce(in defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: blackResetKey) else { return }
+        defaults.removeObject(forKey: defaultsKey)
+        defaults.removeObject(forKey: legacyGlassLevelKey)
+        defaults.set(true, forKey: blackResetKey)
     }
 
     /// Blend's black: solid down to a third, then thinning into the glass.

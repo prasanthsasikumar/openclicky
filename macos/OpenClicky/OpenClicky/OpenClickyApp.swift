@@ -50,6 +50,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         // (fully buffered, nothing appears until the app exits).
         setvbuf(stdout, nil, _IOLBF, 0)
 
+        // The island's style goes back to black once, before anything reads it.
+        IslandLook.resetToBlackOnce()
+
         // OpenClicky: headless check of the agent lane (gate + Codex run via the CLI) without any
         // GUI, permissions, or screen capture. Used by scripted builds:
         //   OpenClicky.app/Contents/MacOS/OpenClicky --openclicky-smoke-run "create a file called x.txt containing 'y'"

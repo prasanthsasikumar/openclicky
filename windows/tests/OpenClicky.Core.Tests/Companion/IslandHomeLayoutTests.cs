@@ -53,11 +53,25 @@ public class IslandHomeLayoutTests
     }
 
     [Fact]
-    public void TheStyleDefaultsToLiquidGlassAndHonoursTheOldSlider()
+    public void AnEarlierStyleIsPutBackToBlackOnceAndALaterChoiceIsKept()
     {
         var preferences = Preferences.InMemory();
         var appearance = new IslandAppearanceSettings(preferences);
-        Assert.Equal(IslandLook.Glass, appearance.Look);
+        appearance.Look = IslandLook.Glass;
+        preferences.Set(IslandLooks.LegacyGlassLevelKey, 0.6);
+        IslandLooks.ResetToBlackOnce(preferences);
+        Assert.Equal(IslandLook.Black, appearance.Look);
+        appearance.Look = IslandLook.Blend;
+        IslandLooks.ResetToBlackOnce(preferences);
+        Assert.Equal(IslandLook.Blend, appearance.Look);
+    }
+
+    [Fact]
+    public void TheStyleDefaultsToBlackAndHonoursTheOldSlider()
+    {
+        var preferences = Preferences.InMemory();
+        var appearance = new IslandAppearanceSettings(preferences);
+        Assert.Equal(IslandLook.Black, appearance.Look);
         preferences.Set(IslandLooks.LegacyGlassLevelKey, 0.6);
         Assert.Equal(IslandLook.Blend, appearance.Look);
         preferences.Set(IslandLooks.LegacyGlassLevelKey, 0.0);
