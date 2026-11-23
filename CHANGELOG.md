@@ -17,6 +17,10 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ## Unreleased
 
+### All platforms
+
+- **The island is black by default.** The open island is now solid black like the notch, for everyone: this update switches the style to *Black* once, even if you had picked *Liquid Glass* or *Blend*. To have glass back, choose it again in Settings → Island → *Style*; your choice is kept from then on.
+
 ### Mac
 
 - **The pointer moves with more life.** When Clicky points at something, the pointer leaves a short streak on a long flight, lands a touch small and fills out, and a ring opens where it arrives; while it stays there its glow breathes. Short hops are quicker (0.4 s instead of 0.6 s). Beside your mouse it follows a little more softly, bobs gently for a few seconds when you stop and while Clicky speaks, shows a soft halo around the bars while it listens, and three dots taking turns (instead of a spinner) while it thinks. With Reduce Motion on, in macOS or in Clicky's settings, none of this loops: flights go straight, and the halo, glow and dots hold still.

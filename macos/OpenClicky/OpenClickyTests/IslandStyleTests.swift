@@ -29,15 +29,26 @@ struct IslandStyleTests {
         #expect(IslandCorners.topFlare(for: .full, isSideDrawer: true) == 0)
     }
 
-    @Test func theStyleDefaultsToLiquidGlassAndHonoursTheOldSlider() {
+    @Test func theStyleDefaultsToBlackAndHonoursTheOldSlider() {
         let defaults = UserDefaults(suiteName: "IslandStyleTests.\(UUID().uuidString)")!
-        #expect(IslandLook.current(in: defaults) == .glass)
+        #expect(IslandLook.current(in: defaults) == .black)
         defaults.set(0.6, forKey: IslandLook.legacyGlassLevelKey)
         #expect(IslandLook.current(in: defaults) == .blend)
         defaults.set(0.0, forKey: IslandLook.legacyGlassLevelKey)
         #expect(IslandLook.current(in: defaults) == .black)
         defaults.set("glass", forKey: IslandLook.defaultsKey)
         #expect(IslandLook.current(in: defaults) == .glass)
+    }
+
+    @Test func anEarlierStyleIsPutBackToBlackOnceAndALaterChoiceIsKept() {
+        let defaults = UserDefaults(suiteName: "IslandStyleTests.\(UUID().uuidString)")!
+        defaults.set("glass", forKey: IslandLook.defaultsKey)
+        defaults.set(0.6, forKey: IslandLook.legacyGlassLevelKey)
+        IslandLook.resetToBlackOnce(in: defaults)
+        #expect(IslandLook.current(in: defaults) == .black)
+        defaults.set("blend", forKey: IslandLook.defaultsKey)
+        IslandLook.resetToBlackOnce(in: defaults)
+        #expect(IslandLook.current(in: defaults) == .blend)
     }
 
     @Test func theGlassLayerExistsOnlyOnTheOpenPanelInAGlassStyle() {
