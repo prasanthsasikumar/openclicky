@@ -28,6 +28,7 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 - **Typed questions get their answer in words too.** Ask with ⌃ twice and the island opens a reply card: a typing bubble that becomes the answer as it arrives, read aloud as before. Hand a job to the agent and the card shows its steps ticking off, then the result with an *Open* button. The card goes away by itself once you have had time to read it; rest the pointer on it to keep it.
 - **Next questions.** After an answer the island offers up to three questions you might ask next; a click asks one. It costs one small extra request on your own key or plan and never uses the free credits. Switch it off in Settings → Clicky → *Next questions*.
 - **The text box remembers.** What you typed and did not send is still there the next time you open it.
+- **Settings drop down from the island.** The gear on the island, and *Settings…* in the menu bar, now unfold the island into your settings instead of opening a window: the same six pages, with search. A button at the top opens the same page in the window when you want more room.
 
 ## 0.12.2
 

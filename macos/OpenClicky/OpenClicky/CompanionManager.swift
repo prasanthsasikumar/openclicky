@@ -1306,6 +1306,10 @@ final class CompanionManager: ObservableObject {
     /// The window at a settings page (General when none is named): ⌘,, "Settings…", the island.
     /// Opened at General for the first time after the welcome tour, it plays the Settings tour once.
     func showSettings(_ page: DictationSettingsPage = .general) {
+        // Settings drop down from the island where there is one to open them on; the window has
+        // them otherwise (the island hidden or on a screen edge, or setup still running), and
+        // when it is already open at settings.
+        if dictationWindowController?.window?.isVisible != true, notchHUDManager.openSettings(page) { return }
         showDictationWindow(settingsPage: page)
         if page == .general, firstRunTour.isFinished, !SettingsTourController.hasPlayed {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.startSettingsTour() }

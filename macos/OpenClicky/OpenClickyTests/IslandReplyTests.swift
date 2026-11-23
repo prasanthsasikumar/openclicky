@@ -122,3 +122,40 @@ struct IslandReplyModelTests {
         #expect(model.expansion == .permission)
     }
 }
+
+@MainActor
+struct IslandSettingsModelTests {
+    private func notchModel() -> NotchHUDModel {
+        let model = NotchHUDModel(geometry: NotchGeometry(screenFrame: CGRect(x: 0, y: 0, width: 1512, height: 982), hasHardwareNotch: true, notchWidth: 190, notchHeight: 33, visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 949)))
+        model.opensOnRest = false
+        return model
+    }
+
+    @Test func settingsDropDownStaysOpenUntilClosed() {
+        let model = notchModel()
+        model.showSettings(.clicky)
+        #expect(model.expansion == .settings && model.settingsPage == .clicky)
+        #expect(model.width == IslandSettingsLayout.width)
+        #expect(model.height == model.cardTopInset + IslandSettingsLayout.preferredHeight)
+        model.setHovering(true)
+        model.setHovering(false)                 // the pointer leaving does not close them
+        model.setBusy(true)                      // nor does Clicky getting busy
+        #expect(model.expansion == .settings)
+        model.showSettings(.island)              // turning the page keeps them open
+        #expect(model.expansion == .settings && model.settingsPage == .island)
+        model.islandClicked()                    // a click inside is the form's, not a toggle
+        #expect(model.expansion == .settings)
+        model.close()
+        #expect(model.settingsPage == nil && model.expansion != .settings)
+    }
+
+    @Test func aShortScreenGetsAShorterDropDownAndPermissionsStillComeFirst() {
+        #expect(IslandSettingsLayout.height(visibleHeight: 949) == IslandSettingsLayout.preferredHeight)
+        #expect(IslandSettingsLayout.height(visibleHeight: 600) == 510)
+        #expect(IslandSettingsLayout.height(visibleHeight: 300) == 320)
+        let model = notchModel()
+        model.showSettings(.general)
+        model.setPermissionPrompt(PermissionPrompt(step: .accessibility, status: PermissionStatus()))
+        #expect(model.expansion == .permission)
+    }
+}

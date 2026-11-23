@@ -56,7 +56,7 @@ struct IslandSurface: View {
 
     private var isOpen: Bool {
         switch expansion {
-        case .full, .connect, .permission, .tour, .plate, .notice, .reply, .composer: return true
+        case .full, .connect, .permission, .tour, .plate, .notice, .reply, .settings, .composer: return true
         case .collapsed, .peek, .compact: return false
         }
     }

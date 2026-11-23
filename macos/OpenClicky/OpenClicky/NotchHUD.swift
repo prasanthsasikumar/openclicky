@@ -94,6 +94,8 @@ enum NotchHUDExpansion: Equatable {
     case notice
     /// The reply card: a typed question's or a job's answer in words, and the next questions.
     case reply
+    /// Settings, dropped down from the island (`IslandSettings.swift`).
+    case settings
     case full
 }
 
@@ -150,6 +152,17 @@ final class NotchHUDModel: ObservableObject {
     @Published var tourCard: FirstRunTourCard?
     /// The suggested tasks' card, if one is up; set by `PlateController`.
     @Published var plateCard: PlateIslandCard?
+    /// The settings page showing in the island's drop-down; nil when settings are closed.
+    @Published private(set) var settingsPage: DictationSettingsPage?
+    var settingsHeight: CGFloat { cardTopInset + IslandSettingsLayout.height(visibleHeight: geometry.visibleFrame.height) }
+
+    /// Opens the drop-down at a page, or turns to it.
+    func showSettings(_ page: DictationSettingsPage) {
+        guard settingsPage != page else { return }
+        settingsPage = page
+        reconcile(immediately: true)
+    }
+
     /// The reply card, if one is up; set by `IslandReplyController`.
     @Published var reply: IslandReplyState?
     var replyHeight: CGFloat { cardTopInset + (reply.map(IslandReplyLayout.contentHeight(for:)) ?? 0) }
@@ -354,6 +367,7 @@ final class NotchHUDModel: ObservableObject {
         case .plate: return plateWidth
         case .notice: return plateWidth
         case .reply: return plateWidth
+        case .settings: return IslandSettingsLayout.width
         case .full: return fullWidth
         }
     }
@@ -370,6 +384,7 @@ final class NotchHUDModel: ObservableObject {
         case .plate: return plateHeight
         case .notice: return noticeHeight
         case .reply: return replyHeight
+        case .settings: return settingsHeight
         case .full: return fullHeight
         }
     }
@@ -584,7 +599,7 @@ final class NotchHUDModel: ObservableObject {
         switch expansion {
         case .compact:
             guard !isSpeaking, guideStep == nil else { return }
-        case .connect, .permission, .composer, .tour, .plate, .notice, .reply:
+        case .connect, .permission, .composer, .tour, .plate, .notice, .reply, .settings:
             return
         case .collapsed, .peek, .full:
             break
@@ -624,6 +639,7 @@ final class NotchHUDModel: ObservableObject {
     }
 
     func close() {
+        settingsPage = nil
         isPinnedOpen = false
         isHovering = false
         isDwellOpen = false
@@ -725,6 +741,9 @@ final class NotchHUDModel: ObservableObject {
         } else if permissionPrompt != nil {
             // Without permissions there is nothing else worth opening the island for.
             target = .permission
+        } else if settingsPage != nil && !isSetupInProgress {
+            // Settings stay open while they are used, wherever the pointer goes.
+            target = .settings
         } else if isPinnedOpen && !isSetupInProgress {
             target = .full
         } else if (isDragHovering || isDraggingOut || isHoldingAfterDrop) && !isSetupInProgress {
@@ -756,7 +775,7 @@ final class NotchHUDModel: ObservableObject {
         } else {
             target = restingExpansion
         }
-        if target == .full || target == .peek || target == .connect || target == .permission || target == .composer || target == .tour || target == .plate || target == .notice || target == .reply || immediately {
+        if target == .full || target == .peek || target == .connect || target == .permission || target == .composer || target == .tour || target == .plate || target == .notice || target == .reply || target == .settings || immediately {
             setExpansion(target)
             return
         }
@@ -983,7 +1002,7 @@ final class NotchHUDManager {
 
     /// Closes every open panel because a window it opened is coming forward.
     func dismissPanels() {
-        for instance in instances where instance.model.expansion == .full {
+        for instance in instances where instance.model.expansion == .full || instance.model.expansion == .settings {
             instance.model.dismiss()
         }
     }
@@ -1162,6 +1181,26 @@ final class NotchHUDManager {
     }
 
     var isShowingReply: Bool { primaryInstance?.model.expansion == .reply }
+
+    /// Drops settings down from the island under the pointer (or the main one) at a page. The
+    /// island's window takes the keyboard so the search box and the key fields can be typed in.
+    /// False when there is no island to open them on (it is hidden, or setup has it).
+    @discardableResult
+    func openSettings(_ page: DictationSettingsPage, takesKeyboard: Bool = true) -> Bool {
+        let mouseLocation = NSEvent.mouseLocation
+        guard let instance = instances.first(where: { $0.model.geometry.screenFrame.contains(mouseLocation) }) ?? primaryInstance,
+              !instance.model.isInvisible, !instance.model.isSetupInProgress, !instance.model.placement.isSideDrawer else { return false }
+        for other in instances where other !== instance { other.model.close() }
+        instance.model.showSettings(page)
+        AppLog.append("island: settings opened at \(page.rawValue)")
+        if takesKeyboard {
+            NSApp.activate(ignoringOtherApps: true)
+            instance.window.makeKeyAndOrderFront(nil)
+        }
+        return true
+    }
+
+    var isShowingSettings: Bool { instances.contains { $0.model.expansion == .settings } }
 
     /// What was typed into the composer and not sent, kept for the next time it opens.
     var composerDraft = ""
@@ -1405,7 +1444,7 @@ final class NotchHUDManager {
                 #if DEBUG
                 if self.debugKeepsPanelsOpen { return }
                 #endif
-                for instance in self.instances where instance.model.expansion == .full {
+                for instance in self.instances where instance.model.expansion == .full || instance.model.expansion == .settings {
                     instance.model.close()
                 }
                 self.closeTextComposer()
@@ -1483,6 +1522,12 @@ extension NotchHUDManager {
 
 
     func debugCloseAll() { instances.forEach { $0.model.close() } }
+
+    /// Settings dropped down and held open without taking the keyboard, for a screenshot.
+    func debugHoldSettingsOpen(_ page: DictationSettingsPage) {
+        debugKeepsPanelsOpen = true
+        openSettings(page, takesKeyboard: false)
+    }
 
     func debugOpenPrimaryPanel() { primaryInstance?.model.openPinned() }
 
@@ -1725,6 +1770,10 @@ struct NotchHUDView: View {
                         .frame(width: model.plateWidth, height: model.plateHeight)
                         .transition(IslandMotion.contentTransition)
                 }
+            case .settings:
+                IslandSettingsView(model: model, companionManager: companionManager)
+                    .frame(width: IslandSettingsLayout.width, height: model.settingsHeight)
+                    .transition(IslandMotion.contentTransition)
             case .reply:
                 if let reply = model.reply {
                     IslandReplyView(state: reply, controller: companionManager.islandReply, topInset: model.cardTopInset, reduceMotion: model.reduceMotion)

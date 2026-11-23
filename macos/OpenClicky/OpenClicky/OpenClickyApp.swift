@@ -643,6 +643,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
             }
         }
+        if let settingsIndex = launchArguments.firstIndex(of: "--openclicky-open-settings") {
+            // Drops settings down from the island at a page (general when none is named), to look at it.
+            let page = settingsIndex + 1 < launchArguments.count ? DictationSettingsPage(rawValue: launchArguments[settingsIndex + 1]) : nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in
+                companionManager.notchHUDManager.debugHoldSettingsOpen(page ?? .general)
+            }
+        }
         if launchArguments.contains("--openclicky-island-smoke") {
             // The island's states played by the app itself (see IslandSmoke).
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [companionManager] in

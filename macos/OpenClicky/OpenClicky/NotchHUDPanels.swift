@@ -97,12 +97,8 @@ struct NotchBandRow: View {
                         .accessibilityAddTraits(isActive ? .isSelected : [])
                     }
                 }
-                // Settings live in the window only: an island page of switches was a second,
-                // smaller settings that stayed open behind the pointer.
-                Button(action: {
-                    model.dismiss()
-                    companionManager.showSettings()
-                }) { Image(systemName: "gearshape.fill") }
+                // Settings drop down from the island: the same pages as the window, in place.
+                Button(action: { companionManager.showSettings() }) { Image(systemName: "gearshape.fill") }
                     .buttonStyle(IslandIconButtonStyle(size: 12, frameScale: 2))
                     .help("settings")
                     .accessibilityLabel("settings")
