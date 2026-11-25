@@ -83,6 +83,8 @@ public sealed class GlobalShortcutMonitor : ICompanionShortcutSource, IDisposabl
         }
     }
 
+    private double lastInjectedNoteAt = double.NegativeInfinity;
+
     /// <summary>Runs on the monitor's dispatch thread.</summary>
     private void OnKeyEvent(RawKeyEvent rawEvent)
     {
@@ -92,6 +94,13 @@ public sealed class GlobalShortcutMonitor : ICompanionShortcutSource, IDisposabl
             var modifier = Core.Shortcuts.VirtualKeys.ModifierFor(rawEvent.VirtualKey);
             // Auto-repeat of a held modifier changes nothing the recogniser reads.
             if (modifier != PhysicalModifiers.None && rawEvent.IsRepeat) return;
+            if (modifier != PhysicalModifiers.None && rawEvent.IsInjected && rawEvent.UptimeSeconds - lastInjectedNoteAt > 10)
+            {
+                // Another program's SendInput (ours never reach here): say so, at most every 10 s, so a
+                // run of taps nobody made can be traced to keyboard software or a remapper.
+                lastInjectedNoteAt = rawEvent.UptimeSeconds;
+                AppLog.Write($"shortcuts: another program sent a modifier key (vk 0x{rawEvent.VirtualKey:X2} {(rawEvent.IsDown ? "down" : "up")})");
+            }
             if (modifier != PhysicalModifiers.None)
             {
                 heldModifiers = rawEvent.IsDown ? heldModifiers | modifier : heldModifiers & ~modifier;

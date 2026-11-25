@@ -538,6 +538,7 @@ final class DictationTakeController: ObservableObject {
         focusedTargetAtPress = host.readFocusedTextTarget()
         nearbyTermsAtPress = []
         polisherForThisTake = host.makePolisher()
+        if DictationEngineResolver.wantsModelPolish(settings: settings) { polisherForThisTake?.prepareWhileThePersonSpeaks() }
         liveTyping = makeLiveTypingSessionIfWanted(mode: mode, focusedTarget: focusedTargetAtPress)
         audioStore.beginCapture()
         boxCloseWork?.cancel()

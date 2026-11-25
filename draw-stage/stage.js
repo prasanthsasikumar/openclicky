@@ -11,6 +11,12 @@
 // other; measure answers with the drawing's box (bounds), recording hides the caption and the buttons while the app
 // records the drawing, and saving shows what the app is doing just outside it. A drawing on a card can be dragged
 // about by the card (and the wheel over it resizes it): the page then takes the mouse over the card (reportHits).
+//
+// The pen (stage-pen.js holds its arithmetic, unit-tested): a stroke is ink with a tapered outline, revealed along its
+// length; it takes a time that goes with its length, the next mark starts before it has quite ended, and a pen cursor
+// flies to each mark and draws it. A spoken line's marks are spread to end with the line. With Reduce Motion (the
+// system's setting, or beginStream {reduceMotion}) marks appear in place: no pen, no travel. beginStream {sound} turns
+// on the pen's sound (stage-sound.js); without it the stage is silent.
 'use strict';
 
 (function () {
@@ -23,10 +29,10 @@
   const grip = document.getElementById('grip');
   const saving = document.getElementById('saving');
 
-  const WORDS_PER_SECOND = 2.6;
+  const Pen = window.StagePen;     // the pen's arithmetic (stage-pen.js)
+  const Sound = window.StageSound; // the pen's sound (stage-sound.js); silent unless the app asks for it
   const LINE_GAP = 0.25;          // between two estimated lines
   const LEAD = 0.08, TAIL = 0.12; // a line's strokes start just after its words and end just before they do
-  const FASTEST = 0.35, SLOWEST = 2, OPEN_LINE_SLOWEST = 1.3;
   const STATEMENT_SECONDS = 2;    // the longest one statement may run before the program is stopped
   const MAX_ERRORS = 5;
 
@@ -53,9 +59,24 @@
   let worker = null, seq = 0, running = null, runTimer = 0;
   let source = '', scanned = 0, feedDone = false, stopped = false;
   let pending = [];              // complete statements not run yet
-  let lines = [], items = [], released = 0, penFreeAt = 0, finishing = false, finishedSent = false, ranSent = false;
+  let lines = [], items = [], released = 0, finishing = false, finishedSent = false, ranSent = false;
+  let lastMark = null;           // the mark released last: when its ink started, its natural times, how they were paced
+  let inkDoneAt = 0;             // when the ink of everything released has dried
+  let spoken = [];               // the lines heard so far ({words, seconds}): the voice's own speed (pace "speech")
   let markCount = 0, errors = 0, uid = 0;
   let remembered = false, recording = false;
+
+  // What the app (or a preview's address: ?sound=1, ?motion=reduce) asks of a drawing. Nothing asked: no sound, and
+  // the system's Reduce Motion setting.
+  const query = new URLSearchParams(window.location.search);
+  const motionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  let still = false;             // marks appear in place: no pen, no travel
+  function takeOptions(message) {
+    const asked = typeof message.reduceMotion === 'boolean' ? message.reduceMotion : query.has('motion') ? query.get('motion') === 'reduce' : null;
+    still = asked != null ? asked : !!(motionQuery && motionQuery.matches);
+    const sound = 'sound' in message ? message.sound : query.has('sound') ? Number(query.get('sound')) || query.get('sound') === 'true' : false;
+    if (Sound) Sound.set(sound === true ? 1 : typeof sound === 'number' ? sound : 0);
+  }
 
   const now = () => performance.now() / 1000;
 
@@ -73,6 +94,8 @@
     svg.appendChild(defs());
     labelLayer = el('g', { class: 'labels' });
     svg.appendChild(labelLayer);
+    hidePen(true);
+    if (Sound) { Sound.hush(); Sound.rest(); }
   }
 
   // A new stream of statements: nothing pending, no lines, no button (what is drawn stays).
@@ -87,7 +110,8 @@
     lines = [];
     items = [];
     released = 0;
-    penFreeAt = 0;
+    lastMark = null;
+    inkDoneAt = 0;
     finishing = false;
     finishedSent = false;
     ranSent = false;
@@ -104,7 +128,10 @@
     W = message.w > 0 ? message.w : W;
     H = message.h > 0 ? message.h : H;
     pace = message.pace === 'speech' ? 'speech' : 'estimate';
+    spoken = [];
+    takeOptions(message);
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    penLayer.setAttribute('viewBox', `0 0 ${W} ${H}`);
     worker = new Worker('stage-worker.js');
     worker.onmessage = event => ran(event.data);
     worker.onerror = event => { event.preventDefault(); stop('the program worker failed: ' + (event.message || 'unknown error')); };
@@ -116,6 +143,7 @@
   function continueStream(message) {
     restartStream();
     pace = message.pace === 'speech' ? 'speech' : 'estimate';
+    takeOptions(message);
     if (!worker) {
       log('continue: the program worker had stopped; the follow-up runs without the earlier names');
       worker = new Worker('stage-worker.js');
@@ -240,7 +268,7 @@
     if (pace === 'estimate') {
       const before = lines[k - 1];
       line.start = Math.max(line.arrive, before ? before.end + LINE_GAP : line.arrive);
-      line.end = line.start + Math.max(0.8, words / WORDS_PER_SECOND);
+      line.end = line.start + Pen.lineSeconds(words);
     }
   }
 
@@ -254,10 +282,11 @@
       const p = mark.params || {};
       send({ type: 'pieceWanted', id: mark.id, text: String(p.make || p.name || 'a part'), of: p.of ? String(p.of) : '', size: Array.isArray(p.size) ? p.size.slice(0, 3) : [1, 1, 1] });
     }
-    items.push({ mark, line: lines.length - 1, seconds: naturalSeconds(mark) });
+    items.push({ mark, line: lines.length - 1, timing: Pen.naturalTiming(mark), index: items.length, path: undefined });
   }
 
-  const lineEnd = line => line.end != null ? line.end : line.start + Math.max(0.8, line.words / WORDS_PER_SECOND);
+  // A line still being said ends when the voice has got through its words, at the speed it has spoken so far.
+  const lineEnd = line => line.end != null ? line.end : line.start + Pen.lineSeconds(line.words, Pen.speechRate(spoken));
   const lineIsOpen = line => !feedDone || pending.length > 0 || running !== null ? line.k === lines.length - 1 : false;
 
   function askForLines(t) {
@@ -272,31 +301,69 @@
     }
   }
 
+  // The line the pen follows over a stroke mark (null for any other mark), the same every time for the same mark:
+  // seeded by the mark's place in the program. Worked out once (an arrow moved with its label is worked out again).
+  function pathOf(item) {
+    if (item.path === undefined || item.pathFrom !== item.mark.pts) {
+      item.path = Pen.centreline(item.mark, item.index + 1);
+      item.pathFrom = item.mark.pts;
+    }
+    return item.path;
+  }
+
+  // Where the pen starts and ends a mark: null for a mark the pen does not draw.
+  function endsOf(item) {
+    if (!item.timing.pen) return null;
+    const m = item.mark;
+    if (m.do === 'text') return Pen.textEnds(m);
+    if (m.do === 'highlight') return { from: [m.at[0], m.at[1] + m.h / 2], to: [m.at[0] + m.w, m.at[1] + m.h / 2] };
+    const path = pathOf(item);
+    return path ? { from: path[0], to: path[path.length - 1] } : null;
+  }
+
+  // The cursor's flight to a mark from where the pen is (or will be): none with Reduce Motion or when hurrying.
+  function flightTo(item, from) {
+    if (still || finishing || recording) return 0;
+    const ends = endsOf(item);
+    return ends ? Pen.flightSeconds(from, ends.from) : 0;
+  }
+
+  // The marks of the line still to draw, from item `first` on, as the plan wants them (StagePen.planLine).
+  function stepsFrom(first, t) {
+    const steps = [];
+    let from = penPlace(t);
+    for (let i = first; i < items.length && items[i].line === items[first].line; i++) {
+      const item = items[i], ends = endsOf(item);
+      steps.push({ seconds: item.timing.seconds, advance: item.timing.advance, lead: flightTo(item, from) });
+      if (ends) from = ends.to;
+    }
+    return steps;
+  }
+
   function tick() {
     const t = now();
     askForLines(t);
     while (released < items.length) {
       const item = items[released];
       const line = item.line >= 0 ? lines[item.line] : null;
-      let startAt = penFreeAt;
+      const lead = flightTo(item, penPlace(t));
+      // After the mark before it: at 0.7 of a stroke the pen need not leave, at its end when the cursor must fly.
+      let startAt = lastMark ? lastMark.inkAt + (lead > 0 ? lastMark.seconds : lastMark.advance) * lastMark.spread : 0;
       if (line && !finishing) {
         if (line.start == null) break;
         startAt = Math.max(startAt, line.start + LEAD);
       }
       if (t < startAt) break;
-      let factor = 1;
-      if (finishing) factor = FASTEST;
-      else if (line) {
-        let rest = 0;
-        for (let i = released; i < items.length && items[i].line === item.line; i++) rest += items[i].seconds;
-        const available = lineEnd(line) - TAIL - t;
-        factor = available <= 0.05 ? FASTEST : Math.max(FASTEST, Math.min(lineIsOpen(line) ? OPEN_LINE_SLOWEST : SLOWEST, available / rest));
-      }
-      const seconds = item.seconds * factor;
-      paint(item.mark, seconds, released);
-      penFreeAt = t + seconds + 0.04;
+      let plan = { pace: 1, spread: 1, lead: 1 };
+      if (finishing) plan = Pen.planLine([item.timing], 0, { finishing: true });
+      else if (line) plan = Pen.planLine(stepsFrom(released, t), lineEnd(line) - TAIL - t, { open: lineIsOpen(line) });
+      const seconds = item.timing.seconds * plan.pace, wait = lead * plan.lead;
+      paint(item, seconds, wait, t);
+      lastMark = { inkAt: t + wait, seconds: item.timing.seconds, advance: item.timing.advance, spread: plan.spread };
+      inkDoneAt = Math.max(inkDoneAt, t + wait + seconds + 0.04);
       released++;
     }
+    restPen(t);
     updateCaption(t);
     checkFinished(t);
     // While it is drawn the card grows: where the page takes the mouse follows it.
@@ -308,15 +375,18 @@
   // sleep / wake: the app hides the stage window between drawings; a page still animating under a
   // hidden window kept the GPU busy for the rest of the session.
   let asleep = false;
-  function sleep() { asleep = true; window.drawStage.isAsleep = true; }
+  function sleep() { asleep = true; window.drawStage.isAsleep = true; if (Sound) Sound.rest(); }
   function wake() { if (!asleep) return; asleep = false; window.drawStage.isAsleep = false; requestAnimationFrame(tick); }
 
   function checkFinished(t) {
-    if (finishedSent || !feedDone || pending.length || running || released < items.length || t < penFreeAt) return;
+    if (finishedSent || !feedDone || pending.length || running || released < items.length || t < inkDoneAt) return;
     const last = lines[lines.length - 1];
     if (last && !finishing && (last.start == null || t < lineEnd(last))) return;
     finishedSent = true;
     showCaption(null);
+    // Gone before the app measures the drawing or takes its picture.
+    hidePen(true);
+    if (Sound) Sound.rest(1);
     send({ type: 'finished' });
     showTools();
   }
@@ -458,7 +528,8 @@
     }).filter(Boolean);
     if (ends.length !== 1) return; // neither end, or both (an arrow between two moved labels): it stays as drawn
     const { i, label } = ends[0];
-    mark.pts[i] = [mark.pts[i][0] + label.dx, mark.pts[i][1] + label.dy];
+    // A new list, so the pen's line through the arrow is worked out again (pathOf).
+    mark.pts = mark.pts.map((p, k) => k === i ? [p[0] + label.dx, p[1] + label.dy] : p);
     mark.followed = true;
   }
 
@@ -477,87 +548,124 @@
     return node;
   }
 
-  // a little randomness that is the same for the same mark every time
-  function random(seed) {
-    let a = (seed * 2654435761) >>> 0;
-    return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const clamp = Pen.clamp;
+
+  // Marks appear in place with Reduce Motion: a short fade, nothing travelling.
+  const APPEAR = 0.18;
+  function appear(node, delay, opacity) {
+    node.animate([{ opacity: 0 }, { opacity: opacity == null ? 1 : opacity }], { duration: APPEAR * 1000, delay: (delay || 0) * 1000, easing: 'ease-out', fill: 'both' });
   }
 
-  const length = pts => pts.reduce((sum, p, i) => i ? sum + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0, 0);
-
-  function naturalSeconds(mark) {
-    switch (mark.do) {
-      case 'line': case 'arrow': return clamp(length(mark.pts) / 700, 0.25, 1.2) + (mark.do === 'arrow' ? 0.15 : 0);
-      case 'poly': return clamp(length(mark.pts.concat([mark.pts[0]])) / 800, 0.35, 1.4);
-      case 'ellipse': return clamp((Math.PI * (mark.rx + mark.ry)) / 800, 0.3, 1.2);
-      case 'rect': return clamp((2 * (mark.w + mark.h)) / 900, 0.35, 1.3);
-      case 'text': return clamp(String(mark.text).length * 0.045, 0.3, 1.6);
-      case 'highlight': return 0.45;
-      case 'card': return 0.4;
-      case 'photo': return 0.5;
-      case 'figure': return 0.5;
-      case 'part3d': return mark.params && mark.params.hidden ? 0.02 : mark.params && mark.params.quick ? 0.1 : 0.6; // quick: one of many small parts (a DNA's nucleotides)
-      case 'label3d': return 0.45;
-      case 'view3d': return 0.5;
-      case 'motion3d': return 0.05;
-      default: return 0.2;
-    }
-  }
-  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-
-  // A hand's line: the points with a slight wobble, through a smooth curve.
-  function handPoints(pts, rnd, closed) {
-    const out = [];
-    const all = closed ? pts.concat([pts[0]]) : pts;
-    for (let i = 0; i < all.length - 1; i++) {
-      const [x0, y0] = all[i], [x1, y1] = all[i + 1];
-      const d = Math.hypot(x1 - x0, y1 - y0), steps = Math.max(1, Math.round(d / 40));
-      const nx = -(y1 - y0) / (d || 1), ny = (x1 - x0) / (d || 1), wobble = Math.min(1.6, d * 0.006);
-      for (let s = 0; s < steps; s++) {
-        const t = s / steps, j = s === 0 ? 0 : (rnd() - 0.5) * 2 * wobble;
-        out.push([x0 + (x1 - x0) * t + nx * j, y0 + (y1 - y0) * t + ny * j]);
-      }
-    }
-    out.push(all[all.length - 1]);
-    return out;
+  // One pen stroke along `points`: a white halo under ink with a tapered outline (StagePen.outline), both revealed
+  // from start to end by a mask the pen's line is drawn in. The mask goes once the stroke is drawn, so a finished
+  // drawing is plain shapes. `taper` 1 is a full stroke; a dashed stroke is one reveal over many short dashes.
+  function ink(group, points, m, seconds, delay, seed, taper) {
+    const width = m.width > 0 ? m.width : 3.2, phase = Pen.rng(seed)() * Math.PI * 2;
+    const centre = Pen.pathData(points, false);
+    const body = el('g');
+    body.appendChild(el('path', { d: centre, class: 'halo', 'stroke-width': width + 5 }));
+    const pieces = m.dashed ? Pen.dashes(points, Math.max(8, width * 3), width * 2.5) : [points];
+    const outline = pieces.map(piece => Pen.pathData(Pen.outline(piece, width, { taper: m.dashed ? 0.3 : taper, phase }), true)).join('');
+    body.appendChild(el('path', { d: outline, class: 'ink', fill: tone(m.color, TONES.blue) }));
+    group.appendChild(body);
+    if (still) { appear(body, delay); return; }
+    const xs = points.map(p => p[0]), ys = points.map(p => p[1]), pad = width + 12;
+    const x = Math.min(...xs) - pad, y = Math.min(...ys) - pad;
+    const id = 'ink' + (++uid);
+    const mask = el('mask', { id, maskUnits: 'userSpaceOnUse', x, y, width: Math.max(...xs) + pad - x, height: Math.max(...ys) + pad - y });
+    const front = el('path', { d: centre, class: 'reveal', 'stroke-width': width + 10 });
+    const total = Pen.polylineLength(points) + 2;
+    front.style.strokeDasharray = `${total} ${total}`;
+    mask.appendChild(front);
+    group.appendChild(mask);
+    body.setAttribute('mask', `url(#${id})`);
+    const drawn = front.animate([{ strokeDashoffset: total }, { strokeDashoffset: 0 }],
+      { duration: seconds * 1000, delay: (delay || 0) * 1000, easing: Pen.PEN_EASE_CSS, fill: 'both' });
+    drawn.onfinish = () => { body.removeAttribute('mask'); mask.remove(); };
   }
 
-  function smoothPath(pts) {
-    if (pts.length < 3) return 'M' + pts.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
-    let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
-      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
-      const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
-      d += ` C${c1[0].toFixed(1)} ${c1[1].toFixed(1)} ${c2[0].toFixed(1)} ${c2[1].toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
-    }
-    return d;
+  // ------------------------------------------------------------------ the pen's cursor
+  // A small pen that flies to each mark and draws it, in a layer of its own over the drawing (so it is never in the
+  // drawing's box, its picture or its video). It shows while the pen is at work and goes when it rests.
+  const penLayer = el('svg', { id: 'pen', preserveAspectRatio: 'xMidYMid meet', viewBox: `0 0 ${W} ${H}` });
+  const penNode = el('g');
+  const penShape = el('g');
+  const penTip = el('path', { d: 'M0 0L8.5 -3.2L3.2 -8.5Z', fill: TONES.blue });
+  penShape.appendChild(el('path', { d: 'M8.5 -3.2L3.2 -8.5L23 -28.3A3.7 3.7 0 0 1 28.3 -23Z', fill: '#FFFFFF', stroke: '#1E2230', 'stroke-width': 1.3, 'stroke-linejoin': 'round' }));
+  penShape.appendChild(el('path', { d: 'M19.6 -24.9L24.9 -19.6', fill: 'none', stroke: '#1E2230', 'stroke-width': 1.3 }));
+  penShape.appendChild(penTip);
+  penNode.appendChild(penShape);
+  penLayer.appendChild(penNode);
+  penNode.style.opacity = 0;
+  board.appendChild(penLayer);
+
+  let penShown = false;
+  let penTrack = null;           // where the pen is going: {points, from: when it sets off, seconds, ease}
+  let penBusyUntil = 0;
+  const penMoves = [];           // the cursor's running animations, so the pen can be stopped where it is
+
+  // Where the pen's tip is at time t; null while it is off the page.
+  function penPlace(t) {
+    if (!penShown || !penTrack) return null;
+    const progress = penTrack.seconds > 0 ? clamp((t - penTrack.from) / penTrack.seconds, 0, 1) : 1;
+    return Pen.pointAt(penTrack.points, penTrack.ease(progress));
   }
 
-  function ellipsePoints(m, rnd) {
-    const out = [], n = 40, start = rnd() * Math.PI * 2, overshoot = 0.06 + rnd() * 0.05;
-    for (let i = 0; i <= n * (1 + overshoot); i++) {
-      const a = start + (i / n) * Math.PI * 2, r = 1 + (rnd() - 0.5) * 0.03;
-      out.push([m.at[0] + Math.cos(a) * m.rx * r, m.at[1] + Math.sin(a) * m.ry * r]);
+  const translate = p => ({ transform: `translate(${p[0].toFixed(1)}px, ${p[1].toFixed(1)}px)` });
+
+  // Sends the pen over a mark: `flight` seconds to its start (from where the pen is, or a touch-down beside it when
+  // the pen was off the page), then along `points` for `seconds` on the ink's own curve (linear for words).
+  function movePen(points, seconds, flight, t, colour, linear) {
+    if (still || finishing || recording || !points || points.length < 2) return;
+    const here = penPlace(t), start = points[0];
+    for (const move of penMoves.splice(0)) move.cancel();
+    // The pen's size on the screen stays the same whatever the canvas is scaled by.
+    const k = Math.min(window.innerWidth / W, window.innerHeight / H) || 1;
+    penShape.setAttribute('transform', `scale(${(1.15 / k).toFixed(3)})`);
+    penTip.setAttribute('fill', colour);
+    const easing = linear ? 'linear' : Pen.PEN_EASE_CSS;
+    let follow = Pen.sampleAlong(points, 24).map(translate);
+    if (flight > 0) {
+      const from = here || [start[0] + 26 / k, start[1] - 30 / k];
+      penMoves.push(penNode.animate(Pen.flightArc(from, start, 8).map(translate), { duration: flight * 1000, easing: 'ease-in-out', fill: 'both' }));
+    } else if (here) {
+      // Close by: the pen hops from where it is and meets the ink just after it starts.
+      const hop = 0.06;
+      follow = [Object.assign(translate(here), { offset: 0 })].concat(
+        Pen.sampleAlong(points, 22, hop).map((p, i) => Object.assign(translate(p), { offset: hop + (1 - hop) * i / 22 })));
     }
-    return out;
+    penMoves.push(penNode.animate(follow, { duration: seconds * 1000, delay: flight * 1000, easing, fill: 'both' }));
+    if (!penShown) {
+      penShown = true;
+      penNode.style.opacity = 1;
+      penNode.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: 'ease-out' });
+    }
+    penTrack = { points, from: t + flight, seconds, ease: linear ? (v => v) : Pen.penEase };
+    penBusyUntil = t + flight + seconds;
   }
 
-  // One pen stroke: a white halo under the coloured line, both revealed from start to end.
-  function stroke(group, d, m, seconds, delay) {
-    const width = m.width > 0 ? m.width : 3.2;
-    const halo = el('path', { d, class: 'halo', 'stroke-width': width + 5 });
-    const pen = el('path', { d, class: 'pen', stroke: tone(m.color, TONES.blue), 'stroke-width': width });
-    if (m.dashed) pen.setAttribute('stroke-dasharray', `${width * 3} ${width * 2.5}`);
-    group.appendChild(halo);
-    group.appendChild(pen);
-    for (const path of m.dashed ? [halo] : [halo, pen]) {
-      const total = path.getTotalLength() + 2;
-      path.style.strokeDasharray = `${total} ${total}`;
-      path.animate([{ strokeDashoffset: total }, { strokeDashoffset: 0 }],
-        { duration: seconds * 1000, delay: (delay || 0) * 1000, easing: 'cubic-bezier(.35,.2,.55,.95)', fill: 'both' });
-    }
-    if (m.dashed) pen.animate([{ opacity: 0 }, { opacity: 1 }], { duration: seconds * 1000, delay: (delay || 0) * 1000, fill: 'both' });
+  // The pen waits where its last stroke ended while more is coming, and leaves the page when nothing has been.
+  const PEN_WAITS = 1.2;
+  function restPen(t) {
+    if (penShown && t > penBusyUntil + PEN_WAITS) hidePen(false);
+  }
+
+  function hidePen(atOnce) {
+    if (!penShown && !atOnce) return;
+    penShown = false;
+    penTrack = null;
+    penNode.style.opacity = 0;
+    if (atOnce) for (const move of penMoves.splice(0)) move.cancel();
+    else penNode.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease-in' });
+  }
+
+  // The pen's sound over a stroke (when the app asked for sound, and never while hurrying to finish).
+  const canSound = () => Sound && Sound.isOn() && !finishing && !recording;
+  function soundStroke(length, seconds, delay) {
+    if (canSound() && !still) Sound.stroke(Pen.speedCurve(length, seconds, 24), seconds, delay, 'pen');
+  }
+  function soundTick(delay, strength) {
+    if (canSound()) Sound.tick(delay, strength);
   }
 
   function fillShape(group, d, m, delay) {
@@ -567,63 +675,54 @@
     fill.animate([{ opacity: 0 }, { opacity: m.fillOpacity > 0 ? m.fillOpacity : 0.3 }], { duration: 350, delay: delay * 1000, fill: 'forwards' });
   }
 
-  function reveal(group, node, box, seconds) {
+  // Words and the marker's sweep are uncovered from the left (in place with Reduce Motion).
+  function reveal(group, node, box, seconds, delay) {
+    if (still) { appear(node, delay, Number(node.getAttribute('opacity')) || 1); return; }
     const id = 'clip' + (++uid);
     const clip = el('clipPath', { id });
     const rect = el('rect', { x: box.x - 6, y: box.y - 6, width: 0, height: box.height + 12 });
     clip.appendChild(rect);
     group.appendChild(clip);
     node.setAttribute('clip-path', `url(#${id})`);
-    rect.animate([{ width: '0px' }, { width: `${box.width + 12}px` }], { duration: seconds * 1000, easing: 'linear', fill: 'forwards' });
+    rect.animate([{ width: '0px' }, { width: `${box.width + 12}px` }], { duration: seconds * 1000, delay: (delay || 0) * 1000, easing: 'linear', fill: 'both' });
   }
 
-  function paint(m, seconds, index) {
+  // Paints a mark over `seconds`, its ink starting `wait` seconds from now (t), once the pen's cursor has flown to it.
+  function paint(item, seconds, wait, t) {
+    const m = item.mark, seed = item.index + 1;
     const group = el('g');
     if (m.do === 'text') labelLayer.appendChild(group); else svg.insertBefore(group, labelLayer);
-    const rnd = random(index + 1);
+    const colour = tone(m.color, TONES.blue);
     switch (m.do) {
-      case 'line': {
-        const pts = m.smooth ? m.pts : handPoints(m.pts, rnd, false);
-        stroke(group, smoothPath(pts), m, seconds);
+      case 'line': case 'poly': case 'rect': case 'ellipse': {
+        const points = pathOf(item);
+        if (!points) { log('a ' + m.do + ' without usable points was skipped'); break; }
+        ink(group, points, m, seconds, wait, seed, 1);
+        if (m.do !== 'line') fillShape(group, Pen.pathData(points, false), m, wait + (still ? 0 : seconds));
+        movePen(points, seconds, wait, t, colour);
+        soundStroke(Pen.polylineLength(points), seconds, wait);
         break;
       }
       case 'arrow': {
-        const shaft = Math.max(0.1, seconds - 0.15);
-        stroke(group, smoothPath(m.smooth ? m.pts : handPoints(m.pts, rnd, false)), m, shaft);
-        const tip = m.pts[m.pts.length - 1], back = m.pts[m.pts.length - 2];
-        const angle = Math.atan2(tip[1] - back[1], tip[0] - back[0]);
-        const size = Math.min(22, Math.max(10, length(m.pts) * 0.25));
-        for (const side of [-1, 1]) {
-          const a = angle + Math.PI + side * 0.5;
-          stroke(group, smoothPath([tip, [tip[0] + Math.cos(a) * size, tip[1] + Math.sin(a) * size]]), m, 0.12, shaft);
-        }
-        break;
-      }
-      case 'poly': {
-        const d = smoothPath(handPoints(m.pts, rnd, true));
-        stroke(group, d, m, seconds);
-        fillShape(group, d, m, seconds);
-        break;
-      }
-      case 'rect': {
-        const [x, y] = m.at;
-        const d = smoothPath(handPoints([[x, y], [x + m.w, y], [x + m.w, y + m.h], [x, y + m.h]], rnd, true));
-        stroke(group, d, m, seconds);
-        fillShape(group, d, m, seconds);
-        break;
-      }
-      case 'ellipse': {
-        const d = smoothPath(ellipsePoints(m, rnd));
-        stroke(group, d, m, seconds);
-        fillShape(group, d, m, seconds);
+        const points = pathOf(item);
+        if (!points) { log('an arrow without usable points was skipped'); break; }
+        // The shaft, then the head's two flicks.
+        const head = Math.min(Pen.PEN.head, seconds * 0.4), shaft = Math.max(0.1, seconds - head);
+        ink(group, points, m, shaft, wait, seed, 1);
+        Pen.arrowBarbs(m.pts).forEach((barb, side) => ink(group, barb, m, head * 0.75, wait + (still ? 0 : shaft), seed + 7919 * (side + 1), 0.5));
+        movePen(points, shaft, wait, t, colour);
+        soundStroke(Pen.polylineLength(points), shaft, wait);
+        if (!still) soundTick(wait + shaft, 0.6);
         break;
       }
       case 'dot': {
-        const dot = el('circle', { cx: m.at[0], cy: m.at[1], r: m.r, fill: tone(m.color, TONES.blue), stroke: '#fff', 'stroke-width': 2 });
+        const dot = el('circle', { cx: m.at[0], cy: m.at[1], r: m.r, fill: colour, stroke: '#fff', 'stroke-width': 2 });
         group.appendChild(dot);
+        if (still) { appear(dot, wait); soundTick(wait, 0.7); break; }
         dot.style.transformBox = 'fill-box';
         dot.style.transformOrigin = 'center';
-        dot.animate([{ transform: 'scale(0)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: seconds * 1000, fill: 'both' });
+        dot.animate([{ transform: 'scale(0)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: seconds * 1000, delay: wait * 1000, fill: 'both' });
+        soundTick(wait + seconds * 0.4, 0.7);
         break;
       }
       case 'text': {
@@ -633,14 +732,21 @@
         }));
         text.textContent = m.text;
         group.appendChild(text);
-        reveal(group, text, text.getBBox(), seconds);
+        const box = text.getBBox();
+        reveal(group, text, box, seconds, wait);
+        // The pen writes along under the words.
+        const y = box.y + box.height * 0.62;
+        movePen([[box.x, y], [box.x + box.width, y]], seconds, wait, t, tone(m.color, TONES.ink), true);
+        if (canSound() && !still) Sound.stroke(Pen.writingCurve(String(m.text).length, 24), seconds, wait, 'writing');
         break;
       }
       case 'highlight': {
         const [x, y] = m.at;
         const mark = el('rect', { x, y, width: m.w, height: m.h, rx: Math.min(6, m.h / 4), fill: tone(m.color, TONES.yellow), opacity: 0.38 });
         group.appendChild(mark);
-        reveal(group, mark, { x, y, width: m.w, height: m.h }, seconds);
+        reveal(group, mark, { x, y, width: m.w, height: m.h }, seconds, wait);
+        movePen([[x, y + m.h / 2], [x + m.w, y + m.h / 2]], seconds, wait, t, tone(m.color, TONES.yellow), true);
+        if (canSound() && !still) Sound.stroke(Array.from({ length: 13 }, () => 0.6), seconds, wait, 'marker');
         break;
       }
       case 'figure': case 'part3d': case 'label3d': case 'motion3d': case 'view3d': {
@@ -654,6 +760,7 @@
           rect = { x: ox + k * m.at[0], y: oy + k * m.at[1], w: k * m.w, h: k * m.h };
         }
         window.Figure3D.apply(m, seconds, rect);
+        if (m.do === 'figure' || (m.do === 'part3d' && !(m.params && (m.params.hidden || m.params.quick)))) soundTick(seconds * 0.5, 0.5);
         break;
       }
       case 'photo': {
@@ -670,8 +777,10 @@
           frame.appendChild(caption);
         }
         group.appendChild(frame);
-        frame.animate([{ opacity: 0, transform: 'rotate(-2deg) translateY(10px)' }, { opacity: 1, transform: 'rotate(0) translateY(0)' }],
+        if (still) appear(frame, 0);
+        else frame.animate([{ opacity: 0, transform: 'rotate(-2deg) translateY(10px)' }, { opacity: 1, transform: 'rotate(0) translateY(0)' }],
           { duration: seconds * 1000, easing: 'ease-out', fill: 'both' });
+        soundTick(still ? 0 : seconds * 0.7, 0.9);
         const id = 'photo' + (++uid);
         photos.set(id, { group: frame, box: { x: x + pad, y: y + pad, w: m.w - 2 * pad, h: m.h - pad - captionRoom } });
         send({ type: 'photoWanted', id, query: String(m.query), text: String(m.caption || '') });
@@ -688,8 +797,10 @@
           card.appendChild(title);
         }
         group.appendChild(card);
-        card.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'translateY(0)' }],
+        if (still) appear(card, 0);
+        else card.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'translateY(0)' }],
           { duration: seconds * 1000, easing: 'ease-out', fill: 'both' });
+        soundTick(still ? 0 : seconds * 0.7, 0.6);
         break;
       }
       default:
@@ -914,6 +1025,7 @@
       case 'remembered': remembered = true; showTools(); break;
       case 'recording': {
         recording = !!message.on;
+        if (recording) hidePen(true);
         document.body.classList.toggle('recording', recording);
         // Paper behind the drawing's box, so its frames never show the screen under the stage.
         const box = recording ? contentBounds() : null;
@@ -936,10 +1048,15 @@
       }
       case 'lineEnded': {
         const line = lines[message.k];
-        if (line) { if (line.start == null) line.start = now(); line.end = now(); }
+        if (line) {
+          if (line.start == null) line.start = now();
+          // How fast the voice speaks, for the lines to come.
+          if (line.end == null && pace === 'speech') spoken.push({ words: line.words, seconds: now() - line.start });
+          line.end = now();
+        }
         break;
       }
-      case 'finishNow': finishing = true; break;
+      case 'finishNow': finishing = true; hidePen(true); if (Sound) Sound.hush(); break;
       case 'photo': showPhoto(message); break;
       case 'piece': if (window.Figure3D) window.Figure3D.pieceArrived(message); break;
       case 'saving': showSaving(message); break;

@@ -72,8 +72,8 @@ struct ShelfIslandView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: shelf.items.map(\.id))
-        .animation(.easeInOut(duration: 0.18), value: model.isDragHovering)
+        .animation(Motion.swap, value: shelf.items.map(\.id))
+        .animation(Motion.swap, value: model.isDragHovering)
     }
 
     /// The leading tile while a drag hovers: where the drop will land.

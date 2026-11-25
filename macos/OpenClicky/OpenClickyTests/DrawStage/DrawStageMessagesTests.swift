@@ -23,6 +23,21 @@ import Testing
         #expect(message["h"] as? Int == 720)
         #expect(message["pace"] as? String == "speech")
         #expect(message["keepPlace"] == nil)
+        // Nothing new unless asked: a page that has never heard of sound gets the message it always got.
+        #expect(message["sound"] == nil)
+        #expect(message["reduceMotion"] == nil)
+    }
+
+    @Test func soundAndReduceMotionAreSentOnlyWhenOn() throws {
+        let begun = try object(DrawStageMessages.beginStream(canvasWidth: 1280, canvasHeight: 720, pace: .speech, sound: true, reduceMotion: true))
+        #expect(begun["sound"] as? Bool == true)
+        #expect(begun["reduceMotion"] as? Bool == true)
+        #expect(begun["w"] as? Int == 1280)
+
+        let continued = try object(DrawStageMessages.continueStream(pace: .speech, sound: true))
+        #expect(continued["sound"] as? Bool == true)
+        #expect(continued["reduceMotion"] == nil)
+        #expect(try object(DrawStageMessages.continueStream(pace: .speech)).count == 2)
     }
 
     @Test func feedAndLineAndSimpleRoundTrip() throws {

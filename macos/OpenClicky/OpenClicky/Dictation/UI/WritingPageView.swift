@@ -344,7 +344,7 @@ private struct WritingStyleRow: View {
             .padding(.vertical, SettingsLook.Metric.rowVertical)
             .contentShape(Rectangle())
             // The whole label opens the row, not only the chevron, as the old card did.
-            .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { isExpanded.toggle() } }
+            .onTapGesture { withAnimation(Motion.swap) { isExpanded.toggle() } }
             .pointerCursor()
             .accessibilityLabel("\(style.name), \(style.tagline)")
             .accessibilityHint(isExpanded ? "Collapse" : "Show its rules and apps")

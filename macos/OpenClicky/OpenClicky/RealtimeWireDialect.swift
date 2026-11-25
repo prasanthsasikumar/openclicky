@@ -60,6 +60,11 @@ nonisolated protocol RealtimeWireDialect: AnyObject {
     /// Hands-free: the vendor replies on its own once the person stops, without `response.create`
     /// (so the screen goes up when speech starts instead of when the utterance is committed).
     var respondsWithoutRequest: Bool { get }
+    /// Hands-free: the vendor cancels the reply it is making the moment the person speaks, so a
+    /// `response.cancel` from here would find nothing ("Cancellation failed: no active response
+    /// found"). OpenAI does, because the session asks for `interrupt_response`. Gemini interrupts
+    /// too, but its dialect needs the cancel to drop the rest of that turn's audio.
+    var cancelsItsOwnReplyWhenThePersonSpeaks: Bool { get }
     /// A connection is replaced before this age, ahead of the vendor's own cap.
     var maximumConnectionAge: TimeInterval { get }
     /// The wire messages for one client event (none when the vendor has no equivalent).
@@ -73,6 +78,7 @@ nonisolated final class OpenAIWireDialect: RealtimeWireDialect {
     let providerName = "OpenAI"
     let clientSpeaksFirst = false
     let respondsWithoutRequest = false
+    let cancelsItsOwnReplyWhenThePersonSpeaks = true
     /// OpenAI cuts a session at 60 minutes.
     let maximumConnectionAge: TimeInterval = 50 * 60
     func outgoing(_ event: [String: Any]) -> [[String: Any]] { [event] }
@@ -91,6 +97,7 @@ nonisolated final class GeminiLiveDialect: RealtimeWireDialect {
     let providerName = "Gemini"
     let clientSpeaksFirst = true
     let respondsWithoutRequest = true
+    let cancelsItsOwnReplyWhenThePersonSpeaks = false
     /// Gemini closes a connection after about ten minutes (it says so with `goAway` first);
     /// the session itself carries on through the resumption handle.
     let maximumConnectionAge: TimeInterval = 9 * 60

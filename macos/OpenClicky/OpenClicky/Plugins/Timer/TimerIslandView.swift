@@ -136,6 +136,6 @@ struct IslandSegmentedSwitch<Option: Hashable>: View {
         }
         .padding(2)
         .background(Capsule().fill(Color.white.opacity(0.08)))
-        .animation(.easeOut(duration: 0.15), value: selection)
+        .animation(Motion.hover, value: selection)
     }
 }

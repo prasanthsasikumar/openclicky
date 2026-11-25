@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using Windows.Globalization;
 using Windows.Media.SpeechRecognition;
@@ -42,21 +43,6 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
         }
     }
 
-    public bool AcceptOnlineSpeech()
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(OnlineSpeechPrivacyKey);
-            key.SetValue(OnlineSpeechAcceptedValue, 1, Microsoft.Win32.RegistryValueKind.DWord);
-            onlineSpeechWasRefused = false;
-            return true;
-        }
-        catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or IOException)
-        {
-            return false;
-        }
-    }
-
     public void OpenSpeechPrivacySettings()
     {
         try
@@ -83,7 +69,8 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
             .Where(tag => !string.IsNullOrWhiteSpace(tag))
             .Cast<string>();
         var supported = SupportedLanguages();
-        var languageTag = candidates.Select(tag => BestSupported(tag, supported)).FirstOrDefault(tag => tag is not null)
+        var systemLanguage = SystemSpeechLanguageTag();
+        var languageTag = candidates.Select(tag => BestSupported(tag, supported, systemLanguage)).FirstOrDefault(tag => tag is not null)
             ?? throw new OfflineSpeechException(OfflineSpeechFailure.LanguageNotInstalled,
                 $"dictation cannot listen in {requested} on this pc. add its speech pack in settings, time & language, speech.");
 
@@ -135,7 +122,7 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
     {
         onlineSpeechWasRefused = true;
         return new(OfflineSpeechFailure.SpeechPrivacyPolicyNotAccepted,
-            "windows dictation needs online speech recognition. turn it on from the card on the island.", exception);
+            "windows dictation needs online speech recognition switched on in settings, privacy & security, speech.", exception);
     }
 
     /// <summary>With no capture device at all the recogniser fails with an "internal speech error" COMException.</summary>
@@ -169,13 +156,34 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
         _ => new OfflineSpeechException(OfflineSpeechFailure.Other, $"dictation is not available on this pc ({status})."),
     };
 
-    /// <summary>The installed tag equal to <paramref name="tag"/>, else the first with the same language ("en" → "en-US").</summary>
-    internal static string? BestSupported(string tag, IReadOnlyList<string> supported)
+    /// <summary>The installed tag equal to <paramref name="tag"/>; else, for the same language, the system speech
+    /// language (Settings → Time &amp; language → Speech) when it is one; else the first with the same language.
+    /// So a region with no speech pack of its own (en-SG) listens in the person's speech language (en-US), not
+    /// whichever English happens to be listed first (en-GB).</summary>
+    internal static string? BestSupported(string tag, IReadOnlyList<string> supported, string? systemLanguage = null)
     {
         var exact = supported.FirstOrDefault(candidate => string.Equals(candidate, tag, StringComparison.OrdinalIgnoreCase));
         if (exact is not null) return exact;
         var primary = tag.Split('-')[0];
-        return supported.FirstOrDefault(candidate => string.Equals(candidate.Split('-')[0], primary, StringComparison.OrdinalIgnoreCase));
+        bool SameLanguage(string candidate) => string.Equals(candidate.Split('-')[0], primary, StringComparison.OrdinalIgnoreCase);
+        if (systemLanguage is not null && SameLanguage(systemLanguage))
+        {
+            var system = supported.FirstOrDefault(candidate => string.Equals(candidate, systemLanguage, StringComparison.OrdinalIgnoreCase));
+            if (system is not null) return system;
+        }
+        return supported.FirstOrDefault(SameLanguage);
+    }
+
+    private static string? SystemSpeechLanguageTag()
+    {
+        try
+        {
+            return SpeechRecognizer.SystemSpeechLanguage?.LanguageTag;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private sealed class WindowsSpeechSession : IOfflineSpeechSession
@@ -185,18 +193,28 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
         private string finishedStretchesText = string.Empty;
         private string latestText = string.Empty;
         private bool stopped;
+        // For the log: a take that came back empty says whether the engine heard anything at all.
+        private int hypothesisCount;
+        private int resultCount;
 
         public WindowsSpeechSession(SpeechRecognizer recognizer, string languageTag)
         {
             this.recognizer = recognizer;
             LanguageTag = languageTag;
-            recognizer.HypothesisGenerated += (_, args) => Update(args.Hypothesis.Text, isFinal: false);
+            recognizer.HypothesisGenerated += (_, args) =>
+            {
+                Interlocked.Increment(ref hypothesisCount);
+                Update(args.Hypothesis.Text, isFinal: false);
+            };
             recognizer.ContinuousRecognitionSession.ResultGenerated += (_, args) =>
             {
+                Interlocked.Increment(ref resultCount);
                 if (args.Result.Status == SpeechRecognitionResultStatus.Success) Update(args.Result.Text, isFinal: true);
+                else AppLog.Write($"windows speech: a result came back {args.Result.Status}");
             };
             recognizer.ContinuousRecognitionSession.Completed += (_, args) =>
             {
+                AppLog.Write($"windows speech: session ended {args.Status} ({LanguageTag}, {hypothesisCount} partial, {resultCount} final)");
                 if (args.Status is SpeechRecognitionResultStatus.Success or SpeechRecognitionResultStatus.UserCanceled) return;
                 bool hasText;
                 lock (textLock) hasText = latestText.Trim().Length > 0;
@@ -241,7 +259,11 @@ public sealed class WindowsSpeechRecognizer : IOfflineSpeechRecognizer
             {
                 // Already stopped (silence timeout or an error).
             }
-            lock (textLock) return latestText;
+            string text;
+            lock (textLock) text = latestText;
+            if (text.Trim().Length == 0)
+                AppLog.Write($"windows speech: stopped with no words ({LanguageTag}, {hypothesisCount} partial, {resultCount} final, state {recognizer.State})");
+            return text;
         }
 
         public void Cancel()

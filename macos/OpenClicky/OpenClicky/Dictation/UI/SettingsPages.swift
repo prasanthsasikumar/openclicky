@@ -116,7 +116,7 @@ struct SettingsFormView: View {
                         // The whole row opens the group: a DisclosureGroup only answers on its
                         // small arrow, which people missed.
                         Button(action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            withAnimation(Motion.swap) {
                                 if isOpen { openAdvancedGroupIDs.remove(group.id) } else { openAdvancedGroupIDs.insert(group.id) }
                             }
                         }) {
@@ -161,7 +161,7 @@ struct SettingsFormView: View {
         .formStyle(.grouped)
         .onChange(of: tourTargets.scrollRequest) { requestedRowID in
             guard let requestedRowID else { return }
-            withAnimation(.easeInOut(duration: 0.3)) { scrollProxy.scrollTo(requestedRowID, anchor: .center) }
+            withAnimation(Motion.structural.animation) { scrollProxy.scrollTo(requestedRowID, anchor: .center) }
             tourTargets.scrollRequest = nil
         }
         }

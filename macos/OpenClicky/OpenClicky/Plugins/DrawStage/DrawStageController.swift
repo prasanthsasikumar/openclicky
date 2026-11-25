@@ -54,6 +54,11 @@ final class DrawStageController {
     var figuresChanged: (([CGRect]) -> Void)?
     /// Finds a photo for a query and caption (the Teacher's Wikimedia search); nil finds none.
     var findPhoto: ((String, String) async -> DrawStagePhoto?)?
+    /// Whether the pen makes its sound, asked as each drawing begins (the app's "sounds" setting).
+    var soundsOn: () -> Bool = { false }
+    /// Whether marks appear in place with no pen travelling, asked as each drawing begins (the
+    /// app's own reduce-animation setting or the system's Reduce Motion).
+    var reducesMotion: () -> Bool = { false }
 
     private var waitingForReady: [String] = []
     private var measuring: CheckedContinuation<DrawStageBounds?, Never>?
@@ -71,13 +76,14 @@ final class DrawStageController {
     func begin(displayFrame: CGRect, canvasWidth: Int, canvasHeight: Int, pace: DrawStagePace = .speech) {
         self.displayFrame = displayFrame
         show()
-        send(DrawStageMessages.beginStream(canvasWidth: canvasWidth, canvasHeight: canvasHeight, pace: pace))
+        send(DrawStageMessages.beginStream(canvasWidth: canvasWidth, canvasHeight: canvasHeight, pace: pace,
+                                           sound: soundsOn(), reduceMotion: reducesMotion()))
     }
 
     /// A follow-up's program, run after the drawing on the stage, which stays.
     func continueDrawing() {
         show()
-        send(DrawStageMessages.continueStream(pace: .speech))
+        send(DrawStageMessages.continueStream(pace: .speech, sound: soundsOn(), reduceMotion: reducesMotion()))
     }
 
     func feed(_ programSoFar: String, done: Bool) {
