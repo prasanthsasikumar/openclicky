@@ -13,6 +13,7 @@ using OpenClicky.Core.Plugins.Weather;
 using OpenClicky.Core.Settings;
 using OpenClicky.Windows.Plugins.Calendar;
 using OpenClicky.Windows.Plugins.Weather;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -80,10 +81,10 @@ internal sealed partial class SettingsRowFactory
             if (isOn && Weather.IsEnabled) _ = WeatherTile.Store.RequestLocationPermissionAsync();
         });
         var stack = new StackPanel();
-        stack.Children.Add(Ui.Row("Use my location", "Where Windows says this PC is. Off: the place below.", query, useLocation));
+        stack.Children.Add(Ui.Row(L.T("Use my location"), L.T("Where Windows says this PC is. Off: the place below."), query, useLocation));
         if (!weather.UsesLocation)
         {
-            var field = new Wpf.Ui.Controls.TextBox { Text = weather.Place, PlaceholderText = "A city, like Lisbon", MinWidth = 220 };
+            var field = new Wpf.Ui.Controls.TextBox { Text = weather.Place, PlaceholderText = L.T("A city, like Lisbon"), MinWidth = 220 };
             void Save()
             {
                 if (field.Text.Trim() != Weather.Place) Weather.Place = field.Text;
@@ -93,7 +94,7 @@ internal sealed partial class SettingsRowFactory
             {
                 if (arguments.Key == Key.Enter) Save();
             };
-            var place = Ui.Row("Place", "The weather for this town or city.", query, field);
+            var place = Ui.Row(L.T("Place"), L.T("The weather for this town or city."), query, field);
             place.Margin = new Thickness(0, 12, 0, 0);
             stack.Children.Add(place);
         }
@@ -108,10 +109,10 @@ internal sealed partial class SettingsRowFactory
         var store = CalendarDashboardColumn.Store;
         var (detail, button) = store.Access switch
         {
-            CalendarAccess.Allowed => ("Allowed. The island reads your calendars on this PC; nothing is changed or sent.", null),
-            CalendarAccess.Denied => ("Off in Windows Settings › Privacy › Calendar.", "Open Settings"),
-            CalendarAccess.Unavailable => ("Windows didn't share its calendar with OpenClicky.", "Try Again"),
-            _ => (item.Detail, "Allow"),
+            CalendarAccess.Allowed => (L.T("Allowed. The island reads your calendars on this PC; nothing is changed or sent."), null),
+            CalendarAccess.Denied => (L.T("Off in Windows Settings › Privacy › Calendar."), L.T("Open Settings")),
+            CalendarAccess.Unavailable => (L.T("Windows didn't share its calendar with OpenClicky."), L.T("Try Again")),
+            _ => (item.Detail, L.T("Allow")),
         };
         return Ui.Row(item.Title, detail, query, button is null ? null : Ui.Button(button, () => _ = store.RequestAccessAsync()));
     }
@@ -127,8 +128,8 @@ internal sealed partial class SettingsRowFactory
             var groups = CalendarSchedule.SourceGroups(store.Calendars);
             if (groups.Count == 0)
             {
-                stack.Children.Add(Ui.Card(Ui.Row("No calendars yet",
-                    store.Access == CalendarAccess.Allowed ? "Add an account in Windows' Calendar app and it shows here." : "Allow calendar access on the Privacy page first.",
+                stack.Children.Add(Ui.Card(Ui.Row(L.T("No calendars yet"),
+                    store.Access == CalendarAccess.Allowed ? L.T("Add an account in Windows' Calendar app and it shows here.") : L.T("Allow calendar access on the Privacy page first."),
                     query, null)));
                 return stack;
             }

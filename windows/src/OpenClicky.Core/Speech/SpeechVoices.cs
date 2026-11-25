@@ -15,6 +15,7 @@ using System.Text.RegularExpressions;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Providers;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Speech;
 
@@ -47,16 +48,16 @@ public static class SpeechVoiceChoices
 
     public static string Title(this SpeechVoiceChoice choice) => choice switch
     {
-        SpeechVoiceChoice.Automatic => "Automatic",
-        SpeechVoiceChoice.Account => "Free voice (ElevenLabs)",
+        SpeechVoiceChoice.Automatic => L.T("Automatic"),
+        SpeechVoiceChoice.Account => L.T("Free voice (ElevenLabs)"),
         SpeechVoiceChoice.OpenAI => "OpenAI",
-        SpeechVoiceChoice.ElevenLabs => "ElevenLabs (your key)",
+        SpeechVoiceChoice.ElevenLabs => L.T("ElevenLabs (your key)"),
         SpeechVoiceChoice.Google => "Google Cloud",
         SpeechVoiceChoice.Gemini => "Google Gemini",
         SpeechVoiceChoice.Polly => "Amazon Polly",
         SpeechVoiceChoice.Sarvam => "Sarvam",
-        SpeechVoiceChoice.Kokoro => "Kokoro (on this PC)",
-        _ => "This PC",
+        SpeechVoiceChoice.Kokoro => L.T("Kokoro (on this PC)"),
+        _ => L.T("This PC"),
     };
 
     /// <summary>

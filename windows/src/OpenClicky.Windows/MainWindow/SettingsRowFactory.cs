@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -39,7 +40,7 @@ internal sealed partial class SettingsRowFactory(MainWindowServices services, IM
         if (item.OpensSection is { } section)
         {
             return Ui.Card(Ui.Row(item.Title, item.Detail, query,
-                Ui.Button($"Open {section.SidebarTitle()}", () => actions.ShowSection(section))));
+                Ui.Button(L.F("Open {0}", section.SidebarTitle()), () => actions.ShowSection(section))));
         }
         if (item.OpensDestination is { } destination) return NavigationRow(item, query, destination);
         // The rows are placed by SettingsLayout, not by the page that builds them: each page's

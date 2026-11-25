@@ -3,6 +3,7 @@
 // providers themselves (OpenClicky.Core.Answers) use this type.
 
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Providers;
 
@@ -56,19 +57,19 @@ public static class AnswerSources
 
     public static string DisplayName(this AnswerSource source) => source switch
     {
-        AnswerSource.Anthropic => "Claude (Anthropic key)",
+        AnswerSource.Anthropic => L.T("Claude (Anthropic key)"),
         AnswerSource.OpenAI => "OpenAI",
         AnswerSource.OpenRouter => "OpenRouter",
         AnswerSource.Gemini => "Google Gemini",
         AnswerSource.Groq => "Groq",
         AnswerSource.Mistral => "Mistral",
         AnswerSource.Xai => "xAI (Grok)",
-        AnswerSource.Ollama => "Ollama (on this PC)",
-        AnswerSource.LMStudio => "LM Studio (on this PC)",
-        AnswerSource.CustomOpenAI => "Your OpenAI-compatible server",
-        AnswerSource.ClaudeCodePlan => "Claude Code (your Claude plan)",
-        AnswerSource.CodexPlan => "Codex (your ChatGPT plan)",
-        AnswerSource.OpenClickyAccount => "OpenClicky free credits",
+        AnswerSource.Ollama => L.T("Ollama (on this PC)"),
+        AnswerSource.LMStudio => L.T("LM Studio (on this PC)"),
+        AnswerSource.CustomOpenAI => L.T("Your OpenAI-compatible server"),
+        AnswerSource.ClaudeCodePlan => L.T("Claude Code (your Claude plan)"),
+        AnswerSource.CodexPlan => L.T("Codex (your ChatGPT plan)"),
+        AnswerSource.OpenClickyAccount => L.T("OpenClicky free credits"),
         _ => source.ToString(),
     };
 

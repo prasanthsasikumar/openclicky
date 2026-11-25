@@ -11,6 +11,7 @@
 
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Pointing;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Settings;
 
@@ -115,16 +116,16 @@ public sealed record SettingsTourStep(DictationDestination Destination, string? 
     /// <summary>About a minute in all: what someone needs to find their way, in sidebar order where it can be.</summary>
     public static IReadOnlyList<SettingsTourStep> All { get; } =
     [
-        new(DictationDestination.Of(DictationSettingsPage.Dictation), null, "six pages (esc stops the tour)", "settings-tour-intro"),
-        new(DictationDestination.Of(DictationSettingsPage.Dictation), "keyboard.dictationKey", "the key you hold", "settings-tour-dictation"),
-        new(DictationDestination.Of(DictationSettingsPage.Dictation), "dictation.language", "your language", "settings-tour-language"),
-        new(DictationDestination.Of(DictationSection.Words), null, "everything you said", "settings-tour-words"),
+        new(DictationDestination.Of(DictationSettingsPage.Dictation), null, L.T("six pages (esc stops the tour)"), "settings-tour-intro"),
+        new(DictationDestination.Of(DictationSettingsPage.Dictation), "keyboard.dictationKey", L.T("the key you hold"), "settings-tour-dictation"),
+        new(DictationDestination.Of(DictationSettingsPage.Dictation), "dictation.language", L.T("your language"), "settings-tour-language"),
+        new(DictationDestination.Of(DictationSection.Words), null, L.T("everything you said"), "settings-tour-words"),
         // Clicky's two Talking rows together, then Pointer: one section after the other, not back again.
-        new(SettingsLayout.DestinationOf("clicky.speechVoice"), "clicky.speechVoice", "how i sound", "settings-tour-voice"),
-        new(SettingsLayout.DestinationOf("keyboard.talk"), "keyboard.talk", "every shortcut", "settings-tour-shortcuts"),
-        new(SettingsLayout.DestinationOf("clicky.pointer"), "clicky.pointer", "when i show up", "settings-tour-pointer"),
-        new(DictationDestination.Of(DictationSettingsPage.Account), "account.keys", "your own keys", "settings-tour-keys"),
-        new(DictationDestination.Of(DictationSettingsPage.General), "general.settingsTour", "watch it again here", "settings-tour-done"),
+        new(SettingsLayout.DestinationOf("clicky.speechVoice"), "clicky.speechVoice", L.T("how i sound"), "settings-tour-voice"),
+        new(SettingsLayout.DestinationOf("keyboard.talk"), "keyboard.talk", L.T("every shortcut"), "settings-tour-shortcuts"),
+        new(SettingsLayout.DestinationOf("clicky.pointer"), "clicky.pointer", L.T("when i show up"), "settings-tour-pointer"),
+        new(DictationDestination.Of(DictationSettingsPage.Account), "account.keys", L.T("your own keys"), "settings-tour-keys"),
+        new(DictationDestination.Of(DictationSettingsPage.General), "general.settingsTour", L.T("watch it again here"), "settings-tour-done"),
     ];
 }
 

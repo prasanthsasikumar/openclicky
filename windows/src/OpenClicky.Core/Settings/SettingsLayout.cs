@@ -11,6 +11,8 @@
 // listed; the Windows-only ones (tap to keep listening, the tray icon) sit where their Mac
 // neighbours do.
 
+using OpenClicky.Core.Localization;
+
 namespace OpenClicky.Core.Settings;
 
 public static class SettingsLayout
@@ -34,41 +36,41 @@ public static class SettingsLayout
     private static readonly IReadOnlyList<Group> DictationGroups =
     [
         new(DictationSettingsPage.Dictation, "", ["keyboard.dictationKey", "keyboard.tapKeepsListening", "dictation.engine.*", "dictation.language", "dictation.cleanUp"]),
-        new(DictationSettingsPage.Dictation, "Your writing", ["dictation.openWords", "dictation.openWriting"]),
-        new(DictationSettingsPage.Dictation, "Microphone", ["dictation.input", "dictation.micTest"]),
-        new(DictationSettingsPage.Dictation, "More",
+        new(DictationSettingsPage.Dictation, L.T("Your writing"), ["dictation.openWords", "dictation.openWriting"]),
+        new(DictationSettingsPage.Dictation, L.T("Microphone"), ["dictation.input", "dictation.micTest"]),
+        new(DictationSettingsPage.Dictation, L.T("More"),
             ["dictation.script", "dictation.inactivityTimeout", "keyboard.edit", "keyboard.cancel", "dictation.pasteLast",
              "dictation.sounds", "orb.visible", "dictation.openOrb"]) { IsAdvanced = true },
-        new(DictationSettingsPage.Orb, "Look", ["orb.look", "orb.theme", "orb.size"]),
-        new(DictationSettingsPage.Orb, "When it appears",
+        new(DictationSettingsPage.Orb, L.T("Look"), ["orb.look", "orb.theme", "orb.size"]),
+        new(DictationSettingsPage.Orb, L.T("When it appears"),
             ["orb.hidesWhenIdle", "orb.restsExpanded", "orb.opensBoxWhenPasteUnverified", "orb.isDraggable", "orb.tooltips"]),
     ];
 
     // Clicky's groups are its sections (PagesWithSections): each one shows on its own, under its own title.
     private static readonly IReadOnlyList<Group> ClickyGroups =
     [
-        new(DictationSettingsPage.Clicky, "Talking", ["keyboard.talk", "keyboard.mouseTalk", "clicky.assistantName", "clicky.speechVoice", "clicky.language", "clicky.screenLanguage", "clicky.answerSource"])
-            { Intro = "How you ask, and who answers in which voice." },
-        new(DictationSettingsPage.Clicky, "Hands-free", ["clicky.fastVoice", "clicky.realtimeProvider", "clicky.fastVoiceNeedsKey", "clicky.alwaysListening"])
-            { Intro = "Talking back instantly, and listening without the keys." },
-        new(DictationSettingsPage.Clicky, "Pointer", ["clicky.pointer", "clicky.pointerColor", "clicky.pointerStyle"])
-            { Intro = "The pointer that flies to what Clicky means." },
-        new(DictationSettingsPage.Clicky, "Drawings",
+        new(DictationSettingsPage.Clicky, L.T("Talking"), ["keyboard.talk", "keyboard.mouseTalk", "clicky.assistantName", "clicky.speechVoice", "clicky.language", "clicky.screenLanguage", "clicky.answerSource"])
+            { Intro = L.T("How you ask, and who answers in which voice.") },
+        new(DictationSettingsPage.Clicky, L.T("Hands-free"), ["clicky.fastVoice", "clicky.realtimeProvider", "clicky.fastVoiceNeedsKey", "clicky.alwaysListening"])
+            { Intro = L.T("Talking back instantly, and listening without the keys.") },
+        new(DictationSettingsPage.Clicky, L.T("Pointer"), ["clicky.pointer", "clicky.pointerColor", "clicky.pointerStyle"])
+            { Intro = L.T("The pointer that flies to what Clicky means.") },
+        new(DictationSettingsPage.Clicky, L.T("Drawings"),
             ["plugins.teacher", "clicky.drawingSource", "clicky.drawingDetail", "clicky.pieceMaker", "clicky.drawingInstructions", "clicky.drawingScriptFont", "clicky.markerShortcut"])
-            { Intro = "Answers drawn on your screen while Clicky explains them, in 2D and 3D." },
-        new(DictationSettingsPage.Clicky, "Your models", ["models.ollama", "models.lmStudio", "models.custom"])
-            { Intro = "Models you run yourself, on this PC or another one on your network." },
-        new(DictationSettingsPage.Clicky, "More",
+            { Intro = L.T("Answers drawn on your screen while Clicky explains them, in 2D and 3D.") },
+        new(DictationSettingsPage.Clicky, L.T("Your models"), ["models.ollama", "models.lmStudio", "models.custom"])
+            { Intro = L.T("Models you run yourself, on this PC or another one on your network.") },
+        new(DictationSettingsPage.Clicky, L.T("More"),
             ["keyboard.type", "keyboard.handsFree", "clicky.model", "clicky.emailApp", "clicky.emailNeverSent",
-             "clicky.agentMode", "clicky.workspace"]) { IsAdvanced = true, Intro = "What is rarely changed." },
+             "clicky.agentMode", "clicky.workspace"]) { IsAdvanced = true, Intro = L.T("What is rarely changed.") },
     ];
 
     private static readonly IReadOnlyList<Group> IslandGroups =
     [
         new(DictationSettingsPage.Island, "", ["general.hudPlacement", "appearance.peekDirection", "plugins.islandDefault"]),
-        new(DictationSettingsPage.Island, "Tiles", ["plugins.media", "calendar.enabled", "weather.enabled", "plugins.system"]),
-        new(DictationSettingsPage.Island, "Tools", ["plugins.shelf", "plugins.clipboard", "plugins.notes", "plugins.timer", "plugins.agents"]),
-        new(DictationSettingsPage.Island, "More",
+        new(DictationSettingsPage.Island, L.T("Tiles"), ["plugins.media", "calendar.enabled", "weather.enabled", "plugins.system"]),
+        new(DictationSettingsPage.Island, L.T("Tools"), ["plugins.shelf", "plugins.clipboard", "plugins.notes", "plugins.timer", "plugins.agents"]),
+        new(DictationSettingsPage.Island, L.T("More"),
             ["appearance.style", "plugins.islandOrder", "calendar.quickAdd", "island.openCalendars", "weather.unit", "weather.location",
              "timer.focusMinutes", "timer.breakMinutes", "timer.longBreakMinutes"]) { IsAdvanced = true },
         new(DictationSettingsPage.Calendars, null, ["calendar.calendars", "calendar.calendar.*"]),
@@ -77,30 +79,30 @@ public static class SettingsLayout
     private static readonly IReadOnlyList<Group> AccountGroups =
     [
         new(DictationSettingsPage.Account, "", ["account.profile", "account.plan", "account.usage.backend"]),
-        new(DictationSettingsPage.Account, "Your keys", ["account.keys", "account.keysNote"]),
-        new(DictationSettingsPage.Account, "Plans", ["account.claudeCodePlan", "account.codexPlan", "account.plansNote"]),
-        new(DictationSettingsPage.Account, "Advanced", ["account.usage.sarvam", "account.backendHost", "account.backendToken"]) { IsAdvanced = true },
+        new(DictationSettingsPage.Account, L.T("Your keys"), ["account.keys", "account.keysNote"]),
+        new(DictationSettingsPage.Account, L.T("Plans"), ["account.claudeCodePlan", "account.codexPlan", "account.plansNote"]),
+        new(DictationSettingsPage.Account, L.T("Advanced"), ["account.usage.sarvam", "account.backendHost", "account.backendToken"]) { IsAdvanced = true },
     ];
 
     private static readonly IReadOnlyList<Group> PrivacyGroups =
     [
-        new(DictationSettingsPage.Privacy, "Permissions", ["privacy.microphone", "calendar.access"]),
-        new(DictationSettingsPage.Privacy, "Your screen", ["privacy.readNearbyText", "privacy.pauseBeforeSendingScreen"]),
-        new(DictationSettingsPage.Privacy, "What it keeps",
+        new(DictationSettingsPage.Privacy, L.T("Permissions"), ["privacy.microphone", "calendar.access"]),
+        new(DictationSettingsPage.Privacy, L.T("Your screen"), ["privacy.readNearbyText", "privacy.pauseBeforeSendingScreen"]),
+        new(DictationSettingsPage.Privacy, L.T("What it keeps"),
             ["privacy.memoryOnThisMac", "privacy.clipboardHistory", "privacy.retryFailedTakes", "privacy.deleteTakes", "privacy.summary"]),
         // Incognito's switch is in the sidebar's foot; search still finds it here.
-        new(DictationSettingsPage.Privacy, "Sidebar", ["privacy.incognito"]) { ShowsOnPage = false },
-        new(DictationSettingsPage.Privacy, "Where things live", ["privacy.whereHistory", "privacy.whereSpace", "privacy.whereKeys"]) { IsAdvanced = true },
+        new(DictationSettingsPage.Privacy, L.T("Sidebar"), ["privacy.incognito"]) { ShowsOnPage = false },
+        new(DictationSettingsPage.Privacy, L.T("Where things live"), ["privacy.whereHistory", "privacy.whereSpace", "privacy.whereKeys"]) { IsAdvanced = true },
     ];
 
     private static readonly IReadOnlyList<Group> GeneralGroups =
     [
         new(DictationSettingsPage.General, "", ["general.openAtLogin", "general.trayIcon", "general.reduceMotion", "general.appIcon"]),
         // Appearance is the title bar's button; search still finds it here.
-        new(DictationSettingsPage.General, "Window", ["general.appearance"]) { ShowsOnPage = false },
-        new(DictationSettingsPage.General, "Tours", ["general.walkthrough", "general.settingsTour"]),
-        new(DictationSettingsPage.General, "Updates", ["about.autoUpdate", "about.app"]),
-        new(DictationSettingsPage.General, "Help", ["about.source", "about.reportBug"]),
+        new(DictationSettingsPage.General, L.T("Window"), ["general.appearance"]) { ShowsOnPage = false },
+        new(DictationSettingsPage.General, L.T("Tours"), ["general.walkthrough", "general.settingsTour"]),
+        new(DictationSettingsPage.General, L.T("Updates"), ["about.autoUpdate", "about.app"]),
+        new(DictationSettingsPage.General, L.T("Help"), ["about.source", "about.reportBug"]),
     ];
 
     public static IReadOnlyList<Group> Groups { get; } =

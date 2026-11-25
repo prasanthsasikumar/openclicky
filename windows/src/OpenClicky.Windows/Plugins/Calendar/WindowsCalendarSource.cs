@@ -15,6 +15,7 @@ using System.Diagnostics;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Plugins.Calendar;
 using Windows.ApplicationModel.Appointments;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.Plugins.Calendar;
 
@@ -53,7 +54,7 @@ internal sealed class WindowsCalendarSource : ICalendarSource
             {
                 var colour = CalendarColor.FromBytes(calendar.DisplayColor.R, calendar.DisplayColor.G, calendar.DisplayColor.B);
                 colours[calendar.LocalId] = colour;
-                var source = string.IsNullOrWhiteSpace(calendar.SourceDisplayName) ? "Other" : calendar.SourceDisplayName;
+                var source = string.IsNullOrWhiteSpace(calendar.SourceDisplayName) ? L.T("Other") : calendar.SourceDisplayName;
                 infos.Add(new CalendarInfo(calendar.LocalId, calendar.DisplayName, colour, source, CanAdd(calendar)));
             }
 
@@ -73,7 +74,7 @@ internal sealed class WindowsCalendarSource : ICalendarSource
                 var eventStart = appointment.StartTime;
                 var eventEnd = eventStart + appointment.Duration;
                 var calendarId = appointment.CalendarId ?? "";
-                var title = string.IsNullOrWhiteSpace(appointment.Subject) ? "Untitled" : appointment.Subject;
+                var title = string.IsNullOrWhiteSpace(appointment.Subject) ? L.T("Untitled") : appointment.Subject;
                 var isRecurring = appointment.Recurrence is not null || appointment.OriginalStartTime is not null;
                 events.Add(new CalendarEventItem(
                     $"{appointment.LocalId}@{eventStart.UtcTicks}", appointment.LocalId, title, eventStart, eventEnd,

@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -170,7 +171,7 @@ internal sealed class SettingsFormView : ScrollViewer
         foot.Children.Add(position);
         if (section is { NextTitle: { } nextTitle, OpenNext: { } openNext })
         {
-            var next = Ui.Button($"Next: {nextTitle}", openNext, Wpf.Ui.Controls.ControlAppearance.Secondary, toolTip: $"Go on to {nextTitle}");
+            var next = Ui.Button(L.F("Next: {0}", nextTitle), openNext, Wpf.Ui.Controls.ControlAppearance.Secondary, toolTip: $"Go on to {nextTitle}");
             DockPanel.SetDock(next, Dock.Right);
             foot.Children.Add(next);
         }
@@ -196,7 +197,7 @@ internal sealed class SettingsFormView : ScrollViewer
         chevron.SetResourceReference(TextBlock.ForegroundProperty, SettingsLook.TextSecondary);
         var title = Ui.Text(group.Title, SettingsLook.RowTitleSize, SettingsLook.TextPrimary, wrap: false);
         title.VerticalAlignment = VerticalAlignment.Center;
-        var count = Ui.Text($"{group.Items.Count} settings", SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false);
+        var count = Ui.Text(L.F("{0} settings", group.Items.Count), SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false);
         count.VerticalAlignment = VerticalAlignment.Center;
         var line = new DockPanel();
         DockPanel.SetDock(count, Dock.Right);
@@ -217,7 +218,7 @@ internal sealed class SettingsFormView : ScrollViewer
             rows.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
             ((RotateTransform)chevron.RenderTransform).Angle = isOpen ? 90 : 0;
             count.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-            Ui.AutomationProperties(button, group.Title, isOpen ? "Open" : "Closed");
+            Ui.AutomationProperties(button, group.Title, isOpen ? L.T("Open") : L.T("Closed"));
         }
         Show(false);
         button.Click += (_, _) => Show(rows.Visibility != Visibility.Visible);

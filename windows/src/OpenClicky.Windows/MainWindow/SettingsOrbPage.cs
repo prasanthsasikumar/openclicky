@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -19,16 +20,16 @@ internal sealed partial class SettingsRowFactory
         switch (item.Id)
         {
             case "orb.visible":
-                return LiveSettingsCard(() => Ui.Row(item.Title, $"Off: {Settings.DictationKey.KeycapLabel()} still works everywhere, just without narration.", query,
+                return LiveSettingsCard(() => Ui.Row(item.Title, L.F("Off: {0} still works everywhere, just without narration.", Settings.DictationKey.KeycapLabel()), query,
                     Ui.Toggle(Settings.OrbVisible, isOn => Settings.OrbVisible = isOn)));
             case "orb.look":
                 return LiveSettingsCard(() => OrbDependent(Ui.Row(item.Title, null, query, OrbLookTiles())));
             case "orb.theme":
                 return LiveSettingsCard(() => OrbDependent(Ui.Row(item.Title, null, query,
-                    Ui.Picker(Enum.GetValues<OrbTheme>().Select(theme => (theme, theme.ToString())), Settings.OrbTheme, theme => Settings.OrbTheme = theme, 130))));
+                    Ui.Picker(Enum.GetValues<OrbTheme>().Select(theme => (theme, ThemeName(theme))), Settings.OrbTheme, theme => Settings.OrbTheme = theme, 130))));
             case "orb.size":
                 return LiveSettingsCard(() => OrbDependent(Ui.Row(item.Title, null, query,
-                    Ui.Picker(new[] { (OrbSize.Full, "Full"), (OrbSize.Mini, "Mini") }, Settings.OrbSize, size => Settings.OrbSize = size, 130))));
+                    Ui.Picker(new[] { (OrbSize.Full, L.T("Full")), (OrbSize.Mini, L.T("Mini")) }, Settings.OrbSize, size => Settings.OrbSize = size, 130))));
             case "orb.hidesWhenIdle":
                 return SettingsToggleRow(item.Title, item.Detail, query, () => Settings.OrbHidesWhenIdle, isOn => Settings.OrbHidesWhenIdle = isOn, nameof(DictationSettings.OrbHidesWhenIdle));
             case "orb.restsExpanded":
@@ -39,9 +40,9 @@ internal sealed partial class SettingsRowFactory
             case "orb.isDraggable":
                 // Free to drag, and the way back to the bottom once it was dragged somewhere.
                 return LiveSettingsCard(() => Ui.Row(item.Title,
-                    Settings.OrbPosition is null ? item.Detail : "Off pins the orb at the bottom centre. It rests where you dragged it.", query,
+                    Settings.OrbPosition is null ? item.Detail : L.T("Off pins the orb at the bottom centre. It rests where you dragged it."), query,
                     Ui.HStack(10,
-                        Settings.OrbPosition is null ? null : Ui.Button("Move to Bottom", () => Settings.OrbPosition = null),
+                        Settings.OrbPosition is null ? null : Ui.Button(L.T("Move to Bottom"), () => Settings.OrbPosition = null),
                         Ui.Toggle(Settings.OrbIsDraggable, isOn => Settings.OrbIsDraggable = isOn))));
             case "orb.tooltips":
                 return SettingsToggleRow(item.Title, item.Detail, query, () => Settings.Tooltips, isOn => Settings.Tooltips = isOn, nameof(DictationSettings.Tooltips));
@@ -72,7 +73,7 @@ internal sealed partial class SettingsRowFactory
             var ring = new Border { CornerRadius = new CornerRadius(7), BorderThickness = new Thickness(isSelected ? 2 : 1) };
             ring.SetResourceReference(Border.BorderBrushProperty, isSelected ? SettingsLook.Accent : SettingsLook.ControlStroke);
             picture.Children.Add(ring);
-            var name = look.ToString();
+            var name = LookName(look);
             var caption = Ui.Text(name, SettingsLook.CaptionSize, isSelected ? SettingsLook.TextPrimary : SettingsLook.TextSecondary,
                 isSelected ? FontWeights.SemiBold : FontWeights.Normal, wrap: false);
             caption.HorizontalAlignment = HorizontalAlignment.Center;
@@ -100,4 +101,18 @@ internal sealed partial class SettingsRowFactory
             return Ui.Row(item.Title, item.Detail, query, Ui.Keys(keys.Keys, keys.Gesture));
         });
     }
+
+    private static string LookName(OrbLook look) => look switch
+    {
+        OrbLook.Pill => L.T("Pill"),
+        OrbLook.Classic => L.T("Classic"),
+        _ => L.T("Pixel"),
+    };
+
+    private static string ThemeName(OrbTheme theme) => theme switch
+    {
+        OrbTheme.Black => L.T("Black"),
+        OrbTheme.Coral => L.T("Coral"),
+        _ => L.T("Mist"),
+    };
 }

@@ -19,6 +19,7 @@ using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Settings;
 using WpfUi = Wpf.Ui.Controls;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -93,13 +94,13 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         };
         searchBox = new WpfUi.TextBox
         {
-            PlaceholderText = "Search settings",
+            PlaceholderText = L.T("Search settings"),
             Icon = new WpfUi.SymbolIcon { Symbol = WpfUi.SymbolRegular.Search24 },
             IconPlacement = WpfUi.ElementPlacement.Left,
             ClearButtonEnabled = true,
             Margin = new Thickness(8, 4, 8, 8),
         };
-        Ui.AutomationProperties(searchBox, "Search settings");
+        Ui.AutomationProperties(searchBox, L.T("Search settings"));
         searchBox.TextChanged += (_, _) => Model.SearchText = searchBox.Text;
 
         navigation = new WpfUi.NavigationView
@@ -127,9 +128,9 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
             }
         }
 
-        backButton = ToolbarButton("", "Back", () => Model.GoBack());
+        backButton = ToolbarButton("", L.T("Back"), () => Model.GoBack());
         backButton.HorizontalAlignment = HorizontalAlignment.Left;
-        appearanceButton = ToolbarButton(AppearanceGlyph(services.Settings.Appearance), "Appearance", ShowAppearanceMenu);
+        appearanceButton = ToolbarButton(AppearanceGlyph(services.Settings.Appearance), L.T("Appearance"), ShowAppearanceMenu);
         appearanceButton.HorizontalAlignment = HorizontalAlignment.Right;
         var toolbar = new Grid { Margin = new Thickness(28, 2, 28, 0) };
         toolbar.Children.Add(backButton);
@@ -158,6 +159,12 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         Grid.SetRow(navigation, 1);
         root.Children.Add(navigation);
         Content = root;
+        // In Urdu the window reads from the right, in the Urdu font (Noto Nastaliq for Urdu letters, Segoe for the rest).
+        if (L.IsRightToLeft)
+        {
+            FlowDirection = FlowDirection.RightToLeft;
+            FontFamily = Theme.DS.Fonts.Ui;
+        }
 
         Model.PropertyChanged += OnModelChanged;
         services.Settings.PropertyChanged += (_, _) => Dispatcher.BeginInvoke(RefreshIfRowsChanged);
@@ -253,14 +260,14 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         var canGoBack = Model.CanGoBack && !Model.IsSearching;
         backButton.Visibility = canGoBack ? Visibility.Visible : Visibility.Hidden;
         ((TextBlock)appearanceButton.Content).Text = AppearanceGlyph(services.Settings.Appearance);
-        appearanceButton.ToolTip = $"Appearance: {AppearanceTitle(services.Settings.Appearance)}";
+        appearanceButton.ToolTip = L.F("Appearance: {0}", AppearanceTitle(services.Settings.Appearance));
     }
 
     private static string AppearanceTitle(DictationAppearance appearance) => appearance switch
     {
-        DictationAppearance.Light => "Light",
-        DictationAppearance.Dark => "Dark",
-        _ => "Auto",
+        DictationAppearance.Light => L.T("Light"),
+        DictationAppearance.Dark => L.T("Dark"),
+        _ => L.T("Auto"),
     };
 
     /// <summary>Light, dark or auto (the Mac's AppearanceToolbarMenu): this window, the orb and its transcript box follow it; the island stays black.</summary>
@@ -326,8 +333,8 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
         {
             var query = Model.TrimmedSearchText;
             var matches = catalog.SearchMatches(query);
-            contentHost.Content = new SettingsFormView("Search Results", SettingsSectionGroup.SearchResultGroups(matches, query),
-                item => rowFactory.Build(item, query), $"No settings match “{query}”.");
+            contentHost.Content = new SettingsFormView(L.T("Search Results"), SettingsSectionGroup.SearchResultGroups(matches, query),
+                item => rowFactory.Build(item, query), L.F("No settings match “{0}”.", query));
         }
         else if (Model.Destination.Page is { } sectionedPage && Model.Destination.PageSection is { } pageSection)
         {
@@ -338,7 +345,7 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
             contentHost.Content = new SettingsFormView(pageSection, SettingsSectionGroup.Groups(ShownItems(sectionedPage, pageSection), _ => ""),
                 item => rowFactory.Build(item, ""), page: sectionedPage,
                 section: new SettingsFormView.SectionLook(pageSection, section.Intro ?? "",
-                    $"Section {sections.ToList().FindIndex(each => each.Title == pageSection) + 1} of {sections.Count}",
+                    L.F("Section {0} of {1}", sections.ToList().FindIndex(each => each.Title == pageSection) + 1, sections.Count),
                     next?.PageSection, next is null ? null : () => Model.Select(next)));
         }
         else if (Model.Destination.Page is { } page)
@@ -472,10 +479,10 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
             var toggle = Ui.Toggle(services.Settings.Incognito, isOn => services.Settings.Incognito = isOn);
             DockPanel.SetDock(toggle, Dock.Right);
             row.Children.Add(toggle);
-            var label = Ui.Text("Incognito", 14, SettingsLook.TextPrimary, wrap: false);
+            var label = Ui.Text(L.T("Incognito"), 14, SettingsLook.TextPrimary, wrap: false);
             label.VerticalAlignment = VerticalAlignment.Center;
             row.Children.Add(label);
-            row.ToolTip = services.Settings.Incognito ? "Incognito is on: takes paste but are not saved." : "Incognito is off: takes are saved to history on this PC.";
+            row.ToolTip = services.Settings.Incognito ? L.T("Incognito is on: takes paste but are not saved.") : L.T("Incognito is off: takes are saved to history on this PC.");
             return row;
         }, Changes.Of(services.Settings, nameof(DictationSettings.Incognito)));
         footer.Children.Add(incognitoRow);
@@ -505,7 +512,7 @@ public sealed class DictationWindow : WpfUi.FluentWindow, IMainWindowActions
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0),
             Cursor = Cursors.Hand,
-            ToolTip = "Account",
+            ToolTip = L.T("Account"),
         };
         button.Click += (_, _) => Model.Select(DictationSettingsPage.Account);
         footerAccount.Content = button;

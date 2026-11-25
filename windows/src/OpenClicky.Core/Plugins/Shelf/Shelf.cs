@@ -15,6 +15,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.Shelf;
 
@@ -22,8 +23,8 @@ namespace OpenClicky.Core.Plugins.Shelf;
 public static class ShelfPlugin
 {
     public static IslandComponent Component { get; } = new(
-        IslandPluginRegistry.ShelfId, "Shelf", "", 84, IsPlugin: true,
-        SettingsDetail: "Drop files, text or links on the island to keep them handy. Drag a tile out, or click it to copy.");
+        IslandPluginRegistry.ShelfId, L.T("Shelf"), "", 84, IsPlugin: true,
+        SettingsDetail: L.T("Drop files, text or links on the island to keep them handy. Drag a tile out, or click it to copy."));
 }
 
 /// <summary>What a drop on the island turned out to be.</summary>

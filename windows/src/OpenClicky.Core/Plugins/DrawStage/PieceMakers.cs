@@ -27,6 +27,7 @@ using System.Text.RegularExpressions;
 using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Providers;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.DrawStage;
 
@@ -80,15 +81,15 @@ public static partial class PieceMakers
     /// <summary>Every maker, from the one that needs least to the one that needs most.</summary>
     public static readonly IReadOnlyList<PieceMakerChoice> Choices =
     [
-        new(PieceMakerKind.DrawingModel, "Your drawing model",
-            "Builds each piece from the figure's own parts. Works on any PC; best with a strong model (Claude, GPT, a 30B+ local one).", GraphicsGrade.Low),
-        new(PieceMakerKind.LlamaMeshOllama, "LLaMA-Mesh in Ollama",
-            "Writes each piece as a mesh. About 5 GB (Q4) to 9 GB (Q8): ollama pull hf.co/bartowski/LLaMA-Mesh-GGUF:Q8_0", GraphicsGrade.Medium),
-        new(PieceMakerKind.LlamaMeshLMStudio, "LLaMA-Mesh in LM Studio",
-            "The same model in LM Studio: search for LLaMA-Mesh and load it.", GraphicsGrade.Medium),
-        new(PieceMakerKind.Hunyuan3D, "Hunyuan3D-2 server",
-            "Realistic textured pieces from Tencent's Hunyuan3D-2 (python api_server.py). Shape alone about 6 GB, with textures about 16-24 GB. "
-            + "With an OpenAI key, a picture of each piece is made first with OpenAI's image model, charged to that key.", GraphicsGrade.High),
+        new(PieceMakerKind.DrawingModel, L.T("Your drawing model"),
+            L.T("Builds each piece from the figure's own parts. Works on any PC; best with a strong model (Claude, GPT, a 30B+ local one)."), GraphicsGrade.Low),
+        new(PieceMakerKind.LlamaMeshOllama, L.T("LLaMA-Mesh in Ollama"),
+            L.T("Writes each piece as a mesh. About 5 GB (Q4) to 9 GB (Q8): ollama pull hf.co/bartowski/LLaMA-Mesh-GGUF:Q8_0"), GraphicsGrade.Medium),
+        new(PieceMakerKind.LlamaMeshLMStudio, L.T("LLaMA-Mesh in LM Studio"),
+            L.T("The same model in LM Studio: search for LLaMA-Mesh and load it."), GraphicsGrade.Medium),
+        new(PieceMakerKind.Hunyuan3D, L.T("Hunyuan3D-2 server"),
+            L.T("Realistic textured pieces from Tencent's Hunyuan3D-2 (python api_server.py). Shape alone about 6 GB, with textures about 16-24 GB. "
+            + "With an OpenAI key, a picture of each piece is made first with OpenAI's image model, charged to that key."), GraphicsGrade.High),
     ];
 
     /// <summary>The grade of a graphics card with <paramref name="videoMemoryGB"/> of its own memory (null: none found).</summary>
@@ -102,9 +103,9 @@ public static partial class PieceMakers
     /// <summary>The maker to suggest for a grade, and a sentence saying why.</summary>
     public static (PieceMakerKind Kind, string Why) Recommend(GraphicsGrade grade) => grade switch
     {
-        GraphicsGrade.High => (PieceMakerKind.Hunyuan3D, "This card can make realistic textured pieces with Hunyuan3D-2; LLaMA-Mesh in Ollama is the quick option."),
-        GraphicsGrade.Medium => (PieceMakerKind.LlamaMeshOllama, "This card runs LLaMA-Mesh well (Q4 or Q8 in Ollama); Hunyuan3D-2 fits for shapes without textures."),
-        _ => (PieceMakerKind.DrawingModel, "Without a big graphics card, your drawing model builds the pieces from parts; LLaMA-Mesh also runs on the processor, slowly."),
+        GraphicsGrade.High => (PieceMakerKind.Hunyuan3D, L.T("This card can make realistic textured pieces with Hunyuan3D-2; LLaMA-Mesh in Ollama is the quick option.")),
+        GraphicsGrade.Medium => (PieceMakerKind.LlamaMeshOllama, L.T("This card runs LLaMA-Mesh well (Q4 or Q8 in Ollama); Hunyuan3D-2 fits for shapes without textures.")),
+        _ => (PieceMakerKind.DrawingModel, L.T("Without a big graphics card, your drawing model builds the pieces from parts; LLaMA-Mesh also runs on the processor, slowly.")),
     };
 
     public static PieceMakerKind KindFrom(string? raw) => raw switch

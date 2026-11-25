@@ -1,6 +1,8 @@
 // How the pointer looks (2026-11-01): its colour and its shape, chosen in Settings → Clicky → Pointer. The pointer
 // keeps its glow and its flights whatever it looks like; only the drawing of the mark changes.
 
+using OpenClicky.Core.Localization;
+
 namespace OpenClicky.Core.Pointing;
 
 public enum PointerStyle
@@ -24,9 +26,9 @@ public static class PointerLook
     /// <summary>The colours on offer, by name, with the red OpenClicky has always used first.</summary>
     public static IReadOnlyList<(string Name, string Hex, string Title)> Colors { get; } =
     [
-        ("red", "#F0452B", "Red"), ("blue", "#2F6BFF", "Blue"), ("green", "#25A55F", "Green"), ("purple", "#7C5CD6", "Purple"),
-        ("orange", "#F28C28", "Orange"), ("pink", "#E85D9C", "Pink"), ("teal", "#14A3A3", "Teal"), ("yellow", "#E8B400", "Yellow"),
-        ("black", "#1E2230", "Black"), ("white", "#F4F5F7", "White"),
+        ("red", "#F0452B", L.T("Red")), ("blue", "#2F6BFF", L.T("Blue")), ("green", "#25A55F", L.T("Green")), ("purple", "#7C5CD6", L.T("Purple")),
+        ("orange", "#F28C28", L.T("Orange")), ("pink", "#E85D9C", L.T("Pink")), ("teal", "#14A3A3", L.T("Teal")), ("yellow", "#E8B400", L.T("Yellow")),
+        ("black", "#1E2230", L.T("Black")), ("white", "#F4F5F7", L.T("White")),
     ];
 
     public static IReadOnlyList<PointerStyle> Styles { get; } = Enum.GetValues<PointerStyle>();
@@ -45,9 +47,9 @@ public static class PointerLook
 
     public static string Title(this PointerStyle style) => style switch
     {
-        PointerStyle.Arrow => "Arrow",
-        PointerStyle.Dot => "Dot",
-        PointerStyle.Ring => "Ring",
-        _ => "Triangle",
+        PointerStyle.Arrow => L.T("Arrow"),
+        PointerStyle.Dot => L.T("Dot"),
+        PointerStyle.Ring => L.T("Ring"),
+        _ => L.T("Triangle"),
     };
 }

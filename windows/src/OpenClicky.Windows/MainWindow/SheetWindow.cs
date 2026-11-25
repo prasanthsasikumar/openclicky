@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using OpenClicky.Core.Dictation;
 using WpfUi = Wpf.Ui.Controls;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -99,7 +100,7 @@ internal class SheetWindow : WpfUi.FluentWindow
             Ui.Text(title, 16, SettingsLook.TextPrimary, FontWeights.SemiBold),
             Ui.Text(message, 13, SettingsLook.TextSecondary));
         sheet.SetBody(body, new Thickness(24, 4, 24, 18));
-        sheet.AddFooterButton("Cancel", sheet.Close, isCancel: true);
+        sheet.AddFooterButton(L.T("Cancel"), sheet.Close, isCancel: true);
         sheet.AddFooterButton(actionTitle, () => { confirmed = true; sheet.Close(); }, isDefault: true, appearance: WpfUi.ControlAppearance.Danger);
         sheet.ShowDialog();
         return confirmed;

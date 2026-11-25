@@ -76,9 +76,9 @@ public static class AppLanguage
     public const string PreferenceKey = "app.language";
     public const string SameAsSpoken = "same";
 
-    /// <summary>The choices with their names, each written in its own language.</summary>
-    public static IReadOnlyList<(string Value, string Title)> Choices { get; } =
-        [(SameAsSpoken, "Same as Clicky's language"), ("en", "English"), ("ur", "اردو")];
+    /// <summary>The choices with their names: each language in its own words, the first in the screen language.</summary>
+    public static IReadOnlyList<(string Value, string Title)> Choices =>
+        [(SameAsSpoken, L.T("Same as Clicky's language")), ("en", "English"), ("ur", "اردو")];
 
     /// <summary>The screen language for a stored choice and Clicky's spoken language (ReplyLanguage's code).</summary>
     public static string Resolve(string? stored, string spokenCode)

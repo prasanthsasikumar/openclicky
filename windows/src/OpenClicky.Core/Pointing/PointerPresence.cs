@@ -7,6 +7,8 @@
 //  or stay out of sight until the mouse is shaken, the way macOS finds a lost cursor.
 //
 
+using OpenClicky.Core.Localization;
+
 namespace OpenClicky.Core.Pointing;
 
 public enum PointerPresence
@@ -37,8 +39,8 @@ public static class PointerPresenceExtensions
     public static string Label(this PointerPresence presence) => presence switch
     {
         PointerPresence.Always => "always",
-        PointerPresence.WhileMoving => "while the mouse moves",
-        _ => "after a shake",
+        PointerPresence.WhileMoving => L.T("while the mouse moves"),
+        _ => L.T("after a shake"),
     };
 }
 

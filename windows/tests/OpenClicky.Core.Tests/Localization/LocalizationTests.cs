@@ -11,12 +11,13 @@ namespace OpenClicky.Core.Tests.Localization;
 
 public partial class LocalizationTests
 {
-    /// <summary>Strings translated where they are shown rather than written through L.T: captions (L.Sentence) and the
-    /// tray's status words.</summary>
+    /// <summary>Strings translated where they are shown rather than written through L.T: captions (L.Sentence), the
+    /// tray's status words, and the units Settings counts in (WordsPageSentences.Plural).</summary>
     private static readonly string[] TranslatedWhereShown =
     [
         "stopped", "listening…", "transcribing…", "Marked. Now ask about it: hold the talk key, or type your question.",
         "There's no finished drawing to save.", "Listening", "Thinking", "Speaking", "Agent working", "Ready",
+        "take", "word", "model", "term", "snippet",
     ];
 
     private static string SourceRoot()

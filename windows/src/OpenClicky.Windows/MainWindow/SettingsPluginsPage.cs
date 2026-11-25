@@ -9,6 +9,7 @@ using OpenClicky.Core.Companion;
 using OpenClicky.Core.Plugins;
 using OpenClicky.Core.Plugins.Teacher;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -58,8 +59,8 @@ internal sealed partial class SettingsRowFactory
             name.VerticalAlignment = VerticalAlignment.Center;
             name.Opacity = settings.IsEnabled(id, registry) ? 1 : 0.5;
             var position = index;
-            var up = OrderButton("", $"Move {component.Title} up", position > 0, () => Move(order, position, -1));
-            var down = OrderButton("", $"Move {component.Title} down", position < order.Count - 1, () => Move(order, position, 1));
+            var up = OrderButton("", L.F("Move {0} up", component.Title), position > 0, () => Move(order, position, -1));
+            var down = OrderButton("", L.F("Move {0} down", component.Title), position < order.Count - 1, () => Move(order, position, 1));
             var line = Ui.HStack(6, name, up, down);
             line.HorizontalAlignment = HorizontalAlignment.Right;
             if (index > 0) line.Margin = new Thickness(0, 4, 0, 0);

@@ -12,6 +12,7 @@ using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -19,18 +20,18 @@ internal sealed partial class SettingsRowFactory
 {
     public static string HudPlacementTitle(HUDPlacement placement) => placement switch
     {
-        HUDPlacement.Notch => "Top of the screen",
-        HUDPlacement.Left => "Left edge",
-        HUDPlacement.Right => "Right edge",
-        _ => "Hidden",
+        HUDPlacement.Notch => L.T("Top of the screen"),
+        HUDPlacement.Left => L.T("Left edge"),
+        HUDPlacement.Right => L.T("Right edge"),
+        _ => L.T("Hidden"),
     };
 
     public static string HudPlacementDetail(HUDPlacement placement) => placement switch
     {
-        HUDPlacement.Notch => "Hangs from the top of the screen. Hover it to open.",
-        HUDPlacement.Left => "A drawer on the left edge of every screen. Hover the handle to open.",
-        HUDPlacement.Right => "A drawer on the right edge of every screen. Hover the handle to open.",
-        _ => "Nothing on screen until you use a shortcut. The tray icon opens the panel.",
+        HUDPlacement.Notch => L.T("Hangs from the top of the screen. Hover it to open."),
+        HUDPlacement.Left => L.T("A drawer on the left edge of every screen. Hover the handle to open."),
+        HUDPlacement.Right => L.T("A drawer on the right edge of every screen. Hover the handle to open."),
+        _ => L.T("Nothing on screen until you use a shortcut. The tray icon opens the panel."),
     };
 
     private UIElement? GeneralRow(SettingsItem item, string query)
@@ -52,16 +53,16 @@ internal sealed partial class SettingsRowFactory
                 {
                     // Forced on while the island is hidden: the tray icon is then the only way into the panel.
                     var isForcedOn = companion.HudPlacement == HUDPlacement.Hidden;
-                    var detail = isForcedOn ? "Always on while OpenClicky is hidden, so you can still reach it." : item.Detail;
+                    var detail = isForcedOn ? L.T("Always on while OpenClicky is hidden, so you can still reach it.") : item.Detail;
                     return Ui.Card(Ui.Row(item.Title, detail, query,
                         Ui.Toggle(companion.IsTrayIconVisible || isForcedOn, companion.SetTrayIconVisible, isEnabled: !isForcedOn)));
                 }, Changes.Of(companion, nameof(ICompanionSettings.IsTrayIconVisible), nameof(ICompanionSettings.HudPlacement)));
             case "general.openAtLogin":
                 return LoginItemRow(item, query);
             case "general.walkthrough":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Replay…", companion.ReplayWelcomeTour)));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button(L.T("Replay…"), companion.ReplayWelcomeTour)));
             case "general.settingsTour":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Play", actions.StartSettingsTour)));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button(L.T("Play"), actions.StartSettingsTour)));
             case "general.reduceMotion":
                 return SettingsToggleRow(item.Title, item.Detail, query, () => Settings.ReduceAnimation, isOn => Settings.ReduceAnimation = isOn, nameof(DictationSettings.ReduceAnimation));
             case "about.autoUpdate":
@@ -71,7 +72,7 @@ internal sealed partial class SettingsRowFactory
                     var description = updater.LastCheckDescription;
                     var detail = updater.IsConfigured
                         ? (description.Length > 0 ? char.ToUpper(description[0]) + description[1..] + "." : item.Detail)
-                        : "This build has no update feed (a development build).";
+                        : L.T("This build has no update feed (a development build).");
                     return Ui.Card(Ui.Row(item.Title, detail, query,
                         Ui.Toggle(updater.AutomaticallyChecks, isOn => updater.AutomaticallyChecks = isOn, isEnabled: updater.IsConfigured)));
                 }, Changes.Of(services.Updater));
@@ -112,7 +113,7 @@ internal sealed partial class SettingsRowFactory
             stack.Children.Add(picture);
             stack.Children.Add(caption);
             var button = new Button { Content = stack, Template = Ui.TransparentButtonTemplate(), Cursor = Cursors.Hand, Margin = new Thickness(4, 0, 4, 0) };
-            Ui.AutomationProperties(button, isSelected ? $"{color.Title()}, selected" : color.Title());
+            Ui.AutomationProperties(button, isSelected ? L.F("{0}, selected", color.Title()) : color.Title());
             var picked = color;
             button.Click += (_, _) => Settings.AppIconColor = picked;
             tiles.Children.Add(button);
@@ -133,7 +134,7 @@ internal sealed partial class SettingsRowFactory
 
     private static Button AppearanceTile(DictationAppearance appearance, bool isSelected, Action choose)
     {
-        var label = appearance switch { DictationAppearance.Light => "Light", DictationAppearance.Dark => "Dark", _ => "Auto" };
+        var label = appearance switch { DictationAppearance.Light => L.T("Light"), DictationAppearance.Dark => L.T("Dark"), _ => L.T("Auto") };
         var light = new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF2));
         var dark = new SolidColorBrush(Color.FromRgb(0x2B, 0x2B, 0x2B));
         var picture = new Grid { Width = 68, Height = 46, ClipToBounds = true };
@@ -162,7 +163,7 @@ internal sealed partial class SettingsRowFactory
         stack.Children.Add(picture);
         stack.Children.Add(caption);
         var button = new Button { Content = stack, Template = Ui.TransparentButtonTemplate(), Cursor = Cursors.Hand, Margin = new Thickness(6, 0, 6, 0) };
-        Ui.AutomationProperties(button, isSelected ? $"{label}, selected" : label);
+        Ui.AutomationProperties(button, isSelected ? L.F("{0}, selected", label) : label);
         button.Click += (_, _) => choose();
         return button;
     }

@@ -11,6 +11,7 @@
 
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.FocusTimer;
 
@@ -18,8 +19,8 @@ namespace OpenClicky.Core.Plugins.FocusTimer;
 public static class TimerPlugin
 {
     public static IslandComponent Component { get; } = new(
-        IslandPluginRegistry.TimerId, "Timer", "", 110, IsPlugin: true,
-        SettingsDetail: "Focus in rounds with short breaks and a long one every fourth round, or run a stopwatch. A soft chime marks each change, even with the island closed.");
+        IslandPluginRegistry.TimerId, L.T("Timer"), "", 110, IsPlugin: true,
+        SettingsDetail: L.T("Focus in rounds with short breaks and a long one every fourth round, or run a stopwatch. A soft chime marks each change, even with the island closed."));
 }
 
 /// <summary>A run that can be paused and resumed: the time banked by earlier runs plus the current run. Keeping the start
@@ -72,9 +73,9 @@ public static class FocusPhases
 {
     public static string Title(this FocusPhase phase) => phase switch
     {
-        FocusPhase.ShortBreak => "Break",
-        FocusPhase.LongBreak => "Long break",
-        _ => "Focus",
+        FocusPhase.ShortBreak => L.T("Break"),
+        FocusPhase.LongBreak => L.T("Long break"),
+        _ => L.T("Focus"),
     };
 }
 
@@ -177,7 +178,7 @@ public enum TimerMode
 
 public static class TimerModes
 {
-    public static string Title(this TimerMode mode) => mode == TimerMode.Stopwatch ? "Stopwatch" : "Focus";
+    public static string Title(this TimerMode mode) => mode == TimerMode.Stopwatch ? L.T("Stopwatch") : L.T("Focus");
 }
 
 /// <summary>How long each phase lasts, in minutes, in the Mac's keys (Settings → Island › Tools › Timer).</summary>

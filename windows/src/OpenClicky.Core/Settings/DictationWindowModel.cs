@@ -9,6 +9,7 @@
 // on its first section, and a destination can name the section (Clicky › Drawings).
 
 using CommunityToolkit.Mvvm.ComponentModel;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Settings;
 
@@ -34,8 +35,8 @@ public static class DictationSections
 
     public static string SidebarTitle(this DictationSection section) => section switch
     {
-        DictationSection.Words => "Your words",
-        _ => "How it writes",
+        DictationSection.Words => L.T("Your words"),
+        _ => L.T("How it writes"),
     };
 }
 
@@ -94,14 +95,14 @@ public static class DictationSettingsPages
 
     public static string Title(this DictationSettingsPage page) => page switch
     {
-        DictationSettingsPage.Dictation => "Dictation",
-        DictationSettingsPage.Clicky => "Clicky",
-        DictationSettingsPage.Island => "Island",
-        DictationSettingsPage.Account => "Keys & Account",
-        DictationSettingsPage.Privacy => "Privacy",
-        DictationSettingsPage.General => "General",
-        DictationSettingsPage.Orb => "The orb",
-        _ => "Calendars",
+        DictationSettingsPage.Dictation => L.T("Dictation"),
+        DictationSettingsPage.Clicky => L.T("Clicky"),
+        DictationSettingsPage.Island => L.T("Island"),
+        DictationSettingsPage.Account => L.T("Keys & Account"),
+        DictationSettingsPage.Privacy => L.T("Privacy"),
+        DictationSettingsPage.General => L.T("General"),
+        DictationSettingsPage.Orb => L.T("The orb"),
+        _ => L.T("Calendars"),
     };
 
     /// <summary>The heading search results are listed under: "Dictation › The orb" for a page opened from a row.</summary>
@@ -111,14 +112,14 @@ public static class DictationSettingsPages
     /// <summary>The page's header card: one line on what lives here.</summary>
     public static string Subtitle(this DictationSettingsPage page) => page switch
     {
-        DictationSettingsPage.Dictation => "Hold your dictation key, speak, and the words land at your cursor.",
-        DictationSettingsPage.Clicky => "Hold Ctrl and Win and ask about what’s on screen.",
-        DictationSettingsPage.Island => "What lives at the top of your screen.",
-        DictationSettingsPage.Account => "Your own keys come first. An account is optional.",
-        DictationSettingsPage.Privacy => "What OpenClicky can see, and what it keeps.",
-        DictationSettingsPage.General => "Startup, the tray and updates.",
-        DictationSettingsPage.Orb => "The small narrator that shows while you dictate.",
-        _ => "Which calendars the island shows.",
+        DictationSettingsPage.Dictation => L.T("Hold your dictation key, speak, and the words land at your cursor."),
+        DictationSettingsPage.Clicky => L.T("Hold Ctrl and Win and ask about what’s on screen."),
+        DictationSettingsPage.Island => L.T("What lives at the top of your screen."),
+        DictationSettingsPage.Account => L.T("Your own keys come first. An account is optional."),
+        DictationSettingsPage.Privacy => L.T("What OpenClicky can see, and what it keeps."),
+        DictationSettingsPage.General => L.T("Startup, the tray and updates."),
+        DictationSettingsPage.Orb => L.T("The small narrator that shows while you dictate."),
+        _ => L.T("Which calendars the island shows."),
     };
 
     /// <summary>The sidebar icon: a Segoe Fluent Icons glyph (empty: the window draws the orb's capsule), white on <see cref="TintHex"/>.</summary>

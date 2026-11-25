@@ -21,6 +21,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Dictation;
 
@@ -59,7 +60,7 @@ public static class DictationEngineChoices
     public static string DisplayName(this DictationEngineChoice choice) => choice switch
     {
         DictationEngineChoice.Moonshine => "Moonshine",
-        DictationEngineChoice.Offline => "Windows speech",
+        DictationEngineChoice.Offline => L.T("Windows speech"),
         DictationEngineChoice.Parakeet => "Parakeet",
         DictationEngineChoice.Sarvam => "Sarvam",
         DictationEngineChoice.OpenClicky => "OpenClicky",
@@ -97,64 +98,64 @@ public static class DictationEngineChoices
     /// <summary>The engine's name in Settings → Dictation's "Who hears you".</summary>
     public static string SettingsTitle(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Moonshine => "Moonshine, built in",
-        DictationEngineChoice.Offline => "Windows speech recognition",
-        DictationEngineChoice.Parakeet => "Parakeet, on this PC",
+        DictationEngineChoice.Moonshine => L.T("Moonshine, built in"),
+        DictationEngineChoice.Offline => L.T("Windows speech recognition"),
+        DictationEngineChoice.Parakeet => L.T("Parakeet, on this PC"),
         DictationEngineChoice.Sarvam => "Sarvam",
-        DictationEngineChoice.OpenClicky => "OpenAI, via OpenClicky",
-        _ => "AssemblyAI, via OpenClicky",
+        DictationEngineChoice.OpenClicky => L.T("OpenAI, via OpenClicky"),
+        _ => L.T("AssemblyAI, via OpenClicky"),
     };
 
     /// <summary>The title of the "how to dictate" row on the Your words page.</summary>
     public static string HowToDictateTitle(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline => "Windows speech recognition",
-        DictationEngineChoice.Sarvam => "Sarvam hears you",
+        DictationEngineChoice.Offline => L.T("Windows speech recognition"),
+        DictationEngineChoice.Sarvam => L.T("Sarvam hears you"),
         _ => choice.SettingsTitle(),
     };
 
     /// <summary>The tag beside the engine's name in Settings: where the audio goes.</summary>
     public static string AudioDestinationTag(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline => "May use Microsoft online",
-        DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => "Private · offline",
-        DictationEngineChoice.Sarvam => "Audio goes to Sarvam",
-        DictationEngineChoice.OpenClicky => "Audio goes to OpenAI",
-        _ => "Audio goes to AssemblyAI",
+        DictationEngineChoice.Offline => L.T("May use Microsoft online"),
+        DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => L.T("Private · offline"),
+        DictationEngineChoice.Sarvam => L.T("Audio goes to Sarvam"),
+        DictationEngineChoice.OpenClicky => L.T("Audio goes to OpenAI"),
+        _ => L.T("Audio goes to AssemblyAI"),
     };
 
     /// <summary>Where a take's audio goes, as one sentence for the Your words page.</summary>
     public static string AudioDestinationSentence(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Offline => "Windows speech recognition hears you. With Windows’ online speech recognition on, it may use Microsoft’s online speech service.",
-        DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => "Your voice stays on this PC.",
-        DictationEngineChoice.Sarvam => "Audio goes to Sarvam with your key.",
-        DictationEngineChoice.OpenClicky => "Audio goes to OpenAI through the OpenClicky backend.",
-        _ => "Audio goes to AssemblyAI through the OpenClicky backend.",
+        DictationEngineChoice.Offline => L.T("Windows speech recognition hears you. With Windows’ online speech recognition on, it may use Microsoft’s online speech service."),
+        DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => L.T("Your voice stays on this PC."),
+        DictationEngineChoice.Sarvam => L.T("Audio goes to Sarvam with your key."),
+        DictationEngineChoice.OpenClicky => L.T("Audio goes to OpenAI through the OpenClicky backend."),
+        _ => L.T("Audio goes to AssemblyAI through the OpenClicky backend."),
     };
 
     /// <summary>What the engine does and what it needs, under its name in Settings.</summary>
     public static string SettingsDetail(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Moonshine => "A small model that comes with OpenClicky. Works the moment it’s installed, and nothing leaves this PC. English only.",
-        DictationEngineChoice.Offline => "Windows’ own recogniser. No key, no account. When online speech recognition is on in Windows settings (privacy & security, speech), it may use Microsoft’s online speech service.",
+        DictationEngineChoice.Moonshine => L.T("A small model that comes with OpenClicky. Works the moment it’s installed, and nothing leaves this PC. English only."),
+        DictationEngineChoice.Offline => L.T("Windows’ own recogniser. No key, no account. When online speech recognition is on in Windows settings (privacy & security, speech), it may use Microsoft’s online speech service."),
         DictationEngineChoice.Parakeet => ParakeetFacts.IsRecommendedForThisPC
-            ? $"Far more accurate than Windows speech recognition, and nothing leaves this PC. English and 24 European languages. A {ParakeetFacts.DownloadSizeText} download."
-            : $"NVIDIA’s open model, offline. English and 24 European languages. A {ParakeetFacts.DownloadSizeText} download.",
-        DictationEngineChoice.Sarvam => "Saaras hears eleven Indian languages. Billed by Sarvam to your key.",
-        DictationEngineChoice.OpenClicky => "Needs an OpenClicky account or your own OpenAI key.",
-        _ => "Words appear as you speak. Needs the OpenClicky backend.",
+            ? L.F("Far more accurate than Windows speech recognition, and nothing leaves this PC. English and 24 European languages. A {0} download.", ParakeetFacts.DownloadSizeText)
+            : L.F("NVIDIA’s open model, offline. English and 24 European languages. A {0} download.", ParakeetFacts.DownloadSizeText),
+        DictationEngineChoice.Sarvam => L.T("Saaras hears eleven Indian languages. Billed by Sarvam to your key."),
+        DictationEngineChoice.OpenClicky => L.T("Needs an OpenClicky account or your own OpenAI key."),
+        _ => L.T("Words appear as you speak. Needs the OpenClicky backend."),
     };
 
     /// <summary>The short note on the right of the engine in Settings while it can't be used yet.</summary>
     public static string UnavailableBadge(this DictationEngineChoice choice) => choice switch
     {
-        DictationEngineChoice.Moonshine => "Not in this build",
+        DictationEngineChoice.Moonshine => L.T("Not in this build"),
         DictationEngineChoice.Offline => "",
-        DictationEngineChoice.Parakeet => "Not downloaded",
-        DictationEngineChoice.Sarvam => "Needs a key",
-        DictationEngineChoice.OpenClicky => "Needs account",
-        _ => "Needs backend",
+        DictationEngineChoice.Parakeet => L.T("Not downloaded"),
+        DictationEngineChoice.Sarvam => L.T("Needs a key"),
+        DictationEngineChoice.OpenClicky => L.T("Needs account"),
+        _ => L.T("Needs backend"),
     };
 
     /// <summary>The words the settings search finds the engine by, besides its title and detail.</summary>

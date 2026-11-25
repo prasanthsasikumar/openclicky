@@ -14,6 +14,7 @@ using System.Windows.Media;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Settings;
 using WpfUi = Wpf.Ui.Controls;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -84,17 +85,17 @@ internal sealed class WritingPageView : ScrollViewer
     /// <summary>Edit and delete for one row of a list.</summary>
     private static StackPanel RowActions(string itemName, Action onEdit, Action onDelete)
     {
-        var edit = Ui.Button("Edit…", onEdit);
-        Ui.AutomationProperties(edit, $"Edit {itemName}");
+        var edit = Ui.Button(L.T("Edit…"), onEdit);
+        Ui.AutomationProperties(edit, L.F("Edit {0}", itemName));
         var delete = new WpfUi.Button
         {
             Icon = new WpfUi.SymbolIcon { Symbol = WpfUi.SymbolRegular.Delete24 },
             Appearance = WpfUi.ControlAppearance.Transparent,
-            ToolTip = "Delete",
+            ToolTip = L.T("Delete"),
             Cursor = Cursors.Hand,
             Padding = new Thickness(8, 6, 8, 6),
         };
-        Ui.AutomationProperties(delete, $"Delete {itemName}");
+        Ui.AutomationProperties(delete, L.F("Delete {0}", itemName));
         delete.Click += (_, _) => onDelete();
         return Ui.HStack(4, edit, delete);
     }
@@ -122,9 +123,9 @@ internal sealed class WritingPageView : ScrollViewer
     private static ContextMenu EditDeleteMenu(Action onEdit, Action onDelete)
     {
         var menu = new ContextMenu();
-        var edit = new MenuItem { Header = "Edit…" };
+        var edit = new MenuItem { Header = L.T("Edit…") };
         edit.Click += (_, _) => onEdit();
-        var delete = new MenuItem { Header = "Delete" };
+        var delete = new MenuItem { Header = L.T("Delete") };
         delete.Click += (_, _) => onDelete();
         menu.Items.Add(edit);
         menu.Items.Add(delete);
@@ -136,20 +137,20 @@ internal sealed class WritingPageView : ScrollViewer
     private void DictionarySection(DictationSpace space)
     {
         var dictionaryExample = Settings.Region == Core.Configuration.AppRegion.India
-            ? "You say “aditya shatriya”, OpenClicky writes Aaditya Kshatriya."
-            : "You say “shivon”, OpenClicky writes Siobhán.";
-        column.Children.Add(SectionHeader("Dictionary", space.Dictionary.Count, "term"));
+            ? L.T("You say “aditya shatriya”, OpenClicky writes Aaditya Kshatriya.")
+            : L.T("You say “shivon”, OpenClicky writes Siobhán.");
+        column.Children.Add(SectionHeader(L.T("Dictionary"), space.Dictionary.Count, "term"));
         var terms = space.Dictionary.OrderBy(term => term.Written.ToLowerInvariant()).ToList();
-        if (terms.Count == 0) column.Children.Add(Ui.Card(EmptyLine("Nothing here yet. Teach OpenClicky its first term.")));
+        if (terms.Count == 0) column.Children.Add(Ui.Card(EmptyLine(L.T("Nothing here yet. Teach OpenClicky its first term."))));
         foreach (var term in terms)
         {
-            var heardAs = term.HeardAs.Count == 0 ? "" : "Heard as " + string.Join(", ", term.HeardAs.Select(alias => $"“{alias}”"));
+            var heardAs = term.HeardAs.Count == 0 ? "" : L.T("Heard as ") + string.Join(", ", term.HeardAs.Select(alias => $"“{alias}”"));
             var card = Ui.Card(Ui.Row(term.Written, heardAs, "", RowActions(term.Written, () => EditTerm(term), () => DeleteTerm(term))));
             card.ContextMenu = EditDeleteMenu(() => EditTerm(term), () => DeleteTerm(term));
             column.Children.Add(card);
         }
-        column.Children.Add(AddRow("Add a Term…", () => EditTerm(null)));
-        column.Children.Add(Ui.Footnote($"Names and terms written exactly as you expect. {dictionaryExample} The written form is always matched too, in any casing.", ""));
+        column.Children.Add(AddRow(L.T("Add a Term…"), () => EditTerm(null)));
+        column.Children.Add(Ui.Footnote(L.F("Names and terms written exactly as you expect. {0} The written form is always matched too, in any casing.", dictionaryExample), ""));
     }
 
     private void DeleteTerm(DictionaryTerm term) => SpaceStore.Update(space => space.Dictionary.RemoveAll(existing => existing.Id == term.Id));
@@ -157,15 +158,15 @@ internal sealed class WritingPageView : ScrollViewer
     /// <summary>Teach or edit a dictionary term: the written form and the ways it tends to be heard.</summary>
     private void EditTerm(DictionaryTerm? term)
     {
-        var sheet = new SheetWindow(actions.OwnerWindow, Settings, term is null ? "Teach OpenClicky a term" : "Edit term", 480);
+        var sheet = new SheetWindow(actions.OwnerWindow, Settings, term is null ? L.T("Teach OpenClicky a term") : L.T("Edit term"), 480);
         var written = new WpfUi.TextBox { PlaceholderText = "Aaditya Kshatriya", Text = term?.Written ?? "" };
         var heardAs = new WpfUi.TextBox { PlaceholderText = "aditya shatriya, aditya", Text = term is null ? "" : string.Join(", ", term.HeardAs) };
         sheet.SetBody(Ui.VStack(6,
-            Ui.Text("OpenClicky writes", 13, SettingsLook.TextPrimary), written,
-            Spaced(Ui.Text("You say", 13, SettingsLook.TextPrimary), 12), heardAs,
-            Spaced(Ui.Text("“You say” is optional; separate several with commas. The written form is always matched too, in any casing.", SettingsLook.CaptionSize, SettingsLook.TextSecondary), 8)));
-        sheet.AddFooterButton("Cancel", sheet.Close, isCancel: true);
-        var save = sheet.AddFooterButton("Save", () =>
+            Ui.Text(L.T("OpenClicky writes"), 13, SettingsLook.TextPrimary), written,
+            Spaced(Ui.Text(L.T("You say"), 13, SettingsLook.TextPrimary), 12), heardAs,
+            Spaced(Ui.Text(L.T("“You say” is optional; separate several with commas. The written form is always matched too, in any casing."), SettingsLook.CaptionSize, SettingsLook.TextSecondary), 8)));
+        sheet.AddFooterButton(L.T("Cancel"), sheet.Close, isCancel: true);
+        var save = sheet.AddFooterButton(L.T("Save"), () =>
         {
             var aliases = heardAs.Text.Split(',').Select(alias => alias.Trim()).Where(alias => alias.Length > 0).ToList();
             var changed = new DictionaryTerm(written.Text.Trim(), aliases, term?.Id ?? Guid.NewGuid(), term?.CreatedAt ?? DateTimeOffset.Now);
@@ -193,9 +194,9 @@ internal sealed class WritingPageView : ScrollViewer
 
     private void SnippetsSection(DictationSpace space)
     {
-        column.Children.Add(SectionHeader("Snippets", space.Shortcuts.Count, "snippet"));
+        column.Children.Add(SectionHeader(L.T("Snippets"), space.Shortcuts.Count, "snippet"));
         var snippets = space.Shortcuts.OrderBy(snippet => snippet.Trigger.ToLowerInvariant()).ToList();
-        if (snippets.Count == 0) column.Children.Add(Ui.Card(EmptyLine("Nothing here yet. Teach OpenClicky its first snippet.")));
+        if (snippets.Count == 0) column.Children.Add(Ui.Card(EmptyLine(L.T("Nothing here yet. Teach OpenClicky its first snippet."))));
         foreach (var snippet in snippets)
         {
             var replacement = Ui.Text(snippet.Replacement, SettingsLook.CaptionSize, SettingsLook.TextSecondary);
@@ -215,8 +216,8 @@ internal sealed class WritingPageView : ScrollViewer
             card.ContextMenu = EditDeleteMenu(() => EditSnippet(snippet, space.Shortcuts), () => DeleteSnippet(snippet));
             column.Children.Add(card);
         }
-        column.Children.Add(AddRow("Add a Snippet…", () => EditSnippet(null, space.Shortcuts)));
-        column.Children.Add(Ui.Footnote("Say the trigger on its own and the saved text is written instead: a sign-off, an address, anything you type a hundred times. A snippet expands only on its exact trigger; a dictionary term is replaced inside a longer sentence.", ""));
+        column.Children.Add(AddRow(L.T("Add a Snippet…"), () => EditSnippet(null, space.Shortcuts)));
+        column.Children.Add(Ui.Footnote(L.T("Say the trigger on its own and the saved text is written instead: a sign-off, an address, anything you type a hundred times. A snippet expands only on its exact trigger; a dictionary term is replaced inside a longer sentence."), ""));
     }
 
     private void DeleteSnippet(SpokenShortcut snippet) => SpaceStore.Update(space => space.Shortcuts.RemoveAll(existing => existing.Id == snippet.Id));
@@ -224,17 +225,17 @@ internal sealed class WritingPageView : ScrollViewer
     /// <summary>Teach or edit a snippet. A trigger another snippet already uses (compared the way takes are matched) cannot be saved.</summary>
     private void EditSnippet(SpokenShortcut? snippet, IReadOnlyList<SpokenShortcut> existingSnippets)
     {
-        var sheet = new SheetWindow(actions.OwnerWindow, Settings, snippet is null ? "Teach OpenClicky a snippet" : "Edit snippet", 500);
-        var trigger = new WpfUi.TextBox { PlaceholderText = "my sign-off", Text = snippet?.Trigger ?? "" };
-        var inUse = Ui.Text("That spoken phrase is already in use.", SettingsLook.CaptionSize, SettingsLook.Danger);
+        var sheet = new SheetWindow(actions.OwnerWindow, Settings, snippet is null ? L.T("Teach OpenClicky a snippet") : L.T("Edit snippet"), 500);
+        var trigger = new WpfUi.TextBox { PlaceholderText = L.T("my sign-off"), Text = snippet?.Trigger ?? "" };
+        var inUse = Ui.Text(L.T("That spoken phrase is already in use."), SettingsLook.CaptionSize, SettingsLook.Danger);
         inUse.Visibility = Visibility.Collapsed;
         var replacement = new WpfUi.TextBox { Text = snippet?.Replacement ?? "", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 120, VerticalContentAlignment = VerticalAlignment.Top };
         sheet.SetBody(Ui.VStack(6,
-            Ui.Text("You say", 13, SettingsLook.TextPrimary), trigger, inUse,
-            Spaced(Ui.Text("OpenClicky writes", 13, SettingsLook.TextPrimary), 12), replacement,
-            Spaced(Ui.Text("The saved text is written only when the whole take is the trigger.", SettingsLook.CaptionSize, SettingsLook.TextSecondary), 8)));
-        sheet.AddFooterButton("Cancel", sheet.Close, isCancel: true);
-        var save = sheet.AddFooterButton("Save", () =>
+            Ui.Text(L.T("You say"), 13, SettingsLook.TextPrimary), trigger, inUse,
+            Spaced(Ui.Text(L.T("OpenClicky writes"), 13, SettingsLook.TextPrimary), 12), replacement,
+            Spaced(Ui.Text(L.T("The saved text is written only when the whole take is the trigger."), SettingsLook.CaptionSize, SettingsLook.TextSecondary), 8)));
+        sheet.AddFooterButton(L.T("Cancel"), sheet.Close, isCancel: true);
+        var save = sheet.AddFooterButton(L.T("Save"), () =>
         {
             var changed = new SpokenShortcut(trigger.Text.Trim(), replacement.Text, snippet?.Id ?? Guid.NewGuid(), snippet?.CreatedAt ?? DateTimeOffset.Now);
             SpaceStore.Update(space =>
@@ -287,14 +288,14 @@ internal sealed class WritingPageView : ScrollViewer
 
     private void StylesSection(DictationSpace space)
     {
-        column.Children.Add(SectionHeader("Styles", space.Styles.Count, "style"));
+        column.Children.Add(SectionHeader(L.T("Styles"), space.Styles.Count, "style"));
         // Whether the AI clean-up that reads these rules is on; the switch itself is on the Dictation page.
         var isOn = DictationCleanUp.SwitchShowsOn(Settings);
-        column.Children.Add(Ui.Card(Ui.Row(isOn ? "AI clean-up is on" : "AI clean-up is off",
-            isOn ? "It reads the rules of the app’s style below." : "Styles’ rules are read only while clean-up is on.", "",
-            Ui.Button("Language and Clean-up…", () => actions.ShowSettings(DictationSettingsPage.Dictation)))));
+        column.Children.Add(Ui.Card(Ui.Row(isOn ? L.T("AI clean-up is on") : L.T("AI clean-up is off"),
+            isOn ? L.T("It reads the rules of the app’s style below.") : L.T("Styles’ rules are read only while clean-up is on."), "",
+            Ui.Button(L.T("Language and Clean-up…"), () => actions.ShowSettings(DictationSettingsPage.Dictation)))));
         foreach (var style in space.Styles) column.Children.Add(StyleRow(style, space));
-        column.Children.Add(Ui.Footnote($"How you sound, app by app. Each app is written in one style, and the model reads that style’s rules when it cleans up. New apps start in “{FallbackStyle(space).Name}”.", ""));
+        column.Children.Add(Ui.Footnote(L.F("How you sound, app by app. Each app is written in one style, and the model reads that style’s rules when it cleans up. New apps start in “{0}”.", FallbackStyle(space).Name), ""));
     }
 
     private static string CapitalizedFirstLetter(string text) => text.Length == 0 ? text : char.ToUpper(text[0]) + text[1..];
@@ -305,7 +306,7 @@ internal sealed class WritingPageView : ScrollViewer
         var apps = Apps(style, space);
         var isExpanded = expandedStyleId == style.Id;
         var summary = apps.Count == 0
-            ? (style.AppProcessNames.Count == 0 ? "Writes wherever no style claims the app" : "None of its apps are on this PC")
+            ? (style.AppProcessNames.Count == 0 ? L.T("Writes wherever no style claims the app") : L.T("None of its apps are on this PC"))
             : string.Join(", ", apps.Take(3).Select(app => app.Name)) + (apps.Count > 3 ? $" +{apps.Count - 3}" : "");
 
         var chevron = Ui.Text(isExpanded ? "" : "", 12, SettingsLook.TextSecondary, wrap: false);
@@ -329,7 +330,7 @@ internal sealed class WritingPageView : ScrollViewer
         labelGrid.Children.Add(chevron);
         // The whole label opens the row, not only the chevron.
         var label = new Button { Content = labelGrid, Template = Ui.TransparentButtonTemplate(), Cursor = Cursors.Hand, HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        Ui.AutomationProperties(label, $"{style.Name}, {style.Tagline}", isExpanded ? "Collapse" : "Show its rules and apps");
+        Ui.AutomationProperties(label, $"{style.Name}, {style.Tagline}", isExpanded ? L.T("Collapse") : L.T("Show its rules and apps"));
         label.Click += (_, _) =>
         {
             expandedStyleId = isExpanded ? null : style.Id;
@@ -350,9 +351,9 @@ internal sealed class WritingPageView : ScrollViewer
     {
         var draft = rulesDrafts.TryGetValue(style.Id, out var saved) ? saved : style.Rules;
         var editor = new WpfUi.TextBox { Text = draft, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 96, VerticalContentAlignment = VerticalAlignment.Top };
-        Ui.AutomationProperties(editor, "Rules the model reads");
-        var revert = Ui.Button("Revert", () => { rulesDrafts.Remove(style.Id); Render(); });
-        var saveRules = Ui.Button("Save Rules", () =>
+        Ui.AutomationProperties(editor, L.T("Rules the model reads"));
+        var revert = Ui.Button(L.T("Revert"), () => { rulesDrafts.Remove(style.Id); Render(); });
+        var saveRules = Ui.Button(L.T("Save Rules"), () =>
         {
             var rules = editor.Text;
             rulesDrafts.Remove(style.Id);
@@ -376,26 +377,26 @@ internal sealed class WritingPageView : ScrollViewer
         var rightButtons = Ui.HStack(8, revert, saveRules);
         DockPanel.SetDock(rightButtons, Dock.Right);
         buttons.Children.Add(rightButtons);
-        var nameButton = Ui.Button("Name, Clean-up and Apps…", () => EditStyle(style), toolTip: "Rename the style, its local clean-up switches and its apps");
+        var nameButton = Ui.Button(L.T("Name, Clean-up and Apps…"), () => EditStyle(style), toolTip: L.T("Rename the style, its local clean-up switches and its apps"));
         nameButton.HorizontalAlignment = HorizontalAlignment.Left;
         buttons.Children.Add(nameButton);
-        return Ui.VStack(6, Ui.Text("Rules the model reads", SettingsLook.CaptionSize, SettingsLook.TextSecondary), editor, buttons);
+        return Ui.VStack(6, Ui.Text(L.T("Rules the model reads"), SettingsLook.CaptionSize, SettingsLook.TextSecondary), editor, buttons);
     }
 
     private StackPanel AppsList(DictationStyle style, List<StyleApp> apps, DictationSpace space)
     {
         var stack = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
-        stack.Children.Add(Ui.Text("Apps in this style", SettingsLook.CaptionSize, SettingsLook.TextSecondary));
+        stack.Children.Add(Ui.Text(L.T("Apps in this style"), SettingsLook.CaptionSize, SettingsLook.TextSecondary));
         if (apps.Count == 0)
         {
-            var none = Ui.Text(style.AppProcessNames.Count == 0 ? "Every app no other style claims." : "None of its apps are on this PC.", SettingsLook.CaptionSize, SettingsLook.TextSecondary);
+            var none = Ui.Text(style.AppProcessNames.Count == 0 ? L.T("Every app no other style claims.") : L.T("None of its apps are on this PC."), SettingsLook.CaptionSize, SettingsLook.TextSecondary);
             none.Margin = new Thickness(0, 8, 0, 4);
             stack.Children.Add(none);
         }
         foreach (var app in apps)
         {
             var line = new DockPanel { Margin = new Thickness(0, 6, 0, 0), MinHeight = 30 };
-            var moveTo = new WpfUi.DropDownButton { Content = "Move to", ToolTip = $"Write {app.Name} in another style", Cursor = Cursors.Hand, Padding = new Thickness(8, 3, 8, 4), FontSize = 12 };
+            var moveTo = new WpfUi.DropDownButton { Content = L.T("Move to"), ToolTip = L.F("Write {0} in another style", app.Name), Cursor = Cursors.Hand, Padding = new Thickness(8, 3, 8, 4), FontSize = 12 };
             var menu = new ContextMenu();
             foreach (var otherStyle in space.Styles.Where(other => other.Id != style.Id))
             {
@@ -424,7 +425,7 @@ internal sealed class WritingPageView : ScrollViewer
             line.Children.Add(name);
             stack.Children.Add(line);
         }
-        var addApp = Ui.Button("Add an App…", () =>
+        var addApp = Ui.Button(L.T("Add an App…"), () =>
         {
             if (AppPickerSheet.Pick(actions.OwnerWindow, Settings, icons) is { } processName) Move(processName, style.Id);
         });
@@ -455,15 +456,15 @@ internal sealed class WritingPageView : ScrollViewer
     {
         var draft = style.Clone();
         var sheet = new SheetWindow(actions.OwnerWindow, Settings, CapitalizedFirstLetter(style.Name), 560);
-        var name = new WpfUi.TextBox { Text = draft.Name, PlaceholderText = "Name" };
-        var tagline = new WpfUi.TextBox { Text = draft.Tagline, PlaceholderText = "Tagline" };
+        var name = new WpfUi.TextBox { Text = draft.Name, PlaceholderText = L.T("Name") };
+        var tagline = new WpfUi.TextBox { Text = draft.Tagline, PlaceholderText = L.T("Tagline") };
         var rules = new WpfUi.TextBox { Text = draft.Rules, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 90, VerticalContentAlignment = VerticalAlignment.Top };
         var appsPanel = new StackPanel();
         void RenderApps()
         {
             appsPanel.Children.Clear();
             if (draft.AppProcessNames.Count == 0)
-                appsPanel.Children.Add(Ui.Text("None. This style writes wherever no app has its own.", SettingsLook.CaptionSize, SettingsLook.TextSecondary));
+                appsPanel.Children.Add(Ui.Text(L.T("None. This style writes wherever no app has its own."), SettingsLook.CaptionSize, SettingsLook.TextSecondary));
             foreach (var processName in draft.AppProcessNames.ToList())
             {
                 var line = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
@@ -471,11 +472,11 @@ internal sealed class WritingPageView : ScrollViewer
                 {
                     Icon = new WpfUi.SymbolIcon { Symbol = WpfUi.SymbolRegular.SubtractCircle24 },
                     Appearance = WpfUi.ControlAppearance.Transparent,
-                    ToolTip = "Take this app out of the style",
+                    ToolTip = L.T("Take this app out of the style"),
                     Padding = new Thickness(6),
                     Cursor = Cursors.Hand,
                 };
-                Ui.AutomationProperties(remove, $"Remove {icons.Name(processName) ?? processName}");
+                Ui.AutomationProperties(remove, L.F("Remove {0}", icons.Name(processName) ?? processName));
                 remove.Click += (_, _) => { draft.AppProcessNames.Remove(processName); RenderApps(); };
                 DockPanel.SetDock(remove, Dock.Right);
                 line.Children.Add(remove);
@@ -490,7 +491,7 @@ internal sealed class WritingPageView : ScrollViewer
             }
         }
         RenderApps();
-        var addApp = AddRow("Add an App…", () =>
+        var addApp = AddRow(L.T("Add an App…"), () =>
         {
             if (AppPickerSheet.Pick(sheet, Settings, icons) is { } processName && !draft.AppProcessNames.Contains(processName, StringComparer.OrdinalIgnoreCase))
             {
@@ -503,16 +504,16 @@ internal sealed class WritingPageView : ScrollViewer
         var removeFillers = Ui.Toggle(draft.RemoveFillers, isOn => draft.RemoveFillers = isOn);
         var polish = Ui.Toggle(draft.PolishWithModel, isOn => draft.PolishWithModel = isOn);
         sheet.SetBody(Ui.VStack(0,
-            Ui.Text("Name", 13, SettingsLook.TextPrimary), Spaced(name, 6),
-            Spaced(Ui.Text("Tagline", 13, SettingsLook.TextPrimary), 12), Spaced(tagline, 6),
-            SettingsFormView.SectionHeader("How this style writes"), rules,
-            Spaced(Ui.Text("The model reads this when it cleans up a take in one of these apps.", SettingsLook.CaptionSize, SettingsLook.TextSecondary), 6),
+            Ui.Text(L.T("Name"), 13, SettingsLook.TextPrimary), Spaced(name, 6),
+            Spaced(Ui.Text(L.T("Tagline"), 13, SettingsLook.TextPrimary), 12), Spaced(tagline, 6),
+            SettingsFormView.SectionHeader(L.T("How this style writes")), rules,
+            Spaced(Ui.Text(L.T("The model reads this when it cleans up a take in one of these apps."), SettingsLook.CaptionSize, SettingsLook.TextSecondary), 6),
             Spaced(Ui.Card(Ui.Row("Sentence case", "Capital letters and full stops.", "", sentenceCase)), 16),
-            Ui.Card(Ui.Row("Remove fillers", "Um, uh, and friends.", "", removeFillers)),
-            Ui.Card(Ui.Row("Clean up with AI", "For this style, when “Clean up my words with AI” is on.", "", polish)),
-            SettingsFormView.SectionHeader("Apps written in this style"), appsPanel, addApp));
-        sheet.AddFooterButton("Cancel", sheet.Close, isCancel: true);
-        sheet.AddFooterButton("Save", () =>
+            Ui.Card(Ui.Row(L.T("Remove fillers"), L.T("Um, uh, and friends."), "", removeFillers)),
+            Ui.Card(Ui.Row(L.T("Clean up with AI"), L.T("For this style, when “Clean up my words with AI” is on."), "", polish)),
+            SettingsFormView.SectionHeader(L.T("Apps written in this style")), appsPanel, addApp));
+        sheet.AddFooterButton(L.T("Cancel"), sheet.Close, isCancel: true);
+        sheet.AddFooterButton(L.T("Save"), () =>
         {
             draft.Name = name.Text;
             draft.Tagline = tagline.Text;
@@ -573,10 +574,10 @@ internal static class AppPickerSheet
     public static string? Pick(Window owner, DictationSettings settings, AppIconCache icons)
     {
         string? picked = null;
-        var sheet = new SheetWindow(owner, settings, "Choose an app for this style", 440);
+        var sheet = new SheetWindow(owner, settings, L.T("Choose an app for this style"), 440);
         var search = new WpfUi.TextBox
         {
-            PlaceholderText = "Search running apps",
+            PlaceholderText = L.T("Search running apps"),
             Icon = new WpfUi.SymbolIcon { Symbol = WpfUi.SymbolRegular.Search24 },
             IconPlacement = WpfUi.ElementPlacement.Left,
         };
@@ -607,7 +608,7 @@ internal static class AppPickerSheet
         RenderList();
         var scroller = new ScrollViewer { Content = list, Height = 280, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 10, 0, 0) };
         sheet.SetBody(Ui.VStack(0, search, scroller));
-        sheet.AddFooterButton("Browse…", () =>
+        sheet.AddFooterButton(L.T("Browse…"), () =>
         {
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
@@ -621,7 +622,7 @@ internal static class AppPickerSheet
             }
             sheet.Close();
         }, alignLeft: true);
-        sheet.AddFooterButton("Close", sheet.Close, isCancel: true);
+        sheet.AddFooterButton(L.T("Close"), sheet.Close, isCancel: true);
         sheet.Loaded += (_, _) => search.Focus();
         sheet.ShowDialog();
         return picked;

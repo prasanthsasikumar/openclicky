@@ -23,6 +23,7 @@ using OpenClicky.Core.Plugins.Calendar;
 using OpenClicky.Windows.Island;
 using OpenClicky.Windows.Theme;
 using static OpenClicky.Windows.Island.IslandUi;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.Plugins.Calendar;
 
@@ -143,7 +144,7 @@ internal sealed class CalendarDashboardColumn : Grid, IIslandContent
         cell.Margin = new Thickness(1, 0, 1, 0);
         cell.MouseEnter += (_, _) => { if (!isSelected) cell.Background = DS.Brush(Colors.White, 0.06); };
         cell.MouseLeave += (_, _) => cell.Background = restingFill;
-        AutomationProperties.SetItemStatus(cell, (isSelected ? "selected, " : "") + (day.Events.Count == 0 ? "no events" : $"{day.Events.Count} events"));
+        AutomationProperties.SetItemStatus(cell, (isSelected ? L.T("selected, ") : "") + (day.Events.Count == 0 ? L.T("no events") : $"{day.Events.Count} events"));
         return cell;
     }
 
@@ -154,20 +155,20 @@ internal sealed class CalendarDashboardColumn : Grid, IIslandContent
         switch (Store.Access)
         {
             case CalendarAccess.Unknown:
-                return Message("Reading your calendar…");
+                return Message(L.T("Reading your calendar…"));
             case CalendarAccess.Denied:
-                return Message("Calendar access is off for OpenClicky. Turn it on in Windows Settings.",
-                    IslandDashUi.PillButton("Open privacy settings", () => _ = Store.RequestAccessAsync()));
+                return Message(L.T("Calendar access is off for OpenClicky. Turn it on in Windows Settings."),
+                    IslandDashUi.PillButton(L.T("Open privacy settings"), () => _ = Store.RequestAccessAsync()));
             case CalendarAccess.Unavailable:
-                return Message("Windows didn't share its calendar with OpenClicky.",
-                    IslandDashUi.PillButton("Try again", () => _ = Store.RefreshAsync()));
+                return Message(L.T("Windows didn't share its calendar with OpenClicky."),
+                    IslandDashUi.PillButton(L.T("Try again"), () => _ = Store.RefreshAsync()));
         }
         if (selected is null || selected.Events.Count == 0)
         {
             var isToday = selected is null || CalendarSchedule.LocalDate(selected.Start, zone) == CalendarSchedule.LocalDate(DateTimeOffset.Now, zone);
             var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             row.Children.Add(Glyph(CalendarGlyph, 15, DimText));
-            var words = Text(isToday ? "No events today" : "Nothing planned", 15, DimText, FontWeights.SemiBold);
+            var words = Text(isToday ? L.T("No events today") : L.T("Nothing planned"), 15, DimText, FontWeights.SemiBold);
             words.Margin = new Thickness(8, 0, 0, 0);
             row.Children.Add(words);
             return row;
@@ -202,7 +203,7 @@ internal sealed class CalendarDashboardColumn : Grid, IIslandContent
         words.Children.Add(time);
         row.Children.Add(words);
         var hover = DS.Brush(Colors.White, 0.07);
-        var border = Clickable(row, () => Store.Open(item), "open in Calendar", Brushes.Transparent, new CornerRadius(6));
+        var border = Clickable(row, () => Store.Open(item), L.T("open in Calendar"), Brushes.Transparent, new CornerRadius(6));
         border.Padding = new Thickness(4, 3, 4, 3);
         border.Opacity = isPast ? 0.5 : 1;
         // Clickable dims to 0.85 under the pointer; a past event keeps its own dimming, lit by the fill instead.

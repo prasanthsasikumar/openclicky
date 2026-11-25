@@ -3,6 +3,8 @@
 // buttons are the usual choice; most mice with more buttons can map any of them to those in their own software.
 // The button is swallowed while chosen, so holding "back" to talk doesn't also go back a page.
 
+using OpenClicky.Core.Localization;
+
 namespace OpenClicky.Core.Shortcuts;
 
 public enum MouseTalkButton
@@ -39,10 +41,10 @@ public static class MouseTalkButtons
 
     public static string Title(this MouseTalkButton button) => button switch
     {
-        MouseTalkButton.Back => "Back side button",
-        MouseTalkButton.Forward => "Forward side button",
-        MouseTalkButton.Middle => "Middle button (wheel click)",
-        _ => "Off",
+        MouseTalkButton.Back => L.T("Back side button"),
+        MouseTalkButton.Forward => L.T("Forward side button"),
+        MouseTalkButton.Middle => L.T("Middle button (wheel click)"),
+        _ => L.T("Off"),
     };
 
     private const int WM_MBUTTONDOWN = 0x0207, WM_MBUTTONUP = 0x0208, WM_XBUTTONDOWN = 0x020B, WM_XBUTTONUP = 0x020C;

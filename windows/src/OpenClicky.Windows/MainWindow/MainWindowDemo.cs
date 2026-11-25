@@ -2,7 +2,7 @@
 // .OverrideRoots) with some seeded takes, words and snippets: for looking at the pages without the
 // rest of the app. Integration: Program.cs calls MainWindowDemo.Run(args) for
 // `--openclicky-window-demo`; `--shots <folder>` also saves a screenshot of every page, light and
-// dark, then closes (windows/docs/screenshots/window-*.png were made this way).
+// dark, then closes (windows/docs/screenshots/window-*.png were made this way); `--language ur` shows it in Urdu.
 
 using System.IO;
 using System.Globalization;
@@ -28,6 +28,9 @@ public static class MainWindowDemo
         var shotsFolder = shotsIndex >= 0 && shotsIndex + 1 < args.Length ? Path.GetFullPath(args[shotsIndex + 1]) : null;
         var pageIndex = Array.IndexOf(args, "--page");
         var onlyPage = pageIndex >= 0 && pageIndex + 1 < args.Length ? args[pageIndex + 1] : null;
+        // --language ur shows the window in Urdu, whatever Settings say.
+        var languageIndex = Array.IndexOf(args, "--language");
+        if (languageIndex >= 0 && languageIndex + 1 < args.Length) OpenClicky.Core.Localization.L.SetLanguage(args[languageIndex + 1]);
 
         var root = Path.Combine(Path.GetTempPath(), "openclicky-window-demo-" + Guid.NewGuid().ToString("N")[..8]);
         OpenClickyPaths.OverrideRoots(Path.Combine(root, "home"), Path.Combine(root, "local"));
@@ -240,7 +243,10 @@ public static class MainWindowDemo
             try { PrintWindow(handle, deviceContext, RenderFullContent); }
             finally { graphics.ReleaseHdc(deviceContext); }
         }
-        using var bitmap = whole.Clone(new System.Drawing.Rectangle(bounds.Left - outer.Left, bounds.Top - outer.Top, width, height), whole.PixelFormat);
+        // A right-to-left window (Urdu) comes out of PrintWindow mirrored: its window is laid out right to left.
+        if (window.FlowDirection == FlowDirection.RightToLeft) whole.RotateFlip(System.Drawing.RotateFlipType.RotateNoneFlipX);
+        var left = window.FlowDirection == FlowDirection.RightToLeft ? outer.Right - bounds.Right : bounds.Left - outer.Left;
+        using var bitmap = whole.Clone(new System.Drawing.Rectangle(left, bounds.Top - outer.Top, width, height), whole.PixelFormat);
         bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
     }
 }

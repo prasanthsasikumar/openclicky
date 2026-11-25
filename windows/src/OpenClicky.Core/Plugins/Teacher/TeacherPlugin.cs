@@ -16,6 +16,7 @@ using OpenClicky.Core.Answers;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.Teacher;
 
@@ -30,8 +31,8 @@ public static class TeacherPlugin
 
     /// <summary>The Teacher's row on the island: what is on the board and "clear", or what to ask.</summary>
     public static IslandComponent Component { get; } = new(
-        Id, "Teacher", "", 64,
-        SettingsDetail: "Ask \"teach me how a jet engine works\" and Clicky draws it on your screen, as a diagram or a turning 3D model, while it explains. What a drawing can't show comes up as a picture from Wikimedia Commons (only the search words are sent). The same switch is on the island's Teacher row.");
+        Id, L.T("Teacher"), "", 64,
+        SettingsDetail: L.T("Ask \"teach me how a jet engine works\" and Clicky draws it on your screen, as a diagram or a turning 3D model, while it explains. What a drawing can't show comes up as a picture from Wikimedia Commons (only the search words are sent). The same switch is on the island's Teacher row."));
 
     /// <summary>The preferences the switch is read from (tests swap in their own).</summary>
     public static Func<Preferences> Preferences { get; set; } = () => Configuration.Preferences.Shared;

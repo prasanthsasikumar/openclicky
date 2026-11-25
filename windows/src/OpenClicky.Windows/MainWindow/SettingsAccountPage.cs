@@ -10,6 +10,7 @@ using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Settings;
 using WpfUi = Wpf.Ui.Controls;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -59,15 +60,15 @@ internal sealed partial class SettingsRowFactory
         {
             var isChecking = keysState.Checking.Contains(provider);
             var detail = keysState.RowStatus.TryGetValue(provider, out var status) ? status : $"{provider.Detail()} {ProviderKeys.Masked(provider.SavedKey(shell)!)}";
-            var testButton = Ui.Button(isChecking ? "Testing…" : "Test", () => TestKey(provider, redraw), isEnabled: !isChecking,
-                toolTip: provider == ProviderKey.Spotify ? "Look one song up" : provider.SpeechVoiceId() is null ? "Ask it what colour a red square is" : "Have it say a word");
-            var removeButton = Ui.Button("Remove", () =>
+            var testButton = Ui.Button(isChecking ? L.T("Testing…") : L.T("Test"), () => TestKey(provider, redraw), isEnabled: !isChecking,
+                toolTip: provider == ProviderKey.Spotify ? L.T("Look one song up") : provider.SpeechVoiceId() is null ? L.T("Ask it what colour a red square is") : L.T("Have it say a word"));
+            var removeButton = Ui.Button(L.T("Remove"), () =>
             {
-                if (!SheetWindow.Confirm(actions.OwnerWindow, Settings, $"Remove the {provider.Title()} key?",
-                        "It’s deleted from %USERPROFILE%\\.openclicky\\shell.json. Keep a copy if you’ll need it again.", "Remove")) return;
+                if (!SheetWindow.Confirm(actions.OwnerWindow, Settings, L.F("Remove the {0} key?", provider.Title()),
+                        L.T("It’s deleted from %USERPROFILE%\\.openclicky\\shell.json. Keep a copy if you’ll need it again."), L.T("Remove"))) return;
                 SaveKey(provider, null);
                 keysState.RowStatus.Remove(provider);
-                keysState.AddStatus = $"{provider.Title()} key removed.";
+                keysState.AddStatus = L.F("{0} key removed.", provider.Title());
                 keysState.NewProvider = provider;
                 redraw();
             });
@@ -75,7 +76,7 @@ internal sealed partial class SettingsRowFactory
         }
         if (unsaved.Count == 0)
         {
-            stack.Children.Add(Ui.Card(Ui.Row("Every provider has a key", keysState.AddStatus, query, null)));
+            stack.Children.Add(Ui.Card(Ui.Row(L.T("Every provider has a key"), keysState.AddStatus, query, null)));
             return stack;
         }
         if (!unsaved.Contains(keysState.NewProvider)) keysState.NewProvider = unsaved[0];
@@ -87,7 +88,7 @@ internal sealed partial class SettingsRowFactory
         }, 170);
         var keyField = new WpfUi.PasswordBox { Width = 160, PlaceholderText = keysState.NewProvider.Placeholder(), VerticalAlignment = VerticalAlignment.Center };
         Ui.AutomationProperties(keyField, $"{keysState.NewProvider.Title()} key");
-        var addButton = Ui.Button("Add", () => { }, WpfUi.ControlAppearance.Primary, isEnabled: false);
+        var addButton = Ui.Button(L.T("Add"), () => { }, WpfUi.ControlAppearance.Primary, isEnabled: false);
         void Add()
         {
             var trimmed = keyField.Password.Trim();
@@ -102,7 +103,7 @@ internal sealed partial class SettingsRowFactory
         keyField.PasswordChanged += (_, _) => addButton.IsEnabled = keyField.Password.Trim().Length > 0;
         keyField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) Add(); };
         addButton.Click += (_, _) => Add();
-        stack.Children.Add(Ui.Card(Ui.Row("Add a key", keysState.AddStatus ?? keysState.NewProvider.Detail(), query,
+        stack.Children.Add(Ui.Card(Ui.Row(L.T("Add a key"), keysState.AddStatus ?? keysState.NewProvider.Detail(), query,
             Ui.HStack(8, providerPicker, keyField, addButton))));
         return stack;
     }
@@ -120,7 +121,7 @@ internal sealed partial class SettingsRowFactory
     {
         if (provider.SavedKey(OpenClickyConfiguration.Settings) is null) return;
         keysState.Checking.Add(provider);
-        keysState.RowStatus[provider] = "Checking…";
+        keysState.RowStatus[provider] = L.T("Checking…");
         redraw();
         _ = RunTestAsync();
 
@@ -134,7 +135,7 @@ internal sealed partial class SettingsRowFactory
                 else if (provider.SpeechVoiceId() is { } voiceId) sentence = await services.Services.TestVoiceKeyAsync(voiceId);
                 // Spotify credentials are checked by looking one song up.
                 else if (provider == ProviderKey.Spotify) sentence = await Core.Actions.MusicLookup.TestCredentialsAsync(provider.SavedKey(OpenClickyConfiguration.Settings));
-                else sentence = "Saved.";
+                else sentence = L.T("Saved.");
             }
             catch (Exception error)
             {
@@ -178,8 +179,8 @@ internal sealed partial class SettingsRowFactory
             var isOn = PlanSubscription.IsOn(plan, OpenClickyConfiguration.Settings);
             var detail = checkSentence ?? PlanSubscription.Detail(plan, status, isOn);
             var controls = Ui.HStack(8,
-                status == PlanCliStatus.Ready ? Ui.Button(isChecking ? "Testing…" : "Test", Test, isEnabled: !isChecking, toolTip: "Ask it what colour a red square is") : null,
-                status == PlanCliStatus.NotInstalled ? Ui.Button("Get It ↗", () => Ui.OpenExternal(PlanSubscription.GetItUrl(plan))) : null,
+                status == PlanCliStatus.Ready ? Ui.Button(isChecking ? L.T("Testing…") : L.T("Test"), Test, isEnabled: !isChecking, toolTip: L.T("Ask it what colour a red square is")) : null,
+                status == PlanCliStatus.NotInstalled ? Ui.Button(L.T("Get It ↗"), () => Ui.OpenExternal(PlanSubscription.GetItUrl(plan))) : null,
                 Ui.Toggle(isOn, newValue =>
                 {
                     OpenClickyConfiguration.Update(shell =>
@@ -196,7 +197,7 @@ internal sealed partial class SettingsRowFactory
         private async void Test()
         {
             isChecking = true;
-            checkSentence = "Checking… a plan takes a few seconds.";
+            checkSentence = L.T("Checking… a plan takes a few seconds.");
             Render();
             try { checkSentence = await services.Services.TestAnswerSourceAsync(plan); }
             catch (Exception error) { checkSentence = error.Message; }
@@ -216,9 +217,9 @@ internal sealed partial class SettingsRowFactory
             case "account.plan":
                 return new PlanSummaryRow(item, query);
             case "account.usage.offline":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Tag("Free", isPositive: true)));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Tag(L.T("Free"), isPositive: true)));
             case "account.usage.sarvam":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Dashboard ↗", () => Ui.OpenExternal("https://dashboard.sarvam.ai"))));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button(L.T("Dashboard ↗"), () => Ui.OpenExternal("https://dashboard.sarvam.ai"))));
             case "account.usage.backend":
                 return new LiveContent(() =>
                 {
@@ -230,7 +231,7 @@ internal sealed partial class SettingsRowFactory
             case "account.backendHost":
                 return new LiveContent(() =>
                 {
-                    var button = Ui.Button("Show shell.json", () => Ui.RevealInExplorer(OpenClickyConfiguration.SettingsFilePath), toolTip: OpenClickyConfiguration.BackendBaseUrl);
+                    var button = Ui.Button(L.T("Show shell.json"), () => Ui.RevealInExplorer(OpenClickyConfiguration.SettingsFilePath), toolTip: OpenClickyConfiguration.BackendBaseUrl);
                     return Ui.Card(Ui.Row(item.Title, OpenClickyConfiguration.BackendHostDescription, query, button));
                 }, Changes.Shell);
             case "account.backendToken":
@@ -294,7 +295,7 @@ internal sealed partial class SettingsRowFactory
             {
                 var expander = new Expander
                 {
-                    Header = Ui.Text("Details", SettingsLook.CaptionSize, SettingsLook.TextSecondary),
+                    Header = Ui.Text(L.T("Details"), SettingsLook.CaptionSize, SettingsLook.TextSecondary),
                     Content = Ui.Text(details, SettingsLook.CaptionSize, SettingsLook.TextSecondary),
                     IsExpanded = showsDetails,
                     Margin = new Thickness(0, 6, 0, 0),
