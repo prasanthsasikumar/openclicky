@@ -10,8 +10,14 @@ export interface AgentConfig {
   token?: string;
   /** Isolated CODEX_HOME. Stable across runs so threads can be resumed. */
   codexHome: string;
-  /** Codex binary (name on PATH or absolute path). */
+  /** Codex binary (name on PATH or absolute path). Legacy; the agent lane now uses OpenCode. */
   codexBin: string;
+  /** OpenCode binary (name on PATH or absolute path). Replaces the Codex agent integration. */
+  opencodeBin: string;
+  /** Free Google Gemini API key for the OpenCode agent lane (never written to logs/config). */
+  geminiApiKey?: string;
+  /** Local Ollama base URL for the OpenCode agent lane, e.g. http://localhost:11434. */
+  ollamaBaseUrl?: string;
   /** Directory the agent works in. */
   workspace: string;
   /** Directories outside the workspace that Codex's workspace-write sandbox may write to.
@@ -37,6 +43,8 @@ export interface AgentConfig {
   openaiApiKey?: string;
   /** Optional Anthropic key for the Claude lanes when bringing your own keys. */
   anthropicApiKey?: string;
+  /** Local Ollama model for chat (e.g. llama3.2). */
+  ollamaModel?: string;
   /** Wall-clock cap (ms) on a single CodexAgent.run() turn before it rejects instead of hanging
    *  forever on a Codex bug that never emits a terminal event. See codex.ts DEFAULT_RUN_TIMEOUT_MS. */
   runTimeoutMs: number;
@@ -89,6 +97,9 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     token: flags.token ?? env.OPENCLICKY_TOKEN ?? undefined,
     codexHome: flags.codexHome ?? env.OPENCLICKY_CODEX_HOME ?? path.join(home, ".openclicky", "codex-home"),
     codexBin: flags.codexBin ?? env.OPENCLICKY_CODEX_BIN ?? "codex",
+    opencodeBin: flags.opencodeBin ?? env.OPENCLICKY_OPENCODE_BIN ?? "opencode",
+    geminiApiKey: flags.geminiApiKey ?? env.OPENCLICKY_GEMINI_KEY ?? env.GEMINI_API_KEY ?? undefined,
+    ollamaBaseUrl: flags.ollamaBaseUrl ?? env.OPENCLICKY_OLLAMA_BASE_URL ?? env.OLLAMA_BASE_URL ?? undefined,
     workspace: path.resolve(flags.workspace ?? env.OPENCLICKY_WORKSPACE ?? process.cwd()),
     // The whole home folder by default: an assistant asked to "make a folder on the Desktop" or
     // "save this to Downloads" has to be able to write there, and a workspace-only sandbox refuses
@@ -106,6 +117,7 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     userSkillsDir: path.resolve(flags.userSkillsDir ?? env.OPENCLICKY_USER_SKILLS_DIR ?? path.join(home, ".openclicky", "skills")),
     openaiApiKey: flags.openaiApiKey ?? env.OPENCLICKY_OPENAI_KEY ?? undefined,
     anthropicApiKey: flags.anthropicApiKey ?? env.OPENCLICKY_ANTHROPIC_KEY ?? undefined,
+    ollamaModel: flags.ollamaModel ?? env.OPENCLICKY_OLLAMA_MODEL ?? undefined,
     // 10 minutes by default (see codex.ts DEFAULT_RUN_TIMEOUT_MS): long enough for any real agent
     // task, short enough that a Codex bug which never emits a terminal event can't hang forever.
     runTimeoutMs: flags.runTimeoutMs ?? parsePositiveInt(env.OPENCLICKY_RUN_TIMEOUT_MS) ?? 10 * 60 * 1000,

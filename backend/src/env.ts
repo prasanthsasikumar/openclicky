@@ -7,6 +7,14 @@ import type { Context } from "hono";
 export type Env = {
   OPENAI_API_KEY?: string;
   OPENAI_BASE_URL?: string;
+  /** Free Google Gemini API key (Google AI Studio). Used when no OPENAI_API_KEY; no paid key needed. */
+  GEMINI_API_KEY?: string;
+  /** Gemini OpenAI-compatible base URL (default https://generativelanguage.googleapis.com/v1beta/openai). */
+  GEMINI_BASE_URL?: string;
+  /** Default Gemini model when no model is sent (default gemini-2.5-flash). */
+  GEMINI_MODEL?: string;
+  /** Optional local Ollama base URL for operators pointing OPENAI_BASE_URL at it (no key). */
+  OLLAMA_BASE_URL?: string;
   OPENAI_MODEL?: string;
   /** Realtime voice model minted by POST /agent/realtime/session (default gpt-realtime). */
   OPENAI_REALTIME_MODEL?: string;

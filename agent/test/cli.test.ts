@@ -16,6 +16,7 @@ const cli = path.resolve(here, "..", "src", "cli.ts");
 const tsx = path.resolve(here, "..", "..", "node_modules", ".bin", "tsx");
 const hasCodex = spawnSync("codex", ["--version"], { encoding: "utf8" }).status === 0;
 const fakeCodex = path.join(here, "fixtures", "fake-codex.mjs");
+const fakeOpenCode = path.join(here, "fixtures", "fake-opencode.mjs");
 
 let server: http.Server;
 let url: string;
@@ -150,21 +151,16 @@ describe("openclicky CLI", () => {
     expect(typeof result.threadId).toBe("string");
   }, 60_000);
 
-  it("stops the Codex child instead of orphaning it when a failed run exits the CLI (fake codex)", async () => {
+  it("stops the OpenCode child instead of orphaning it when a failed run exits the CLI (fake opencode)", async () => {
     // `run`'s fail() call for a non-completed turn happens inside `try { … } finally { await
-    // agent.stop(); }` (cli.ts runAgent). Before the fix, fail() called process.exit() there and
-    // skipped that finally, leaving the Codex child running after the CLI process itself was gone.
-    const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cli-fail-home-"));
-    fs.writeFileSync(path.join(codexHome, "fake-scenario.txt"), "fail-turn");
+    // agent.stop(); }` (cli.ts runAgent). A failed run must not leave the OpenCode child running.
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cli-fail-ws-"));
-    const r = await runCli(["run", "do something", "--cwd", ws], {
-      OPENCLICKY_CODEX_HOME: codexHome,
-      OPENCLICKY_CODEX_BIN: fakeCodex,
-    });
-    expect(r.code).toBe(1); // exit code unchanged from before this fix
-    expect(r.stderr).toMatch(/error: turn failed: boom/);
+    fs.writeFileSync(path.join(ws, "fake-scenario.txt"), "fail-turn");
+    const r = await runCli(["run", "do something", "--cwd", ws], { OPENCLICKY_OPENCODE_BIN: fakeOpenCode });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/error: turn/);
 
-    const pid = Number(fs.readFileSync(path.join(codexHome, "fake-codex.pid"), "utf8"));
+    const pid = Number(fs.readFileSync(path.join(ws, "fake-opencode.pid"), "utf8"));
     const isAlive = () => {
       try {
         process.kill(pid, 0);

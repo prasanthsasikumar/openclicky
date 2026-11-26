@@ -1,4 +1,10 @@
-# OpenClicky
+# ATMIYA AI
+
+**Personal macOS AI agent — renamed fork of OpenClicky (MIT; original notices preserved; see LICENSE, macos/OpenClicky/LICENSE, macos/OpenClicky/OPENCLICKY.md).** No paid OpenAI/Anthropic required: free Google Gemini API + optional local Ollama; agent lane runs OpenCode. See **ATMIYA_AI.md**.
+
+---
+
+# OpenClicky (upstream readme)
 
 **Ask your Mac. It shows you where.** Hold ⌃ control + ⌥ option anywhere and ask out loud ("where do I
 check battery health?"): a pointer flies out of the notch and lands on the answer on your screen. Hold

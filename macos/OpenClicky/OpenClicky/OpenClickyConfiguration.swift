@@ -128,6 +128,9 @@ extension OpenClickyShellSettings {
         mistralApiKey = try container.decodeIfPresent(String.self, forKey: .mistralApiKey)
         xaiApiKey = try container.decodeIfPresent(String.self, forKey: .xaiApiKey)
         openCodeApiKey = try container.decodeIfPresent(String.self, forKey: .openCodeApiKey)
+        ollamaEnabled = try container.decodeIfPresent(Bool.self, forKey: .ollamaEnabled)
+        ollamaBaseUrl = try container.decodeIfPresent(String.self, forKey: .ollamaBaseUrl)
+        ollamaModel = try container.decodeIfPresent(String.self, forKey: .ollamaModel)
         useClaudeCodePlan = try container.decodeIfPresent(Bool.self, forKey: .useClaudeCodePlan)
         useCodexPlan = try container.decodeIfPresent(Bool.self, forKey: .useCodexPlan)
         answerSource = try container.decodeIfPresent(String.self, forKey: .answerSource)
@@ -148,8 +151,10 @@ extension OpenClickyShellSettings {
 }
 
 enum OpenClickyConfiguration {
-    /// Where the app talks to unless shell.json says otherwise.
-    static let hostedBackendURL = "https://api.openclicky.org"
+    /// Where the app talks to unless shell.json says otherwise. Defaults to a locally-run backend
+    /// (`npm run dev -w backend`, no paid service); nothing leaves this Mac unless you point it at a
+    /// hosted backend or a model vendor. A paid OpenClicky account is never required.
+    static let hostedBackendURL = "http://localhost:8787"
     /// Connectors (Composio app connections): the "connect <app> to openclicky?" card, the composio
     /// tile in the HUD, and the Composio tools handed to the agent. Off for 0.8.0; a later release
     /// turns them back on by flipping this.
@@ -237,7 +242,43 @@ enum OpenClickyConfiguration {
         if let value = environment["OPENCLICKY_WORKSPACE"], !value.isEmpty { loadedSettings.workspace = value }
         if let value = environment["OPENCLICKY_MODEL"], !value.isEmpty { loadedSettings.model = value }
         if let value = environment["OPENCLICKY_TRANSCRIPTION_PROVIDER"], !value.isEmpty { loadedSettings.transcriptionProvider = value }
+        // Secrets are stored in the macOS Keychain, not shell.json; overlay them (keychain wins).
+        if fileURL == settingsFileURL { overlayKeychainSecrets(into: &loadedSettings) }
         return loadedSettings
+    }
+
+    /// Secret fields kept out of shell.json (see KeychainSecretStore).
+    static let keychainSecretFields: [String] = [
+        "openaiApiKey", "anthropicApiKey", "geminiApiKey", "openRouterApiKey", "groqApiKey",
+        "mistralApiKey", "xaiApiKey", "openCodeApiKey", "sarvamKey", "elevenLabsApiKey",
+        "googleCloudApiKey", "amazonPollyCredentials", "composioApiKey", "spotifyCredentials",
+    ]
+
+    private static func overlayKeychainSecrets(into s: inout OpenClickyShellSettings) {
+        for field in keychainSecretFields {
+            guard let value = KeychainSecretStore.read(field), !value.isEmpty else { continue }
+            applySecret(field, value, into: &s)
+        }
+    }
+
+    private static func applySecret(_ field: String, _ value: String, into s: inout OpenClickyShellSettings) {
+        switch field {
+        case "openaiApiKey": s.openaiApiKey = value
+        case "anthropicApiKey": s.anthropicApiKey = value
+        case "geminiApiKey": s.geminiApiKey = value
+        case "openRouterApiKey": s.openRouterApiKey = value
+        case "groqApiKey": s.groqApiKey = value
+        case "mistralApiKey": s.mistralApiKey = value
+        case "xaiApiKey": s.xaiApiKey = value
+        case "openCodeApiKey": s.openCodeApiKey = value
+        case "sarvamKey": s.sarvamKey = value
+        case "elevenLabsApiKey": s.elevenLabsApiKey = value
+        case "googleCloudApiKey": s.googleCloudApiKey = value
+        case "amazonPollyCredentials": s.amazonPollyCredentials = value
+        case "composioApiKey": s.composioApiKey = value
+        case "spotifyCredentials": s.spotifyCredentials = value
+        default: break
+        }
     }
 
     /// What is in shell.json: nothing yet, settings (with the file's own JSON object, so a write
@@ -351,12 +392,25 @@ enum OpenClickyConfiguration {
                 // An optional set back to nil is not encoded at all, so it leaves the file too.
                 if fieldChanged { fileJSONObject[fieldName] = encodedAfter[fieldName] }
             }
+            // API keys go to the macOS Keychain, never plaintext shell.json (only for the real file).
+            if fileURL == settingsFileURL { scrubSecretsIntoKeychain(from: &fileJSONObject) }
             let data = try JSONSerialization.data(withJSONObject: fileJSONObject, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             try writeShellSettingsData(data, toFileAt: fileURL)
             return true
         } catch {
             AppLog.append("settings: could not write \(fileURL.path): \(error.localizedDescription)")
             return false
+        }
+    }
+
+    /// Move secret fields out of the JSON object into the Keychain and strip them from the file.
+    private static func scrubSecretsIntoKeychain(from fileJSONObject: inout [String: Any]) {
+        for field in keychainSecretFields {
+            if let value = fileJSONObject[field] as? String {
+                if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { KeychainSecretStore.delete(field) }
+                else { KeychainSecretStore.write(field, value) }
+            }
+            fileJSONObject.removeValue(forKey: field)
         }
     }
 

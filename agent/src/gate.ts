@@ -1,5 +1,5 @@
 import type { AgentConfig } from "./config.js";
-import { anthropicRoute, DIRECT_DEFAULTS } from "./providerRoute.js";
+import { anthropicRoute, chatRoute, chatModel, DIRECT_DEFAULTS } from "./providerRoute.js";
 
 /**
  * The cheap "gate" in front of every launch (HeyClicky's Haiku launch-label gate): decide whether a
@@ -40,6 +40,10 @@ export function heuristicLane(text: string): Lane {
 
 export async function gate(cfg: AgentConfig, text: string, opts: { fetchImpl?: typeof fetch } = {}): Promise<GateDecision> {
   const f = opts.fetchImpl ?? fetch;
+  // With no Anthropic key, a free Google Gemini key or a local Ollama server decides the lane.
+  if (!cfg.anthropicApiKey && (cfg.geminiApiKey || cfg.ollamaBaseUrl)) {
+    return gateViaOpenAIChat(cfg, text, f);
+  }
   // Claude decides the lane: the person's Anthropic key straight to Anthropic, else the backend on their token.
   const route = anthropicRoute(cfg, "/v1/messages", { "content-type": "application/json" });
   if (!route) return { lane: heuristicLane(text), reason: "no anthropic key or token; heuristic", gated: false };
@@ -58,6 +62,27 @@ export async function gate(cfg: AgentConfig, text: string, opts: { fetchImpl?: t
     const json: any = await res.json();
     const reply = (json.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
     const parsed = parseGateReply(reply);
+    if (!parsed) return { lane: heuristicLane(text), reason: "gate reply unparseable; heuristic", gated: false };
+    return { ...parsed, gated: true };
+  } catch (e) {
+    return { lane: heuristicLane(text), reason: `gate error (${(e as Error).message}); heuristic`, gated: false };
+  }
+}
+
+
+/** Gate via an OpenAI-compatible chat endpoint (Google Gemini free tier or local Ollama). */
+async function gateViaOpenAIChat(cfg: AgentConfig, text: string, f: typeof fetch): Promise<GateDecision> {
+  const route = chatRoute(cfg, "/v1/messages", { accept: "application/json" });
+  if (!route) return { lane: heuristicLane(text), reason: "no gate route; heuristic", gated: false };
+  try {
+    const res = await f(route.url, {
+      method: "POST", headers: route.headers,
+      body: JSON.stringify({ model: chatModel(cfg, route), stream: false, messages: [{ role: "system", content: GATE_SYSTEM_PROMPT }, { role: "user", content: text }] }),
+    });
+    if (!res.ok) return { lane: heuristicLane(text), reason: `gate unavailable (${res.status}); heuristic`, gated: false };
+    const json: any = await res.json();
+    const reply = json.choices?.[0]?.message?.content ?? "";
+    const parsed = parseGateReply(typeof reply === "string" ? reply : JSON.stringify(reply));
     if (!parsed) return { lane: heuristicLane(text), reason: "gate reply unparseable; heuristic", gated: false };
     return { ...parsed, gated: true };
   } catch (e) {

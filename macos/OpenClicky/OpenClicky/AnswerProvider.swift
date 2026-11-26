@@ -18,7 +18,7 @@ import Foundation
 
 /// The services that can answer, as the router and Settings name them.
 nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
-    case anthropic, openAI, openRouter, gemini, groq, mistral, xai, openCode, claudeCodePlan, codexPlan, openClickyAccount
+    case anthropic, openAI, openRouter, gemini, groq, mistral, xai, openCode, claudeCodePlan, codexPlan, openClickyAccount, ollama
 
     var id: String { rawValue }
 
@@ -36,6 +36,7 @@ nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
         case .claudeCodePlan: return "Claude Code"
         case .codexPlan: return "Codex"
         case .openClickyAccount: return "free credits"
+        case .ollama: return "Ollama"
         }
     }
 
@@ -52,6 +53,7 @@ nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
         case .claudeCodePlan: return "Claude Code (your Claude plan)"
         case .codexPlan: return "Codex (your ChatGPT plan)"
         case .openClickyAccount: return "OpenClicky free credits"
+        case .ollama: return "Ollama (local, on this Mac)"
         }
     }
 
@@ -69,6 +71,7 @@ nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
         // K2.5 and K2.6 answered "Model access is disabled" on 2026-11-05.
         case .openCode: return "kimi-k3"
         case .claudeCodePlan, .codexPlan, .openClickyAccount: return nil // the CLI's or backend's own
+        case .ollama: return nil // the local Ollama model (Settings → model), no key
         }
     }
 

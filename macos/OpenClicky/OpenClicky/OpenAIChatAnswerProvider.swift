@@ -129,16 +129,22 @@ nonisolated struct OpenAIChatAnswerProvider: AnswerProvider {
     let apiKey: String
     let model: String
     let transport: AnswerHTTPTransport
+    /// Overrides `source.chatCompletionsURL` (e.g. local Ollama `http://localhost:11434/v1/chat/completions`).
+    let endpointOverride: URL?
+    /// Keyless local servers (Ollama) send no Authorization header.
+    let keyless: Bool
 
-    init(source: AnswerSource, apiKey: String, model: String, transport: @escaping AnswerHTTPTransport = AnswerHTTPTransports.urlSession) {
+    init(source: AnswerSource, apiKey: String, model: String, transport: @escaping AnswerHTTPTransport = AnswerHTTPTransports.urlSession, endpointOverride: URL? = nil, keyless: Bool = false) {
         self.source = source
         self.apiKey = apiKey
         self.model = model
         self.transport = transport
+        self.endpointOverride = endpointOverride
+        self.keyless = keyless
     }
 
     func answer(_ request: AnswerRequest, onTextChunk: @escaping @Sendable (String) -> Void) async throws -> AnswerResult {
-        let urlRequest = try Self.makeURLRequest(source: source, apiKey: apiKey, model: model, answerRequest: request)
+        let urlRequest = try Self.makeURLRequest(source: source, apiKey: apiKey, model: model, answerRequest: request, endpointOverride: endpointOverride, keyless: keyless)
         let response = try await transport(urlRequest)
 
         guard (200...299).contains(response.statusCode) else {
@@ -224,8 +230,8 @@ nonisolated struct OpenAIChatAnswerProvider: AnswerProvider {
         return body
     }
 
-    static func makeURLRequest(source: AnswerSource, apiKey: String, model: String, answerRequest: AnswerRequest) throws -> URLRequest {
-        guard let chatCompletionsURL = source.chatCompletionsURL else {
+    static func makeURLRequest(source: AnswerSource, apiKey: String, model: String, answerRequest: AnswerRequest, endpointOverride: URL? = nil, keyless: Bool = false) throws -> URLRequest {
+        guard let chatCompletionsURL = endpointOverride ?? source.chatCompletionsURL else {
             throw AnswerProviderError(source: source, status: 0, message: "\(source.displayName) does not offer an OpenAI-compatible chat endpoint")
         }
         var urlRequest = URLRequest(url: chatCompletionsURL)
@@ -233,7 +239,7 @@ nonisolated struct OpenAIChatAnswerProvider: AnswerProvider {
         urlRequest.timeoutInterval = 120
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        if !keyless { urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
         if source == .openRouter {
             // OpenRouter's app attribution: optional, but it is how the requests show up as
             // OpenClicky's on their side instead of as an unnamed client.

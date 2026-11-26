@@ -83,6 +83,10 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
     var openCodeKey: String?
     var claudeCodePlanOn = false
     var codexPlanOn = false
+    /// Local Ollama server on this Mac (no key). Enabled explicitly; base URL and model overridable.
+    var ollamaEnabled = false
+    var ollamaBaseUrl: String = "http://localhost:11434"
+    var ollamaModel: String = ""
     /// Who should answer, when the person picked one (nil: automatic).
     var preferredAnswerSource: AnswerSource?
 
@@ -106,6 +110,9 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
         self.claudeCodePlanOn = claudeCodePlanOn
         self.codexPlanOn = codexPlanOn
         self.preferredAnswerSource = preferredAnswerSource
+        self.ollamaEnabled = ollamaEnabled
+        self.ollamaBaseUrl = cleaned(ollamaBaseUrl) ?? "http://localhost:11434"
+        self.ollamaModel = cleaned(ollamaModel) ?? ""
     }
 
     init(settings: OpenClickyShellSettings) {
@@ -113,7 +120,8 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
                   openRouterKey: settings.openRouterApiKey, geminiKey: settings.geminiApiKey, groqKey: settings.groqApiKey,
                   mistralKey: settings.mistralApiKey, xaiKey: settings.xaiApiKey, openCodeKey: settings.openCodeApiKey,
                   claudeCodePlanOn: settings.useClaudeCodePlan == true, codexPlanOn: settings.useCodexPlan == true,
-                  preferredAnswerSource: settings.answerSource.flatMap(AnswerSource.init(rawValue:)))
+                  preferredAnswerSource: settings.answerSource.flatMap(AnswerSource.init(rawValue:)),
+                  ollamaEnabled: settings.ollamaEnabled == true, ollamaBaseUrl: settings.ollamaBaseUrl ?? "http://localhost:11434", ollamaModel: settings.ollamaModel ?? "")
     }
 
     /// The key for an API source, nil for the plans and the account.
@@ -127,7 +135,7 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
         case .mistral: return mistralKey
         case .xai: return xaiKey
         case .openCode: return openCodeKey
-        case .claudeCodePlan, .codexPlan, .openClickyAccount: return nil
+        case .claudeCodePlan, .codexPlan, .openClickyAccount, .ollama: return nil
         }
     }
 
@@ -136,6 +144,7 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
         switch source {
         case .claudeCodePlan: return claudeCodePlanOn
         case .codexPlan: return codexPlanOn
+        case .ollama: return ollamaEnabled
         case .openClickyAccount: return accountToken != nil
         default: return key(for: source) != nil
         }
@@ -144,7 +153,7 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
     /// The sources that can answer, in the order "automatic" tries them: own keys (Anthropic first,
     /// then OpenRouter, which reaches the most models), then the plans switched on, then the account.
     var answerSourcesInOrder: [AnswerSource] {
-        let order: [AnswerSource] = [.anthropic, .openRouter, .openAI, .gemini, .xai, .mistral, .groq, .openCode, .claudeCodePlan, .codexPlan, .openClickyAccount]
+        let order: [AnswerSource] = [.gemini, .ollama, .anthropic, .openRouter, .openAI, .xai, .mistral, .groq, .openCode, .claudeCodePlan, .codexPlan, .openClickyAccount]
         return order.filter(canAnswer(with:))
     }
 }

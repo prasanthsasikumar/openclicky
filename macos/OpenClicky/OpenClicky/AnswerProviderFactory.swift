@@ -14,6 +14,14 @@ nonisolated enum AnswerProviderFactory {
                      modelOverrides: [String: String]) async throws -> AnswerProvider {
         let model = modelOverrides[source.rawValue].flatMap { $0.isEmpty ? nil : $0 } ?? source.defaultModel
         switch source {
+        case .ollama:
+            let model = modelOverrides[source.rawValue].flatMap { $0.isEmpty ? nil : $0 }
+                ?? credentials.ollamaModel.nilIfEmpty
+            let base = credentials.ollamaBaseUrl.nilIfEmpty ?? "http://localhost:11434"
+            let trimmedBase = base.hasSuffix("/") ? String(base.dropLast()) : base
+            let url = URL(string: trimmedBase + "/v1/chat/completions")
+            // Ollama needs no key; it ignores auth. A model name is required; ask the user to pick one.
+            return OpenAIChatAnswerProvider(source: source, apiKey: "", model: model ?? "", endpointOverride: url, keyless: true)
         case .openAI, .openRouter, .groq, .mistral, .xai, .openCode:
             guard let key = credentials.key(for: source), let model else { throw missing(source, "add its key in settings, account.") }
             return OpenAIChatAnswerProvider(source: source, apiKey: key, model: model)
@@ -39,4 +47,9 @@ nonisolated enum AnswerProviderFactory {
     private static func missing(_ source: AnswerSource, _ sentence: String) -> AnswerProviderError {
         AnswerProviderError(source: source, status: 0, message: sentence)
     }
+}
+
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

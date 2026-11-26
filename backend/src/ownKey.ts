@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { getEnv, type Env } from "./env.js";
 import { requireAuth, type Principal } from "./auth.js";
-import { OPENAI_KEY_HEADER } from "./keys.js";
+import { OPENAI_KEY_HEADER, GEMINI_KEY_HEADER } from "./keys.js";
 import { addressBlocks, ipOf, keyedHash } from "./accountAuth.js";
 
 /**
@@ -23,7 +23,9 @@ function saltFor(env: Env): string {
   return processSalt;
 }
 
-export const hasOwnOpenAIKey = (c: Context) => Boolean(c.req.header(OPENAI_KEY_HEADER)?.trim());
+export const hasOwnOpenAIKey = (c: Context) => Boolean(c.req.header(OPENAI_KEY_HEADER)?.trim() || c.req.header(GEMINI_KEY_HEADER)?.trim());
+/** Alias: own paid OR free key, no account. */
+export const hasOwnKey = hasOwnOpenAIKey;
 
 /** The anonymous principal for this request: a keyed hash of the address block, never the address itself. */
 export async function ownKeyPrincipal(c: Context): Promise<Principal> {

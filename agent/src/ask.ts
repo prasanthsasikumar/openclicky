@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { AgentConfig } from "./config.js";
-import { openaiRoute, needsOpenAI, DIRECT_DEFAULTS } from "./providerRoute.js";
+import { openaiRoute, chatRoute, chatModel, needsOpenAI, DIRECT_DEFAULTS } from "./providerRoute.js";
 
 export interface AskOptions {
   imagePath?: string;
@@ -62,7 +62,7 @@ export function parseSseStream(text: string): string {
  * (OPENAI_MODEL) for "default".
  */
 export async function ask(cfg: AgentConfig, question: string, opts: AskOptions = {}): Promise<string> {
-  const route = openaiRoute(cfg, "/v1/chat/completions", "/chat/completions", { "content-type": "application/json", accept: "text/event-stream" });
+  const route = chatRoute(cfg, "/v1/chat/completions", { accept: "text/event-stream" });
   if (!route) throw new Error(`ask ${needsOpenAI}`);
   const f = opts.fetchImpl ?? fetch;
 
@@ -77,7 +77,7 @@ export async function ask(cfg: AgentConfig, question: string, opts: AskOptions =
     method: "POST",
     headers: route.headers,
     body: JSON.stringify({
-      model: route.direct ? DIRECT_DEFAULTS.openaiModel : "default",
+      model: chatModel(cfg, route),
       stream: true,
       messages: [
         { role: "system", content: opts.system ?? ASK_SYSTEM_PROMPT },

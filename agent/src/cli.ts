@@ -5,8 +5,7 @@ import readline from "node:readline";
 import { resolveConfig, type AgentConfig } from "./config.js";
 import { readVersion } from "./version.js";
 import { canCallBackend, MISSING_CREDENTIALS } from "./backendHeaders.js";
-import { CodexAgent, type ApprovalRequest, type ApprovalDecision, type RunResult, buildChildEnv } from "./codex.js";
-import { ensureCodexHome } from "./codexHome.js";
+import { OpenCodeAgent, type ApprovalRequest, type ApprovalDecision, type RunResult, buildChildEnv } from "./opencode.js";
 import { ask } from "./ask.js";
 import { gate, type Lane } from "./gate.js";
 import { captureScreen } from "./screenshot.js";
@@ -18,7 +17,7 @@ import { spawnTarget } from "./winSpawn.js";
 const program = new Command();
 program
   .name("openclicky")
-  .description("OpenClicky headless agent: run tasks through Codex via the OpenClicky backend, or ask quick questions.")
+  .description("ATMIYA AI headless agent: run tasks through OpenCode, or ask quick questions (Google Gemini / local Ollama, no paid keys required).")
   .version(readVersion());
 
 /**
@@ -62,7 +61,7 @@ const propagate = (e: unknown): never => {
 
 const withCommonOptions = (cmd: Command) =>
   cmd
-    .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL; default https://api.openclicky.org, the hosted backend — point it at http://localhost:8787 to use your own)")
+    .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL; no paid account required; the agent lane itself uses OpenCode)")
     .option("--token <token>", "Supabase JWT or session token (env OPENCLICKY_TOKEN)")
     .option("--image <path>", "attach a local screenshot/image")
     .option("--screenshot", "capture the screen now (macOS screencapture, Windows, Linux grim/gnome-screenshot/spectacle/scrot/import) and attach it")
@@ -77,7 +76,7 @@ const withRunOptions = (cmd: Command) =>
   cmd
     .option("--thread <id>", "resume an existing thread")
     .option("--cwd <dir>", "working directory for the agent (env OPENCLICKY_WORKSPACE; default: cwd)")
-    .option("--model <model>", "Codex model override (env OPENCLICKY_MODEL)")
+    .option("--model <model>", "OpenCode model override (provider/model; env OPENCLICKY_MODEL)")
     .option("--approve", "ask before running commands / changing files outside the sandbox (default: auto-accept)");
 
 function configFrom(opts: Record<string, any>): AgentConfig {
@@ -153,9 +152,10 @@ async function promptApproval(req: ApprovalRequest): Promise<ApprovalDecision> {
 }
 
 async function runAgent(cfg: AgentConfig, task: string, opts: Record<string, any>): Promise<RunResult> {
-  if (!canCallBackend(cfg)) fail(MISSING_CREDENTIALS);
+  // OpenCode manages its own model provider (free `opencode/*`, Google Gemini, or local Ollama);
+  // no paid OpenAI/Anthropic key or OpenClicky backend token is required for the agent lane.
   let streamed = false;
-  const agent = new CodexAgent(cfg, {
+  const agent = new OpenCodeAgent(cfg, {
     onEvent: note,
     onDelta: opts.json
       ? undefined
@@ -206,7 +206,7 @@ async function runAsk(cfg: AgentConfig, question: string, opts: Record<string, a
   return answer;
 }
 
-withRunOptions(withCommonOptions(program.command("run").description("full agent run (spawns Codex on a thread)").argument("<task...>", "what to do"))).action(
+withRunOptions(withCommonOptions(program.command("run").description("full agent run (spawns OpenCode on a session)").argument("<task...>", "what to do"))).action(
   async (parts: string[], opts) => {
     try {
       await runAgent(configFrom(opts), parts.join(" "), opts);
@@ -307,20 +307,20 @@ withRunOptions(
 
 program
   .command("talk")
-  .description("always-on voice conversation via OpenAI Realtime (mic → speech in/out); work is handed to a Codex thread")
+  .description("always-on voice conversation via OpenAI Realtime (mic → speech in/out); work is handed to an OpenCode session")
   .option("--backend-url <url>", "OpenClicky backend URL (env BACKEND_URL)")
   .option("--token <token>", "Supabase JWT or session token (env OPENCLICKY_TOKEN)")
   .option("--voice <name>", "Realtime voice (e.g. marin, cedar, alloy)")
   .option("--device <index>", "microphone: AVFoundation index (macOS), DirectShow index or name (Windows)", "0")
   .option("--cwd <dir>", "working directory for agent tasks")
-  .option("--model <model>", "Codex model override for agent tasks")
+  .option("--model <model>", "OpenCode model override for agent tasks")
   .option("--seconds <n>", "hang up after N seconds (default: until Ctrl-C)")
   .option("--no-agent", "answer only; never hand work to the agent")
   .option("--full-duplex", "keep the mic open while OpenClicky speaks (use with a headset; enables barge-in)")
   .option("--verbose")
   .action(async (opts) => {
     const cfg = configFrom(opts);
-    let agent: CodexAgent | undefined;
+    let agent: OpenCodeAgent | undefined;
     let threadId: string | undefined;
     // Tool calls are dispatched from a fire-and-forget websocket handler, so two `send_to_agent`
     // calls in one response overlap. Both would read this `threadId`, run against it, and the later
@@ -339,7 +339,7 @@ program
         : (task) => {
             const result = agentTasks.then(async () => {
               if (!agent) {
-                agent = new CodexAgent(cfg, { onEvent: note });
+                agent = new OpenCodeAgent(cfg, { onEvent: note });
                 await agent.start();
               }
               const r = await agent.run(task, { threadId });
@@ -374,9 +374,9 @@ program
     }
   });
 
-const threads = program.command("threads").description("inspect OpenClicky's Codex threads (isolated CODEX_HOME)");
-const withThreadAgent = async <T>(opts: Record<string, any>, fn: (agent: CodexAgent) => Promise<T>): Promise<T> => {
-  const agent = new CodexAgent(configFrom(opts));
+const threads = program.command("threads").description("inspect OpenCode sessions");
+const withThreadAgent = async <T>(opts: Record<string, any>, fn: (agent: OpenCodeAgent) => Promise<T>): Promise<T> => {
+  const agent = new OpenCodeAgent(configFrom(opts));
   try {
     await agent.start();
     return await fn(agent);
@@ -439,19 +439,18 @@ threads
     }
   });
 
-// Account integrations (Composio through Codex's MCP OAuth). The macOS app's "Connect <app>" card
+// Account integrations (Composio through OpenCode's MCP OAuth). The macOS app's "Connect <app>" card
 // calls these: `login` once per machine, then the agent's composio tools can connect single apps.
-const integrations = program.command("integrations").description("account integrations (Composio MCP through Codex OAuth)");
+const integrations = program.command("integrations").description("account integrations (Composio MCP through OpenCode OAuth)");
 
-/** `codex mcp <args>` against OpenClicky's CODEX_HOME; the config is (re)rendered first. */
+/** `opencode mcp <args>`; no provider key is forwarded to the MCP child. */
 async function codexMcp(cfg: AgentConfig, args: string[], onLine?: (line: string) => void): Promise<{ code: number; output: string }> {
-  ensureCodexHome(cfg);
   const { spawn } = await import("node:child_process");
+  // Same allowlist as the agent child: `opencode mcp` talks to third-party MCP servers, so it
+  // has no business inheriting every credential in the user's shell either.
+  const env = buildChildEnv(cfg);
   return new Promise((resolve, reject) => {
-    // Same allowlist as the app-server child: `codex mcp` talks to third-party MCP servers, so it
-    // has no business inheriting every credential in the user's shell either.
-    const env = buildChildEnv(cfg);
-    const target = spawnTarget(cfg.codexBin, ["mcp", ...args], env);
+    const target = spawnTarget(cfg.opencodeBin ?? "opencode", ["mcp", ...args], env);
     const child = spawn(target.command, target.args, { env, stdio: ["ignore", "pipe", "pipe"], shell: target.shell });
     let output = "";
     let pending = "";
@@ -464,7 +463,7 @@ async function codexMcp(cfg: AgentConfig, args: string[], onLine?: (line: string
     };
     child.stdout.on("data", consume);
     child.stderr.on("data", consume);
-    child.once("error", (e) => reject(new Error(`failed to start ${cfg.codexBin}: ${e.message}`)));
+    child.once("error", (e) => reject(new Error(`failed to start ${cfg.opencodeBin ?? "opencode"}: ${e.message}`)));
     child.once("close", (code) => {
       if (pending) onLine?.(pending);
       resolve({ code: code ?? 1, output });
@@ -477,13 +476,13 @@ withCommonOptions(integrations.command("status").description("MCP servers and wh
     try {
       const cfg = configFrom(opts);
       const { code, output } = await codexMcp(cfg, ["list", "--json"]);
-      if (code !== 0) fail(output.trim() || `codex mcp list exited ${code}`);
+      if (code !== 0) fail(output.trim() || `opencode mcp list exited ${code}`);
       const servers = JSON.parse(output) as Array<Record<string, any>>;
       const composio = servers.find((s) => s.name === "composio");
       const status = {
         configured: Boolean(cfg.composioMcpUrl),
         composio: composio ?? null,
-        // Codex reports "OAuth" once `codex mcp login composio` has stored a token; a consumer key needs no login.
+        // OpenCode reports OAuth once `opencode mcp login composio` has stored a token; a consumer key needs no login.
         loggedIn: Boolean(cfg.composioApiKey) || /o_?auth/i.test(String(composio?.auth_status ?? composio?.authStatus ?? "")),
       };
       if (opts.json) return void process.stdout.write(JSON.stringify(status, null, 2) + "\n");
@@ -499,7 +498,7 @@ withCommonOptions(integrations.command("status").description("MCP servers and wh
 withCommonOptions(
   integrations
     .command("login")
-    .description("log Codex into the Composio MCP server (opens Composio's authorization page)")
+    .description("log OpenCode into the Composio MCP server (opens Composio's authorization page)")
     .argument("[server]", "MCP server name", "composio")
     .option("--no-open", "print the authorization URL instead of opening the browser"),
 ).action(async (server: string, opts) => {
@@ -510,7 +509,7 @@ withCommonOptions(
       const url = line.match(/https?:\/\/\S+/)?.[0];
       if (url && opts.open !== false) {
         process.stdout.write(`opening ${url}\n`);
-        // Codex only prints the URL; open it so the user lands on Composio's page.
+        // OpenCode only prints the URL; open it so the user lands on Composio's page.
         // Windows has no `open`; url.dll hands the URL to the default browser without cmd.exe quoting.
         // Linux desktops open it with xdg-open.
         const opener: [string, string[]] =
@@ -520,7 +519,7 @@ withCommonOptions(
         process.stdout.write(line + "\n");
       }
     });
-    if (code !== 0) fail(output.trim() || `codex mcp login exited ${code}`);
+    if (code !== 0) fail(output.trim() || `opencode mcp login exited ${code}`);
   } catch (e) {
     propagate(e);
   }

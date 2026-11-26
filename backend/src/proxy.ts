@@ -90,19 +90,23 @@ function passthrough(upstream: Response): Response {
 export async function proxyOpenAI(c: Context, upstreamPath: string, store?: BillingStore): Promise<Response> {
   const env = getEnv(c);
   const keys = resolveProviderKeys(c.req.raw.headers, env);
-  if (!keys.openaiKey) return c.json({ error: "backend missing OPENAI_API_KEY" }, 502);
-  let body = applyModelDefault(await readJson(c), env.OPENAI_MODEL);
-  if (keys.mapModels) body = applyModelMapping(body, env.MODEL_ALIASES, env.OPENAI_MODEL_PREFIX);
+  // No paid key required: an own OpenAI key, else a free Google Gemini key (OpenAI-compatible).
+  const useGemini = !keys.openaiKey && Boolean(keys.geminiKey);
+  const upstreamKey = keys.openaiKey ?? keys.geminiKey;
+  const upstreamBase = keys.openaiKey ? keys.openaiBase : keys.geminiBase;
+  if (!upstreamKey) return c.json({ error: "backend missing OPENAI_API_KEY or GEMINI_API_KEY" }, 502);
+  let body = applyModelDefault(await readJson(c), env.OPENAI_MODEL ?? (useGemini ? (env.GEMINI_MODEL || "gemini-2.5-flash") : undefined));
+  if (keys.mapModels && !useGemini) body = applyModelMapping(body, env.MODEL_ALIASES, env.OPENAI_MODEL_PREFIX);
   // A streamed chat completion only reports token usage in its last chunk when asked to.
   if (store && !keys.byok && upstreamPath === "/chat/completions" && body.stream === true && body.stream_options === undefined) {
     body = { ...body, stream_options: { include_usage: true } };
   }
-  const upstream = await fetch(keys.openaiBase + upstreamPath, {
+  const upstream = await fetch(upstreamBase + upstreamPath, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       accept: c.req.header("accept") ?? "*/*",
-      authorization: `Bearer ${keys.openaiKey}`,
+      authorization: `Bearer ${upstreamKey}`,
     },
     body: JSON.stringify(body),
   });
@@ -222,8 +226,10 @@ export async function assemblyAiToken(c: Context): Promise<Response> {
 export async function proxyAnthropic(c: Context, store?: BillingStore): Promise<Response> {
   const env = getEnv(c);
   const keys = resolveProviderKeys(c.req.raw.headers, env);
+  // No paid Anthropic key required: fall back to a free Google Gemini key (translated).
+  if (!keys.anthropicKey && keys.geminiKey) return proxyAnthropicViaGemini(c, keys.geminiKey, keys.geminiBase, env);
   if (keys.byok && !keys.anthropicKey) return c.json({ error: "byok_missing_anthropic_key" }, 402);
-  if (!keys.anthropicKey) return c.json({ error: "backend missing ANTHROPIC_API_KEY" }, 502);
+  if (!keys.anthropicKey) return c.json({ error: "backend missing ANTHROPIC_API_KEY or GEMINI_API_KEY" }, 502);
   let body = applyModelDefault(await readJson(c), keys.anthropicDefaultModel);
   if (keys.mapModels) body = applyModelMapping(body, env.MODEL_ALIASES, env.ANTHROPIC_MODEL_PREFIX);
   const upstream = await fetch(keys.anthropicBase + "/v1/messages", {
@@ -237,4 +243,28 @@ export async function proxyAnthropic(c: Context, store?: BillingStore): Promise<
     body: JSON.stringify(body),
   });
   return meterResponse(c, upstream, new URL(c.req.url).pathname, typeof body.model === "string" ? body.model : undefined, store, () => CREDIT_COSTS.flatTokenFallback);
+}
+
+
+/** Anthropic `/v1/messages` shape translated to a Gemini `generateContent` call and back (non-streamed). */
+async function proxyAnthropicViaGemini(c: Context, geminiKey: string, geminiBase: string, env: { GEMINI_MODEL?: string }): Promise<Response> {
+  const body = await readJson(c);
+  const model = (typeof body.model === "string" && body.model && body.model !== "default" ? body.model : env.GEMINI_MODEL || "gemini-2.5-flash").replace(/^anthropic\//, "");
+  const systemParts = typeof body.system === "string" ? body.system : Array.isArray(body.system) ? body.system.map((b: any) => (typeof b === "string" ? b : b?.text ?? "")).join("\n") : "";
+  const contents = (Array.isArray(body.messages) ? body.messages : []).map((m: any) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((c: any) => (typeof c === "string" ? c : c?.text ?? "")).join("\n") : String(m.content ?? "") }],
+  }));
+  const reqBody: Record<string, unknown> = { contents, generationConfig: { maxOutputTokens: typeof body.max_tokens === "number" ? body.max_tokens : 1024 } };
+  if (systemParts) reqBody.systemInstruction = { parts: [{ text: systemParts }] };
+  // Use the OpenAI-compatible chat endpoint for simplicity.
+  const upstream = await fetch(geminiBase + "/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${geminiKey}` },
+    body: JSON.stringify({ model, max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : 1024, messages: [...(systemParts ? [{ role: "system", content: systemParts }] : []), ...contents.map((m) => ({ role: m.role === "model" ? "assistant" : "user", content: (m.parts[0] as { text: string }).text }))] }),
+  });
+  const json = (await upstream.json().catch(() => ({}))) as any;
+  if (!upstream.ok) return c.json({ type: "error", error: { type: "api_error", message: json?.error?.message ?? `gemini ${upstream.status}` } }, upstream.status as 400);
+  const text = json?.choices?.[0]?.message?.content ?? "";
+  return c.json({ id: "msg_gemini", type: "message", role: "assistant", model, content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: json?.usage?.prompt_tokens ?? 0, output_tokens: json?.usage?.completion_tokens ?? 0 } });
 }
