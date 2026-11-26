@@ -5,6 +5,7 @@ import { readVersion } from "./version.js";
 import { snapshotWorkspace, diffSnapshots } from "./artifacts.js";
 import type { AgentConfig } from "./config.js";
 import { spawnTarget } from "./winSpawn.js";
+import path from "node:path";
 
 /**
  * OpenCode agent, replacing the OpenAI Codex CLI integration.
@@ -65,7 +66,29 @@ export function buildChildEnv(cfg: AgentConfig, sourceEnv: NodeJS.ProcessEnv = p
   // forward OpenAI/Anthropic keys to the child.
   const geminiKey = cfg.geminiApiKey ?? sourceEnv.OPENCLICKY_GEMINI_KEY ?? sourceEnv.GEMINI_API_KEY;
   if (geminiKey) env.GEMINI_API_KEY = geminiKey;
+  // Optional local Ollama + generated provider config (additive; user's own opencode config still applies).
+  const configPath = ensureOpenCodeConfig(cfg, geminiKey);
+  if (configPath) env.OPENCODE_CONFIG = configPath;
   return env;
+}
+
+/**
+ * Write an additive `opencode.json` registering a local Ollama provider (OpenAI-compatible
+ * `http://<host>/v1`) and, when a Gemini key is present, note Gemini. Returns its path, or null.
+ */
+export function ensureOpenCodeConfig(cfg: AgentConfig, geminiKey?: string): string | null {
+  const home = cfg.opencodeHome ?? path.join(cfg.home ?? process.env.HOME ?? ".", ".openclicky", "opencode");
+  try {
+    const provider: Record<string, unknown> = {};
+    const ollamaBase = (cfg.ollamaBaseUrl ?? "http://localhost:11434").replace(/\/+$/, "");
+    // Register local Ollama (OpenAI-compatible /v1); models are read from the server. No key.
+    provider.ollama = { npm: "@ai-sdk/openai-compatible", name: "Ollama (local)", options: { baseURL: ollamaBase + "/v1" } };
+    const doc: Record<string, unknown> = { "$schema": "https://opencode.ai/config.json", provider };
+    fs.mkdirSync(home, { recursive: true });
+    const configPath = home + "/opencode.json";
+    fs.writeFileSync(configPath, JSON.stringify(doc, null, 2));
+    return configPath;
+  } catch { return null; }
 }
 
 export type ApprovalKind = "command" | "fileChange" | "permissions";

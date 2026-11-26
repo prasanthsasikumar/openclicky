@@ -45,6 +45,10 @@ export interface AgentConfig {
   anthropicApiKey?: string;
   /** Local Ollama model for chat (e.g. llama3.2). */
   ollamaModel?: string;
+  /** Isolated OpenCode config home for generated opencode.json. */
+  opencodeHome?: string;
+  /** Home dir override (tests). */
+  home?: string;
   /** Wall-clock cap (ms) on a single CodexAgent.run() turn before it rejects instead of hanging
    *  forever on a Codex bug that never emits a terminal event. See codex.ts DEFAULT_RUN_TIMEOUT_MS. */
   runTimeoutMs: number;
@@ -118,6 +122,8 @@ export function resolveConfig(flags: Partial<AgentConfig> = {}, env: NodeJS.Proc
     openaiApiKey: flags.openaiApiKey ?? env.OPENCLICKY_OPENAI_KEY ?? undefined,
     anthropicApiKey: flags.anthropicApiKey ?? env.OPENCLICKY_ANTHROPIC_KEY ?? undefined,
     ollamaModel: flags.ollamaModel ?? env.OPENCLICKY_OLLAMA_MODEL ?? undefined,
+    opencodeHome: flags.opencodeHome ?? env.OPENCLICKY_OPENCODE_HOME ?? path.join(home, ".openclicky", "opencode"),
+    home,
     // 10 minutes by default (see codex.ts DEFAULT_RUN_TIMEOUT_MS): long enough for any real agent
     // task, short enough that a Codex bug which never emits a terminal event can't hang forever.
     runTimeoutMs: flags.runTimeoutMs ?? parsePositiveInt(env.OPENCLICKY_RUN_TIMEOUT_MS) ?? 10 * 60 * 1000,
