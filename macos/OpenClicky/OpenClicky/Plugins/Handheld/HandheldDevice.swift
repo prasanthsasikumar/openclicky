@@ -52,6 +52,8 @@ struct HandheldDevice: Identifiable {
     /// For a 3D model of the device (`HandheldDeviceView`): the name of the model's part that is
     /// each control, by control id. Empty for a device with no known model.
     var modelPartNameByControlID: [String: String] = [:]
+    /// Where the 3D model can be downloaded from when the person asks for it; nil when there is none.
+    var modelDownload: HandheldModelDownload?
 
     func control(withID controlID: String) -> HandheldControl? {
         controls.first { $0.id == controlID }

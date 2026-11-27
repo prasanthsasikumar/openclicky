@@ -71,7 +71,7 @@ enum SettingsLayout {
         ]),
         Group(page: .calendars, title: nil, itemIDs: ["calendar.calendars", "calendar.calendar.*"]),
         // The device first, with no header above it; which device is connected goes last.
-        Group(page: .handheld, title: "", itemIDs: ["handheld.device", "handheld.binding.*", "handheld.mouseNote"]),
+        Group(page: .handheld, title: "", itemIDs: ["handheld.device", "handheld.modelOffer", "handheld.binding.*", "handheld.mouseNote"]),
         Group(page: .handheld, title: "Microphone", itemIDs: ["handheld.microphone"]),
         Group(page: .handheld, title: "Device", itemIDs: ["handheld.status", "handheld.makerAppNote"]),
     ]

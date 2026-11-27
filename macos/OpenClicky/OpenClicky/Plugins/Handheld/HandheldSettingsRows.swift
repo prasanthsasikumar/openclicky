@@ -78,6 +78,14 @@ enum HandheldSettings {
                 keywords: ["handheld", "device", "3d", "model", "picture"],
                 isRelevant: { plugin.isEnabled && plugin.deviceShown?.id == device.id && deviceModelIsAvailable(device) },
                 view: AnyView(HandheldDeviceRow(plugin: plugin, device: device))))
+            if let modelDownload = device.modelDownload {
+                items.append(SettingsItem(
+                    id: "handheld.modelOffer",
+                    title: HandheldModelOfferRow.title, detail: HandheldModelOfferRow.detail,
+                    keywords: ["handheld", "3d", "model", "picture", "download"],
+                    isRelevant: { plugin.isEnabled && plugin.deviceShown?.id == device.id && !deviceModelIsAvailable(device) },
+                    view: AnyView(HandheldModelOfferRow(plugin: plugin, device: device, modelDownload: modelDownload))))
+            }
             for control in device.controls {
                 for gesture in HandheldBindings.bindableGestures(of: control) {
                     let rowTitle = "\(control.name), \(label(for: gesture))"
@@ -106,6 +114,45 @@ enum HandheldSettings {
             isRelevant: { plugin.isEnabled && plugin.deviceShown != nil },
             view: AnyView(SettingsFootnote(text: mouseNote))))
         return items
+    }
+}
+
+// MARK: - The offer to download the picture
+
+/// Shown until the device's 3D model is on this Mac: one button that downloads it.
+struct HandheldModelOfferRow: View {
+    static let title = "See the device in 3D"
+    static let detail = "Click its buttons on a picture instead of a list. Downloaded once from OpenClicky’s page on GitHub."
+
+    @ObservedObject var plugin: HandheldPlugin
+    let device: HandheldDevice
+    let modelDownload: HandheldModelDownload
+    @ObservedObject private var installer = HandheldModelInstaller.shared
+
+    var body: some View {
+        SettingsRow(title: Self.title, detail: detailNow) {
+            if installer.state(forDeviceID: device.id).isBusy {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Download (\(modelDownload.sizeText))") {
+                    Task {
+                        await installer.install(modelDownload, deviceID: device.id, to: HandheldDeviceModelFile.url(for: device)) {
+                            // The page is drawn again, now with the picture in place of the list.
+                            plugin.onSettingsShapeChanged?()
+                        }
+                    }
+                }
+                .pointerCursor()
+            }
+        }
+    }
+
+    private var detailNow: String {
+        switch installer.state(forDeviceID: device.id) {
+        case .downloading, .unpacking: return "Downloading…"
+        case .failed(let reason): return "It could not be downloaded: \(reason). Try again."
+        default: return Self.detail
+        }
     }
 }
 
