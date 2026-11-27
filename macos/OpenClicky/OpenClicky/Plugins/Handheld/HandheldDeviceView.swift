@@ -82,7 +82,7 @@ enum HandheldDeviceViewMessage {
     }
 }
 
-private final class HandheldViewerSchemeHandler: NSObject, WKURLSchemeHandler {
+final class HandheldViewerSchemeHandler: NSObject, WKURLSchemeHandler {
     private let modelFile: URL
 
     init(modelFile: URL) {
@@ -96,8 +96,15 @@ private final class HandheldViewerSchemeHandler: NSObject, WKURLSchemeHandler {
             urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
             return
         }
-        let response = URLResponse(url: url, mimeType: HandheldViewerScheme.mediaType(forRequestPath: url.path),
-                                   expectedContentLength: data.count, textEncodingName: "utf-8")
+        // An HTTP answer with a status: the page reads its model with `fetch`, which takes an
+        // answer without a status as a failure ("the model could not be read").
+        guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [
+            "Content-Type": HandheldViewerScheme.mediaType(forRequestPath: url.path),
+            "Content-Length": String(data.count),
+        ]) else {
+            urlSchemeTask.didFailWithError(URLError(.badServerResponse))
+            return
+        }
         urlSchemeTask.didReceive(response)
         urlSchemeTask.didReceive(data)
         urlSchemeTask.didFinish()
