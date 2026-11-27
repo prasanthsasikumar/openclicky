@@ -381,6 +381,14 @@ struct IslandGlowTests {
         #expect(IslandGlowTone.tone(voiceState: .responding, isAgentWorking: true) == .speaking)
         #expect(IslandGlowMetrics.sweepSeconds < IslandGlowMetrics.sweepCycleSeconds)
     }
+
+    /// The light is drawn inside the island and scales down with a short one.
+    @Test func theGlowIsSizedFromTheIslandsHeight() {
+        #expect(IslandGlowMetrics.blobRadius(islandHeight: 32) <= 38)
+        #expect(IslandGlowMetrics.blobRadius(islandHeight: 232) == 38)
+        #expect(IslandGlowMetrics.blobRadius(islandHeight: 0) == 0)
+        #expect(IslandGlowMetrics.bandHeight(islandHeight: 32) < 32)
+    }
 }
 
 @MainActor

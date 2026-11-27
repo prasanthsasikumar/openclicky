@@ -2,9 +2,10 @@
 //  IslandGlow.swift
 //  OpenClicky
 //
-//  The light that leaks from under the island's bottom corners while Clicky is listening,
-//  thinking, speaking or has an agent working, and the sweep that runs along its bottom edge
-//  while an agent works. Both are Core Animation layers: the slow pulse and the sweep run in the
+//  The light inside the island's bottom corners while Clicky is listening, thinking, speaking or
+//  has an agent working, and the sweep that runs along its bottom edge while an agent works. The
+//  light stays inside the black shape (`IslandSurface` clips it to the outline): light outside it
+//  was cut off by the island's window 16 pt out and showed as a square of colour. Both are Core Animation layers: the slow pulse and the sweep run in the
 //  render server and cost the app nothing while they loop. They exist only while something is
 //  going on (nothing animates on an idle island), and under Reduce Motion they hold still.
 //
@@ -40,8 +41,12 @@ enum IslandGlowTone: Equatable {
 }
 
 enum IslandGlowMetrics {
-    /// How far the light reaches past the island's sides and bottom.
-    static let reach: CGFloat = 12
+    /// A corner light's radius for an island this tall.
+    static func blobRadius(islandHeight: CGFloat) -> CGFloat { min(max(0, islandHeight) * 1.1, 38) }
+    /// How far in from the island's side a corner light's centre sits (it sits on the bottom edge).
+    static let blobInset: CGFloat = 10
+    /// How tall the faint band along the inside of the bottom edge is.
+    static func bandHeight(islandHeight: CGFloat) -> CGFloat { min(max(0, islandHeight) * 0.4, 12) }
     static let restOpacity: Float = 0.55
     static let peakOpacity: Float = 0.95
     /// The sweep crosses in this long, then rests until the cycle ends.
@@ -49,7 +54,8 @@ enum IslandGlowMetrics {
     static let sweepCycleSeconds: Double = 1.6
 }
 
-/// Two soft blobs at the island's bottom corners and a faint band between them.
+/// Two soft lights inside the island's bottom corners and a faint band between them. Give it the
+/// island's own frame and clip it to the island's outline.
 struct IslandGlowView: NSViewRepresentable {
     let tone: IslandGlowTone
     let reduceMotion: Bool
@@ -71,15 +77,16 @@ final class IslandGlowLayerView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.masksToBounds = false
+        layer?.masksToBounds = true
         for blob in [left, right] {
             blob.type = .radial
             blob.startPoint = CGPoint(x: 0.5, y: 0.5)
             blob.endPoint = CGPoint(x: 1, y: 1)
             layer?.addSublayer(blob)
         }
-        band.startPoint = CGPoint(x: 0.5, y: 1)
-        band.endPoint = CGPoint(x: 0.5, y: 0)
+        // Brightest on the bottom edge, gone a few points up (AppKit layers: y = 0 is the bottom).
+        band.startPoint = CGPoint(x: 0.5, y: 0)
+        band.endPoint = CGPoint(x: 0.5, y: 1)
         layer?.addSublayer(band)
     }
 
@@ -91,11 +98,12 @@ final class IslandGlowLayerView: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let blobSize = min(bounds.height * 1.6, 70)
-        // AppKit layers have their origin at the bottom-left: the island's bottom corners are at y = reach.
-        left.frame = CGRect(x: IslandGlowMetrics.reach - blobSize / 2 + 6, y: IslandGlowMetrics.reach - blobSize / 2 + 4, width: blobSize, height: blobSize)
-        right.frame = CGRect(x: bounds.width - IslandGlowMetrics.reach - blobSize / 2 - 6, y: IslandGlowMetrics.reach - blobSize / 2 + 4, width: blobSize, height: blobSize)
-        band.frame = CGRect(x: IslandGlowMetrics.reach + 10, y: 0, width: max(0, bounds.width - 2 * IslandGlowMetrics.reach - 20), height: IslandGlowMetrics.reach + 6)
+        let radius = IslandGlowMetrics.blobRadius(islandHeight: bounds.height)
+        let inset = IslandGlowMetrics.blobInset
+        // AppKit layers have their origin at the bottom-left: each light is centred on the bottom edge.
+        left.frame = CGRect(x: inset - radius, y: -radius, width: radius * 2, height: radius * 2)
+        right.frame = CGRect(x: bounds.width - inset - radius, y: -radius, width: radius * 2, height: radius * 2)
+        band.frame = CGRect(x: 0, y: 0, width: bounds.width, height: IslandGlowMetrics.bandHeight(islandHeight: bounds.height))
         CATransaction.commit()
     }
 

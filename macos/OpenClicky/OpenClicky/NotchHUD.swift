@@ -1650,7 +1650,10 @@ struct NotchHUDView: View {
             height: surfaceHeight,
             look: model.look,
             isSideDrawer: model.placement.isSideDrawer,
-            drawerSide: model.placement
+            drawerSide: model.placement,
+            // Only the busy strip glows, and nothing glows while nothing is going on.
+            glow: expansion == .compact && !model.placement.isSideDrawer ? glowTone : nil,
+            reduceMotion: model.reduceMotion
         )
     }
 
@@ -1659,17 +1662,6 @@ struct NotchHUDView: View {
             // Collapsed the island is the notch itself: black, no shadow, no outline. On a display
             // without a notch nothing is drawn while collapsed (no fake notch over the menu bar): only
             // the thin handle below marks where to hover.
-            // The light under the busy strip's corners, and the sweep along its edge while an agent
-            // works. Neither exists while nothing is going on.
-            if expansion == .compact, !model.placement.isSideDrawer, let tone = glowTone {
-                IslandGlowView(tone: tone, reduceMotion: model.reduceMotion)
-                    .frame(width: surfaceWidth + 2 * IslandGlowMetrics.reach, height: surfaceHeight + IslandGlowMetrics.reach)
-                    .animation(widthAnimation, value: surfaceWidth)
-                    .animation(heightAnimation, value: surfaceHeight)
-                    .allowsHitTesting(false)
-                    .transition(.opacity.animation(Motion.swap))
-                    .accessibilityHidden(true)
-            }
             if expansion != .collapsed || (model.placement == .notch && model.geometry.hasHardwareNotch) {
                 islandBackground
                     .frame(width: surfaceWidth)
