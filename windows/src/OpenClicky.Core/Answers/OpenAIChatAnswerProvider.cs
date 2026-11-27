@@ -447,8 +447,14 @@ public sealed class OpenAIChatStreamAccumulator
             throw new MidStreamException(errorMessage);
         }
         if ((streamEvent["choices"] as JsonArray)?.FirstOrDefault() is not JsonObject firstChoice) return LineOutcome.Nothing;
-        if (JsonHelpers.String(firstChoice["finish_reason"]) is { } choiceFinishReason) FinishReason = choiceFinishReason;
+        if (JsonHelpers.String(firstChoice["finish_reason"]) is { } choiceFinishReason)
+        {
+            FinishReason = choiceFinishReason;
+            if (choiceFinishReason == SafetyBlock.OpenAIFinishReason) throw new SafetyBlockException(choiceFinishReason);
+        }
         if (firstChoice["delta"] is not JsonObject delta) return LineOutcome.Nothing;
+        // A model that declines writes it in `refusal`, not `content`: unread, the answer came back empty.
+        if (JsonHelpers.String(delta["refusal"]) is { Length: > 0 }) throw new SafetyBlockException("refusal");
 
         if (delta["tool_calls"] is JsonArray toolCallFragments)
         {

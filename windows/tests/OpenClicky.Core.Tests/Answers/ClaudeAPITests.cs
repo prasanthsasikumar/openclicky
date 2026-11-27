@@ -311,6 +311,22 @@ public class ClaudeApiRequestTests : IDisposable
         Assert.Contains("overloaded_error", error.Message);
     }
 
+    // An answer Claude's safety classifier stopped (stop_reason "refusal") is a safety block, said plainly,
+    // not the half that came; on the account (the backend passes Anthropic's stream through) and on an own key.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnAnswerStoppedByTheSafetyFilterIsASafetyBlock(bool onTheAccount)
+    {
+        recorder.Answer = (_, _) => Sse(
+            """data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"well, first you"}}""",
+            """data: {"type":"message_delta","delta":{"stop_reason":"refusal"}}""",
+            """data: {"type":"message_stop"}""");
+        var error = await Assert.ThrowsAsync<SafetyBlockException>(() =>
+            Api(onTheAccount ? Account : OwnKey).AnalyzeImageStreamingAsync(OneImage, "s", null, "q", null, _ => { }));
+        Assert.Equal("refusal", error.Reason);
+    }
+
     [Fact]
     public async Task NothingSetUpIsTheRoutesSentence()
     {
