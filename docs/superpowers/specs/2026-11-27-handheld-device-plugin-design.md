@@ -254,3 +254,22 @@ installed here as `ai.whisprompt.desktop`; that bundle id is how "also running" 
 The exact Swift shapes, where the page's rows sit in `SettingsLayout`, how the microphone
 stand-in hooks in, the picker's look, log lines, and the CLAUDE.md key-files entry and CHANGELOG
 line.
+
+## What changed while building (2026-11-27)
+
+- **"May be waiting" waits 45 s, not 10 s.** A real Claude Code log and a Codex rollout were
+  read: neither records a permission prompt, so a prompt and a long-running command look the same.
+  At 10 s every build or test run would have posted a notice. No new parser state was needed: a
+  stall is the existing tool activity plus the log's last write time.
+- **The device microphone does not cover fast voice.** It stands in for dictation and classic
+  ⌃⌥ questions; the Realtime client (fast voice ⌃⌥ and hands-free) keeps the person's microphone,
+  because it cannot tell push-to-talk from always-on when choosing echo cancellation.
+- **Binding rows carry the device id** (`handheld.binding.<device>.<control>.<gesture>`): a
+  page's rows are fixed until it is drawn again, so they are built for every supported device and
+  shown for the one the page is about.
+- **A finished session is announced once per turn**, and "Go to the waiting terminal" falls back
+  to the session that finished last, then the newest session.
+- **Still owed, all on `docs/handheld-hand-test.md`:** which key is A, B and C; whether a hold
+  loses the first word; the battery byte; the Developer ID build's Input Monitoring behaviour;
+  and every on-screen check (the page, the recorder, the notices).
+
