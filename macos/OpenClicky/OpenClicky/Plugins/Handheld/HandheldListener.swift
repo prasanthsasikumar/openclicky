@@ -131,8 +131,9 @@ final class IOKitHandheldReportSource: HandheldReportSource {
         }, unretainedSelf)
 
         // The main run loop: every callback below then arrives on the main thread, where the
-        // listener lives.
-        IOHIDManagerScheduleWithRunLoop(newManager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        // listener lives. The common modes, like the keyboard's event tap: in the default mode
+        // alone a key's release would wait out an open menu or a drag, with the microphone open.
+        IOHIDManagerScheduleWithRunLoop(newManager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
         let openResult = IOHIDManagerOpen(newManager, IOOptionBits(kIOHIDOptionsTypeNone))
         manager = newManager
         if openResult == kIOReturnSuccess {
@@ -144,7 +145,7 @@ final class IOKitHandheldReportSource: HandheldReportSource {
 
     func stop() {
         guard let manager else { return }
-        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         for (_, reportBuffer) in reportBuffersByDevice {
             reportBuffer.buffer.deallocate()

@@ -36,6 +36,7 @@ final class AgentSessionNotifier {
     private var finishCountBySessionID: [String: Int] = [:]
     private var announcedStallIDs: Set<String> = []
     private var lastFinishedSession: AgentSession?
+    private var lastFinishedAt: Date?
     /// The session "go to the waiting terminal" goes to: the newest one sitting on a step, else
     /// the one that finished last and has not started again.
     private(set) var newestSessionNeedingAttention: AgentSession?
@@ -52,6 +53,7 @@ final class AgentSessionNotifier {
         finishCountBySessionID = [:]
         announcedStallIDs = []
         lastFinishedSession = nil
+        lastFinishedAt = nil
         newestSessionNeedingAttention = nil
     }
 
@@ -69,6 +71,7 @@ final class AgentSessionNotifier {
                     let finishCount = (finishCountBySessionID[session.id] ?? 0) + 1
                     finishCountBySessionID[session.id] = finishCount
                     lastFinishedSession = session
+                    lastFinishedAt = currentTime
                     finishedSessions.append((session, "agent-done-\(session.id)-\(finishCount)"))
                 }
                 continue
@@ -85,6 +88,11 @@ final class AgentSessionNotifier {
             }
         }
 
+        // A session that finished stays worth going to only as long as it stays listed.
+        if let lastFinishedAt, currentTime.timeIntervalSince(lastFinishedAt) > AgentSession.recentWindow {
+            lastFinishedSession = nil
+            self.lastFinishedAt = nil
+        }
         newestSessionNeedingAttention = sessionsSittingOnAStep.max { $0.lastEventAt < $1.lastEventAt } ?? lastFinishedSession
 
         guard hasBaseline else {

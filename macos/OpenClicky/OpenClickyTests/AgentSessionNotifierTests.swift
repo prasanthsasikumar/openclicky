@@ -130,6 +130,16 @@ struct AgentSessionNotifierTests {
         #expect(notifier.newestSessionNeedingAttention == nil)
     }
 
+    @Test func aSessionThatFinishedLongAgoIsNotWhereTheButtonGoes() {
+        let notifier = makeNotifier()
+        notifier.observe([session("a", activity: .thinking)])
+        notifier.observe([session("a", activity: .idle)])
+        #expect(notifier.newestSessionNeedingAttention?.id == "a")
+        recorder.currentTime = recorder.currentTime.addingTimeInterval(AgentSession.recentWindow + 1)
+        notifier.observe([])
+        #expect(notifier.newestSessionNeedingAttention == nil)
+    }
+
     @Test func aBurstBecomesOneNotice() {
         let notifier = makeNotifier()
         notifier.observe([

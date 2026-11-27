@@ -16,37 +16,59 @@ final class RecordingHandheldActionHost: HandheldActionHost {
     private(set) var postedCombinations: [HandheldKeyCombination] = []
     private(set) var islandOpenCount = 0
     private(set) var goToWaitingTerminalCount = 0
+    /// The app's side, played simply: a question listens from talk pressed to talk released unless
+    /// the press is refused, and a tapped dictation key opens a take and the next tap ends it.
+    var askIsListening = false
+    var dictationTakeIsInProgress = false
+    var refusesTalk = false
 
-    func performExternalShortcut(_ shortcutEvent: CompanionShortcutEvent) { shortcutEvents.append(shortcutEvent) }
+    func performExternalShortcut(_ shortcutEvent: CompanionShortcutEvent) {
+        shortcutEvents.append(shortcutEvent)
+        switch shortcutEvent {
+        case .talkPressed: askIsListening = !refusesTalk
+        case .talkReleased: askIsListening = false
+        case .dictationReleased(let wasTap, _) where wasTap: dictationTakeIsInProgress.toggle()
+        default: break
+        }
+    }
     func postKeyCombination(_ combination: HandheldKeyCombination) { postedCombinations.append(combination) }
     func openIsland() { islandOpenCount += 1 }
     func goToWaitingTerminal() { goToWaitingTerminalCount += 1 }
 }
 
-/// A scheduler the test fires by hand, in place of a real timer.
+/// A clock the test moves by hand, in place of real timers.
 @MainActor
 final class ManualHandheldScheduler {
     final class Work: HandheldScheduledWork {
-        let delaySeconds: TimeInterval
+        let dueAtSeconds: TimeInterval
         let run: () -> Void
-        private(set) var wasCancelled = false
-        init(delaySeconds: TimeInterval, run: @escaping () -> Void) {
-            self.delaySeconds = delaySeconds
+        var isFinished = false
+        init(dueAtSeconds: TimeInterval, run: @escaping () -> Void) {
+            self.dueAtSeconds = dueAtSeconds
             self.run = run
         }
-        func cancel() { wasCancelled = true }
+        func cancel() { isFinished = true }
     }
 
-    private(set) var scheduledWork: [Work] = []
+    private var scheduledWork: [Work] = []
+    private(set) var elapsedSeconds: TimeInterval = 0
 
     func schedule(_ delaySeconds: TimeInterval, _ run: @escaping () -> Void) -> HandheldScheduledWork {
-        let work = Work(delaySeconds: delaySeconds, run: run)
+        let work = Work(dueAtSeconds: elapsedSeconds + delaySeconds, run: run)
         scheduledWork.append(work)
         return work
     }
 
-    func fireEverythingNotCancelled() {
-        for work in scheduledWork where !work.wasCancelled { work.run() }
+    /// Moves the clock on, running whatever comes due on the way, in order, work scheduled by
+    /// that work included.
+    func advance(bySeconds seconds: TimeInterval) {
+        let endSeconds = elapsedSeconds + seconds
+        while let nextWork = scheduledWork.filter({ !$0.isFinished && $0.dueAtSeconds <= endSeconds }).min(by: { $0.dueAtSeconds < $1.dueAtSeconds }) {
+            elapsedSeconds = nextWork.dueAtSeconds
+            nextWork.isFinished = true
+            nextWork.run()
+        }
+        elapsedSeconds = endSeconds
     }
 }
 
@@ -98,16 +120,16 @@ struct HandheldActionRunnerTests {
 
         runner.handle(event("keyB", .single), bindings: askOnKeyB)
         #expect(host.shortcutEvents == [.talkPressed])
-        #expect(scheduler.scheduledWork.last?.delaySeconds == 60)
-        scheduler.fireEverythingNotCancelled()
+        scheduler.advance(bySeconds: 59)
+        #expect(host.shortcutEvents == [.talkPressed])
+        scheduler.advance(bySeconds: 1)
         #expect(host.shortcutEvents == [.talkPressed, .talkReleased])
 
         runner.handle(event("keyB", .single), bindings: askOnKeyB)
         runner.handle(event("keyB", .single), bindings: askOnKeyB)
         #expect(host.shortcutEvents == [.talkPressed, .talkReleased, .talkPressed, .talkReleased])
-        #expect(scheduler.scheduledWork.last?.wasCancelled == true)
         // The limit of a question already sent must not release anything later.
-        scheduler.fireEverythingNotCancelled()
+        scheduler.advance(bySeconds: 120)
         #expect(host.shortcutEvents.count == 4)
     }
 
@@ -129,7 +151,7 @@ struct HandheldActionRunnerTests {
         runner.handle(event("keyB", .single), bindings: bindings(.askToggle, controlID: "keyB", gesture: .single))
         runner.releaseEverythingHeld(reason: "switched off")
         #expect(host.shortcutEvents == [.talkPressed, .talkReleased, .talkPressed, .talkReleased])
-        scheduler.fireEverythingNotCancelled()
+        scheduler.advance(bySeconds: 300)
         #expect(host.shortcutEvents.count == 4)
     }
 
@@ -180,5 +202,82 @@ struct HandheldActionRunnerTests {
         let runner = makeRunner()
         runner.handle(event("keyB", .single), bindings: bindings(.dictateHold, controlID: "keyB", gesture: .single))
         #expect(host.shortcutEvents.isEmpty)
+    }
+
+    // MARK: found by the whole-branch review
+
+    @Test func aToggledTakeEndsWhenTheDeviceGoes() {
+        // Key A pressed once opens a take that stays open; pulling the receiver must end it.
+        let runner = makeRunner()
+        runner.handle(event("keyA", .single), bindings: defaultBindings)
+        #expect(host.dictationTakeIsInProgress)
+        runner.releaseEverythingHeld(reason: "disconnected")
+        #expect(host.shortcutEvents == [.dictationPressed, .dictationReleased(wasTap: true), .dictationPressed, .dictationReleased(wasTap: true)])
+        #expect(!host.dictationTakeIsInProgress)
+    }
+
+    @Test func aToggledTakeThatAlreadyEndedIsNotStartedAgainWhenTheDeviceGoes() {
+        let runner = makeRunner()
+        runner.handle(event("keyA", .single), bindings: defaultBindings)
+        // The take ended some other way: fn, esc, or its own silence timeout.
+        host.dictationTakeIsInProgress = false
+        runner.releaseEverythingHeld(reason: "disconnected")
+        #expect(host.shortcutEvents.count == 2)
+    }
+
+    @Test func aTakeTheKeyboardStartedIsLeftAloneWhenTheDeviceGoes() {
+        let runner = makeRunner()
+        host.dictationTakeIsInProgress = true
+        runner.releaseEverythingHeld(reason: "disconnected")
+        #expect(host.shortcutEvents.isEmpty)
+    }
+
+    @Test func aRefusedAskPressLeavesNothingOpen() {
+        // "you're still dictating": the press was refused, so the next press must start a
+        // question, not send a release for one that never began.
+        let runner = makeRunner()
+        let askOnKeyB = bindings(.askToggle, controlID: "keyB", gesture: .single)
+        host.refusesTalk = true
+        runner.handle(event("keyB", .single), bindings: askOnKeyB)
+        scheduler.advance(bySeconds: 2)
+        host.refusesTalk = false
+        runner.handle(event("keyB", .single), bindings: askOnKeyB)
+        #expect(host.shortcutEvents == [.talkPressed, .talkPressed])
+        #expect(host.askIsListening)
+    }
+
+    @Test func aQuestionStoppedAtTheKeyboardIsNotReleasedLater() {
+        // Esc at the keyboard ends the toggled question. A ⌃⌥ hold begun afterwards must not be
+        // cut off by the old question's limit.
+        let runner = makeRunner()
+        runner.handle(event("keyB", .single), bindings: bindings(.askToggle, controlID: "keyB", gesture: .single))
+        scheduler.advance(bySeconds: 5)
+        host.askIsListening = false
+        scheduler.advance(bySeconds: 2)
+        host.askIsListening = true
+        scheduler.advance(bySeconds: 120)
+        #expect(host.shortcutEvents == [.talkPressed])
+        #expect(host.askIsListening)
+    }
+
+    @Test func aHoldIsReleasedAfterItsLimit() {
+        // A wireless handheld switched off or out of range mid-hold never reports the release.
+        let runner = makeRunner()
+        runner.handle(event("keyA", .longStart), bindings: defaultBindings)
+        scheduler.advance(bySeconds: HandheldActionRunner.holdLimitSeconds - 1)
+        #expect(host.shortcutEvents == [.dictationPressed])
+        scheduler.advance(bySeconds: 1)
+        #expect(host.shortcutEvents == [.dictationPressed, .dictationReleased(wasTap: false)])
+        // The key works again afterwards.
+        runner.handle(event("keyA", .longStart), bindings: defaultBindings)
+        #expect(host.shortcutEvents.count == 3)
+    }
+
+    @Test func aHoldReleasedInTimeIsNotReleasedAgainAtItsLimit() {
+        let runner = makeRunner()
+        runner.handle(event("keyA", .longStart), bindings: defaultBindings)
+        runner.handle(event("keyA", .longEnd), bindings: defaultBindings)
+        scheduler.advance(bySeconds: HandheldActionRunner.holdLimitSeconds * 2)
+        #expect(host.shortcutEvents.count == 2)
     }
 }

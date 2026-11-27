@@ -105,4 +105,14 @@ struct HandheldPluginTests {
         defer { defaults.removePersistentDomain(forName: scratchSuiteName) }
         #expect(plugin.makerAppIsAlsoRunning)
     }
+
+    @Test func goingToSleepEndsAHold() {
+        let (plugin, factory, defaults) = makePlugin(switchedOn: true)
+        defer { defaults.removePersistentDomain(forName: scratchSuiteName) }
+        plugin.attach(to: host)
+        factory.madeSources[0].connectWhisPrompt()
+        factory.madeSources[0].sendFromWhisPrompt(keyALongStart)
+        plugin.systemWillSleep()
+        #expect(host.shortcutEvents == [.dictationPressed, .dictationReleased(wasTap: false)])
+    }
 }

@@ -95,6 +95,11 @@ final class HandheldPlugin: ObservableObject {
         onMicrophoneChoiceChanged?()
     }
 
+    /// The Mac is about to sleep: a held key's release would never be heard.
+    func systemWillSleep() {
+        actionRunner?.releaseEverythingHeld(reason: "the Mac is going to sleep")
+    }
+
     func setAction(_ action: HandheldAction, controlID: String, gesture: HandheldGesture) {
         guard let device = deviceShown else { return }
         bindings.set(action, controlID: controlID, gesture: gesture)
@@ -129,12 +134,22 @@ final class HandheldPlugin: ObservableObject {
             .sink { [weak self] device in self?.deviceWasSeen(device) }
             .store(in: &listenerSubscriptions)
         newListener.start()
+        sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.systemWillSleep() }
+        }
     }
+
+    /// Registered only while listening.
+    private var sleepObserver: NSObjectProtocol?
 
     private var listenerSubscriptions: Set<AnyCancellable> = []
 
     private func stopListening() {
         actionRunner?.releaseEverythingHeld(reason: "plugin switched off")
+        if let sleepObserver { NSWorkspace.shared.notificationCenter.removeObserver(sleepObserver) }
+        sleepObserver = nil
         listener?.stop()
         listenerSubscriptions.removeAll()
         listener = nil
