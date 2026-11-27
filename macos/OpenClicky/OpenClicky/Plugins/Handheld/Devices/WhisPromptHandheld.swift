@@ -36,7 +36,9 @@ enum WhisPromptHandheld {
         microphoneName: "WhisPrompt Mic Stream",
         controls: controls,
         defaultBindings: defaultBindings,
-        decode: decode
+        decode: decode,
+        // The part names in the maker's own model of the device, which its owner may have.
+        modelPartNameByControlID: ["keyA": "按键1", "keyB": "按键2", "keyC": "按键3", "wheelButton": "金属滑轮"]
     )
 
     static let controls: [HandheldControl] = [

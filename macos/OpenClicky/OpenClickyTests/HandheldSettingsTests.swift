@@ -32,7 +32,7 @@ struct HandheldSettingsTests {
     }
 
     @Test func everyRowHasAPlace() {
-        let items = HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: true))
+        let items = HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: true), deviceModelIsAvailable: { _ in false })
         let arranged = SettingsLayout.arrange(items)
         #expect(Set(arranged.map(\.id)) == Set(items.map(\.id)))
         #expect(arranged.count == items.count)
@@ -43,14 +43,14 @@ struct HandheldSettingsTests {
     }
 
     @Test func offShowsOnlyTheSwitchAndItIsFolded() {
-        let items = SettingsLayout.arrange(HandheldSettings.items(plugin: makePlugin(switchedOn: false, deviceSeen: false)))
+        let items = SettingsLayout.arrange(HandheldSettings.items(plugin: makePlugin(switchedOn: false, deviceSeen: false), deviceModelIsAvailable: { _ in false }))
         #expect(relevantIDs(items) == ["handheld.enabled"])
         #expect(items.first { $0.id == "handheld.enabled" }?.isAdvanced == true)
         #expect(items.first { $0.id == "handheld.enabled" }?.page == .island)
     }
 
     @Test func onWithNoDeviceEverSeenShowsTheStatusButNoPickers() {
-        let ids = relevantIDs(HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: false)))
+        let ids = relevantIDs(HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: false), deviceModelIsAvailable: { _ in false }))
         #expect(ids.contains("island.openHandheld"))
         #expect(ids.contains("handheld.status"))
         #expect(!ids.contains { $0.hasPrefix("handheld.binding.") })
@@ -58,7 +58,7 @@ struct HandheldSettingsTests {
     }
 
     @Test func aControlGetsOnePickerPerBindableGesture() {
-        let ids = relevantIDs(HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: true)))
+        let ids = relevantIDs(HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: true), deviceModelIsAvailable: { _ in false }))
         #expect(ids.filter { $0.hasPrefix("handheld.binding.") } == [
             "handheld.binding.whisprompt.keyA.single", "handheld.binding.whisprompt.keyA.double", "handheld.binding.whisprompt.keyA.longStart",
             "handheld.binding.whisprompt.keyB.single", "handheld.binding.whisprompt.keyB.double", "handheld.binding.whisprompt.keyB.longStart",
@@ -69,9 +69,9 @@ struct HandheldSettingsTests {
     }
 
     @Test func theMakerAppNoteFollowsTheApp() {
-        let idsWithTheAppRunning = relevantIDs(HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: true, makerAppIsRunning: true)))
+        let idsWithTheAppRunning = relevantIDs(HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: true, makerAppIsRunning: true), deviceModelIsAvailable: { _ in false }))
         #expect(idsWithTheAppRunning.contains("handheld.makerAppNote"))
-        let idsWithout = relevantIDs(HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: true)))
+        let idsWithout = relevantIDs(HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: true), deviceModelIsAvailable: { _ in false }))
         #expect(!idsWithout.contains("handheld.makerAppNote"))
     }
 

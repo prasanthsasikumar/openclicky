@@ -49,6 +49,9 @@ struct HandheldDevice: Identifiable {
     /// Reads one input report (its bytes include the leading report id) as an event, or nil for a
     /// report that is not a key event or that names a key or gesture this description does not list.
     let decode: (_ reportID: UInt32, _ reportBytes: [UInt8]) -> HandheldEvent?
+    /// For a 3D model of the device (`HandheldDeviceView`): the name of the model's part that is
+    /// each control, by control id. Empty for a device with no known model.
+    var modelPartNameByControlID: [String: String] = [:]
 
     func control(withID controlID: String) -> HandheldControl? {
         controls.first { $0.id == controlID }

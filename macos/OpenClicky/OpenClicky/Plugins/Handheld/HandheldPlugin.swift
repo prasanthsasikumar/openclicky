@@ -35,6 +35,23 @@ final class HandheldPlugin: ObservableObject {
     /// "Use its microphone while it is connected" (`HandheldMicrophone`). Off until asked for.
     @Published private(set) var usesDeviceMicrophone: Bool
 
+    /// The control whose choices the settings page shows under the device's picture: the one
+    /// last clicked there, the device's first control until then.
+    var selectedControlID: String? {
+        guard let device = deviceShown else { return nil }
+        if let chosenControlID, device.control(withID: chosenControlID) != nil { return chosenControlID }
+        return device.controls.first?.id
+    }
+    @Published private var chosenControlID: String?
+    /// Called with a control's id when it is pressed on the real device, for the picture to show.
+    var onControlPressed: ((String) -> Void)?
+
+    func selectControl(withID controlID: String) {
+        guard deviceShown?.control(withID: controlID) != nil, controlID != selectedControlID else { return }
+        chosenControlID = controlID
+        onSettingsShapeChanged?()
+    }
+
     var makerAppIsAlsoRunning: Bool { makerAppIsRunning() }
     /// Called when the rows Settings should show change (the switch, a device coming or going), so
     /// an open Settings page is drawn again. Set by the plugin's settings rows.
@@ -119,6 +136,9 @@ final class HandheldPlugin: ObservableObject {
         newListener.onEvent = { [weak self] device, event in
             self?.deviceWasSeen(device)
             guard let self else { return }
+            if event.gesture == .single || event.gesture == .double || event.gesture == .longStart {
+                self.onControlPressed?(event.controlID)
+            }
             newActionRunner.handle(event, bindings: self.bindings)
         }
         newListener.onDisconnect = { [weak self] _ in

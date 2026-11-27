@@ -71,7 +71,7 @@ enum SettingsLayout {
         ]),
         Group(page: .calendars, title: nil, itemIDs: ["calendar.calendars", "calendar.calendar.*"]),
         Group(page: .handheld, title: "", itemIDs: ["handheld.status", "handheld.makerAppNote"]),
-        Group(page: .handheld, title: "Buttons", itemIDs: ["handheld.binding.*", "handheld.mouseNote"]),
+        Group(page: .handheld, title: "Buttons", itemIDs: ["handheld.device", "handheld.binding.*", "handheld.mouseNote"]),
         Group(page: .handheld, title: "Microphone", itemIDs: ["handheld.microphone"]),
     ]
 

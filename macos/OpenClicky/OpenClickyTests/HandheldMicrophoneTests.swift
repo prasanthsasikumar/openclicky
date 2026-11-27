@@ -83,10 +83,10 @@ struct HandheldMicrophoneTests {
         let host = RecordingHandheldActionHost()
         plugin.attach(to: host)
 
-        let microphoneRowBeforeADevice = HandheldSettings.items(plugin: plugin).first { $0.id == "handheld.microphone" }
+        let microphoneRowBeforeADevice = HandheldSettings.items(plugin: plugin, deviceModelIsAvailable: { _ in false }).first { $0.id == "handheld.microphone" }
         #expect(microphoneRowBeforeADevice?.isRelevant() == false)
         source.connectWhisPrompt()
-        let microphoneRow = SettingsLayout.arrange(HandheldSettings.items(plugin: plugin)).first { $0.id == "handheld.microphone" }
+        let microphoneRow = SettingsLayout.arrange(HandheldSettings.items(plugin: plugin, deviceModelIsAvailable: { _ in false })).first { $0.id == "handheld.microphone" }
         #expect(microphoneRow?.isRelevant() == true)
         #expect(microphoneRow?.page == .handheld)
     }

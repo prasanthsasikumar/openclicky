@@ -39,7 +39,11 @@ enum HandheldSettings {
         }
     }
 
-    static func items(plugin: HandheldPlugin) -> [SettingsItem] {
+    /// `deviceModelIsAvailable` says whether a 3D model of a device is on this Mac. With one, the
+    /// page shows the device and the choices of the button chosen on it; without, every button's
+    /// choices as a list.
+    static func items(plugin: HandheldPlugin,
+                      deviceModelIsAvailable: @escaping (HandheldDevice) -> Bool = { HandheldDeviceModelFile.isAvailable(for: $0) }) -> [SettingsItem] {
         var items: [SettingsItem] = [
             SettingsItem(
                 id: "handheld.enabled",
@@ -68,6 +72,12 @@ enum HandheldSettings {
         // One picker per button and gesture, for every supported device; only the rows of the
         // device the page is about are shown.
         for device in HandheldDeviceCatalog.all {
+            items.append(SettingsItem(
+                id: "handheld.device",
+                title: device.displayName, detail: "Click a button on the device to choose what it does.",
+                keywords: ["handheld", "device", "3d", "model", "picture"],
+                isRelevant: { plugin.isEnabled && plugin.deviceShown?.id == device.id && deviceModelIsAvailable(device) },
+                view: AnyView(HandheldDeviceRow(plugin: plugin, device: device))))
             for control in device.controls {
                 for gesture in HandheldBindings.bindableGestures(of: control) {
                     let rowTitle = "\(control.name), \(label(for: gesture))"
@@ -75,7 +85,10 @@ enum HandheldSettings {
                         id: "handheld.binding.\(device.id).\(control.id).\(gesture.rawValue)",
                         title: rowTitle, detail: "",
                         keywords: ["handheld", "button", "binding", control.name.lowercased()],
-                        isRelevant: { plugin.isEnabled && plugin.deviceShown?.id == device.id },
+                        isRelevant: {
+                            guard plugin.isEnabled, plugin.deviceShown?.id == device.id else { return false }
+                            return !deviceModelIsAvailable(device) || plugin.selectedControlID == control.id
+                        },
                         view: AnyView(HandheldBindingRow(plugin: plugin, control: control, gesture: gesture, title: rowTitle))))
                 }
             }
