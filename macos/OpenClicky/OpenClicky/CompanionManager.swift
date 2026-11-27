@@ -115,9 +115,9 @@ final class CompanionManager: ObservableObject {
         ? true
         : UserDefaults.standard.bool(forKey: "isOpenClickyRealtimeVoiceEnabled")
 
-    /// Always-on listening (server VAD, barge-in) instead of push-to-talk. Session-only: a launch
-    /// always starts in push-to-talk, so a forgotten hands-free toggle never greets the user out
-    /// of nowhere the next day. (The old persisted key is cleared so nothing reads it again.)
+    /// Hands-free listening. The microphone stays open only to hear "Hey Ris". Nothing is
+    /// answered, clicked, or pasted until that phrase. Session-only. (The old persisted key
+    /// is cleared so nothing reads it again.)
     @Published var isAlwaysListening: Bool = {
         UserDefaults.standard.removeObject(forKey: "isOpenClickyAlwaysListening")
         return false
@@ -201,7 +201,6 @@ final class CompanionManager: ObservableObject {
     /// The user's skill library (~/.openclicky/skills) plus the bundled app-teaching skills.
     let skillLibraryStore = SkillLibraryStore()
     private var realtimeLevelCancellable: AnyCancellable?
-    private var didGreetRealtime = false
     private var didConfigureRealtimeCallbacks = false
 
     private var usesRealtimeVoice: Bool { isRealtimeVoiceEnabled && OpenClickyConfiguration.isConfigured && AccountCapabilities.current().usesRealtime }
@@ -221,35 +220,18 @@ final class CompanionManager: ObservableObject {
 
     func setAlwaysListening(_ enabled: Bool) {
         isAlwaysListening = enabled
-        if usesRealtimeVoice {
-            stopStandardHandsFree()
-            warmUpRealtimeVoice()
-        } else if enabled {
-            startStandardHandsFree()
-        } else {
-            stopStandardHandsFree()
-        }
+        if usesRealtimeVoice { warmUpRealtimeVoice() }
+        if enabled { startStandardHandsFree() } else { stopStandardHandsFree() }
     }
 
-    /// Open the Realtime session now so the first key press only starts audio (HeyClicky's warm-up).
+    /// Open the Realtime session now so a command after "Hey Ris" can be answered at once.
+    /// The session does not take the microphone and does not greet. The local listener is
+    /// the only thing that hears the room, and it ignores everything except "Hey Ris".
     private func warmUpRealtimeVoice() {
         guard usesRealtimeVoice else { return }
         configureRealtimeCallbacksIfNeeded()
-        let mode: RealtimeVoiceClient.TurnMode = isAlwaysListening ? .alwaysOn : .pushToTalk
         realtimeVoiceClient.disconnect(reason: nil)
-        realtimeVoiceClient.keepWarm(mode: mode)
-        if isAlwaysListening {
-            Task { [weak self] in
-                guard let self else { return }
-                try? await self.realtimeVoiceClient.connectIfNeeded(mode: .alwaysOn)
-                self.realtimeVoiceClient.startListeningContinuously()
-                if !self.didGreetRealtime {
-                    self.didGreetRealtime = true
-                    let languageName = ReplyLanguage.englishName(for: ReplyLanguage.currentCode)
-                    self.realtimeVoiceClient.requestResponse(instructions: "Greet the user in \(languageName) in one short sentence as OpenClicky.")
-                }
-            }
-        }
+        realtimeVoiceClient.keepWarm(mode: .pushToTalk)
     }
 
     private func configureRealtimeCallbacksIfNeeded() {
@@ -267,6 +249,12 @@ final class CompanionManager: ObservableObject {
                     self.showTaskPrompts()
                     return
                 }
+                if AtmiyaTasks.asksToUseSavedPrompts(text) {
+                    self.realtimeVoiceClient.stopSpeaking()
+                    self.useSavedPrompts(runTasks: AtmiyaTasks.asksToRunTasks(text))
+                    return
+                }
+                self.savedPrompts = AtmiyaPromptLog.remember(text, in: self.savedPrompts)
                 // Draw to explain on the fast-voice lane: a question a picture answers is drawn
                 // and narrated by the answer voice while the fast voice steps aside
                 // (CompanionManager+DrawStage.swift); anything else goes on as before.
@@ -293,6 +281,7 @@ final class CompanionManager: ObservableObject {
             guard let self, self.usesRealtimeVoice, self.voiceState != .listening else { return }
             self.voiceState = .idle
             self.scheduleTransientHideIfNeeded()
+            self.resumeEarsAfterReply()
         }
         realtimeVoiceClient.onEvent = { line in print("🎙️ \(line)") }
         realtimeVoiceClient.onStopListeningRequested = { [weak self] in
@@ -651,6 +640,8 @@ final class CompanionManager: ObservableObject {
     /// Conversation history so Claude remembers prior exchanges within a session.
     /// Each entry is the user's transcript and Claude's response.
     private var conversationHistory: [(userTranscript: String, assistantResponse: String)] = []
+    /// Prompts the person has given in this session, newest last. Not written to disk.
+    private var savedPrompts: [String] = []
     /// The last question sent down the ask lane and when: the same one again soon after means the
     /// answer missed what they meant (`RepeatedQuestion`).
     private var lastAskQuestion: (transcript: String, askedAt: Date)?
@@ -972,6 +963,9 @@ final class CompanionManager: ObservableObject {
         if hasCompletedOnboarding && allPermissionsGranted {
             warmUpRealtimeVoice()
         }
+        // The microphone stays on for one phrase. Work starts only after "Hey Ris".
+        setAlwaysListening(true)
+        showAskCaption("Say Hey Ris.", holdSeconds: 8)
     }
 
     func clearDetectedElementLocation() {
@@ -1539,6 +1533,40 @@ final class CompanionManager: ObservableObject {
             showTaskPrompts()
             return
         }
+        if AtmiyaTasks.asksToUseSavedPrompts(trimmedText) {
+            useSavedPrompts(runTasks: AtmiyaTasks.asksToRunTasks(trimmedText))
+            return
+        }
+        savedPrompts = AtmiyaPromptLog.remember(trimmedText, in: savedPrompts)
+        deliverTypedRequest(trimmedText)
+    }
+
+    /// Accessibility lets prompts be pasted. Screen Recording lets the tasks see the page.
+    /// Saved prompts are pasted, then the safe ones are run. Sending, paying, and deleting wait.
+    func useSavedPrompts(runTasks: Bool) {
+        WindowPositionManager.requestAccessibilityPermission()
+        WindowPositionManager.requestScreenRecordingPermission()
+        let prompts = savedPrompts
+        let pasted = prompts.isEmpty ? AtmiyaTasks.spokenList : AtmiyaPromptLog.pastedText(for: prompts)
+        _ = FrontAppTextInserter.insert(pasted)
+        let notes = NotesStore.shared.text
+        if !notes.hasSuffix(pasted) {
+            NotesStore.shared.update(notes + (notes.isEmpty ? "" : "\n\n") + pasted)
+            NotesStore.shared.saveNow()
+        }
+        let safe = prompts.filter(AtmiyaPromptLog.isSafeToRun)
+        let allowed = AXIsProcessTrusted()
+        if runTasks, !safe.isEmpty {
+            showAskCaption(allowed ? "Pasted your prompts. Doing the safe tasks." : "Allow ATMIYA AI in Accessibility, then say it again.", holdSeconds: 3)
+            deliverTypedRequest(AtmiyaPromptLog.taskInstruction(for: prompts))
+            return
+        }
+        showAskCaption(allowed ? "Pasted your prompts." : "Allow ATMIYA AI in Accessibility so prompts can be pasted.", holdSeconds: 3)
+    }
+
+    /// A typed request goes where a spoken one would: the Realtime session (it answers out loud,
+    /// points, and can call the agent) or, without Realtime, the Claude teacher lane.
+    private func deliverTypedRequest(_ trimmedText: String) {
         transientHideTask?.cancel()
         transientHideTask = nil
         if !isClickyCursorEnabled && !isOverlayVisible {
@@ -1561,8 +1589,9 @@ final class CompanionManager: ObservableObject {
         voiceState = .processing
         Task { [weak self] in
             guard let self else { return }
+            if self.isAlwaysListening { await self.pauseLocalEarsForReply() }
             do {
-                try await self.realtimeVoiceClient.connectIfNeeded(mode: self.isAlwaysListening ? .alwaysOn : .pushToTalk)
+                try await self.realtimeVoiceClient.connectIfNeeded(mode: .pushToTalk)
                 await self.realtimeVoiceClient.sendTextTurn(trimmedText)
                 // A typed question is drawn like a spoken one: the draw gate first (the turn above
                 // attached the screen it needs), then the Teacher's own lesson.
@@ -1572,12 +1601,24 @@ final class CompanionManager: ObservableObject {
             } catch {
                 print("⚠️ Realtime unavailable for the typed request (\(error.localizedDescription)); using the teacher lane")
                 self.sendTranscriptToClaudeWithScreenshot(transcript: trimmedText)
+                self.resumeEarsAfterReply()
             }
         }
     }
 
     /// fn tapped twice with control held: always-on listening on or off. Fast voice when it is on;
     /// otherwise the standard lane listens on this Mac and asks as ⌃⌥ would.
+    /// Starts listening with no keys held, and says the one command to speak.
+    func startSpokenDemo() {
+        guard usesRealtimeVoice || OpenClickyConfiguration.isConfigured else {
+            streamCursorCaption(ProviderRouter.needsAnthropicKeySentence, holdSeconds: 6)
+            return
+        }
+        if !isAlwaysListening { setAlwaysListening(true) }
+        streamCursorCaption("Listening. Do not hold any keys. Say: Hey Ris.", holdSeconds: 8)
+        AppLog.append("demo: listening without holding keys")
+    }
+
     func toggleHandsFree() {
         guard usesRealtimeVoice || OpenClickyConfiguration.isConfigured else {
             // Nothing could answer: no key, no plan and no account.
@@ -1600,8 +1641,8 @@ final class CompanionManager: ObservableObject {
     /// the shortcut.
     private func announceHandsFreeChange(how: String?) {
         let feedback = isAlwaysListening
-            ? "hands-free is on. just talk, i'm listening. hold control and tap fn twice to stop."
-            : "hands-free is off. hold control + option to talk."
+            ? "Listening. Say Hey Ris. I will not start until then."
+            : "Listening is off. Say nothing starts until you turn it on and say Hey Ris."
         streamCursorCaption(feedback, holdSeconds: 6)
         let state = isAlwaysListening ? "on" : "off"
         let line = how.map { "hands-free \(state) (\($0))" } ?? "hands-free \(state)"
@@ -2462,8 +2503,12 @@ final class CompanionManager: ObservableObject {
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    try await self.realtimeVoiceClient.connectIfNeeded(mode: self.isAlwaysListening ? .alwaysOn : .pushToTalk)
-                    guard self.voiceState == .listening else { return }
+                    if self.isAlwaysListening { await self.pauseLocalEarsForReply() }
+                    try await self.realtimeVoiceClient.connectIfNeeded(mode: .pushToTalk)
+                    guard self.voiceState == .listening else {
+                        self.resumeEarsAfterReply()
+                        return
+                    }
                     self.realtimeVoiceClient.beginPushToTalk()
                 } catch {
                     print("⚠️ Realtime unavailable (\(error.localizedDescription))")
@@ -2474,6 +2519,7 @@ final class CompanionManager: ObservableObject {
                     // Why, on screen: "check the backend" sent people looking at the network
                     // when the answer was a rejected key.
                     self.streamCursorCaption(error.localizedDescription, holdSeconds: 12)
+                    self.resumeEarsAfterReply()
                 }
             }
         case .released:
@@ -3316,42 +3362,85 @@ extension CompanionManager {
         standardHandsFreeListener.setAccepting(accepts)
     }
 
+    /// The fast voice needs the microphone to speak. The wake listener gives it up, then comes back.
+    func pauseLocalEarsForReply() async {
+        guard isStandardHandsFreeOn else { return }
+        isStandardHandsFreeOn = false
+        isStandardHandsFreeTranscribing = false
+        standardHandsFreeGateTimer?.invalidate()
+        standardHandsFreeGateTimer = nil
+        standardHandsFreeListener.setAccepting(false)
+        await standardHandsFreeListener.stop()
+    }
+
+    /// After the answer, listen again, but only for "Hey Ris".
+    func resumeEarsAfterReply() {
+        guard isAlwaysListening, !isStandardHandsFreeOn else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            for _ in 0..<150 {
+                if !self.realtimeVoiceClient.isSpeaking,
+                   self.voiceState != .processing, self.voiceState != .responding,
+                   !self.systemSpeechSynthesizer.isSpeaking {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+            guard self.isAlwaysListening, !self.isStandardHandsFreeOn else { return }
+            await self.realtimeVoiceClient.releaseMicrophoneForDictation()
+            self.startStandardHandsFree()
+        }
+    }
+
     private func handleStandardHandsFreeEvent(_ event: UtteranceDetector.Event) {
         guard isStandardHandsFreeOn else { return }
         switch event {
         case .started:
-            AppLog.append("hands-free (standard): speech started")
-            ChromiumAccessibility.wakeFrontApp()
-            showAskCaption("listening…", holdSeconds: 30)
+            AppLog.append("hands-free: heard speech, waiting for Hey Ris")
         case .discarded:
-            dismissCursorCaption()
+            break
         case .finished(let samples):
             isStandardHandsFreeTranscribing = true
             standardHandsFreeListener.setAccepting(false)
-            showAskCaption("transcribing…", holdSeconds: 30)
             let seconds = Double(samples.count) / Double(UtteranceDetector.sampleRate)
             Task { [weak self] in
                 guard let self else { return }
                 let heard = await StandardHandsFreeListener.transcribe(samples)
                 self.isStandardHandsFreeTranscribing = false
                 guard self.isStandardHandsFreeOn else { return }
-                AppLog.append("hands-free (standard): heard \(heard.count) chars from \(String(format: "%.1f", seconds)) s")
-                guard !heard.isEmpty else {
-                    self.dismissCursorCaption()
+                AppLog.append("hands-free: heard \(heard.count) chars from \(String(format: "%.1f", seconds)) s")
+                guard let command = RisWakePhrase.command(in: heard) else {
+                    AppLog.append("hands-free: ignored, no Hey Ris")
                     return
                 }
-                if HandsFreeSignOff.isSignOff(heard) {
+                if !self.isClickyCursorEnabled && !self.isOverlayVisible {
+                    self.showOverlayOnAllScreens()
+                }
+                if command.isEmpty {
+                    self.showAskCaption("I'm here.", holdSeconds: 4)
+                    self.speakWithSystemVoice("I'm here.")
+                    return
+                }
+                if HandsFreeSignOff.isSignOff(command) {
                     self.setAlwaysListening(false)
                     self.announceHandsFreeChange(how: "by voice")
                     return
                 }
-                // From here it is a ⌃⌥ question like any other.
                 self.lastQuestionWasTyped = false
-                self.lastTranscript = heard
+                self.lastTranscript = command
                 self.askOutcome = .resolved
-                ClickyAnalytics.trackUserMessageSent(characterCount: heard.count)
-                self.showAskCaption("“\(heard)” · thinking…", holdSeconds: 30)
-                self.sendTranscriptToClaudeWithScreenshot(transcript: heard)
+                ClickyAnalytics.trackUserMessageSent(characterCount: command.count)
+                if AtmiyaTasks.asksForTheList(command) {
+                    self.showTaskPrompts()
+                    return
+                }
+                if AtmiyaTasks.asksToUseSavedPrompts(command) {
+                    self.useSavedPrompts(runTasks: AtmiyaTasks.asksToRunTasks(command))
+                    return
+                }
+                self.savedPrompts = AtmiyaPromptLog.remember(command, in: self.savedPrompts)
+                self.showAskCaption("“\(command)”", holdSeconds: 6)
+                self.deliverTypedRequest(command)
             }
         }
     }

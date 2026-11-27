@@ -637,6 +637,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         companionManager.dictationSettings.appIconColor.apply()
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
+        if launchArguments.contains("--openclicky-demo") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [companionManager] in
+                companionManager.startSpokenDemo()
+            }
+        }
         #if DEBUG
         if let renderIndex = launchArguments.firstIndex(of: "--openclicky-render-cards"), renderIndex + 1 < launchArguments.count {
             // The island's cards as PNG files, drawn off screen, then exit (see IslandCardRender).

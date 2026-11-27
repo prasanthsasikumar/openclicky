@@ -63,14 +63,18 @@ final class MenuBarPanelManager: NSObject {
         header.view = headerView
         menu.addItem(header)
         menu.addItem(.separator())
+        addItem(to: menu, title: "Listen", action: #selector(startSpokenDemo))
         addItem(to: menu, title: "Stop work", action: #selector(stopWork))
         addItem(to: menu, title: "Agent Mode", action: #selector(toggleAgentMode), isOn: companionManager.isAgentModeEnabled)
         menu.addItem(.separator())
         let tasks = NSMenuItem(title: "Tasks", action: nil, keyEquivalent: "")
         let taskMenu = NSMenu()
         let listItem = NSMenuItem(title: "Show the prompts", action: #selector(showTaskPrompts), keyEquivalent: "")
+        let pasteItem = NSMenuItem(title: "Paste my prompts and do my tasks", action: #selector(pastePromptsAndRunTasks), keyEquivalent: "")
+        pasteItem.target = self
         listItem.target = self
         taskMenu.addItem(listItem)
+        taskMenu.addItem(pasteItem)
         taskMenu.addItem(.separator())
         for task in AtmiyaTasks.all {
             let item = NSMenuItem(title: task.title, action: #selector(runKeyboardTask(_:)), keyEquivalent: "")
@@ -112,12 +116,14 @@ final class MenuBarPanelManager: NSObject {
 
     @objc private func toggleAgentMode() { companionManager.setAgentModeEnabled(!companionManager.isAgentModeEnabled) }
     @objc private func stopWork() { companionManager.stopCurrentWork() }
+    @objc private func startSpokenDemo() { companionManager.startSpokenDemo() }
     @objc private func openWindow() { companionManager.showDictationWindow(settingsPage: .commandCenter) }
     @objc private func openIsland() { companionManager.notchHUDManager.openPanel() }
     @objc private func openSettings() { companionManager.showSettings() }
     @objc private func replayWelcome() { companionManager.firstRunTour.replay() }
     @objc private func showPlate() { companionManager.plateController.showOnRequest() }
     @objc private func showTaskPrompts() { companionManager.showTaskPrompts() }
+    @objc private func pastePromptsAndRunTasks() { companionManager.useSavedPrompts(runTasks: true) }
     @objc private func runKeyboardTask(_ sender: NSMenuItem) {
         guard let title = sender.representedObject as? String,
               let task = AtmiyaTasks.all.first(where: { $0.title == title }) else { return }

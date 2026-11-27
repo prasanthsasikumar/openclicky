@@ -2014,10 +2014,10 @@ struct NotchCompactStatusView: View {
         switch companionManager.voiceState {
         case .idle:
             if companionManager.agentActivityText != nil { return "an agent is working" }
-            return companionManager.isAlwaysListening ? "hands-free · just talk" : "openclicky"
+            return companionManager.isAlwaysListening ? "say Hey Ris" : "openclicky"
         case .listening:
             if isDictating { return "dictating" }
-            return companionManager.isAlwaysListening ? "listening · hands-free" : "listening"
+            return companionManager.isAlwaysListening ? "listening · Hey Ris" : "listening"
         case .processing:
             if isDictating { return "typing it in" }
             return companionManager.agentActivityText == nil ? "looking at your screen" : "working"
