@@ -58,6 +58,9 @@ struct OpenClickyShellSettings: Codable {
     var mistralApiKey: String? = nil
     var xaiApiKey: String? = nil
     var openCodeApiKey: String? = nil
+    var ollamaEnabled: Bool? = nil
+    var ollamaBaseUrl: String? = nil
+    var ollamaModel: String? = nil
     /// Answer questions through a plan the person already pays for: the Claude Code CLI signed in
     /// to their Claude plan, or Codex signed in with ChatGPT. Off until switched on in Settings.
     var useClaudeCodePlan: Bool? = nil

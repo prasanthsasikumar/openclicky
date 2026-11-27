@@ -2,8 +2,8 @@
 //  DictationWindow.swift
 //  OpenClicky
 //
-//  OpenClicky's one window. A native sidebar lists six pages, with no heading: Dictation, Clicky,
-//  Island, Keys & Account, Privacy, General. Rows on a page open the pages under it (Your words,
+//  OpenClicky's one window. A native sidebar starts with the ATMIYA AI Command Center, followed by
+//  Dictation, Clicky, Island, Keys & Account, Privacy and General. Rows on a page open the pages under it (Your words,
 //  How it writes and The orb under Dictation; Calendars under Island), and the toolbar's back
 //  button returns. Every page is drawn the same native way, a search field filters every setting,
 //  and incognito and the account sit at the sidebar's foot. Every way in (⌘,, the menu
@@ -48,7 +48,7 @@ enum DictationDestination: Hashable {
 
 @MainActor
 final class DictationWindowModel: ObservableObject {
-    @Published var destination: DictationDestination = .settings(.dictation)
+    @Published var destination: DictationDestination = .settings(.commandCenter)
     /// The pages left by opening a row (Dictation, then The orb): the toolbar's back button
     /// returns through them. A sidebar click or a way in from outside starts it again.
     @Published private(set) var backStack: [DictationDestination] = []
@@ -107,7 +107,7 @@ final class DictationWindowController: NSWindowController, NSWindowDelegate {
             contentRect: NSRect(origin: .zero, size: Self.startingSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
-        window.title = "OpenClicky"
+        window.title = "ATMIYA AI"
         window.setFrameAutosaveName("OpenClickyWindow")
         window.isReleasedWhenClosed = false
         // A toolbar lets the split view put the page title and the sidebar button in the title bar.
@@ -214,7 +214,7 @@ struct DictationRootView: View {
                 get: { model.isSearching ? nil : DictationDestination.settings(model.destination.sidebarPage) },
                 set: { chosen in if let chosen { model.select(chosen) } }
             )) {
-                ForEach(DictationSettingsPage.sidebarPages) { page in pageRow(page, matches: matches) }
+                ForEach(DictationSettingsPage.windowSidebarPages) { page in pageRow(page, matches: matches) }
             }
             .listStyle(.sidebar)
             .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search settings")
@@ -264,9 +264,17 @@ struct DictationRootView: View {
         } else {
             switch model.destination {
             case .settings(let page):
-                SettingsFormView(groups: SettingsSectionGroup.groups(relevantItems.filter { $0.page == page && $0.showsOnPage }, foldsAdvanced: true), page: page)
-                    .id(page)
-                    .navigationTitle(page.title)
+                if page == .commandCenter {
+                    CommandCenterView(model: model, companionManager: companionManager)
+                        .navigationTitle(page.title)
+                } else if page == .productivity {
+                    ProductivityView(model: model, companionManager: companionManager)
+                        .navigationTitle(page.title)
+                } else {
+                    SettingsFormView(groups: SettingsSectionGroup.groups(relevantItems.filter { $0.page == page && $0.showsOnPage }, foldsAdvanced: true), page: page)
+                        .id(page)
+                        .navigationTitle(page.title)
+                }
             case .section(let section):
                 sectionPage(section)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

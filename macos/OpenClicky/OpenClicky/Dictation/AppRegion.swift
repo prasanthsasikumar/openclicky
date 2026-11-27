@@ -3,10 +3,9 @@
 //  OpenClicky
 //
 //  India or the rest of the world: which options the settings offer. Sarvam (engine, voice, key),
-//  the ten Indian dictation languages, seven Indian Clicky languages and the native-or-roman
-//  script are India's. Since 2026-10-30 OpenClicky is for the world and the Region choice is gone:
-//  `DictationSettings.region` is always `.world`. It never changes what is set: an option already
-//  in use stays offered.
+//  the ten Indian dictation languages, eight Indian Clicky languages and the native-or-roman
+//  script are India's. The region is inferred from macOS, rather than making the person manage
+//  another setting. It never changes what is set: an option already in use stays offered.
 //
 
 import Foundation
@@ -27,7 +26,13 @@ enum AppRegion: String, CaseIterable, Identifiable {
     var offersIndianOptions: Bool { self == .india }
 
     /// The Clicky languages from `ReplyLanguage.choices` that only India needs.
-    static let indianReplyLanguageCodes: Set<String> = ["hi", "ta", "te", "bn", "mr", "kn", "ml"]
+    static let indianReplyLanguageCodes: Set<String> = ["hi", "gu", "ta", "te", "bn", "mr", "kn", "ml"]
+
+    /// Indian-language controls follow the Mac's region. Keeping this as a pure function makes
+    /// the behaviour deterministic in tests and avoids asking for location permission.
+    static func current(locale: Locale = .autoupdatingCurrent) -> AppRegion {
+        locale.region?.identifier.uppercased() == "IN" ? .india : .world
+    }
 }
 
 extension DictationLanguage {

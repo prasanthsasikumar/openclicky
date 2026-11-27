@@ -14,7 +14,7 @@ import { createSkillFiles } from "../src/skillsLibrary.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.resolve(here, "..", "src", "cli.ts");
 const tsx = path.resolve(here, "..", "..", "node_modules", ".bin", "tsx");
-const hasCodex = spawnSync("codex", ["--version"], { encoding: "utf8" }).status === 0;
+const hasOpenCode = spawnSync("opencode", ["--version"], { encoding: "utf8" }).status === 0;
 const fakeCodex = path.join(here, "fixtures", "fake-codex.mjs");
 const fakeOpenCode = path.join(here, "fixtures", "fake-opencode.mjs");
 
@@ -139,15 +139,16 @@ describe("openclicky CLI", () => {
     expect(JSON.parse(ev.stdout.trim())).toEqual({ type: "lane", lane: "ask", gated: true, reason: "fake gate" });
   });
 
-  it.skipIf(!hasCodex)("run --events streams deltas and a result through the real codex binary", async () => {
+  it.skipIf(!hasOpenCode)("run --events streams deltas and a result through the real OpenCode binary", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "oc-cli-ws-"));
     const r = await runCli(["run", "say hi", "--events", "--cwd", ws, "--model", "gpt-5.2"]);
     expect(r.code).toBe(0);
     const lines = r.stdout.trim().split("\n").map((l) => JSON.parse(l));
-    expect(lines.some((l) => l.type === "event" && /started thread/.test(l.line))).toBe(true);
-    expect(lines.filter((l) => l.type === "delta").map((l) => l.text).join("")).toBe("agent says hi");
+    expect(lines.some((l) => l.type === "event" && /started session/.test(l.line))).toBe(true);
+    const streamed = lines.filter((l) => l.type === "delta").map((l) => l.text).join("");
+    expect(streamed.length).toBeGreaterThan(0);
     const result = lines.at(-1);
-    expect(result).toMatchObject({ type: "result", status: "completed", finalMessage: "agent says hi", artifacts: [] });
+    expect(result).toMatchObject({ type: "result", status: "completed", finalMessage: streamed, artifacts: [] });
     expect(typeof result.threadId).toBe("string");
   }, 60_000);
 

@@ -1,0 +1,11 @@
+ATMIYA AI — FILE AUTOMATION DEMO
+
+This file was created automatically inside the ATMIYA AI project.
+
+Demo actions:
+1. Create this original file.
+2. Make an exact copy of it.
+3. Verify that the original and copy are identical.
+4. Open the copied file for inspection.
+
+Demo phrase: ATMIYA AI can safely create, copy, open, and verify permitted files.

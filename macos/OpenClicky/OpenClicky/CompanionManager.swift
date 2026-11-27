@@ -686,6 +686,22 @@ final class CompanionManager: ObservableObject {
         scheduleTransientHideIfNeeded()
     }
 
+    /// Immediately stops voice, dictation, hands-free listening, guided actions and agent work.
+    /// The Command Center exposes this as the single safety control for the whole assistant.
+    func emergencyStop() {
+        AppLog.append("safety: emergency stop from command center")
+        interruptCurrentAnswer(includingAgentWork: true)
+        realtimeVoiceClient.stopSpeaking()
+        realtimeVoiceClient.disconnect(reason: "emergency stop")
+        stopStandardHandsFree()
+        buddyDictationManager.cancelCurrentDictation()
+        dictationTakeController.cancelTake(reason: "emergency stop")
+        MeetingTranscriptionController.shared.cancel()
+        stopGuide()
+        voiceState = .idle
+        agentActivityText = nil
+    }
+
     /// Silences everything this manager is saying and abandons the answer in progress: the queued
     /// pieces of a spoken answer, the response task, the answer voice, and a system-voice or
     /// recorded notice. `includingAgentWork` also ends a running agent turn: a new question

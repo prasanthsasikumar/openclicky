@@ -27,6 +27,7 @@ enum ReplyLanguage {
     static let choices: [Choice] = [
         Choice(code: "en", name: "English"),
         Choice(code: "hi", name: "हिन्दी"),
+        Choice(code: "gu", name: "ગુજરાતી"),
         Choice(code: "ta", name: "தமிழ்"),
         Choice(code: "te", name: "తెలుగు"),
         Choice(code: "bn", name: "বাংলা"),

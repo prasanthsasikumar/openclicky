@@ -65,13 +65,13 @@ final class MenuBarPanelManager: NSObject {
         menu.addItem(.separator())
         addItem(to: menu, title: "Agent Mode", action: #selector(toggleAgentMode), isOn: companionManager.isAgentModeEnabled)
         menu.addItem(.separator())
-        addItem(to: menu, title: "Open OpenClicky", action: #selector(openWindow))
+        addItem(to: menu, title: "Open ATMIYA AI", action: #selector(openWindow))
         addItem(to: menu, title: "Open the Island", action: #selector(openIsland))
         addItem(to: menu, title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         addItem(to: menu, title: PlateMenu.title(waiting: companionManager.plateController.waitingCount), action: #selector(showPlate))
         addItem(to: menu, title: "Replay Welcome…", action: #selector(replayWelcome))
         menu.addItem(.separator())
-        addItem(to: menu, title: "Quit OpenClicky", action: #selector(quit), keyEquivalent: "q")
+        addItem(to: menu, title: "Quit ATMIYA AI", action: #selector(quit), keyEquivalent: "q")
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         // The menu is attached only for the click, or AppKit would keep it attached for good.
@@ -96,7 +96,7 @@ final class MenuBarPanelManager: NSObject {
     }
 
     @objc private func toggleAgentMode() { companionManager.setAgentModeEnabled(!companionManager.isAgentModeEnabled) }
-    @objc private func openWindow() { companionManager.showDictationWindow(section: .words) }
+    @objc private func openWindow() { companionManager.showDictationWindow(settingsPage: .commandCenter) }
     @objc private func openIsland() { companionManager.notchHUDManager.openPanel() }
     @objc private func openSettings() { companionManager.showSettings() }
     @objc private func replayWelcome() { companionManager.firstRunTour.replay() }
@@ -130,7 +130,7 @@ private struct StatusMenuHeader: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
                 Circle().fill(statusText == "Ready" ? Color(nsColor: .systemGreen) : Color(nsColor: .systemOrange)).frame(width: 8, height: 8)
-                Text("OpenClicky").font(.system(size: 13, weight: .bold))
+                Text("ATMIYA AI").font(.system(size: 13, weight: .bold))
                 Spacer()
                 Text(statusText).font(.system(size: 13)).foregroundStyle(.secondary)
             }

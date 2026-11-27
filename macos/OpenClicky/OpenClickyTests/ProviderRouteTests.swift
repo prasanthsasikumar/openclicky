@@ -88,6 +88,18 @@ struct ProviderRouteTests {
         #expect(ProviderRouter.route(for: .claude, credentials: onlyZen) == .answerProvider(.openCode))
     }
 
+    @Test func enabledOllamaKeepsItsLocalEndpointAndModel() {
+        let credentials = ProviderCredentials(
+            openAIKey: nil, anthropicKey: nil, accountToken: nil,
+            ollamaEnabled: true, ollamaBaseUrl: " http://localhost:11434/ ", ollamaModel: " qwen3:4b "
+        )
+
+        #expect(credentials.ollamaEnabled)
+        #expect(credentials.ollamaBaseUrl == "http://localhost:11434/")
+        #expect(credentials.ollamaModel == "qwen3:4b")
+        #expect(ProviderRouter.route(for: .claude, credentials: credentials) == .answerProvider(.ollama))
+    }
+
     /// Only questions move: speech, dictation clean-up and the rest still need OpenAI or the account.
     @Test func otherKeysOnlyAnswerQuestions() {
         let geminiOnly = ProviderCredentials(openAIKey: nil, anthropicKey: nil, accountToken: nil, geminiKey: "g")

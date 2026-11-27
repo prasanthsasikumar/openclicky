@@ -398,10 +398,9 @@ final class DictationSettings: ObservableObject {
 
     // MARK: general
 
-    /// Which options the settings offer (AppRegion). Always the world since 2026-10-30: OpenClicky
-    /// no longer offers India its own set, so the Region choice is gone. An option already in use
-    /// (Sarvam, an Indian language) stays offered. The old `openclicky.region` value is ignored.
-    var region: AppRegion { .world }
+    /// Which language options the settings offer. This follows the Mac's region, without adding
+    /// another preference or requesting location access. An option already in use stays offered.
+    var region: AppRegion { AppRegion.current() }
     @Published var appearance: DictationAppearance { didSet { defaults.set(appearance.rawValue, forKey: Keys.appearance) } }
     /// The app icon's colour in the Dock and OpenClicky's windows (AppIconColor.apply, at launch and on change).
     @Published var appIconColor: AppIconColor {

@@ -3,7 +3,7 @@
 //  OpenClicky
 //
 //  The settings pages of OpenClicky's one window (DictationWindow.swift), drawn from the Claude
-//  Design "OpenClicky settings — redesign mockups": six pages with coloured sidebar icons, each a
+//  Design "OpenClicky settings — redesign mockups": settings pages with coloured sidebar icons, each a
 //  grouped form with its rarely changed rows folded into "More", and the native look they share.
 //  Every row comes from `SettingsCatalog`, placed by `SettingsLayout`, so a page and a search
 //  result draw the same control.
@@ -13,29 +13,35 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// The settings pages. Six are in the sidebar (`sidebarPages`, in its order); The orb and Calendars
+/// The settings pages. The six original pages are in `sidebarPages`; the full window adds the
+/// Command Center and Productivity before them. The orb and Calendars
 /// are opened from a row on their parent page and keep the parent selected in the sidebar. The
 /// order follows the Claude Design "OpenClicky settings — redesign mockups": the two things
 /// OpenClicky does (Dictation, Clicky), where it lives (Island), what pays for it (Keys & Account),
 /// what it may see (Privacy), then General. `SettingsLayout` says which rows each page holds.
 enum DictationSettingsPage: String, CaseIterable, Identifiable {
-    case dictation, clicky, island, account, privacy, general, orb, calendars
+    case commandCenter, productivity, dictation, clicky, island, account, privacy, general, orb, calendars
     var id: String { rawValue }
 
     /// The pages the sidebar lists, in order.
     static let sidebarPages: [DictationSettingsPage] = [.dictation, .clicky, .island, .account, .privacy, .general]
+    /// The main window starts with an operational overview; the compact island settings panel
+    /// keeps its settings-only navigation.
+    static let windowSidebarPages: [DictationSettingsPage] = [.commandCenter, .productivity] + sidebarPages
 
     /// The sidebar page a page opened from a row belongs to; a sidebar page is its own.
     var sidebarPage: DictationSettingsPage {
         switch self {
         case .orb: return .dictation
         case .calendars: return .island
-        case .dictation, .clicky, .island, .account, .privacy, .general: return self
+        case .commandCenter, .productivity, .dictation, .clicky, .island, .account, .privacy, .general: return self
         }
     }
 
     var title: String {
         switch self {
+        case .commandCenter: return "Command Center"
+        case .productivity: return "Productivity"
         case .dictation: return "Dictation"
         case .clicky: return "Clicky"
         case .island: return "Island"
@@ -55,6 +61,8 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
     /// The page's header card: one line on what lives here.
     var subtitle: String {
         switch self {
+        case .commandCenter: return "Everything ATMIYA AI can use and do, in one place."
+        case .productivity: return "Tasks, meetings, reminders and reusable workflows."
         case .dictation: return "Hold fn, speak, and the words land at your cursor."
         case .clicky: return "Hold ⌃⌥ and ask about what’s on screen."
         case .island: return "What lives around the notch."
@@ -69,6 +77,8 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
     /// The sidebar icon, white on `tint`.
     var symbol: String {
         switch self {
+        case .commandCenter: return "sparkles.rectangle.stack.fill"
+        case .productivity: return "checklist"
         case .dictation: return "mic.fill"
         case .clicky: return "sparkle"
         case .island: return "rectangle.topthird.inset.filled"
@@ -82,6 +92,8 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
 
     var tint: Color {
         switch self {
+        case .commandCenter: return SettingsLook.accent
+        case .productivity: return Color(red: 0.11, green: 0.52, blue: 0.43)
         case .dictation, .orb: return Color(red: 0.039, green: 0.518, blue: 1.0)
         case .clicky: return Color(red: 0.686, green: 0.322, blue: 0.871)
         case .island, .calendars: return Color(red: 0.11, green: 0.11, blue: 0.118)

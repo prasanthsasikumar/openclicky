@@ -175,7 +175,7 @@ enum TakeFormatter {
             return FormattedTake(text: cleaned, expandedShortcut: nil, formattingDegraded: false)
         } catch {
             AppLog.append("take formatter: \(polisher.displayName) failed: \(error.localizedDescription)")
-            PolishFailureNotice.note(error)
+            await PolishFailureNotice.note(error)
             local.formattingDegraded = true
             return local
         }

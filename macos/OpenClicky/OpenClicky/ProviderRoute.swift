@@ -93,7 +93,8 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
     init(openAIKey: String?, anthropicKey: String?, accountToken: String?,
          openRouterKey: String? = nil, geminiKey: String? = nil, groqKey: String? = nil,
          mistralKey: String? = nil, xaiKey: String? = nil, openCodeKey: String? = nil,
-         claudeCodePlanOn: Bool = false, codexPlanOn: Bool = false, preferredAnswerSource: AnswerSource? = nil) {
+         claudeCodePlanOn: Bool = false, codexPlanOn: Bool = false, preferredAnswerSource: AnswerSource? = nil,
+         ollamaEnabled: Bool = false, ollamaBaseUrl: String? = nil, ollamaModel: String? = nil) {
         func cleaned(_ value: String?) -> String? {
             let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed

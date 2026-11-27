@@ -11,6 +11,15 @@ import Testing
 @testable import OpenClicky
 
 struct OpenClickyConfigurationTests {
+    @Test func ollamaSettingsDecodeFromShellJSON() throws {
+        let data = Data(#"{"ollamaEnabled":true,"ollamaBaseUrl":"http://localhost:11434","ollamaModel":"qwen3:4b"}"#.utf8)
+        let settings = try JSONDecoder().decode(OpenClickyShellSettings.self, from: data)
+
+        #expect(settings.ollamaEnabled == true)
+        #expect(settings.ollamaBaseUrl == "http://localhost:11434")
+        #expect(settings.ollamaModel == "qwen3:4b")
+    }
+
     @Test func anOwnKeyIsEnoughForModelCallsWithNoAccount() {
         var settings = OpenClickyShellSettings()
         settings.openaiApiKey = " sk-user "

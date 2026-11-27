@@ -3,9 +3,9 @@
 //  OpenClickyTests
 //
 //  India or the rest of the world: which languages each offers, never dropping the one in use.
-//  The settings always use the world now; India's set is kept for what is already in use.
 //
 
+import Foundation
 import Testing
 @testable import OpenClicky
 
@@ -22,7 +22,14 @@ struct AppRegionTests {
         let india = DictationLanguage.pinnableChoices(region: .india, current: .auto)
         #expect(india.first == DictationLanguage.named("en-IN"))
         #expect(india.contains(DictationLanguage.named("hi-IN")))
+        #expect(india.contains(DictationLanguage.named("gu-IN")))
         #expect(!india.contains(DictationLanguage.named("en-US")))
+    }
+
+    @Test func theMacRegionSelectsIndianLanguageControls() {
+        #expect(AppRegion.current(locale: Locale(identifier: "en_IN")) == .india)
+        #expect(AppRegion.current(locale: Locale(identifier: "en_US")) == .world)
+        #expect(ReplyLanguage.choices(region: .india, currentCode: "en").contains { $0.code == "gu" })
     }
 
     @Test func aLanguageInUseStaysOfferedWhateverTheRegion() {
