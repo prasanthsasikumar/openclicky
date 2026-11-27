@@ -32,7 +32,10 @@ Read `~/Library/Logs/OpenClicky/app.log` alongside: every step logs a `handheld:
 
 ## 3. Which key is which
 
-- [ ] Press each physical key once and watch the log (`external shortcut:` for the voice key,
+- [x] *(2026-11-27, with the plugin's listener run outside the app: asked for Key B alone, the key
+      WhisPrompt's picture shows top left and binds to Enter, and it arrived as `keyB`; the voice key is
+      `keyA`, the only one that reports a hold. Not yet repeated through the app.)*
+      Press each physical key once and watch the log (`external shortcut:` for the voice key,
       nothing typed for the others unless a text box has focus). The key that dictates must be the
       one the page calls **Key A**. If the names are wrong, say which physical key is which: only
       the names in `Devices/WhisPromptHandheld.swift` change.
