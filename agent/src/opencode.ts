@@ -205,9 +205,10 @@ export class OpenCodeAgent {
       const created = await this.race(rpc.request<any>("session/new", { cwd, mcpServers }));
       sessionId = created.sessionId ?? created.session?.id ?? created.id;
     }
-    if (this.cfg.model) {
-      await this.race(rpc.request("session/set_config_option", { sessionId, configId: "model", value: this.cfg.model })).catch(() => null);
-    }
+    // Never fall back to OpenCode's own paid default (`opencode/seaglass-alpha-free`): pick a
+    // free model explicitly. `opencode/big-pickle` is OpenCode's free tier; Gemini/Ollama when set.
+    const model = this.cfg.model ?? (this.cfg.geminiApiKey ? "google/gemini-2.5-flash" : "opencode/big-pickle");
+    await this.race(rpc.request("session/set_config_option", { sessionId, configId: "model", value: model })).catch(() => null);
     this.log(`${opts.threadId ? "resumed" : "started"} session ${sessionId}`);
 
     const prompt: Array<Record<string, unknown>> = [{ type: "text", text: task }];

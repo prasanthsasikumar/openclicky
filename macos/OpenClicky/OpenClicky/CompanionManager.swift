@@ -412,8 +412,6 @@ final class CompanionManager: ObservableObject {
     static let textAlreadyReadsWellSentence = "that already reads well, so i left it as it is."
     /// The permission cards the island shows one at a time until all four are granted.
     let permissionPromptController = PermissionPromptController()
-    /// The "drag me into the Accessibility list" panel the accessibility card opens.
-    private let accessibilityDragPanelController = AccessibilityDragPanelController()
 
     /// Opens the "Connect <app> to OpenClicky" card in the HUD when a supported app or site comes to the front.
     let appConnectPromptController = AppConnectPromptController()
@@ -1045,10 +1043,9 @@ final class CompanionManager: ObservableObject {
         permissionPromptController.update(with: permissionStatus)
     }
 
-    /// Wires the permission cards to the island: the drag helper they open, and the one request
-    /// macOS has no call for (Screen Content is granted by actually capturing something).
+    /// Wires the permission cards to the island and the one request macOS has no call for
+    /// (Screen Content is granted by actually capturing something).
     private func startPermissionPrompts() {
-        permissionPromptController.dragHelper = accessibilityDragPanelController
         permissionPromptController.performRequest = { [weak self] step in
             guard let self else { return }
             if step == .screenContent {

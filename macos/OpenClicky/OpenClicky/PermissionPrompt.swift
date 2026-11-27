@@ -8,9 +8,7 @@
 //    Accessibility → Microphone → Screen Recording → Screen Content
 //  Accessibility comes first because the pointer can show (and help) from then on.
 //  Tapping the button once takes the macOS route for that permission (the system prompt, then
-//  System Settings on later taps) and the card moves to its `waiting` stage: for Accessibility
-//  and Screen Recording that stage also opens the drag helper, the little panel you drag
-//  OpenClicky out of and into the list, for when macOS doesn't add it there by itself.
+//  System Settings on later taps) and the card moves to its `waiting` stage.
 //
 
 import AVFoundation
@@ -62,9 +60,9 @@ enum PermissionStep: String, CaseIterable, Identifiable {
     /// The line once the request is out and we're waiting on the user in System Settings.
     var waitingDetail: String {
         switch self {
-        case .microphone: return "switch openclicky on in the microphone list."
-        case .accessibility: return "drag me into the accessibility list."
-        case .screenRecording: return "switch openclicky on (or drag me into the list), then quit & reopen."
+        case .microphone: return "switch ATMIYA AI on in the Microphone list."
+        case .accessibility: return "switch ATMIYA AI on in Accessibility settings."
+        case .screenRecording: return "switch ATMIYA AI on in Screen Recording, then reopen the app."
         case .screenContent: return "waiting for the capture panel…"
         }
     }
@@ -150,22 +148,6 @@ struct PermissionPrompt: Equatable {
         PermissionStep.allCases.map { PermissionChecklistItem(step: $0, isGranted: status.isGranted($0)) }
     }
 
-    /// Whether to offer the escape hatch for a stale Accessibility row: the list shows OpenClicky
-    /// switched on, but it was approved under a signature the running app no longer has (an update
-    /// signed differently, or a development build of the same bundle id), so macOS keeps the row and
-    /// keeps refusing the app. Only a delete-and-re-add fixes it, and only the user can do it from
-    /// System Settings — unless the app clears its own row, which is what the button does.
-    var offersAccessibilityTrustReset: Bool { step == .accessibility && stage == .waiting }
-}
-
-// MARK: - Drag helper
-
-/// The "I'm OpenClicky — drag me into the list above" panel. A protocol so tests can watch it
-/// open and close without a window on screen.
-@MainActor
-protocol AccessibilityDragPresenting: AnyObject {
-    func showAccessibilityDragHelper()
-    func hideAccessibilityDragHelper()
 }
 
 // MARK: - Controller
@@ -178,18 +160,23 @@ final class PermissionPromptController: ObservableObject {
 
     @Published private(set) var currentPrompt: PermissionPrompt?
 
-    /// The ✕ on the card: the user gets on with their day and we stop nagging until relaunch.
-    private(set) var isDismissedForThisLaunch = false
+    private static let dismissalKey = "permissionPromptsDismissed"
+    private let defaults: UserDefaults
+
+    /// The ✕ on the card: once dismissed, setup stays in Privacy settings instead of returning.
+    private(set) var isDismissedForThisLaunch: Bool
 
     /// The overview is the first card once per launch, and only while nothing has been granted.
     private var hasShownOverview = false
 
     /// Performs the macOS request for a step. Injected so tests never open System Settings.
     var performRequest: @MainActor (PermissionStep) -> Void = PermissionPromptController.requestFromSystem(_:)
-    /// Clears the app's own Accessibility row and relaunches. Injected so tests never touch TCC.
-    var performAccessibilityTrustReset: @MainActor () -> Void = PermissionPromptController.resetAccessibilityTrustInTCC
-    weak var dragHelper: AccessibilityDragPresenting?
     private weak var notchHUDManager: NotchHUDManager?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        isDismissedForThisLaunch = defaults.bool(forKey: Self.dismissalKey)
+    }
 
     /// The first permission that is still missing, in the order the cards ask for them.
     static func nextStep(for status: PermissionStatus) -> PermissionStep? {
@@ -236,14 +223,9 @@ final class PermissionPromptController: ObservableObject {
         setPrompt(PermissionPrompt(step: prompt.step, status: prompt.status, stage: .waiting))
     }
 
-    /// "Still not working?" on the accessibility card: delete the stale row and start over.
-    func resetAccessibilityTrust() {
-        guard currentPrompt?.offersAccessibilityTrustReset == true else { return }
-        performAccessibilityTrustReset()
-    }
-
     func dismiss() {
         isDismissedForThisLaunch = true
+        defaults.set(true, forKey: Self.dismissalKey)
         setPrompt(nil)
     }
 
@@ -259,31 +241,6 @@ final class PermissionPromptController: ObservableObject {
     private func setPrompt(_ prompt: PermissionPrompt?) {
         currentPrompt = prompt
         notchHUDManager?.setPermissionPrompt(prompt)
-        // Both lists accept the app dragged in when macOS has not put it there itself.
-        if (prompt?.step == .accessibility || prompt?.step == .screenRecording) && prompt?.stage == .waiting {
-            dragHelper?.showAccessibilityDragHelper()
-        } else {
-            dragHelper?.hideAccessibilityDragHelper()
-        }
-    }
-
-    /// `tccutil reset Accessibility <bundle id>` removes this app's row entirely — the only way
-    /// back from a row whose recorded signature no longer matches this build, and the same thing as
-    /// selecting OpenClicky in the list and pressing "−". The app then has to relaunch: the trust
-    /// answer it was given at launch is now stale either way.
-    static func resetAccessibilityTrustInTCC() {
-        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
-        let resetProcess = Process()
-        resetProcess.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-        resetProcess.arguments = ["reset", "Accessibility", bundleIdentifier]
-        do {
-            try resetProcess.run()
-            resetProcess.waitUntilExit()
-        } catch {
-            print("⚠️ Accessibility trust reset failed: \(error)")
-            return
-        }
-        WindowPositionManager.relaunchApp()
     }
 
     /// The real macOS route for each permission. Microphone is asked for in-process, Accessibility
@@ -311,8 +268,8 @@ final class PermissionPromptController: ObservableObject {
 // MARK: - View
 
 /// The card inside the island: the orange "!" disc, the headline and one line of copy with the
-/// progress dashes under them, and grant / later on the right. "later" hides the cards until
-/// relaunch; the small gear opens the menu bar panel. 512 pt wide, sized by
+/// progress dashes under them, and grant / later on the right. "later" hides the cards permanently;
+/// the Privacy page remains available for setup. 512 pt wide, sized by
 /// `NotchHUDModel.permissionHeight`.
 struct PermissionPromptView: View {
     let prompt: PermissionPrompt
@@ -368,7 +325,7 @@ struct PermissionPromptView: View {
                     }
                     .buttonStyle(.plain)
                     .pointerCursor()
-                    .help("hide these cards until openclicky next opens")
+                    .help("don't show these setup cards again")
                 }
                 .fixedSize()
             }
@@ -377,18 +334,6 @@ struct PermissionPromptView: View {
             checklistRow
                 .padding(.leading, DS.HUD.tileSize + 14)
 
-            if prompt.offersAccessibilityTrustReset {
-                Button(action: { controller.resetAccessibilityTrust() }) {
-                    Text("already switched on? reset it and try again")
-                        .font(.system(size: 11))
-                        .foregroundColor(DS.HUD.text3)
-                        .underline()
-                }
-                .buttonStyle(.plain)
-                .pointerCursor()
-                .help("removes openclicky from the accessibility list and relaunches, so it can be granted again")
-                .padding(.leading, DS.HUD.tileSize + 14)
-            }
         }
         .padding(.top, topInset + 12)
         .padding(.horizontal, DS.HUD.bodySidePadding)

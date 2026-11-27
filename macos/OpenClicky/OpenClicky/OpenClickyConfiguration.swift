@@ -604,7 +604,7 @@ enum OpenClickyConfiguration {
         environment.removeValue(forKey: "ANTHROPIC_API_KEY")
         // GUI apps get a minimal PATH; add the usual CLI locations so `openclicky`, `codex`, `node`, `ffmpeg` resolve.
         let homeDirectory = NSHomeDirectory()
-        let extraPathEntries = ["\(homeDirectory)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(homeDirectory)/.npm-global/bin"]
+        let extraPathEntries = ["\(homeDirectory)/.local/bin", "\(homeDirectory)/.opencode/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(homeDirectory)/.npm-global/bin"]
         environment["PATH"] = (extraPathEntries + [environment["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
         return environment
     }

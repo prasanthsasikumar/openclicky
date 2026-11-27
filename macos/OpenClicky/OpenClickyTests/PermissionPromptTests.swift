@@ -3,52 +3,29 @@
 //  OpenClickyTests
 //
 //  The permission cards the notch island shows one at a time ("I need accessibility
-//  permissions." → Grant → "Drag me into the Accessibility list."): which step is asked
-//  for next, what the card says, and when the drag helper opens.
+//  permissions." → Grant): which step is asked for next, what the card says, and whether a
+//  dismissal stays respected.
 //
 
 import CoreGraphics
+import Foundation
 import Testing
 @testable import OpenClicky
 
 @MainActor
 struct PermissionPromptTests {
 
-    /// Records the grant requests instead of poking System Settings, and stands in for the
-    /// drag helper window.
+    /// Records grant requests instead of poking System Settings.
     @MainActor
-    private final class Spy: AccessibilityDragPresenting {
+    private final class Spy {
         var requestedSteps: [PermissionStep] = []
-        var didResetAccessibilityTrust = false
-        var isDragHelperShown = false
-        func showAccessibilityDragHelper() { isDragHelperShown = true }
-        func hideAccessibilityDragHelper() { isDragHelperShown = false }
     }
 
-    private func makeController(_ spy: Spy) -> PermissionPromptController {
-        let controller = PermissionPromptController()
-        controller.dragHelper = spy
+    private func makeController(_ spy: Spy, defaults: UserDefaults? = nil) -> PermissionPromptController {
+        let isolatedDefaults = defaults ?? UserDefaults(suiteName: "PermissionPromptTests.\(UUID().uuidString)")!
+        let controller = PermissionPromptController(defaults: isolatedDefaults)
         controller.performRequest = { spy.requestedSteps.append($0) }
-        controller.performAccessibilityTrustReset = { spy.didResetAccessibilityTrust = true }
         return controller
-    }
-
-    @Test func theDragHelperFollowsTheMainSettingsWindowAndStepsAsideForADialog() {
-        let main = CGRect(x: 400, y: 75, width: 1320, height: 1150)
-        let quitAndReopen = CGRect(x: 820, y: 420, width: 480, height: 460)
-        let finderBehind = CGRect(x: 200, y: 80, width: 1700, height: 860)
-        // Front to back. The dialog came first and used to be taken for the window.
-        let withDialog = AccessibilityDragPanelController.mainSettingsWindow(inFrontToBackOrder: [
-            (quitAndReopen, true), (main, true), (finderBehind, false),
-        ])
-        #expect(withDialog?.bounds == main)
-        #expect(withDialog?.dialogIsOpen == true)
-        // A password sheet from a Settings extension (another process) counts too.
-        #expect(AccessibilityDragPanelController.mainSettingsWindow(inFrontToBackOrder: [(quitAndReopen, false), (main, true)])?.dialogIsOpen == true)
-        // A window behind Settings, or one only overlapping it, is not a dialog.
-        #expect(AccessibilityDragPanelController.mainSettingsWindow(inFrontToBackOrder: [(main, true), (quitAndReopen, false)])?.dialogIsOpen == false)
-        #expect(AccessibilityDragPanelController.mainSettingsWindow(inFrontToBackOrder: [(finderBehind, false), (main, true)])?.dialogIsOpen == false)
-        #expect(AccessibilityDragPanelController.mainSettingsWindow(inFrontToBackOrder: [(finderBehind, false)]) == nil)
     }
 
     @Test func asksForOneStepAtATimeInOrder() {
@@ -81,7 +58,6 @@ struct PermissionPromptTests {
         controller.update(with: PermissionStatus(microphone: true, accessibility: true,
                                                  screenRecording: true, screenContent: true))
         #expect(controller.currentPrompt == nil)
-        #expect(!spy.isDragHelperShown)
     }
 
     @Test func grantingAdvancesToTheNextStepAndResetsTheStage() {
@@ -157,56 +133,6 @@ struct PermissionPromptTests {
         #expect(PermissionStep.allCases.count == 4)
     }
 
-    /// Both lists take the app dragged in: the helper opens while the accessibility or the screen
-    /// recording card waits, and never for the microphone.
-    @Test func theDragHelperOpensWhileAccessibilityOrScreenRecordingWaits() {
-        let spy = Spy()
-        let controller = makeController(spy)
-
-        controller.update(with: PermissionStatus())
-        #expect(!spy.isDragHelperShown, "not before the user asks to grant it")
-        controller.grant()
-        #expect(spy.isDragHelperShown)
-
-        controller.update(with: PermissionStatus(accessibility: true))
-        #expect(!spy.isDragHelperShown, "the list accepted the drop")
-        controller.grant()
-        #expect(!spy.isDragHelperShown, "the microphone step has nothing to drag")
-
-        controller.update(with: PermissionStatus(microphone: true, accessibility: true))
-        controller.grant()
-        #expect(spy.isDragHelperShown, "screen recording's list takes the drag too")
-    }
-
-    /// The escape hatch for a stale TCC row: the list shows OpenClicky switched on, but the
-    /// signature it was approved under no longer matches, so the app is still untrusted.
-    @Test func resetAndRegrantIsOfferedOnlyOnAStuckAccessibilityCard() {
-        let spy = Spy()
-        let controller = makeController(spy)
-
-        controller.update(with: PermissionStatus())
-        #expect(controller.currentPrompt?.offersAccessibilityTrustReset == false,
-                "not before the user has tried granting it")
-
-        controller.grant()
-        #expect(controller.currentPrompt?.offersAccessibilityTrustReset == true)
-
-        controller.update(with: PermissionStatus(accessibility: true))
-        controller.grant()
-        #expect(controller.currentPrompt?.offersAccessibilityTrustReset == false,
-                "the microphone card has no TCC row to reset")
-    }
-
-    @Test func resettingAccessibilityTrustClearsTheRowAndRelaunches() {
-        let spy = Spy()
-        let controller = makeController(spy)
-
-        controller.update(with: PermissionStatus(microphone: true))
-        controller.grant()
-        controller.resetAccessibilityTrust()
-        #expect(spy.didResetAccessibilityTrust)
-    }
-
     @Test func theCardCopyChangesWithTheStage() {
         let spy = Spy()
         let controller = makeController(spy)
@@ -217,23 +143,29 @@ struct PermissionPromptTests {
         #expect(controller.currentPrompt?.buttonTitle == "grant")
 
         controller.grant()
-        #expect(controller.currentPrompt?.detail == "drag me into the accessibility list.")
+        #expect(controller.currentPrompt?.detail == "switch ATMIYA AI on in Accessibility settings.")
         #expect(controller.currentPrompt?.buttonTitle == "open")
     }
 
-    @Test func closingTheCardHidesItUntilTheNextLaunch() {
+    @Test func closingTheCardHidesItAcrossLaunches() {
         let spy = Spy()
-        let controller = makeController(spy)
+        let suiteName = "PermissionPromptTests.dismissal.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let controller = makeController(spy, defaults: defaults)
 
         controller.update(with: PermissionStatus(microphone: true))
         controller.grant()
         controller.dismiss()
         #expect(controller.currentPrompt == nil)
-        #expect(!spy.isDragHelperShown)
 
         // Polling keeps running; the card stays closed.
         controller.update(with: PermissionStatus(microphone: true))
         #expect(controller.currentPrompt == nil)
+
+        let relaunchedController = makeController(spy, defaults: defaults)
+        relaunchedController.update(with: PermissionStatus(microphone: true))
+        #expect(relaunchedController.currentPrompt == nil)
     }
 
     /// Reaching past the island while Clicky speaks keeps the speaking strip (its stop button);
