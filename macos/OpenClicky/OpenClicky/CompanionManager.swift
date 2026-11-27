@@ -1457,6 +1457,21 @@ final class CompanionManager: ObservableObject {
         clipboardHistoryMonitor.start()
     }
 
+    /// A shortcut from something other than the keyboard (a handheld's button, `Plugins/Handheld`).
+    /// It takes the keyboard's own path, so everything that guards a key press guards this too.
+    /// Talk is delivered where the keyboard's talk is: through the shortcut transitions.
+    func performExternalShortcut(_ shortcutEvent: CompanionShortcutEvent) {
+        AppLog.append("external shortcut: \(shortcutEvent)")
+        switch shortcutEvent {
+        case .talkPressed:
+            handleShortcutTransition(.pressed)
+        case .talkReleased:
+            handleShortcutTransition(.released)
+        default:
+            handleCompanionShortcut(shortcutEvent)
+        }
+    }
+
     private func handleCompanionShortcut(_ shortcutEvent: CompanionShortcutEvent) {
         switch shortcutEvent {
         case .textComposerRequested:
