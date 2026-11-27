@@ -32,12 +32,26 @@ enum HandheldMicrophone {
         return deviceMicrophone.uid
     }
 
-    /// The same, from the plugin as it is now. With the plugin off the microphones are not even listed.
+    /// The same, from the plugin as it is now.
     static func currentUID(personsChoiceUID: String?, plugin: HandheldPlugin = .shared) -> String? {
+        standInUID(plugin: plugin) ?? personsChoiceUID
+    }
+
+    /// The handheld's microphone while it is the one recording, nil while the person's own choice
+    /// is. The microphone pickers (Settings → Dictation, the island's menu) show this one as
+    /// chosen, so there is one answer to "which microphone is in use". With the plugin off the
+    /// microphones are not even listed.
+    static func standInUID(plugin: HandheldPlugin = .shared) -> String? {
         guard plugin.isEnabled, plugin.usesDeviceMicrophone, let microphoneName = plugin.connectedDevice?.microphoneName else {
-            return personsChoiceUID
+            return nil
         }
-        return effectiveUID(personsChoiceUID: personsChoiceUID, pluginIsOn: true, optionIsOn: true,
+        return effectiveUID(personsChoiceUID: nil, pluginIsOn: true, optionIsOn: true,
                             connectedDeviceMicrophoneName: microphoneName, availableMicrophones: MicrophoneDevices.available())
+    }
+
+    /// The person picked a microphone in one of those pickers: theirs is the one in use from now
+    /// on, so the handheld's stops standing in (its switch on the Handheld page goes off).
+    static func thePersonPickedAMicrophone(plugin: HandheldPlugin = .shared) {
+        plugin.setUsesDeviceMicrophone(false)
     }
 }

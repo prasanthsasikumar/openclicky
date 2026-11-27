@@ -217,11 +217,16 @@ private struct InactivityTimeoutPicker: View {
 
 private struct MicrophoneInputRow: View {
     @ObservedObject var settings: DictationSettings
+    /// A connected handheld's microphone can stand in for the choice here; the row then shows it.
+    @ObservedObject private var handheld = HandheldPlugin.shared
     @State private var devices = MicrophoneDevices.available()
 
     var body: some View {
-        SettingsRow(title: "Input", detail: "Automatic follows the Mac’s default, skipping a headphone jack with no microphone. Now: \(currentName).") {
-            Picker("", selection: Binding(get: { settings.preferredMicrophoneUID ?? "" }, set: { settings.preferredMicrophoneUID = $0.isEmpty ? nil : $0 })) {
+        SettingsRow(title: "Input", detail: detail) {
+            Picker("", selection: Binding(get: { HandheldMicrophone.standInUID(plugin: handheld) ?? settings.preferredMicrophoneUID ?? "" }, set: {
+                HandheldMicrophone.thePersonPickedAMicrophone(plugin: handheld)
+                settings.preferredMicrophoneUID = $0.isEmpty ? nil : $0
+            })) {
                 Text("Automatic (\(MicrophoneDevices.effectiveInputName(preferredUID: nil) ?? "none"))").tag("")
                 ForEach(devices) { device in Text(device.name).tag(device.uid) }
             }
@@ -231,8 +236,16 @@ private struct MicrophoneInputRow: View {
         .onAppear { devices = MicrophoneDevices.available() }
     }
 
+    private var detail: String {
+        if HandheldMicrophone.standInUID(plugin: handheld) != nil {
+            return "Now: \(currentName), the handheld’s own microphone, while it is connected. Pick another here to stop using it."
+        }
+        return "Automatic follows the Mac’s default, skipping a headphone jack with no microphone. Now: \(currentName)."
+    }
+
     private var currentName: String {
-        if let uid = settings.preferredMicrophoneUID, let device = devices.first(where: { $0.uid == uid }) { return device.name }
+        let uid = HandheldMicrophone.standInUID(plugin: handheld) ?? settings.preferredMicrophoneUID
+        if let uid, let device = devices.first(where: { $0.uid == uid }) { return device.name }
         return MicrophoneDevices.effectiveInputName(preferredUID: nil) ?? "no microphone found"
     }
 }
@@ -266,10 +279,12 @@ private struct MicrophoneTestRow: View {
     private func startTest() {
         testStartProblem = nil
         let engine = AVAudioEngine()
-        MicrophoneDevices.apply(preferredUID: settings.preferredMicrophoneUID, to: engine)
+        // The microphone a take would record from: a handheld's when it stands in for the choice.
+        let microphoneUID = HandheldMicrophone.currentUID(personsChoiceUID: settings.preferredMicrophoneUID)
+        MicrophoneDevices.apply(preferredUID: microphoneUID, to: engine)
         let input = engine.inputNode
         let format = MicrophoneDevices.tapFormat(of: input)
-        let microphoneName = MicrophoneDevices.effectiveInputName(preferredUID: settings.preferredMicrophoneUID) ?? "no microphone"
+        let microphoneName = MicrophoneDevices.effectiveInputName(preferredUID: microphoneUID) ?? "no microphone"
         AppLog.append("microphone test: \(microphoneName), \(Int(format.sampleRate)) Hz, \(format.channelCount) ch, permission \(AVCaptureDevice.authorizationStatus(for: .audio).rawValue)")
         guard format.sampleRate > 0 else {
             testStartProblem = "\(microphoneName) gave no audio. Check Privacy & Security › Microphone, or pick another input."

@@ -55,6 +55,36 @@ struct HandheldMicrophoneTests {
         #expect(HandheldPlugin(defaults: defaults, makeSource: { FakeHandheldReportSource() }, makerAppIsRunning: { false }).usesDeviceMicrophone)
     }
 
+    /// 2026-11-27: with the option on, the Dictation page still showed "Automatic (MacBook Pro
+    /// Microphone)", and nobody could tell which microphone was recording. One answer now: the
+    /// pickers show the handheld's microphone while it stands in, and picking any microphone in
+    /// them is the person's choice from then on.
+    @Test func pickingAMicrophoneYourselfSwitchesTheHandheldsOff() {
+        let scratchSuiteName = "HandheldMicrophoneTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: scratchSuiteName)!
+        defer { defaults.removePersistentDomain(forName: scratchSuiteName) }
+        let plugin = HandheldPlugin(defaults: defaults, makeSource: { FakeHandheldReportSource() }, makerAppIsRunning: { false })
+        plugin.setUsesDeviceMicrophone(true)
+        var microphoneChoiceChangeCount = 0
+        plugin.onMicrophoneChoiceChanged = { microphoneChoiceChangeCount += 1 }
+
+        HandheldMicrophone.thePersonPickedAMicrophone(plugin: plugin)
+
+        #expect(!plugin.usesDeviceMicrophone)
+        #expect(microphoneChoiceChangeCount == 1)
+    }
+
+    @Test func nothingStandsInWhileThePluginIsOff() {
+        let scratchSuiteName = "HandheldMicrophoneTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: scratchSuiteName)!
+        defer { defaults.removePersistentDomain(forName: scratchSuiteName) }
+        defaults.set(true, forKey: HandheldMicrophone.useDeviceMicrophoneKey)
+        let plugin = HandheldPlugin(defaults: defaults, makeSource: { FakeHandheldReportSource() }, makerAppIsRunning: { false })
+
+        #expect(HandheldMicrophone.standInUID(plugin: plugin) == nil)
+        #expect(HandheldMicrophone.currentUID(personsChoiceUID: "BuiltInMicrophoneDevice", plugin: plugin) == "BuiltInMicrophoneDevice")
+    }
+
     @Test func aDeviceComingOrGoingTellsTheApp() {
         let scratchSuiteName = "HandheldMicrophoneTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: scratchSuiteName)!
