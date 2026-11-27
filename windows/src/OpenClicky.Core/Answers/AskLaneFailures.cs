@@ -25,6 +25,55 @@ public static class AskLaneFailures
 {
     public const string EmptyAnswerSentence = "i didn't get an answer. please ask again.";
 
+    /// <summary>Said when the AI that answers is down or overloaded (after one quiet retry): what happened, in a child's
+    /// words, instead of "something went wrong" or the provider's own message.</summary>
+    public const string OutageSentence = "the ai that answers me is having trouble right now. please ask again in a minute.";
+
+    /// <summary>How long the ask lane waits before its one retry after an outage.</summary>
+    public static readonly TimeSpan OutageRetryDelay = TimeSpan.FromSeconds(2);
+
+    private static readonly int[] OutageStatuses = [500, 502, 503, 504, 529];
+
+    /// <summary>
+    /// The AI that answers is down or overloaded, not refusing this question or this person: a server error or
+    /// "overloaded" (529) from the backend or an own key's provider, Anthropic's overloaded or api error partway into the
+    /// stream, or a provider's mid-stream "overloaded" / "unavailable". A rate limit (429) is the person's own limit, not an
+    /// outage.
+    /// </summary>
+    public static bool IsOutage(Exception error) => error switch
+    {
+        BackendHttpException { Service: BackendHttpException.ServiceKind.Answers } refusal => OutageStatuses.Contains(refusal.Status),
+        AnswerProviderException { Status: 0 } providerError => SaysOverloaded(providerError.VendorMessage),
+        AnswerProviderException providerError => OutageStatuses.Contains(providerError.Status),
+        ClaudeApiException { Code: ClaudeAPI.MidStreamErrorCode } midStream =>
+            midStream.Message.Contains("overloaded_error", StringComparison.Ordinal) || midStream.Message.Contains("(api_error)", StringComparison.Ordinal),
+        _ => false,
+    };
+
+    private static bool SaysOverloaded(string message) =>
+        message.Contains("overloaded", StringComparison.OrdinalIgnoreCase) || message.Contains("UNAVAILABLE", StringComparison.Ordinal)
+        || message.Contains("high demand", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Runs <paramref name="attempt"/>, and once more after <paramref name="delay"/> when it fails with an outage before any
+    /// of the answer arrived (<paramref name="answerArrived"/>; a retry then would say it twice). Anything else, a second
+    /// failure, or a cancellation is thrown as it came.
+    /// </summary>
+    public static async Task<T> RetryOnceAfterOutageAsync<T>(Func<Task<T>> attempt, Func<bool> answerArrived, TimeSpan delay,
+        Action<Exception> onRetry, CancellationToken cancellationToken, Func<TimeSpan, CancellationToken, Task>? wait = null)
+    {
+        try
+        {
+            return await attempt();
+        }
+        catch (Exception error) when (IsOutage(error) && !answerArrived() && !cancellationToken.IsCancellationRequested)
+        {
+            onRetry(error);
+        }
+        await (wait ?? Task.Delay)(delay, cancellationToken);
+        return await attempt();
+    }
+
     /// <summary>
     /// An interrupted request: the caller's cancellation, or the HTTP read cancelled because a new
     /// question replaced this one. HttpClient's own timeout (a TaskCanceledException wrapping a
@@ -73,8 +122,10 @@ public static class AskLaneFailures
         {
             return "something went wrong talking to the openclicky backend. check the backend and your token in the settings file.";
         }
-        // Not an HTTP refusal: the stream had started when Anthropic reported the failure.
+        // Not an HTTP refusal: the stream had started when Anthropic reported the failure (as the Mac says it, outage or not).
         if (error is ClaudeApiException { Code: ClaudeAPI.MidStreamErrorCode }) return "the answer stopped partway. please ask again.";
+        // The AI itself is down or overloaded (already tried twice): say so plainly.
+        if (IsOutage(error)) return OutageSentence;
         return "something went wrong getting your answer. please ask again.";
     }
 
