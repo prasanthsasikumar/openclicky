@@ -30,6 +30,8 @@ public enum SpeechVoiceChoice
     [RawValue("polly")] Polly,
     [RawValue("sarvam")] Sarvam,
     [RawValue("kokoro")] Kokoro,
+    /// <summary>The person's own speech server (SpeechServer): the voice model picked under Clicky → Your models.</summary>
+    [RawValue("server")] Server,
     [RawValue("mac")] Mac,
 }
 
@@ -56,17 +58,18 @@ public static class SpeechVoiceChoices
         SpeechVoiceChoice.Polly => "Amazon Polly",
         SpeechVoiceChoice.Sarvam => "Sarvam",
         SpeechVoiceChoice.Kokoro => "Kokoro (on this PC)",
+        SpeechVoiceChoice.Server => "Your speech server",
         _ => "This PC",
     };
 
     /// <summary>
-    /// Automatic's order: own keys first (the person chose to pay for them), then the account's ElevenLabs
+    /// Automatic's order: a speech server of the person's own first (they set it up to speak), then own keys (the person chose to pay for them), then the account's ElevenLabs
     /// voice (FlowsXR's grant pays for it, with a generous monthly allowance; #23), then Kokoro if someone
     /// downloaded it, then this PC. Gemini comes last of the keys: its voice takes about four seconds a sentence.
     /// </summary>
     public static IReadOnlyList<SpeechVoiceChoice> AutomaticOrder { get; } =
     [
-        SpeechVoiceChoice.OpenAI, SpeechVoiceChoice.ElevenLabs, SpeechVoiceChoice.Google, SpeechVoiceChoice.Polly,
+        SpeechVoiceChoice.Server, SpeechVoiceChoice.OpenAI, SpeechVoiceChoice.ElevenLabs, SpeechVoiceChoice.Google, SpeechVoiceChoice.Polly,
         SpeechVoiceChoice.Sarvam, SpeechVoiceChoice.Gemini, SpeechVoiceChoice.Account, SpeechVoiceChoice.Kokoro, SpeechVoiceChoice.Mac,
     ];
 
@@ -84,6 +87,7 @@ public static class SpeechVoiceChoices
         SpeechVoiceChoice.Polly => AWSCredentials.TryParse(settings.AmazonPollyCredentials) is not null && CloudVoiceRequests.PollyVoice(languageCode) is not null,
         SpeechVoiceChoice.Sarvam => Has(settings.SarvamKey) && SarvamSpeechWire.SpeechLanguageCode(languageCode) is not null,
         SpeechVoiceChoice.Kokoro => kokoroInstalled && KokoroVoice.SpeakerFor(languageCode, null) is not null,
+        SpeechVoiceChoice.Server => SpeechServer.Speaks(settings),
         _ => true,
     };
 
@@ -530,6 +534,9 @@ public static class CloudVoiceSpeaker
             }
             case SpeechVoiceChoice.Kokoro:
                 return await (services ?? SpeechVoiceServices.Required).KokoroAudio(text, languageCode, cancellationToken).ConfigureAwait(false);
+            case SpeechVoiceChoice.Server:
+                return await SpeechServer.SpeakAsync(SpeechServer.From(settings) ?? throw CloudVoiceException.NoKey(SpeechServer.VendorName), text,
+                    cancellationToken, client).ConfigureAwait(false);
             default:
                 return await new SystemVoice((services ?? SpeechVoiceServices.Required).SystemVoice).AudioAsync(text, settings, languageCode, cancellationToken).ConfigureAwait(false);
         }

@@ -42,6 +42,9 @@ public enum DictationEngineChoice
     [RawValue("openclicky")] OpenClicky,
     /// <summary>AssemblyAI streaming through a backend-minted token.</summary>
     [RawValue("assemblyai")] AssemblyAI,
+    /// <summary>The person's own speech server (Ollama, Speaches, LocalAI…; Settings → Clicky → Your models), hearing
+    /// with the model picked there.</summary>
+    [RawValue("server")] Server,
 }
 
 /// <summary>
@@ -63,6 +66,7 @@ public static class DictationEngineChoices
         DictationEngineChoice.Parakeet => "Parakeet",
         DictationEngineChoice.Sarvam => "Sarvam",
         DictationEngineChoice.OpenClicky => "OpenClicky",
+        DictationEngineChoice.Server => "Speech server",
         _ => "AssemblyAI",
     };
 
@@ -91,6 +95,7 @@ public static class DictationEngineChoices
         DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => "this pc",
         DictationEngineChoice.Sarvam => "sarvam",
         DictationEngineChoice.OpenClicky => "openai",
+        DictationEngineChoice.Server => "your speech server",
         _ => "assemblyai",
     };
 
@@ -102,6 +107,7 @@ public static class DictationEngineChoices
         DictationEngineChoice.Parakeet => "Parakeet, on this PC",
         DictationEngineChoice.Sarvam => "Sarvam",
         DictationEngineChoice.OpenClicky => "OpenAI, via OpenClicky",
+        DictationEngineChoice.Server => "Your speech server",
         _ => "AssemblyAI, via OpenClicky",
     };
 
@@ -120,6 +126,7 @@ public static class DictationEngineChoices
         DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => "Private · offline",
         DictationEngineChoice.Sarvam => "Audio goes to Sarvam",
         DictationEngineChoice.OpenClicky => "Audio goes to OpenAI",
+        DictationEngineChoice.Server => "Audio goes to your server",
         _ => "Audio goes to AssemblyAI",
     };
 
@@ -130,6 +137,7 @@ public static class DictationEngineChoices
         DictationEngineChoice.Moonshine or DictationEngineChoice.Parakeet => "Your voice stays on this PC.",
         DictationEngineChoice.Sarvam => "Audio goes to Sarvam with your key.",
         DictationEngineChoice.OpenClicky => "Audio goes to OpenAI through the OpenClicky backend.",
+        DictationEngineChoice.Server => "Audio goes to your own speech server, and nowhere else.",
         _ => "Audio goes to AssemblyAI through the OpenClicky backend.",
     };
 
@@ -143,6 +151,7 @@ public static class DictationEngineChoices
             : $"NVIDIA’s open model, offline. English and 24 European languages. A {ParakeetFacts.DownloadSizeText} download.",
         DictationEngineChoice.Sarvam => "Saaras hears eleven Indian languages. Billed by Sarvam to your key.",
         DictationEngineChoice.OpenClicky => "Needs an OpenClicky account or your own OpenAI key.",
+        DictationEngineChoice.Server => "Ollama, Speaches or another server of yours, on this PC or your network, with a model that hears (Whisper, Gemma 4). Set it up under Clicky → Your models.",
         _ => "Words appear as you speak. Needs the OpenClicky backend.",
     };
 
@@ -154,6 +163,7 @@ public static class DictationEngineChoices
         DictationEngineChoice.Parakeet => "Not downloaded",
         DictationEngineChoice.Sarvam => "Needs a key",
         DictationEngineChoice.OpenClicky => "Needs account",
+        DictationEngineChoice.Server => "Not set up",
         _ => "Needs backend",
     };
 
@@ -170,6 +180,7 @@ public static class DictationEngineChoices
             DictationEngineChoice.Parakeet => [.. onDeviceKeywords, "parakeet", "nvidia", "download", "model"],
             DictationEngineChoice.Sarvam => ["sarvam", "saaras", "key", "api key", "indian", "hindi"],
             DictationEngineChoice.OpenClicky => [.. onDeviceKeywords, "openai", "openclicky", "account", "backend"],
+            DictationEngineChoice.Server => ["local", "private", "server", "self-hosted", "ollama", "speaches", "whisper", "gemma", "network"],
             _ => [.. onDeviceKeywords, "assemblyai", "streaming", "backend"],
         };
         return [.. common, .. own];

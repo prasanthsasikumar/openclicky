@@ -36,6 +36,8 @@ internal sealed partial class SettingsRowFactory
                 return SelfHostedRow(AnswerSource.LMStudio, item, query);
             case "models.custom":
                 return SelfHostedRow(AnswerSource.CustomOpenAI, item, query);
+            case "models.speech":
+                return SpeechServerRow(item, query);
             case "clicky.drawingSource":
                 return new LiveContent(() => Ui.Card(DrawingSourceRow(item, query)), Changes.Shell);
             case "clicky.drawingDetail":
