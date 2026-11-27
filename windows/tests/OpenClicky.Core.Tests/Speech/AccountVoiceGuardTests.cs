@@ -16,7 +16,13 @@ public class AnswerVoiceSessionTests
     private static byte[] Audio(string voice, string text) => Encoding.UTF8.GetBytes($"{voice}:{text}");
     private static string Spoken(byte[] audio) => Encoding.UTF8.GetString(audio);
 
-    /// <summary>Records what the session reports, and makes the session with short deadlines.</summary>
+    /// <summary>
+    /// Records what the session reports, and makes the session. Every race is won by seconds, never by a fraction of one:
+    /// on a busy CI runner a timer can fire most of a second late, and a 0.8 s piece then lost to its 1.5 s deadline
+    /// (ALaterPieceHasMoreRoomThanTheFirst, 2026-11). A piece that answers at once completes before any deadline is
+    /// awaited, so the first deadline stays short; a late piece sleeps far past every deadline and is cancelled when it
+    /// loses, so the tests stay quick. The Mac's AccountVoiceGuardTests.swift made the same change on 2026-10-29.
+    /// </summary>
     private sealed class Harness
     {
         public List<AnswerVoiceSession.AccountTrouble> Troubles { get; } = [];
@@ -25,7 +31,7 @@ public class AnswerVoiceSessionTests
         public int FirstSoundCount;
 
         public AnswerVoiceSession Session(Func<string, double>? accountDelaySeconds = null, Func<string, bool>? accountFails = null,
-                                          bool speaksWithAccountVoice = true) => new(
+                                          bool speaksWithAccountVoice = true, double firstDeadline = 0.5, double laterDeadline = 20) => new(
             speaksWithAccountVoice,
             async (text, cancellationToken) =>
             {
@@ -34,7 +40,7 @@ public class AnswerVoiceSessionTests
                 return Audio("account", text);
             },
             (text, _) => Task.FromResult(Audio("local", text)),
-            deadline: pieceNumber => TimeSpan.FromSeconds(pieceNumber == 0 ? 0.5 : 1.5),
+            deadline: pieceNumber => TimeSpan.FromSeconds(pieceNumber == 0 ? firstDeadline : laterDeadline),
             onFirstAccountAudio: _ => Interlocked.Increment(ref FirstSoundCount),
             onAccountTrouble: trouble => { lock (Troubles) Troubles.Add(trouble); },
             onAnswerOnTime: () => Interlocked.Increment(ref AnswersOnTime),
@@ -58,10 +64,10 @@ public class AnswerVoiceSessionTests
     public async Task ALateFirstPieceIsSpokenByTheLocalVoiceAndSoIsTheRest()
     {
         var harness = new Harness();
-        var session = harness.Session(accountDelaySeconds: text => text == "one" ? 5 : 0);
+        var session = harness.Session(accountDelaySeconds: text => text == "one" ? 120 : 0);
         var stopwatch = Stopwatch.StartNew();
         Assert.Equal("local:one", Spoken(await session.AudioAsync("one")));
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(3));
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10));
         // The account would answer the second piece at once; the answer stays in one voice.
         Assert.Equal("local:two", Spoken(await session.AudioAsync("two")));
         Assert.Equal(1, harness.TroubledAnswers);
@@ -75,7 +81,8 @@ public class AnswerVoiceSessionTests
     public async Task ALaterPieceHasMoreRoomThanTheFirst()
     {
         var harness = new Harness();
-        var session = harness.Session(accountDelaySeconds: text => text == "two" ? 0.8 : 0);
+        // Three times the first piece's deadline, and nowhere near a later piece's.
+        var session = harness.Session(accountDelaySeconds: text => text == "two" ? 1.5 : 0);
         await session.AudioAsync("one");
         Assert.Equal("account:two", Spoken(await session.AudioAsync("two")));
         Assert.Empty(harness.Troubles);
@@ -100,11 +107,13 @@ public class AnswerVoiceSessionTests
     public async Task APieceInFlightWhenAnotherFallsBackFollowsIt()
     {
         var harness = new Harness();
-        var session = harness.Session(accountDelaySeconds: text => text == "one" ? 5 : 1.0);
+        var session = harness.Session(accountDelaySeconds: text => text == "one" ? 120 : 60);
+        var stopwatch = Stopwatch.StartNew();
         var first = session.AudioAsync("one");
         var second = session.AudioAsync("two");
         Assert.Equal("local:one", Spoken(await first));
         Assert.Equal("local:two", Spoken(await second));
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10)); // well before the second piece's own 20 s deadline
         Assert.Single(harness.Troubles);
         Assert.Equal(1, harness.TroubledAnswers);
     }

@@ -423,8 +423,12 @@ public sealed class PieceWorkshop(Func<IPieceMaker> currentMaker, int atOnce = 4
         var maker = currentMaker();
         var key = FormattableString.Invariant($"{maker.Name}|{request.Make.Trim().ToLowerInvariant()}|{request.Width:0.#}|{request.Height:0.#}|{request.Depth:0.#}");
         var task = made.GetOrAdd(key, _ => RunAsync(maker, request));
-        // A piece that couldn't be made may be tried again later.
-        _ = task.ContinueWith(done => { if (!done.IsCompletedSuccessfully || done.Result is null) made.TryRemove(key, out _); }, TaskScheduler.Default);
+        // A piece that couldn't be made may be tried again: it is forgotten as it finishes, before anyone waiting on it
+        // hears, so asking again straight away really tries again. Only this attempt is forgotten, never a newer one.
+        _ = task.ContinueWith(done =>
+        {
+            if (!done.IsCompletedSuccessfully || done.Result is null) made.TryRemove(KeyValuePair.Create(key, done));
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         return task;
     }
 

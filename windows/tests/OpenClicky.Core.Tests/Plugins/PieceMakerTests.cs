@@ -201,7 +201,7 @@ public sealed class PieceMakerTests
         var failing = new Maker(_ => null);
         var again = new PieceWorkshop(() => failing);
         Assert.Null(await again.MakeAsync(Wing));
-        await Task.Delay(50);
+        // Straight away, with no wait: a failed piece is forgotten before its caller hears (a 50 ms wait here was flaky).
         Assert.Null(await again.MakeAsync(Wing));
         Assert.Equal(2, failing.Calls);
     }

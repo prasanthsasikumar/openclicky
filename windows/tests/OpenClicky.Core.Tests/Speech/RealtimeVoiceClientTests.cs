@@ -435,7 +435,7 @@ public class RealtimeTurnTests : IDisposable
         await mainThread.InvokeAsync(() => client.OnStopListeningRequested = () => stopRequests++);
         socket.Receive("""{"type":"response.function_call_arguments.done","name":"stop_listening","call_id":"call_1","response_id":"resp_1","arguments":"{}"}""");
         Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("function_call_output") && text.Contains("call_1"))));
-        Assert.Contains(socket.SentTexts, text => text.Contains("Say a short goodbye"));
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("Say a short goodbye"))));
         Assert.Equal(0, stopRequests);
 
         socket.Receive("""{"type":"response.done","response":{"status":"completed"}}""");
@@ -455,10 +455,15 @@ public class RealtimeTurnTests : IDisposable
     {
         var (client, socket, _) = await ConnectedClientAsync();
         var action = new TaskCompletionSource<RealtimeToolResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var actionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var screensAttached = 0;
         await mainThread.InvokeAsync(() =>
         {
-            client.OnDesktopAction = (_, _) => action.Task;
+            client.OnDesktopAction = (_, _) =>
+            {
+                actionStarted.TrySetResult();
+                return action.Task;
+            };
             client.ScreenContextProvider = () =>
             {
                 screensAttached++;
@@ -468,13 +473,10 @@ public class RealtimeTurnTests : IDisposable
         socket.Receive("""{"type":"response.created","response":{"id":"r1"}}""");
         socket.Receive("""{"type":"response.done","response":{"id":"r1","status":"completed"}}""");
         socket.Receive("""{"type":"response.function_call_arguments.done","name":"open_url","call_id":"c1","response_id":"r1","arguments":"{\"url\":\"https://mail.google.com\"}"}""");
-        var busy = false;
-        for (var attempt = 0; attempt < 500 && !busy; attempt++)
-        {
-            busy = await mainThread.InvokeAsync(() => client.IsBusy);
-            if (!busy) await Task.Delay(10);
-        }
-        Assert.True(busy);
+        // Wait for the action itself: IsBusy is also true while r1 is still open, and an Esc before the call is
+        // picked up belongs to the turn before it, so the call's continuation would rightly go out (CI, 2026-11-22).
+        await actionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(await mainThread.InvokeAsync(() => client.IsBusy));
 
         await mainThread.InvokeAsync(client.StopSpeaking);
         action.SetResult(new RealtimeToolResult("Opened Gmail.", ThenLooksAtScreen: true));
@@ -500,11 +502,12 @@ public class RealtimeTurnTests : IDisposable
             client.WriteInPlaceHost = host;
         });
         await mainThread.RunAsync(() => client.SendTextTurnAsync("make this sound professional"));
-        Assert.Contains(socket.SentTexts, text => text.Contains("«hey can u send it»"));
+        // Sent through OrderedSocketSender's queue, which drains on its own task: wait for it (CI, "Filter not matched").
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("«hey can u send it»"))));
         socket.Receive("""{"type":"response.function_call_arguments.done","call_id":"w","name":"write_in_place","arguments":"{\"text\":\"Could you send it, please?\"}"}""");
         Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("function_call_output"))));
         Assert.Equal(["select all", "insert Could you send it, please?", "copy hey can u send it"], host.Steps);
-        Assert.Contains(socket.SentTexts, text => text.Contains("it's in place") && text.Contains("never read the new text out"));
+        Assert.True(await Eventually.TrueAsync(() => socket.SentTexts.Any(text => text.Contains("it's in place") && text.Contains("never read the new text out"))));
     }
 
     private sealed class RecordingWriteInPlaceHost(WritingFieldSnapshot snapshot) : IWriteInPlaceHost
