@@ -73,6 +73,13 @@ public sealed partial class CompanionManager
             {
                 LastTranscript = text;
                 AppLog.Write($"talk: you said ({text.Length} chars)");
+                // "Play it again" draws the drawing up again with its own voice; the fast voice keeps quiet meanwhile.
+                if (Plugins.DrawStage.DrawStageController.Shared.Current is { } drawingUp && TryReplayDrawing(text))
+                {
+                    fastVoiceQuietUntil = DateTimeOffset.UtcNow + ReplayLength(drawingUp) + TimeSpan.FromSeconds(2);
+                    client.StopSpeaking();
+                    return;
+                }
                 // "Save it" saves the drawing up; the fast voice keeps quiet about it.
                 if (TrySaveDrawing(text))
                 {

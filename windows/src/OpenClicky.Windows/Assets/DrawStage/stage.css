@@ -225,6 +225,8 @@ body.gliding #tools, body.gliding .grip {
 }
 
 /* Each button its own colour: Picture blue, Video red, PiP teal; the close button turns red under the pointer. */
+#tools button.replay { background: #EAF7EC; border-color: rgba(37, 165, 95, 0.35); color: #1B7F47; }
+#tools button.replay:hover { background: #D5F0DA; border-color: #25A55F; color: #146438; }
 #tools button.picture { background: #E8F0FF; border-color: rgba(47, 107, 255, 0.35); color: #1F56D6; }
 #tools button.picture:hover { background: #D3E2FF; border-color: #2F6BFF; color: #1A47B3; }
 #tools button.video { background: #FDECEC; border-color: rgba(229, 72, 77, 0.35); color: #C3343A; }
