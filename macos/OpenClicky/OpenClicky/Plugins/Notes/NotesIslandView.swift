@@ -18,38 +18,77 @@ struct NotesIslandComponent: IslandComponent {
     let settingsDetail: String? = "A quick notepad on the island. Click it to type; it saves on this Mac as you go and never leaves it."
     func isAvailable(in context: IslandContext) -> Bool { true }
     @MainActor func makeView(companionManager: CompanionManager, model: NotchHUDModel) -> AnyView {
-        AnyView(NotesIslandView(store: NotesStore.shared, hud: companionManager.notchHUDManager))
+        AnyView(NotesIslandView(store: NotesStore.shared, companionManager: companionManager, hud: companionManager.notchHUDManager))
     }
 }
 
 struct NotesIslandView: View {
     @ObservedObject var store: NotesStore
+    @ObservedObject var companionManager: CompanionManager
     let hud: NotchHUDManager
 
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            NotesTextEditor(
-                text: store.text,
-                onChange: { store.update($0) },
-                onBeginTyping: { hud.beginComponentTyping(in: $0) },
-                onEndTyping: { view in
-                    store.saveNow()
-                    hud.endComponentTyping(in: view)
-                }
-            )
-            if store.text.isEmpty {
-                // The text view's own inset puts the first line here.
-                Text("Click to jot something down")
-                    .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.35))
-                    .padding(.horizontal, NotesTextEditor.inset.width + 5)
-                    .padding(.vertical, NotesTextEditor.inset.height)
-                    .allowsHitTesting(false)
-            }
+    /// The job in progress, shown beside Cancel so it is clear what Stop ends.
+    private var workLine: String? {
+        if let activity = companionManager.agentActivityText, !activity.isEmpty { return activity }
+        switch companionManager.voiceState {
+        case .listening: return "Listening"
+        case .processing: return "Working"
+        case .responding: return "Speaking"
+        case .idle: return nil
         }
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.07)))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            ZStack(alignment: .topLeading) {
+                NotesTextEditor(
+                    text: store.text,
+                    onChange: { store.update($0) },
+                    onBeginTyping: { hud.beginComponentTyping(in: $0) },
+                    onEndTyping: { view in
+                        store.saveNow()
+                        hud.endComponentTyping(in: view)
+                    }
+                )
+                if store.text.isEmpty {
+                    // The text view's own inset puts the first line here.
+                    Text("Click to jot something down")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.35))
+                        .padding(.horizontal, NotesTextEditor.inset.width + 5)
+                        .padding(.vertical, NotesTextEditor.inset.height)
+                        .allowsHitTesting(false)
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.07)))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            VStack(alignment: .trailing, spacing: 6) {
+                if let workLine {
+                    Text(workLine)
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.72))
+                        .multilineTextAlignment(.trailing)
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                Spacer(minLength: 0)
+                Button(action: { companionManager.stopCurrentWork() }) {
+                    Text("Cancel")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .frame(height: 28)
+                        .background(Capsule().fill(Color.white.opacity(0.16)))
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .help("Stop the current job")
+                .accessibilityLabel("Cancel")
+            }
+            .frame(width: 88)
+        }
         .padding(.bottom, 10)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Notes")
