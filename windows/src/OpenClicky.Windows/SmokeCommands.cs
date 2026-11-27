@@ -108,6 +108,13 @@ internal static class SmokeCommands
         if (args.Contains(Plugins.Teacher.TeacherSmoke.Flag)) return Plugins.Teacher.TeacherSmoke.Run(args);
         if (args.Contains(Plugins.DrawStage.DrawStageSmoke.Flag)) return Plugins.DrawStage.DrawStageSmoke.Run(args);
         if (args.Contains(Overlay.ScreenMarkerSmoke.Flag)) return Overlay.ScreenMarkerSmoke.Run();
+        // The update flow's cards (ready, the update window's steps, updated), drawn offscreen to PNGs: no update needed.
+        if (Argument("--openclicky-update-demo") is { } updateDemoFolder)
+        {
+            ConsoleAttachment.Attach();
+            foreach (var path in Companion.UpdateCards.SaveDemo(updateDemoFolder, Argument("--openclicky-update-demo", 2) ?? "0.12.3")) Console.WriteLine($"smoke: {path}");
+            return 0;
+        }
         if (Argument("--openclicky-action-smoke") is { } toolName)
         {
             ConsoleAttachment.Attach();

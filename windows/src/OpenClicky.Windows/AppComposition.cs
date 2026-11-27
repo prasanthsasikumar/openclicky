@@ -51,6 +51,9 @@ public sealed class AppComposition : ICompanionHost, IDisposable
     private readonly IDisposable pointerStyleObservation;
     private readonly GuidedStepInputSource guidedStepInput;
     private readonly VelopackAppUpdater updater;
+    private readonly UpdateWindows updateWindows;
+    /// <summary>Started by Restart now from the version before (UpdateFlow.RestartedArgument).</summary>
+    private readonly bool restartedAfterUpdate;
     private readonly TrayIcon trayIcon;
     private readonly DispatcherTimer memoryWatch;
     private readonly nint lowMemoryNotification;
@@ -149,7 +152,22 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         Companion = new CompanionManager(services,
             new CompanionModels(companionUi.Overlay, companionUi.Island, companionUi.Orb, companionUi.AgentCard), this);
 
-        updater = new VelopackAppUpdater(preferences, new UpdatePromptSheets(dispatcher, dictationSettings));
+        updateWindows = new UpdateWindows(dispatcher);
+        updater = new VelopackAppUpdater(preferences, new UpdatePromptSheets(dispatcher, dictationSettings), updateWindows);
+        restartedAfterUpdate = args.Contains(Core.Updates.UpdateFlow.RestartedArgument);
+        // An update downloaded in the background: the card says it is ready, unless Later was pressed for it today.
+        updater.UpdateReady += version => dispatcher.BeginInvoke(() =>
+        {
+            var laterAt = DateTimeOffset.TryParse(preferences.GetString(Core.Updates.UpdateFlow.LaterAtKey), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var at) ? at : (DateTimeOffset?)null;
+            if (!Core.Updates.UpdateReadyCard.ShouldShow(version, preferences.GetString(Core.Updates.UpdateFlow.LaterVersionKey), laterAt, DateTimeOffset.UtcNow)) return;
+            updateWindows.ShowReadyCard(version, updater.RestartToUpdate, () =>
+            {
+                AppLog.Write($"updates: {version} later");
+                preferences.Set(Core.Updates.UpdateFlow.LaterVersionKey, version);
+                preferences.Set(Core.Updates.UpdateFlow.LaterAtKey, DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            }, () => AppWindow.Ui.OpenExternal(Core.Updates.UpdateFlow.ReleaseNotesUrl(VelopackAppUpdater.RepositoryUrl, version)));
+        });
         trayIcon = new TrayIcon(ReadTrayState);
         WireTray();
 
@@ -180,11 +198,41 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         companionUi.Show();
         trayIcon.IsVisible = TrayShouldShow();
         updater.Start();
+        SayWhenUpdated();
         memoryWatch.Start();
         if (Companion.DictationTakeController is { } controller) controller.HideOwnWindows = () => dictationWindow?.Hide();
         // Launching at sign-in is opt-in (`registerAsLoginItem` in shell.json), as on the Mac.
         if (OpenClickyConfiguration.Settings.RegisterAsLoginItem == true && !platform.LoginItem.IsEnabled) platform.LoginItem.SetEnabled(true);
         AppLog.Write("launch: ready");
+        if (restartedAfterUpdate && updater.CurrentVersion is { } updatedTo)
+        {
+            // The update window carried through Open: the new version is up.
+            updateWindows.ShowProgress(Core.Updates.UpdateProgress.Finished(updatedTo));
+            _ = dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2.5));
+                updateWindows.CloseProgress();
+            });
+        }
+    }
+
+    /// <summary>The first start of a new version says so once: the update window's Open step when Restart now restarted into
+    /// it, else a short note. A development build (no installed version) says nothing.</summary>
+    private void SayWhenUpdated()
+    {
+        if (updater.CurrentVersion is not { } current) return;
+        var lastRun = preferences.GetString(Core.Updates.UpdateFlow.LastRunVersionKey);
+        preferences.Set(Core.Updates.UpdateFlow.LastRunVersionKey, current);
+        if (restartedAfterUpdate)
+        {
+            AppLog.Write($"updates: restarted into {current}");
+            updateWindows.ShowProgress(Core.Updates.UpdateProgress.Opening(current));
+            return;
+        }
+        if (Core.Updates.UpdatedNotice.Message(lastRun, current) is not { } message) return;
+        AppLog.Write($"updates: updated from {lastRun} to {current}");
+        updateWindows.ShowUpdatedCard(message, () => AppWindow.Ui.OpenExternal(Core.Updates.UpdateFlow.ReleaseNotesUrl(VelopackAppUpdater.RepositoryUrl, current)),
+            TimeSpan.FromSeconds(12));
     }
 
     // MARK: - The tray

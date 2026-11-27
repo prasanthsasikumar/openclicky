@@ -1,15 +1,19 @@
 // AppUpdater.swift's job (Sparkle on the Mac) through Velopack, against the GitHub Releases of the
 // OpenClicky repository. A development build (not installed by Setup.exe) has no feed: IsConfigured
 // is false and the row says so. Automatic checks run at launch and once a day: an update found then
-// downloads in the background and is applied when OpenClicky quits, unless the person skipped that
-// version. "Check now" asks first, as Sparkle does (Install Update / Skip This Version / Remind Me
-// Later); only Install downloads it and restarts into the new version. It also says when OpenClicky
-// is up to date or the check failed.
+// downloads in the background, unless the person skipped that version, and a card says it is ready
+// (UpdateReady → UpdateWindows: Restart now / Later). Restart now shows the update window and restarts
+// into the new version; otherwise Velopack applies it the next time OpenClicky starts (its auto-apply on
+// startup; the old WaitExitThenApplyUpdates gave up after 60 s, long before a tray app is quit). "Check
+// now" asks first, as Sparkle does (Install Update / Skip This Version / Remind Me Later); Install
+// downloads it in the update window and restarts. It also says when OpenClicky is up to date or the
+// check failed. The flow's words and rules are Core's (Updates/UpdateFlow).
 
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Settings;
+using OpenClicky.Core.Updates;
 using Velopack;
 using Velopack.Sources;
 
@@ -25,15 +29,20 @@ public sealed class VelopackAppUpdater : ObservableObject, IAppUpdater, IDisposa
 
     private readonly Preferences preferences;
     private readonly UpdatePromptSheets? prompts;
+    private readonly UpdateWindows? windows;
     private readonly UpdateManager? updateManager;
+    /// <summary>The update downloaded in the background, waiting for Restart now (or the next start).</summary>
+    private VelopackAsset? downloadedUpdate;
     private Timer? dailyTimer;
     private bool isChecking;
 
     /// <param name="prompts">The sheets "Check Now" asks with; null → it installs without asking (tests, no UI).</param>
-    public VelopackAppUpdater(Preferences preferences, UpdatePromptSheets? prompts = null)
+    /// <param name="windows">The ready card and the update window; null → nothing is shown.</param>
+    public VelopackAppUpdater(Preferences preferences, UpdatePromptSheets? prompts = null, UpdateWindows? windows = null)
     {
         this.preferences = preferences;
         this.prompts = prompts;
+        this.windows = windows;
         try
         {
             var manager = new UpdateManager(new GithubSource(RepositoryUrl, null, false));
@@ -46,6 +55,39 @@ public sealed class VelopackAppUpdater : ObservableObject, IAppUpdater, IDisposa
     }
 
     public bool IsConfigured => updateManager is not null;
+
+    /// <summary>The installed version ("0.12.2"); null for a development build.</summary>
+    public string? CurrentVersion => updateManager?.CurrentVersion?.ToString();
+
+    /// <summary>An update finished downloading in the background (its version): the card can say it is ready.</summary>
+    public event Action<string>? UpdateReady;
+
+    /// <summary>Restart now: the update window shows Install, and OpenClicky restarts into the downloaded version, which
+    /// opens with the window on Open (UpdateFlow.RestartedArgument).</summary>
+    public void RestartToUpdate()
+    {
+        if (updateManager is null || downloadedUpdate is not { } update) return;
+        var version = update.Version.ToString();
+        AppLog.Write($"updates: restarting into {version}");
+        _ = InstallAndRestartAsync(update, version);
+    }
+
+    private async Task InstallAndRestartAsync(VelopackAsset update, string version)
+    {
+        windows?.ShowProgress(UpdateProgress.Installing(version));
+        // A moment for the window to be seen before OpenClicky exits.
+        await Task.Delay(TimeSpan.FromSeconds(1.2)).ConfigureAwait(false);
+        try
+        {
+            updateManager!.ApplyUpdatesAndRestart(update, [UpdateFlow.RestartedArgument]);
+        }
+        catch (Exception error)
+        {
+            AppLog.Write($"updates: couldn't install ({error.GetType().Name}: {error.Message})");
+            windows?.CloseProgress();
+            if (prompts is not null) await prompts.TellAsync("Update failed", "OpenClicky couldn't install the update. It will try again the next time it starts.").ConfigureAwait(false);
+        }
+    }
 
     public bool AutomaticallyChecks
     {
@@ -85,7 +127,7 @@ public sealed class VelopackAppUpdater : ObservableObject, IAppUpdater, IDisposa
     {
         if (updateManager is null || isChecking) return;
         isChecking = true;
-        (Action<int> Report, Action Close)? downloading = null;
+        var showsProgress = false;
         try
         {
             var update = await updateManager.CheckForUpdatesAsync().ConfigureAwait(false);
@@ -111,11 +153,18 @@ public sealed class VelopackAppUpdater : ObservableObject, IAppUpdater, IDisposa
                     AppLog.Write($"updates: {version} available; {choice.ToString().ToLowerInvariant()}");
                     if (choice == UpdateChoice.Skip) preferences.Set(SkippedVersionKey, version);
                     if (choice != UpdateChoice.Install) return;
-                    downloading = await prompts.ShowDownloadingAsync(version).ConfigureAwait(false);
                 }
-                await updateManager.DownloadUpdatesAsync(update, downloading?.Report).ConfigureAwait(false);
-                downloading?.Report(100);
-                updateManager.ApplyUpdatesAndRestart(update.TargetFullRelease);
+                showsProgress = true;
+                windows?.ShowProgress(UpdateProgress.Downloading(version, 0));
+                var lastPercent = -1;
+                await updateManager.DownloadUpdatesAsync(update, percent =>
+                {
+                    if (percent == lastPercent) return;
+                    lastPercent = percent;
+                    windows?.ShowProgress(UpdateProgress.Downloading(version, percent / 100.0));
+                }).ConfigureAwait(false);
+                downloadedUpdate = update.TargetFullRelease;
+                await InstallAndRestartAsync(update.TargetFullRelease, version).ConfigureAwait(false);
             }
             else
             {
@@ -126,14 +175,16 @@ public sealed class VelopackAppUpdater : ObservableObject, IAppUpdater, IDisposa
                 }
                 AppLog.Write($"updates: {version} available; downloading");
                 await updateManager.DownloadUpdatesAsync(update).ConfigureAwait(false);
-                // Installed when OpenClicky quits, without a window in the way.
-                updateManager.WaitExitThenApplyUpdates(update.TargetFullRelease, silent: true, restart: false);
+                // Ready: the card offers Restart now; otherwise it is applied the next time OpenClicky starts.
+                downloadedUpdate = update.TargetFullRelease;
+                AppLog.Write($"updates: {version} downloaded; ready to restart into");
+                UpdateReady?.Invoke(version);
             }
         }
         catch (Exception error)
         {
             AppLog.Write($"updates: check failed ({error.GetType().Name}: {error.Message})");
-            downloading?.Close();
+            if (showsProgress) windows?.CloseProgress();
             if (applyNow && prompts is not null)
             {
                 await prompts.TellAsync("Update failed", "OpenClicky couldn't check for or download the update. Check your connection and try again.").ConfigureAwait(false);
