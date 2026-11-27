@@ -26,8 +26,8 @@ Read `~/Library/Logs/OpenClicky/app.log` alongside: every step logs a `handheld:
 - [ ] Switch it on. Does macOS ask for Input Monitoring (or anything else)? Write down what
       appeared. The log says `handheld: listening` and `handheld: WhisPrompt connected`.
 - [ ] A "Handheld" row appears under the switch without closing Settings, and opens the page.
-- [ ] The page names the device as connected and shows seven pickers: Key A press, twice, hold;
-      Key B press, twice; Key C press, twice. It also shows the mouse note and the microphone switch.
+- [ ] The page names the device as connected and shows a picker for every press, double press and hold
+      of Key A, Key B, Key C and the wheel button (or, with a model file, the picture: section 11). It also shows the mouse note and the microphone switch.
 - [ ] The same page in the island's settings drop-down looks right on black.
 
 ## 3. Which key is which
@@ -89,6 +89,37 @@ Open TextEdit with a scratch document and click into it before each step.
 - [ ] If the handheld runs on a battery: is the level shown anywhere on it or in its own app?
       The status report's twelfth byte read 100 while plugged in. Say what the level was at a time
       it was clearly not full, and the byte can be checked against it (or leave battery out).
+
+## 10. The wheel (added 2026-11-27, builds 780–788)
+
+The device has a fourth key, the wheel's own button (`wheelButton`), and every key reports a hold.
+
+- [x] *(2026-11-27, build ~780: "everything worked super great")* Wheel button, one press: a stack
+      of open windows; the wheel moves through it; pressing again goes to the window in front.
+- [x] *(2026-11-27, build 787)* Wheel button, twice: the pointer says "tab cycling on". Wheel down
+      is the next tab, up the one before, in Terminal and in Chrome. Twice again: "tab cycling off".
+- [ ] During tab cycling a trackpad still scrolls the page under the pointer.
+- [ ] Left alone for 30 s, tab cycling ends by itself and the wheel scrolls again.
+- [ ] One press during tab cycling ends it and opens the window stack; twice with the stack open
+      closes the stack and starts tab cycling. The two are never on together.
+- [ ] Key C held: Delete repeats until the key is let go (and stops by itself after 10 s).
+
+## 11. The page and the picture (added 2026-11-27)
+
+- [x] *(2026-11-27)* With the plugin on, "Handheld" is in the Settings sidebar after Island.
+- [ ] Without a model file the page lists every button's pickers.
+- [x] *(2026-11-27, "this is great")* With the maker's model copied to
+      `~/.openclicky/handheld/whisprompt.glb` (never in the repo or the app), the page shows the
+      device floating, labels beside each button, and a click on a button shows its pickers.
+- [ ] Build 783: Key B and Key C labels on the left, no header card, the device line last.
+
+## 12. One microphone (added 2026-11-27, build 786)
+
+- [ ] With the handheld's microphone on, Settings → Dictation → Input shows it as chosen, and
+      "Speak to Test" follows a voice spoken into the handheld.
+- [ ] Picking another microphone there switches the handheld's off on the Handheld page.
+- [ ] Section 7's first line again on build 784 or later: before it, every take was silent
+      (the 16 kHz device was tapped in the Mac microphone's 48 kHz format).
 
 ## 9. Terminal notices
 

@@ -270,6 +270,19 @@ line.
   shown for the one the page is about.
 - **A finished session is announced once per turn**, and "Go to the waiting terminal" falls back
   to the session that finished last, then the newest session.
+- **Four keys, all of which can be held.** Later recordings showed a fourth key (code 03, the
+  wheel's button) and a long press on every key, not only Key A. A key combination bound to a
+  hold repeats until release (every 0.08 s, at most 10 s): Key C held is a repeating Delete.
+- **The wheel has two modes, one at a time.** The window switcher (`Switcher/`: a stack of open
+  windows the wheel moves through) and tab cycling (`HandheldTabCycling`: an event tap that
+  turns the wheel's clicks into ⌃Tab and ⌃⇧Tab, 30 s idle limit). The one just asked for wins.
+- **The page is in the Settings sidebar** while the plugin is on, and shows a 3D picture of the
+  device to pick buttons on (`HandheldDeviceView`, `Viewer/`). The maker's model is not ours to
+  ship: it is read only from `~/.openclicky/handheld/<device id>.glb` on the person's own Mac,
+  and without it the page lists the buttons.
+- **A chosen microphone is tapped in its own format** (`MicrophoneDevices.tapFormat`): the
+  16 kHz handheld beside the 48 kHz Mac microphone recorded silence in every lane. The
+  microphone pickers show the handheld's while it stands in, and a pick there switches it off.
 - **Still owed, all on `docs/handheld-hand-test.md`:** which key is A, B and C; whether a hold
   loses the first word; the battery byte; the Developer ID build's Input Monitoring behaviour;
   and every on-screen check (the page, the recorder, the notices).
