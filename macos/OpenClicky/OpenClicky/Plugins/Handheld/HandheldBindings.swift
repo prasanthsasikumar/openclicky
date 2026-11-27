@@ -39,6 +39,9 @@ enum HandheldAction: Codable, Equatable {
     case openIsland
     /// Opens the stack of open windows (`Switcher/`); with it open, goes to the one in front.
     case switchWindows
+    /// Switches tab cycling on or off (`HandheldTabCycling`): while on, the wheel moves between
+    /// the tabs of the app in front.
+    case cycleTabs
     /// One key with its modifiers. Bound to a hold, it repeats until the button is let go.
     case keyCombination(HandheldKeyCombination)
     case nothing
@@ -55,6 +58,7 @@ enum HandheldAction: Codable, Equatable {
         case .goToWaitingTerminal: return "Go to the waiting terminal"
         case .openIsland: return "Open the island"
         case .switchWindows: return "Switch windows"
+        case .cycleTabs: return "Cycle tabs with the wheel"
         case .keyCombination(let keyCombination): return keyCombination.displayText
         case .nothing: return "Nothing"
         }
@@ -73,7 +77,7 @@ enum HandheldAction: Codable, Equatable {
     /// picker itself.
     private static let allFixedActions: [HandheldAction] = [
         .dictateHold, .dictateToggle, .askHold, .askToggle, .handsFreeToggle, .typeQuestion, .stop,
-        .goToWaitingTerminal, .switchWindows, .openIsland, .nothing,
+        .goToWaitingTerminal, .switchWindows, .cycleTabs, .openIsland, .nothing,
     ]
 
     /// The actions offered for one gesture of one control. The hold actions are offered only for

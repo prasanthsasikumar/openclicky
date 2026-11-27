@@ -62,6 +62,7 @@ enum WhisPromptHandheld {
         (controlID: "keyC", gesture: .longStart, action: .keyCombination(HandheldKeyCombination(keyCode: 51, modifierFlags: 0, displayText: "Delete"))),
         // Press the wheel, turn it through the open windows, press again to go to one.
         (controlID: "wheelButton", gesture: .single, action: .switchWindows),
+        (controlID: "wheelButton", gesture: .double, action: .cycleTabs),
     ])
 
     private static let controlIDByKeyByte: [UInt8: String] = [0x02: "keyA", 0x01: "keyB", 0x00: "keyC", 0x03: "wheelButton"]

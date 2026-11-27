@@ -17,6 +17,8 @@ final class RecordingHandheldActionHost: HandheldActionHost {
     private(set) var islandOpenCount = 0
     private(set) var goToWaitingTerminalCount = 0
     private(set) var windowSwitcherToggleCount = 0
+    private(set) var tabCyclingToggleCount = 0
+    private(set) var tabCyclingStopCount = 0
     /// The app's side, played simply: a question listens from talk pressed to talk released unless
     /// the press is refused, and a tapped dictation key opens a take and the next tap ends it.
     var askIsListening = false
@@ -36,6 +38,8 @@ final class RecordingHandheldActionHost: HandheldActionHost {
     func openIsland() { islandOpenCount += 1 }
     func goToWaitingTerminal() { goToWaitingTerminalCount += 1 }
     func toggleWindowSwitcher() { windowSwitcherToggleCount += 1 }
+    func toggleTabCycling() { tabCyclingToggleCount += 1 }
+    func stopTabCycling() { tabCyclingStopCount += 1 }
 }
 
 /// A clock the test moves by hand, in place of real timers.

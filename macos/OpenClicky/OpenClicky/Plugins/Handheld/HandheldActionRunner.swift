@@ -29,6 +29,10 @@ protocol HandheldActionHost: AnyObject {
     func goToWaitingTerminal()
     /// Opens the stack of open windows, or with it open goes to the window in front of it.
     func toggleWindowSwitcher()
+    /// Switches tab cycling on or off: while on, the wheel moves between the front app's tabs.
+    func toggleTabCycling()
+    /// Ends tab cycling if it is on. The wheel must never stay taken away from scrolling.
+    func stopTabCycling()
     /// A question is being listened to right now (⌃⌥ held, or a button standing in for it).
     var askIsListening: Bool { get }
     /// A dictation take is open right now, whoever started it.
@@ -116,6 +120,7 @@ final class HandheldActionRunner {
             tapTheDictationKey()
         }
         aPressOpenedTheTake = false
+        host?.stopTabCycling()
         if somethingWasHeld {
             AppLog.append("handheld: released what was held (\(reason))")
         }
@@ -155,6 +160,8 @@ final class HandheldActionRunner {
             host?.openIsland()
         case .switchWindows:
             host?.toggleWindowSwitcher()
+        case .cycleTabs:
+            host?.toggleTabCycling()
         case .keyCombination(let combination):
             host?.postKeyCombination(combination)
             if event.gesture == .longStart {
@@ -274,6 +281,16 @@ extension CompanionManager: HandheldActionHost {
 
     func openIsland() {
         notchHUDManager.openPanel()
+    }
+
+    func toggleTabCycling() {
+        HandheldTabCycling.shared.toggle(
+            postKeyCombination: { [weak self] in self?.postKeyCombination($0) },
+            say: { [weak self] in self?.showAskCaption($0, holdSeconds: 2) })
+    }
+
+    func stopTabCycling() {
+        HandheldTabCycling.shared.stop(reason: "everything held was released")
     }
 
     func toggleWindowSwitcher() {
