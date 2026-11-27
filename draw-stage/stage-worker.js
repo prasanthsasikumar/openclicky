@@ -7,6 +7,10 @@
 // The drawing language (keep docs/draw-stage.md in sync):
 //   step(n) / say(text)                     a beat and its spoken line; marks after a say() are drawn while it is said
 //   keep()                                  a follow-up's first statement: it draws after the drawing on the stage
+//   change(mark, {color, hidden}) / erase(mark)   a follow-up changes what is drawn in place: a 2D mark, a 3D part
+//                                           (part.change({size, color, opacity, hidden}), part.hide(), part.show()) or a
+//                                           builder's part (cl.part('nucleus')); f.tempo(0.5) slows a figure's motions,
+//                                           f.labels(false) hides its labels
 //   line(points, o) / curve(points, o)      a pen stroke through [[x, y], ...]; curve() is smooth
 //   arrow(points, o)                        a stroke with a head at its last point
 //   circle(x, y, r, o) / ellipse(x, y, rx, ry, o) / rect(x, y, w, h, o) / poly(points, o)
@@ -51,7 +55,7 @@ const warn = message => { if (warnings.length < 20) warnings.push(message); };
 function push(mark, o) {
   if (total >= LIMIT_MARKS) throw new Error('too many marks (the limit is ' + LIMIT_MARKS + ')');
   total++;
-  const merged = Object.assign({}, options(o), mark, { step: currentStep });
+  const merged = Object.assign({}, options(o), mark, { step: currentStep, n: total - 1 });
   marks.push(merged);
   return { id: total - 1 };
 }
@@ -72,6 +76,9 @@ const api = {
   polar: (cx, cy, r, angle) => [cx + Math.cos(angle) * r, cy + Math.sin(angle) * r],
 
   keep: () => {}, // the app reads it: this program is drawn after the one already on the stage
+  // A follow-up's changes to what is already drawn, in place.
+  change: (target, o) => changeDrawn(target, options(o)),
+  erase: (...targets) => { targets.forEach(target => changeDrawn(target, { hidden: true })); return null; },
   step: n => { if (finite(n)) currentStep = n; },
   say: words => { says.push({ text: String(words), step: currentStep, at: total }); },
 
@@ -100,6 +107,9 @@ const api = {
     for (const kind of PART_KINDS) figure[kind] = opts => part3d(id, kind, opts);
     figure.label = (part, words, opts) => { push({ do: 'label3d', fig: id, part: part && part.id, text: String(words) }, opts); return figure; };
     figure.view = opts => { push({ do: 'view3d', fig: id }, opts); return figure; };
+    // Every motion in the figure at this speed (0.5 half, 2 twice as fast), and its labels shown or not.
+    figure.tempo = (k, opts) => { if (finite(k) && k > 0) push({ do: 'tempo3d', fig: id, tempo: k }, opts); else warn('tempo() needs a speed above 0, like 0.5'); return figure; };
+    figure.labels = shown => { push({ do: 'labels3d', fig: id, shown: shown !== false }); return figure; };
     return figure;
   },
 };
@@ -425,7 +435,51 @@ function part3d(fig, kind, o) {
   const handle = { id };
   for (const motion of MOTIONS) handle[motion] = opts => { push({ do: 'motion3d', fig, part: id, kind: motion, params: plain(opts) }); return handle; };
   handle.label = (words, opts) => { push({ do: 'label3d', fig, part: id, text: String(words) }, opts); return handle; };
+  // Changed in place: size (times as big as it is now), color, opacity, hidden; secs (0.8) for the change to take.
+  handle.change = opts => { push({ do: 'change3d', fig, part: id, params: plain(opts) }); return handle; };
+  handle.hide = opts => handle.change(Object.assign({}, options(opts), { hidden: true }));
+  handle.show = opts => handle.change(Object.assign({}, options(opts), { hidden: false }));
   return handle;
+}
+
+// A builder's figure switches on the builder too: cl.labels(false), b.tempo(0.5) (models write it that way).
+function withFigure(build) {
+  return (...args) => {
+    const built = build(...args);
+    if (built && typeof built === 'object' && built.figure && !built.labels) {
+      built.labels = shown => { built.figure.labels(shown); return built; };
+      built.tempo = (k, o) => { built.figure.tempo(k, o); return built; };
+    }
+    return built;
+  };
+}
+
+// Several 3D parts that go by one name (a cell's mitochondria, the lungs): changed, shown, hidden and pointed out
+// together, labelled on the first.
+function partGroup(list) {
+  const group = {
+    change: o => { list.forEach(h => h.change(o)); return group; },
+    hide: o => { list.forEach(h => h.hide(o)); return group; },
+    show: o => { list.forEach(h => h.show(o)); return group; },
+    pulse: o => { list.forEach(h => h.pulse(o)); return group; },
+    label: (words, o) => (list[0] ? list[0].label(words, o) : null),
+  };
+  return group;
+}
+// What part() hands back for a name it doesn't know: calls on it do nothing.
+const noPart = (who, which) => { warn(who + ': no part ' + JSON.stringify(which)); return new Proxy({}, { get: () => () => null }); };
+
+// change(target, o) / erase(target): a 2D mark (what line(), text(), rect()… returned), a 3D part or a builder's part,
+// or a list of them.
+function changeDrawn(target, o) {
+  if (Array.isArray(target)) { target.forEach(t => changeDrawn(t, o)); return target; }
+  if (target && typeof target.change === 'function') return target.change(o);
+  if (target && Number.isInteger(target.id)) {
+    push({ do: 'change2d', target: target.id }, { color: typeof o.color === 'string' ? o.color : undefined, hidden: typeof o.hidden === 'boolean' ? o.hidden : undefined });
+    return target;
+  }
+  warn("change() and erase() take something drawn: a mark, a 3D part, or a part of a builder (cl.part('nucleus'))");
+  return null;
 }
 
 // Molecules: molecule(x, y, w, h, o) builds a ball-and-stick (or space-filling) model in a 3D figure. The model only
@@ -776,7 +830,7 @@ function moleculeShape(atoms, bonds) {
 }
 
 // What molecule() hands back when it couldn't build one: calls on it do nothing.
-const noMolecule = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
+const noMolecule = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : key === 'part' || key === 'atom' ? () => nothing() : () => null });
 
 function molecule(x, y, w, h, o) {
   if (![x, y, w, h].every(finite) || w < 40 || h < 40) { warn('molecule() needs x, y, width and height (at least 40 each); skipped'); return noMolecule(); }
@@ -850,6 +904,7 @@ function molecule(x, y, w, h, o) {
   return {
     figure: f, atoms: atoms.length,
     atom: which => parts[pick(which)] || null,
+    part: which => parts[pick(which)] || noPart('molecule', which),
     label: (which, words, o2) => {
       const i = pick(which);
       return parts[i] ? parts[i].label(words, o2) : (warn('molecule label: no atom ' + JSON.stringify(which)), null);
@@ -858,7 +913,7 @@ function molecule(x, y, w, h, o) {
   };
 }
 
-api.molecule = molecule;
+api.molecule = withFigure(molecule);
 
 // The parts of `text` between commas outside brackets and strings.
 function splitTopLevelCommas(text) {
@@ -1163,7 +1218,7 @@ function mechanism(x, y, w, h, o) {
   const rpmOf = p => Math.round(rpm * Math.abs(p.ratio || 0) * 10) / 10;
   return {
     figure: f,
-    part: name => handles.get(name) || null,
+    part: name => handles.get(name) || noPart('mechanism', name),
     label: (name, words, o2) => (handles.get(name) ? handles.get(name).label(words, o2) : (warn('mechanism label: no part ' + name), null)),
     // How fast a part turns (turns a minute) and which way: for the spoken words, worked out not guessed.
     speed: name => (placed.get(name) ? rpmOf(placed.get(name)) : null),
@@ -1172,8 +1227,8 @@ function mechanism(x, y, w, h, o) {
   };
 }
 // What mechanism() hands back when it couldn't build one: calls on it do nothing.
-const noMechanism = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
-api.mechanism = mechanism;
+const noMechanism = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : key === 'part' || key === 'atom' ? () => nothing() : () => null });
+api.mechanism = withFigure(mechanism);
 
 // DNA: dna(x, y, w, h, {sequence, form}) builds a double helix (or a flat ladder) in a 3D figure from the letters of
 // one strand. The other strand is worked out here (A pairs with T, G with C), the helix has its real shape (ten base
@@ -1372,8 +1427,8 @@ function dna(x, y, w, h, o) {
   return handle;
 }
 // What dna() hands back when it couldn't build one: calls on it do nothing.
-const noDna = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
-api.dna = dna;
+const noDna = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : key === 'part' || key === 'atom' ? () => nothing() : () => null });
+api.dna = withFigure(dna);
 
 // Blood circulation: circulation(x, y, w, h, {speed, labels}) draws the heart, the lungs and the body as a flat
 // diagram in a 3D figure, the way a textbook does (the person's right on the viewer's left), with see-through vessels
@@ -1506,13 +1561,14 @@ function circulation(x, y, w, h, o) {
     label: (which, words, o2) => (nameOf(which) ? tag(nameOf(which), String(words), o2) : (warn('circulation label: no ' + which), null)),
     // Points a part out while it is talked about: it swells gently (the chambers already beat, so a vessel or organ).
     point: which => { const n = nameOf(which); if (!n) { warn('circulation point: no ' + which); return null; } handles.get(n).forEach(p => p.pulse({ amount: 0.06, period: 1.2 })); return handles.get(n)[0]; },
+    part: which => (nameOf(which) ? partGroup(handles.get(nameOf(which))) : noPart('circulation', which)),
     parts: NAMES.filter(n => handles.has(n)),
     view: o2 => f.view(o2),
   };
 }
 // What circulation() hands back when it couldn't draw: calls on it do nothing.
-const noCirculation = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
-api.circulation = circulation;
+const noCirculation = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : key === 'part' || key === 'atom' ? () => nothing() : () => null });
+api.circulation = withFigure(circulation);
 
 // Cell division: mitosis(x, y, w, h, {pairs, labels}) builds an animal cell about to divide, in a 3D figure, and
 // m.next() / m.to(phase) play what happens, phase by phase: interphase (the DNA loose in the nucleus) → prophase (each
@@ -1825,14 +1881,15 @@ function mitosis(x, y, w, h, o) {
     label: (which, words, o2) => { const name = nameOf(which); return name && firstOf(name) ? tagOn(firstOf(name), words, o2) : (warn('mitosis label: no ' + which), null); },
     // Points a part out while it is talked about: every piece of it swells gently.
     point: which => { const name = nameOf(which); if (!name || !handles.has(name)) { warn('mitosis point: no ' + which); return null; } handles.get(name).forEach(t => t.handle.pulse({ amount: 0.1, period: 1.2 })); return handle; },
+    part: which => { const name = nameOf(which); return name && handles.has(name) ? partGroup(handles.get(name).map(item => item.handle)) : noPart('mitosis', which); },
     parts: [...new Set(Object.values(NAMES))],
     view: o2 => f.view(o2),
   };
   return handle;
 }
 // What mitosis() hands back when it couldn't draw: calls on it do nothing.
-const noMitosis = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
-api.mitosis = mitosis;
+const noMitosis = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : key === 'part' || key === 'atom' ? () => nothing() : () => null });
+api.mitosis = withFigure(mitosis);
 
 // const x = ..., let x = ..., var x = ... (each name of `const a = 1, b = 2`) and function f() {...} at the start of a
 // statement are kept in `scope`, so later statements see them; everything else runs as written.
@@ -2037,12 +2094,13 @@ function cell(x, y, w, h, o) {
     label: (which, words, o2) => (find(which) ? tag(cellName(which), String(words), o2) : (warn('cell label: no ' + which + ' in this cell'), null)),
     // Points one part out while it is talked about: every piece of it swells gently.
     point: which => { const list = find(which); if (!list) { warn('cell point: no ' + which + ' in this cell'); return null; } list.forEach(p => p.pulse({ amount: 0.12, period: 1.2 })); return list[0]; },
+    part: which => (find(which) ? partGroup(find(which)) : noPart('cell', which)),
     view: o2 => f.view(o2),
   };
 }
 // What cell() hands back when it couldn't build one: calls on it do nothing.
-const noCell = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : () => null });
-api.cell = cell;
+const noCell = () => new Proxy({}, { get: (_, key) => key === 'figure' ? nothing() : key === 'part' || key === 'atom' ? () => nothing() : () => null });
+api.cell = withFigure(cell);
 
 // Nothing the program writes can reach the network or load more code.
 // A nested worker made from a blob would get a fresh global with fetch in it, so Worker, SharedWorker, Blob and

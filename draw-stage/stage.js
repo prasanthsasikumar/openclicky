@@ -64,6 +64,7 @@
   let inkDoneAt = 0;             // when the ink of everything released has dried
   let spoken = [];               // the lines heard so far ({words, seconds}): the voice's own speed (pace "speech")
   let markCount = 0, errors = 0, uid = 0;
+  const drawn = new Map(); // a 2D mark's number in the program → what was drawn for it (erase / change)
   let remembered = false, recording = false;
 
   // What the app (or a preview's address: ?sound=1, ?motion=reduce) asks of a drawing. Nothing asked: no sound, and
@@ -86,6 +87,7 @@
     restartStream();
     markCount = 0;
     labels = [];
+    drawn.clear();
     cards = [];
     strokes = [];
     while (svg.lastChild) svg.removeChild(svg.lastChild);
@@ -668,6 +670,23 @@
     if (canSound()) Sound.tick(delay, strength);
   }
 
+  // A follow-up's change to a 2D mark already drawn: hidden (true fades it out, false brings it back), color (its pen
+  // strokes, text and fill).
+  function change2d(m, seconds) {
+    const group = drawn.get(m.target);
+    if (!group) { log('change: no mark ' + m.target + ' on the stage'); return; }
+    const ms = Math.max(150, seconds * 1000);
+    if (m.hidden === true) group.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, fill: 'forwards' });
+    if (m.hidden === false) group.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, fill: 'forwards' });
+    const color = m.color ? tone(m.color, null) : null;
+    if (color) {
+      for (const node of group.querySelectorAll('.pen')) node.setAttribute('stroke', color);
+      for (const node of group.querySelectorAll('path.ink')) node.setAttribute('fill', color);
+      for (const node of group.querySelectorAll('text')) node.setAttribute('fill', color);
+      for (const node of group.querySelectorAll('path.fade')) node.setAttribute('fill', color);
+    }
+  }
+
   function fillShape(group, d, m, delay) {
     if (!m.fill) return;
     const fill = el('path', { d, fill: tone(m.fill, TONES.yellow), stroke: 'none', class: 'fade' });
@@ -690,8 +709,10 @@
   // Paints a mark over `seconds`, its ink starting `wait` seconds from now (t), once the pen's cursor has flown to it.
   function paint(item, seconds, wait, t) {
     const m = item.mark, seed = item.index + 1;
+    if (m.do === 'change2d') { change2d(m, seconds); return; }
     const group = el('g');
     if (m.do === 'text') labelLayer.appendChild(group); else svg.insertBefore(group, labelLayer);
+    if (Number.isInteger(m.n)) drawn.set(m.n, group);
     const colour = tone(m.color, TONES.blue);
     switch (m.do) {
       case 'line': case 'poly': case 'rect': case 'ellipse': {
@@ -749,7 +770,7 @@
         if (canSound() && !still) Sound.stroke(Array.from({ length: 13 }, () => 0.6), seconds, wait, 'marker');
         break;
       }
-      case 'figure': case 'part3d': case 'label3d': case 'motion3d': case 'view3d': {
+      case 'figure': case 'part3d': case 'label3d': case 'motion3d': case 'view3d': case 'change3d': case 'tempo3d': case 'labels3d': {
         if (!window.Figure3D) { log('3D is not loaded; skipped ' + m.do); break; }
         let rect = null;
         if (m.do === 'figure') {
