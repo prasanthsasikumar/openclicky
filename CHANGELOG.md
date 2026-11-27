@@ -15,6 +15,34 @@ release page shows each platform under its own heading once that platform's file
 (`scripts/update-release-page.sh`, run by the Windows and Linux release workflows), followed by a
 downloads table. Under a platform heading, don't start bullets with "Windows:" again.
 
+## Unreleased
+
+### Mac
+
+- **A follow-up changes the drawing that is up.** Ask "make the nucleus bigger", "colour the big gear red", "slow it down" or "hide the labels" and the drawing on screen changes, instead of being drawn again or drawn over.
+- **Urdu and Arabic answers are spoken sentence by sentence.** The voice now starts at the first Urdu full stop (۔) or Arabic question mark (؟) instead of waiting for a long piece of the answer.
+- **A safety filter is said plainly.** When the AI's safety filter stops a question or its answer, Clicky says so and offers to explain the ideas behind it, instead of "something went wrong". It remembers that, so "why?" next is answered knowing what happened.
+
+## 0.13.1
+
+### Windows
+
+- **Captions of what Clicky says.** The answer is written beside the pointer as it is spoken, for a noisy room, a laptop with the sound off, or anyone who reads along. By default they show when the answer can't be heard (you typed the question, or the sound is off or low); choose *Always* or *Off*, and the words' colour and glow, in Settings → Clicky → Talking → *Captions*.
+- **Next questions.** After an answer, a card under the island offers up to three questions you might ask next; a tap asks one. They are made by your own key or model and never use the free credits. Switch it off in Settings → Clicky → Talking → *Next questions*.
+- **A quiz on a drawing.** A finished drawing has a *Quiz me* button: a few questions on what was drawn, read aloud, answered by tapping, with the part each one is about swelling for a moment and a score at the end. Saying "quiz me" works too. Settings → Clicky → Drawings → *Quiz after a drawing* turns the button off, or asks after every drawing, for a child or a class.
+- **A follow-up changes the drawing that is up.** Ask "make the nucleus bigger", "colour the big gear red", "slow it down" or "hide the labels" and the drawing on screen changes, instead of being drawn again or drawn over.
+- **Play a drawing again.** *Play again* on a finished drawing, or saying "play it again", draws it once more with its own voice, without asking the question again.
+- **Drawings follow the page when it scrolls.** A ring round a button, a highlight or an arrow to a line of code now moves with what it points at when that part of the screen scrolls, and fades when it scrolls out of sight. Cards, photos and 3D figures stay where they are.
+- **The pointer and the island stay above a drawing.** A drawing used to hide the pointer pointing at it, its caption, the island and the orb.
+- **Hear and speak with your own speech server.** Questions can be heard, and answers spoken, by models you run yourself on this PC or another one on your network: Ollama, Speaches or any server that speaks OpenAI's audio API. No account or key is needed, and nothing leaves your network. Set it up in Settings → Clicky → Your models → *Speech server*.
+- **Clicky remembers how you want answers.** Say "use easier words", "keep it short" or "yes or no first" once and it stays that way. The three switches are in Settings → Clicky → *How it answers*.
+- **The screens in Urdu.** With the screen language set to Urdu (Settings → Clicky → Talking → *Screen language*), the island, the first-run tour, the pointer's phrases, every notice, the tray menu, the Settings window, the island's plugins and the calendar are in Urdu, right to left, in a Nastaliq font.
+- **Urdu and Arabic answers are spoken sentence by sentence.** The voice now starts at the first Urdu full stop (۔) or Arabic question mark (؟) instead of waiting for a long piece of the answer.
+- **A safety filter is said plainly.** When the AI's safety filter stops a question or its answer, Clicky says so and offers to explain the ideas behind it, instead of "something went wrong". It remembers that, so "why?" next is answered knowing what happened.
+- **An outage is said plainly, after one quiet retry.** When the AI that answers is down or overloaded, Clicky tries once more two seconds later, then says it is having trouble and to ask again in a minute, on your own key too.
+- **Updates show as they happen.** When a new version has downloaded, a card under the island says it is ready, with *Restart now*, *Later* and *What's new*. Restart now shows the three steps, Download, Install and Open, and carries on into the new version. Later waits a day, and the update still goes in the next time OpenClicky starts.
+- **Pick the pointer's colour and shape from tiles.** Settings → Clicky → Pointer shows each colour and shape as the pointer itself, instead of two lists.
+
 ## 0.13.0
 
 ### All platforms
