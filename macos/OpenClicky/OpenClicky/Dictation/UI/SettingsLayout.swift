@@ -66,8 +66,13 @@ enum SettingsLayout {
         Group(page: .island, title: "More", isAdvanced: true, itemIDs: [
             "appearance.style", "plugins.islandOrder", "calendar.quickAdd", "island.openCalendars", "weather.unit", "weather.location",
             "timer.focusMinutes", "timer.breakMinutes", "timer.longBreakMinutes",
+            // The handheld plugin: one switch for the few who own a device, its page only once it is on.
+            "handheld.enabled", "island.openHandheld",
         ]),
         Group(page: .calendars, title: nil, itemIDs: ["calendar.calendars", "calendar.calendar.*"]),
+        Group(page: .handheld, title: "", itemIDs: ["handheld.status", "handheld.makerAppNote"]),
+        Group(page: .handheld, title: "Buttons", itemIDs: ["handheld.binding.*", "handheld.mouseNote"]),
+        Group(page: .handheld, title: "Microphone", itemIDs: ["handheld.microphone"]),
     ]
 
     private static let accountGroups: [Group] = [

@@ -81,7 +81,7 @@ struct SettingsCatalog {
         dictationItems() + keyboardItems() + orbItems()
             + clickyItems() + voiceItems()
             + islandAppearanceItems() + islandPluginItems() + calendarSettingsItems() + weatherSettingsItems()
-            + clipboardSettingsItems() + notesSettingsItems() + timerSettingsItems()
+            + clipboardSettingsItems() + notesSettingsItems() + timerSettingsItems() + handheldSettingsItems()
             + accountItems() + keysItems() + privacyItems() + generalItems() + aboutItems()
             + navigationItems()
     }

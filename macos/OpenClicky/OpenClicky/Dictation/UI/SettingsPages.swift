@@ -13,13 +13,13 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// The settings pages. Six are in the sidebar (`sidebarPages`, in its order); The orb and Calendars
-/// are opened from a row on their parent page and keep the parent selected in the sidebar. The
+/// The settings pages. Six are in the sidebar (`sidebarPages`, in its order); The orb, Calendars and
+/// Handheld (the handheld plugin's bindings, `Plugins/Handheld`) are opened from a row on their parent page and keep the parent selected in the sidebar. The
 /// order follows the Claude Design "OpenClicky settings — redesign mockups": the two things
 /// OpenClicky does (Dictation, Clicky), where it lives (Island), what pays for it (Keys & Account),
 /// what it may see (Privacy), then General. `SettingsLayout` says which rows each page holds.
 enum DictationSettingsPage: String, CaseIterable, Identifiable {
-    case dictation, clicky, island, account, privacy, general, orb, calendars
+    case dictation, clicky, island, account, privacy, general, orb, calendars, handheld
     var id: String { rawValue }
 
     /// The pages the sidebar lists, in order.
@@ -29,7 +29,7 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
     var sidebarPage: DictationSettingsPage {
         switch self {
         case .orb: return .dictation
-        case .calendars: return .island
+        case .calendars, .handheld: return .island
         case .dictation, .clicky, .island, .account, .privacy, .general: return self
         }
     }
@@ -44,6 +44,7 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         case .general: return "General"
         case .orb: return "The orb"
         case .calendars: return "Calendars"
+        case .handheld: return "Handheld"
         }
     }
 
@@ -63,6 +64,7 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         case .general: return "Startup, appearance and updates."
         case .orb: return "The small narrator that shows while you dictate."
         case .calendars: return "Which calendars the island shows."
+        case .handheld: return "What each button on your handheld does."
         }
     }
 
@@ -77,6 +79,7 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         case .general: return "gearshape.fill"
         case .orb: return "capsule.fill"
         case .calendars: return "calendar"
+        case .handheld: return "dot.radiowaves.left.and.right"
         }
     }
 
@@ -84,7 +87,7 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .dictation, .orb: return Color(red: 0.039, green: 0.518, blue: 1.0)
         case .clicky: return Color(red: 0.686, green: 0.322, blue: 0.871)
-        case .island, .calendars: return Color(red: 0.11, green: 0.11, blue: 0.118)
+        case .island, .calendars, .handheld: return Color(red: 0.11, green: 0.11, blue: 0.118)
         case .account: return Color(red: 0.204, green: 0.78, blue: 0.349)
         case .privacy: return Color(red: 0.369, green: 0.361, blue: 0.902)
         case .general: return Color(red: 0.557, green: 0.557, blue: 0.576)

@@ -34,6 +34,9 @@ final class HandheldPlugin: ObservableObject {
     @Published private(set) var bindings = HandheldBindings()
 
     var makerAppIsAlsoRunning: Bool { makerAppIsRunning() }
+    /// Called when the rows Settings should show change (the switch, a device coming or going), so
+    /// an open Settings page is drawn again. Set by the plugin's settings rows.
+    var onSettingsShapeChanged: (() -> Void)?
     /// The device the page is about: the connected one, else the last one seen.
     var deviceShown: HandheldDevice? { connectedDevice ?? lastSeenDevice }
 
@@ -73,6 +76,7 @@ final class HandheldPlugin: ObservableObject {
         } else {
             stopListening()
         }
+        onSettingsShapeChanged?()
     }
 
     func setAction(_ action: HandheldAction, controlID: String, gesture: HandheldGesture) {
@@ -99,6 +103,7 @@ final class HandheldPlugin: ObservableObject {
         newListener.onDisconnect = { [weak self] _ in
             newActionRunner.releaseEverythingHeld(reason: "device disconnected")
             self?.connectedDevice = nil
+            self?.onSettingsShapeChanged?()
         }
         listener = newListener
         actionRunner = newActionRunner
@@ -128,5 +133,6 @@ final class HandheldPlugin: ObservableObject {
             defaults.set(device.id, forKey: Self.lastSeenDeviceKey)
         }
         bindings = bindingsStore.bindings(for: device)
+        onSettingsShapeChanged?()
     }
 }
