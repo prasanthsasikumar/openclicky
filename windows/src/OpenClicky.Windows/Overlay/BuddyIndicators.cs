@@ -68,6 +68,20 @@ public sealed class PointerTriangleView : Grid
         RenderTransform = scale;
     }
 
+    /// <summary>A still pointer in a given colour and shape (Settings' tiles): it follows nobody's choice, and a hairline
+    /// edge keeps a white or black pointer visible on any tile.</summary>
+    public static PointerTriangleView Preview(Color color, PointerStyle style, double size, double glowRadius)
+    {
+        var view = new PointerTriangleView(size, color, glowRadius);
+        view.Restyle(color, style);
+        if (style != PointerStyle.Ring)
+        {
+            view.path.Stroke = new SolidColorBrush(Color.FromArgb(0x66, 0x80, 0x80, 0x80));
+            view.path.StrokeThickness = 1;
+        }
+        return view;
+    }
+
     public double RotationDegrees
     {
         get => rotation.Angle;
