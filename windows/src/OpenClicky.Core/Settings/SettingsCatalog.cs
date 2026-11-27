@@ -272,6 +272,8 @@ public sealed class SettingsCatalog
                 ["drawing", "draw", "diagram", "teacher", "3d", "model", "explain", "whiteboard"]),
             Item("clicky.drawingDetail", L.T("How detailed"), L.T("More parts and finer detail take longer to draw. Very detailed suits a strong model."),
                 ["drawing", "detail", "detailed", "parts", "realistic", "real", "quality", "3d", "simple", "complex"]),
+            Item("clicky.drawingQuiz", "Quiz after a drawing", "A few questions on what was drawn, answered by tapping. Offer puts a Quiz me button on each drawing; Always asks after every one, for a child or a class. Saying \"quiz me\" works whatever this is.",
+                ["quiz", "questions", "test", "lesson", "kids", "children", "school", "classroom", "learn", "teacher"]),
             Item("clicky.pieceMaker", L.T("3D pieces come from"), L.T("A complex thing (a plane, a car, an animal) is built from pieces made one at a time, each one clickable."),
                 ["3d", "generator", "pieces", "model", "mesh", "hunyuan", "llama-mesh", "ollama", "lm studio", "gpu", "graphics card", "realistic"]),
             Item("clicky.drawingInstructions", L.T("Your drawing instructions"), L.T("Added to every drawing's instructions: a style, a level, what to show more of."),

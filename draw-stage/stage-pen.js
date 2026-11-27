@@ -80,6 +80,7 @@
       case 'motion3d': return whole(0.05);
       case 'change3d': case 'tempo3d': case 'labels3d': return whole(0.15);
       case 'change2d': return whole(0.4);
+      case 'quiz': return whole(0.6);
       default: return whole(0.2);
     }
   }
