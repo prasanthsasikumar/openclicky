@@ -244,6 +244,8 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     public Action<RealtimeTranscriptRole, string>? OnTranscript { get; set; }
     public Action<string>? OnEvent { get; set; }
     public Action? OnResponseStarted { get; set; }
+    /// <summary>The assistant's words so far in this response, as their transcript arrives (the captions).</summary>
+    public Action<string>? OnAssistantTranscriptSoFar { get; set; }
     public Action? OnResponseFinished { get; set; }
     /// <summary>The socket went away (or a send failed) while it was thought to be connected. Without this a turn
     /// in flight never got its `response.done`, the voice state stayed on processing, and that blocked dictation.</summary>
@@ -1431,6 +1433,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
                 break;
             case "response.output_audio_transcript.delta" or "response.audio_transcript.delta":
                 assistantTranscriptBuffer += SpeechJson.String(serverEvent["delta"]) ?? "";
+                OnAssistantTranscriptSoFar?.Invoke(assistantTranscriptBuffer);
                 break;
             case "response.output_audio_transcript.done" or "response.audio_transcript.done":
             {

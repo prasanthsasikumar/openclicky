@@ -171,6 +171,34 @@ public class SpeechQueueTests
         Assert.True(speaker.IsCancelled);
     }
 
+    /// <summary>Captions: each piece's words as the voice starts it, in order, the point tag never among them; nothing once
+    /// the answer is stopped.</summary>
+    [Fact]
+    public async Task EachPiecesWordsAreGivenAsTheVoiceStartsThem()
+    {
+        var events = new ConcurrentQueue<string>();
+        var queue = new SpeechQueue((text, _) => Task.FromResult(Bytes(text)), (data, _) => { events.Enqueue("play " + Text(data)); return Task.CompletedTask; });
+        var speaker = new StreamingAnswerSpeaker(queue, () => { }, _ => { }, pieceText => events.Enqueue("caption " + pieceText));
+        var playback = speaker.PlayAsync();
+        speaker.Receive("[POINT:10,20:save] that is the save button.");
+        speaker.Finish(["okay, i will use simpler words from now on."]);
+        await playback;
+        Assert.Equal(["caption that is the save button.", "play that is the save button.",
+                      "caption okay, i will use simpler words from now on.", "play okay, i will use simpler words from now on."], events);
+        Assert.Equal("that is the save button.", queue.PieceText(0));
+        Assert.Equal("", queue.PieceText(5));
+
+        var stoppedCaptions = new ConcurrentQueue<string>();
+        var stopped = new StreamingAnswerSpeaker(
+            new SpeechQueue((text, _) => Task.FromResult(Bytes(text)), (_, _) => Task.CompletedTask), () => { }, _ => { }, stoppedCaptions.Enqueue);
+        var stoppedPlayback = stopped.PlayAsync();
+        stopped.Cancel();
+        stopped.Receive("this is never said, so it is never captioned.");
+        stopped.Finish([]);
+        try { await stoppedPlayback; } catch (OperationCanceledException) { }
+        Assert.Empty(stoppedCaptions);
+    }
+
     /// <summary>The agent's result arrives whole; it is cut into pieces like an answer.</summary>
     [Fact]
     public async Task AWholeAgentReplyIsSpokenInPiecesInOrder()

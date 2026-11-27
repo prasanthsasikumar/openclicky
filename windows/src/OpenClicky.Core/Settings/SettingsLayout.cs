@@ -47,7 +47,7 @@ public static class SettingsLayout
     // Clicky's groups are its sections (PagesWithSections): each one shows on its own, under its own title.
     private static readonly IReadOnlyList<Group> ClickyGroups =
     [
-        new(DictationSettingsPage.Clicky, "Talking", ["keyboard.talk", "keyboard.mouseTalk", "clicky.assistantName", "clicky.speechVoice", "clicky.language", "clicky.screenLanguage", "clicky.answerSource", "clicky.nextQuestions"])
+        new(DictationSettingsPage.Clicky, "Talking", ["keyboard.talk", "keyboard.mouseTalk", "clicky.assistantName", "clicky.speechVoice", "clicky.captions", "clicky.captionColor", "clicky.captionGlow", "clicky.language", "clicky.screenLanguage", "clicky.answerSource", "clicky.nextQuestions"])
             { Intro = "How you ask, and who answers in which voice." },
         new(DictationSettingsPage.Clicky, "How it answers", ["clicky.answerSimpler", "clicky.answerShorter", "clicky.answerYesNoFirst"])
             { Intro = "Ask Clicky for easier words, shorter answers or yes or no first, and it remembers. Switch them off here." },
