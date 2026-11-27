@@ -279,9 +279,11 @@ line.
 - **The page is in the Settings sidebar** while the plugin is on, and shows a 3D picture of the
   device to pick buttons on (`HandheldDeviceView`, `Viewer/`). The maker's model was first
   kept out of the repository and read only from `~/.openclicky/handheld/<device id>.glb`; on
-  2026-11-27 the owner decided to carry it in the app (`Models/handheld-whisprompt.glb`, 13 MB,
-  with a README saying it is the maker's and not under the MIT licence) so everyone with the
-  device sees the picture. A person's own file still wins; a device with neither lists its buttons.
+  2026-11-27 the owner decided to publish it so everyone with the device can see the picture,
+  but not inside the app (13 MB that almost nobody would use). It is in `assets/handheld/` of
+  the repository (its README says it is the maker's and not under the MIT licence), and the page
+  offers to download it into the person's folder (`HandheldModelDownload`, SHA-256 pinned in the
+  device's description). Until then, and for a device with no model, the page lists the buttons.
 - **A chosen microphone is tapped in its own format** (`MicrophoneDevices.tapFormat`): the
   16 kHz handheld beside the 48 kHz Mac microphone recorded silence in every lane. The
   microphone pickers show the handheld's while it stands in, and a pick there switches it off.

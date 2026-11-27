@@ -38,7 +38,12 @@ enum WhisPromptHandheld {
         defaultBindings: defaultBindings,
         decode: decode,
         // The part names in the maker's own model of the device, which its owner may have.
-        modelPartNameByControlID: ["keyA": "按键1", "keyB": "按键2", "keyC": "按键3", "wheelButton": "金属滑轮"]
+        modelPartNameByControlID: ["keyA": "按键1", "keyB": "按键2", "keyC": "按键3", "wheelButton": "金属滑轮"],
+        // The file in `assets/handheld/` of this repository; its README says what to do when it changes.
+        modelDownload: HandheldModelDownload(
+            url: URL(string: "https://raw.githubusercontent.com/prasanthsasikumar/openclicky/main/assets/handheld/handheld-whisprompt.glb")!,
+            sha256: "127ebaa8da72223825b3480511cca7a98f123377431c3b7f44a68e51ecddab28",
+            bytes: 13_302_608)
     )
 
     static let controls: [HandheldControl] = [
