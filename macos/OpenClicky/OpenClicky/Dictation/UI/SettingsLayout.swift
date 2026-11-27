@@ -70,9 +70,10 @@ enum SettingsLayout {
             "handheld.enabled", "island.openHandheld",
         ]),
         Group(page: .calendars, title: nil, itemIDs: ["calendar.calendars", "calendar.calendar.*"]),
-        Group(page: .handheld, title: "", itemIDs: ["handheld.status", "handheld.makerAppNote"]),
-        Group(page: .handheld, title: "Buttons", itemIDs: ["handheld.device", "handheld.binding.*", "handheld.mouseNote"]),
+        // The device first, with no header above it; which device is connected goes last.
+        Group(page: .handheld, title: "", itemIDs: ["handheld.device", "handheld.binding.*", "handheld.mouseNote"]),
         Group(page: .handheld, title: "Microphone", itemIDs: ["handheld.microphone"]),
+        Group(page: .handheld, title: "Device", itemIDs: ["handheld.status", "handheld.makerAppNote"]),
     ]
 
     private static let accountGroups: [Group] = [

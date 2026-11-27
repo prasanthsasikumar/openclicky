@@ -206,11 +206,18 @@ function gestureLines(gestures) {
 function buildCallouts() {
   turntable.rotation.set(restingPitch, restingYaw, 0);
   turntable.updateMatrixWorld(true);
-  const placed = [...controlParts].map(([controlID, part]) => ({ controlID, point: pagePoint(part) }));
+  // The camera works its own matrices out when a frame is drawn, and none has been yet: without
+  // this every button reads as being on the right.
+  camera.updateMatrixWorld(true);
+  camera.updateProjectionMatrix();
+  // Where each button is in the view itself (-1 at its left edge to 1 at its right, 1 at its
+  // top), not in pixels: the page may not have its size yet when the model arrives.
+  const placed = [...controlParts].map(([controlID, part]) => (
+    { controlID, point: part.mesh.localToWorld(part.middle.clone()).project(camera) }));
   for (const side of ['left', 'right']) {
     const onThisSide = placed
-      .filter((entry) => (entry.point.x < canvas.clientWidth / 2) === (side === 'left'))
-      .sort((first, second) => first.point.y - second.point.y);
+      .filter((entry) => (entry.point.x < 0) === (side === 'left'))
+      .sort((first, second) => second.point.y - first.point.y);
     onThisSide.forEach((entry, index) => {
       const control = configuration.controls[entry.controlID];
       const box = document.createElement('div');
@@ -402,6 +409,10 @@ window.handheldViewer = {
   /** Draws one frame at once. For tests: a page that is not on screen is given no frames. */
   drawNow() {
     drawFrame(performance.now());
+  },
+  /** Which side of the device each button's label is on. For tests. */
+  calloutSides() {
+    return Object.fromEntries([...callouts].map(([controlID, callout]) => [controlID, callout.side]));
   },
   /** What the last frame drew and onto what. For tests and for finding a blank picture's cause. */
   drawnState() {

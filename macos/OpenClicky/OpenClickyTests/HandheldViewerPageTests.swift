@@ -24,12 +24,14 @@ struct HandheldViewerPageTests {
         normals.forEach { value in withUnsafeBytes(of: value.bitPattern.littleEndian) { binaryChunk.append(contentsOf: $0) } }
         let description: [String: Any] = [
             "asset": ["version": "2.0"],
-            "scenes": [["nodes": [0, 1]]],
+            "scenes": [["nodes": [0, 1, 2]]],
             // A body, and above it the part that is a button. Both scaled like the real model's
             // parts, which are in millimetres.
             "nodes": [
                 ["name": "body", "mesh": 0, "scale": [0.001, 0.001, 0.001]],
-                ["name": partName, "mesh": 0, "scale": [0.001, 0.001, 0.001], "translation": [0, 0.002, 0]],
+                ["name": partName, "mesh": 0, "scale": [0.001, 0.001, 0.001], "translation": [0.004, 0.002, 0]],
+                // A second button on the other side of the body.
+                ["name": "按键2", "mesh": 0, "scale": [0.001, 0.001, 0.001], "translation": [-0.004, 0, 0]],
             ],
             "meshes": [["primitives": [["attributes": ["POSITION": 0, "NORMAL": 1], "mode": 4]]]],
             "accessors": [
@@ -94,5 +96,14 @@ struct HandheldViewerPageTests {
         let labelText = try? await webView.evaluateJavaScript("document.querySelector('.callout') ? document.querySelector('.callout').textContent : ''")
         #expect((labelText as? String)?.contains("Key A") == true)
         #expect((labelText as? String)?.contains("Dictate (hold)") == true)
+
+        // Each label is on the side of the device its button is on, so no line crosses the device.
+        // (They were once all on the right: the side was read from the page's width before the
+        // page had one.)
+        let sides = try? await webView.evaluateJavaScript("JSON.stringify(window.handheldViewer.calloutSides())")
+        let sideByControlID = (sides as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: String] ?? [:]
+        #expect(sideByControlID["keyA"] != nil)
+        #expect(sideByControlID["keyB"] != nil)
+        #expect(sideByControlID["keyA"] != sideByControlID["keyB"])
     }
 }

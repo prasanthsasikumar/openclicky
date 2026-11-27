@@ -55,6 +55,10 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         }
     }
 
+    /// False for a page that spends its top on something else (the handheld's picture of the
+    /// device) and so has no header card.
+    var showsHeaderCard: Bool { self != .handheld }
+
     /// The heading search results are listed under: "Dictation › The orb" for a page opened from a row.
     var searchTitle: String {
         sidebarPage == self ? title : "\(sidebarPage.title) › \(title)"
@@ -117,7 +121,7 @@ struct SettingsFormView: View {
     var body: some View {
         ScrollViewReader { scrollProxy in
         Form {
-            if let page {
+            if let page, page.showsHeaderCard {
                 Section { SettingsPageHeader(page: page) }
             }
             ForEach(groups) { group in

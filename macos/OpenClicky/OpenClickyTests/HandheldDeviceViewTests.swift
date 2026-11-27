@@ -125,4 +125,16 @@ struct HandheldDeviceViewTests {
         #expect(HandheldDeviceViewMessage.gesturesScript(for: WhisPromptHandheld.device, bindings: WhisPromptHandheld.device.defaultBindings)
             .hasPrefix("window.handheldViewer && window.handheldViewer.setGestures({"))
     }
+
+    @Test func thePageSpendsItsSpaceOnTheDevice() {
+        // No header card on this page, the device first, and the line about which device is
+        // connected at the bottom.
+        #expect(!DictationSettingsPage.handheld.showsHeaderCard)
+        #expect(DictationSettingsPage.island.showsHeaderCard)
+        let (plugin, _) = makePluginWithTheDeviceConnected()
+        let pageIDs = SettingsLayout.arrange(HandheldSettings.items(plugin: plugin, deviceModelIsAvailable: { _ in true }))
+            .filter { $0.page == .handheld }.map(\.id)
+        #expect(pageIDs.first == "handheld.device")
+        #expect(pageIDs.suffix(2) == ["handheld.status", "handheld.makerAppNote"])
+    }
 }
