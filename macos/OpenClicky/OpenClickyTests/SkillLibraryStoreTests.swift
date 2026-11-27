@@ -136,6 +136,20 @@ struct SkillLibraryStoreTests {
         #expect(store.librarySkills.isEmpty)
     }
 
+    @Test func starterWorkflowsInstallOnceWithoutReplacingUserFiles() throws {
+        let (store, _) = try makeStore()
+        #expect(!store.hasStarterWorkflows)
+
+        #expect(store.installStarterWorkflows() == 3)
+        #expect(store.hasStarterWorkflows)
+        #expect(store.librarySkills.map(\.id) == ["meeting-follow-up", "project-check-in", "research-brief"])
+        #expect(store.activeIds == ["meeting-follow-up", "project-check-in", "research-brief"])
+        #expect(store.installStarterWorkflows() == 0)
+
+        let meetingWorkflow = try #require(store.librarySkills.first { $0.id == "meeting-follow-up" })
+        #expect(meetingWorkflow.body.contains("never send it without explicit approval"))
+    }
+
     @Test func appSkillsLoadFromTheirDirectory() throws {
         let (store, root) = try makeStore()
         let figma = root.appendingPathComponent("app-skills/figma", isDirectory: true)

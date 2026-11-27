@@ -31,7 +31,8 @@ fi
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$APP_DIR/../.." && pwd)"
 SCHEME="OpenClicky"
-APP_NAME="OpenClicky"
+APP_NAME="ATMIYA AI"
+ARTIFACT_NAME="ATMIYA-AI"
 BUILD_DIR="$APP_DIR/build"
 DERIVED_DATA="$BUILD_DIR/DerivedData"
 EXPORT_DIR="$BUILD_DIR/export"
@@ -180,8 +181,8 @@ codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 codesign -dvv "$APP_PATH" 2>&1 | grep -E '^(Authority|TeamIdentifier|Identifier)=' | sed 's/^/    /'
 
 # 2. Package: zip (Sparkle/GitHub friendly) and a dmg.
-ZIP_PATH="$EXPORT_DIR/$APP_NAME-$VERSION.zip"
-DMG_PATH="$EXPORT_DIR/$APP_NAME-$VERSION.dmg"
+ZIP_PATH="$EXPORT_DIR/$ARTIFACT_NAME-$VERSION.zip"
+DMG_PATH="$EXPORT_DIR/$ARTIFACT_NAME-$VERSION.dmg"
 ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
 DMG_STAGING="$EXPORT_DIR/dmg"
 mkdir -p "$DMG_STAGING"

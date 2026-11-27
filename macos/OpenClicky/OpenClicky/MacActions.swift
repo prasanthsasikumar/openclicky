@@ -96,11 +96,15 @@ enum MacActionOutcome: Equatable {
     case nothingInFront
     case needsAccessibility
     case openedFolder(name: String?, location: MacActionLocation)
+    case copiedItem(name: String, from: MacActionLocation, to: MacActionLocation)
+    case nothingToCopy(name: String, location: MacActionLocation)
+    case copyDestinationExists(name: String, location: MacActionLocation)
     case foundFiles(query: String, files: [URL])
     case noFilesFound(query: String)
     case searchedPage(text: String)
     case noFindBar
     case switchedTab(title: String)
+    case pageReady(action: PageControl, query: String)
     case noBrowserOpen
     case noSuchTab
     case browserNotAllowed
@@ -109,7 +113,7 @@ enum MacActionOutcome: Equatable {
     /// True when the action did what was asked (the tour counts it as a task handed over).
     var didSomething: Bool {
         switch self {
-        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail, .playingTrack, .openedSpotifySearch, .scrolled, .stoppedScrolling, .openedFolder, .foundFiles, .searchedPage, .switchedTab: return true
+        case .openedApp, .createdFolder, .folderAlreadyExists, .revealed, .openedURL, .volumeSet, .mediaControlled, .playerControlled, .searched, .minimizedWindows, .restoredWindows, .unreadMail, .openedGmailInbox, .draftedEmail, .playingTrack, .openedSpotifySearch, .scrolled, .stoppedScrolling, .openedFolder, .copiedItem, .foundFiles, .searchedPage, .switchedTab, .pageReady: return true
         default: return false
         }
     }
@@ -119,8 +123,19 @@ enum MacActionOutcome: Equatable {
     /// to look at).
     var toolOutput: String {
         switch self {
+        case .openedApp:
+            return spokenSentence + " The app is open in the latest screenshot. Continue the user's requested work there with the available tools; do not stop after opening it."
         case .searched(let query, _):
             return "The results for \(query) are on screen in the latest screenshot. If they asked for a fact (the weather, a score, a price), say that fact from the page; otherwise say what the first few results are. One sentence."
+        case .pageReady(let action, let query):
+            switch action {
+            case .search:
+                return "YouTube search for \(query) is the latest screenshot. Click the result they asked for, then continue. Do not stop on the results page."
+            case .openVideo:
+                return "The YouTube page for \(query) is the latest screenshot. If it is a list of results, click the video they named. If the video is already open, say its title in a few words."
+            case .follow:
+                return "YouTube channel results for \(query) are the latest screenshot. Click that person's name. When their page is open, click Subscribe or Follow, because they asked to follow them. Do not click Send, Buy, or Delete."
+            }
         case .unreadMail(let unread):
             guard !unread.isEmpty else { return spokenSentence }
             let lines = unread.map { "\($0.sender) — \($0.subject)" }.joined(separator: "\n")
@@ -173,6 +188,12 @@ enum MacActionOutcome: Equatable {
             return "find_files: \(files.count) found"
         case .noFilesFound:
             return "find_files: nothing found"
+        case .copiedItem:
+            return "copy_item: copied"
+        case .nothingToCopy:
+            return "copy_item: source missing"
+        case .copyDestinationExists:
+            return "copy_item: destination exists"
         case .searchedPage(let text):
             return "find_on_page: \(text.count)-character search typed"
         case .switchedTab:
@@ -195,7 +216,7 @@ enum MacActionOutcome: Equatable {
         switch self {
         // A continuous scroll is still moving, so a screenshot would show nothing settled.
         case .scrolled(_, let amount): return amount != .continuous
-        case .openedURL, .searched, .openedGmailInbox, .mailUnavailable, .openedFolder, .foundFiles, .switchedTab: return true
+        case .openedApp, .openedURL, .searched, .openedGmailInbox, .mailUnavailable, .openedFolder, .copiedItem, .foundFiles, .switchedTab, .pageReady: return true
         case .draftedEmail(let app, _, _): return app == .gmail
         default: return false
         }
@@ -309,6 +330,12 @@ enum MacActionOutcome: Equatable {
             return "Opened \(location.spokenName)."
         case .openedFolder(let name?, let location):
             return "Opened \(name) on \(location.spokenName)."
+        case .copiedItem(let name, let source, let destination):
+            return "Copied \(name) from \(source.spokenName) to \(destination.spokenName)."
+        case .nothingToCopy(let name, let location):
+            return "I couldn't find \(name) in \(location.spokenName)."
+        case .copyDestinationExists(let name, let location):
+            return "I didn't replace \(name) because it is already in \(location.spokenName)."
         case .foundFiles(_, let files):
             let firstFileName = files.first?.lastPathComponent ?? ""
             return files.count == 1 ? "Found \(firstFileName); it's selected in Finder." : "Found \(files.count) matches; \(firstFileName) is selected in Finder."
@@ -320,6 +347,12 @@ enum MacActionOutcome: Equatable {
             return "This app didn't open a find bar, so I didn't type anything."
         case .switchedTab(let title):
             return "Here's \(title)."
+        case .pageReady(let action, let query):
+            switch action {
+            case .search: return "Searching YouTube for \(query)."
+            case .openVideo: return "Opening \(query) on YouTube."
+            case .follow: return "Opening \(query) on YouTube so I can follow them."
+            }
         case .noBrowserOpen:
             return "There's no browser open for me to switch tabs in."
         case .noSuchTab:
@@ -386,6 +419,13 @@ enum MacActionValidation {
 }
 
 /// One action the Realtime model asked for, already parsed and typed.
+/// What `control_page` does inside YouTube.
+enum PageControl: String, Equatable {
+    case search
+    case openVideo = "open_video"
+    case follow
+}
+
 enum MacAction: Equatable {
     case openApp(name: String)
     case openURL(raw: String)
@@ -394,6 +434,8 @@ enum MacAction: Equatable {
     case setVolume(level: Int)
     case mediaControl(action: String)
     case webSearch(query: String, site: WebSearchSite)
+    /// Search YouTube, open a video, or open a person's channel so the next click can follow them.
+    case controlPage(action: PageControl, query: String)
     /// Every window to the Dock, except the named app's when there is one.
     case minimizeAll(keepApp: String?)
     /// What minimizeAll minimized, or only the named app's windows when there is one.
@@ -407,6 +449,8 @@ enum MacAction: Equatable {
     case stopScrolling
     /// A whole folder in Finder ("open downloads"), or a folder inside it when one is named.
     case openFolder(name: String?, location: MacActionLocation)
+    /// Copies a file or a whole folder between the closed set of user locations. Never overwrites.
+    case copyItem(name: String, from: MacActionLocation, to: MacActionLocation)
     /// Spotlight: files under the home folder whose names hold every word said.
     case findFiles(query: String)
     /// The front app's find bar (⌘F) with these words.
@@ -460,6 +504,8 @@ final class MacActionRunner {
         var revealFiles: ([URL]) -> Void
         var findOnPage: (String) async -> FindOnPageResult
         var switchTab: (BrowserTabTarget) -> BrowserTabSwitchResult
+        /// Asks macOS for the permissions inner-page clicks need. Tests leave this empty.
+        var preparePageControl: () -> Void
 
         init(
             controlPlayer: @escaping (MediaCommand) async -> Bool = { _ in false },
@@ -481,7 +527,8 @@ final class MacActionRunner {
             findFiles: @escaping (String) async -> [URL] = { _ in [] },
             revealFiles: @escaping ([URL]) -> Void = { _ in },
             findOnPage: @escaping (String) async -> FindOnPageResult = { _ in .noApp },
-            switchTab: @escaping (BrowserTabTarget) -> BrowserTabSwitchResult = { _ in .noBrowser }
+            switchTab: @escaping (BrowserTabTarget) -> BrowserTabSwitchResult = { _ in .noBrowser },
+            preparePageControl: @escaping () -> Void = {}
         ) {
             self.controlPlayer = controlPlayer
             self.minimizeAllWindows = minimizeAllWindows
@@ -503,6 +550,7 @@ final class MacActionRunner {
             self.revealFiles = revealFiles
             self.findOnPage = findOnPage
             self.switchTab = switchTab
+            self.preparePageControl = preparePageControl
         }
 
         static let inert = Extras()
@@ -604,6 +652,18 @@ final class MacActionRunner {
             openURL(WebSearchSite.url(for: site, query: query))
             return .searched(query: query, site: site)
 
+        case .controlPage(let action, let query):
+            extras.preparePageControl()
+            switch action {
+            case .search:
+                openURL(WebSearchSite.url(for: .youtube, query: query))
+            case .openVideo:
+                openURL(YouTubePage.watchURL(from: query) ?? WebSearchSite.url(for: .youtube, query: query))
+            case .follow:
+                openURL(YouTubePage.channelSearchURL(name: query))
+            }
+            return .pageReady(action: action, query: query)
+
         case .minimizeAll(let keptApp):
             guard let count = extras.minimizeAllWindows(keptApp) else { return .windowAppNotRunning(keptApp ?? "") }
             return .minimizedWindows(count: count, keptApp: keptApp)
@@ -685,6 +745,26 @@ final class MacActionRunner {
             extras.openFolder(target)
             return .openedFolder(name: name, location: location)
 
+        case .copyItem(let rawName, let sourceLocation, let destinationLocation):
+            guard let name = MacActionValidation.folderName(rawName) else { return .invalidName }
+            let sourceDirectory = sourceLocation.directoryURL(homeDirectory: homeDirectory, workspaceDirectory: workspaceDirectory)
+            let destinationDirectory = destinationLocation.directoryURL(homeDirectory: homeDirectory, workspaceDirectory: workspaceDirectory)
+            let source = sourceDirectory.appendingPathComponent(name)
+            let destination = destinationDirectory.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: source.path) else { return .nothingToCopy(name: name, location: sourceLocation) }
+            guard !FileManager.default.fileExists(atPath: destination.path) else { return .copyDestinationExists(name: name, location: destinationLocation) }
+            do {
+                try FileManager.default.copyItem(at: source, to: destination)
+                revealInFinder(destination)
+                return .copiedItem(name: name, from: sourceLocation, to: destinationLocation)
+            } catch let error as NSError {
+                if error.domain == NSCocoaErrorDomain && [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(error.code) {
+                    let failedPath = error.userInfo[NSFilePathErrorKey] as? String ?? ""
+                    return .permissionDenied(failedPath.hasPrefix(sourceDirectory.path) ? sourceLocation : destinationLocation)
+                }
+                return .failed(error.localizedDescription)
+            }
+
         case .findFiles(let query):
             let files = await extras.findFiles(query)
             guard let bestMatch = files.first else { return .noFilesFound(query: query) }
@@ -737,8 +817,12 @@ final class MacActionRunner {
             workspaceDirectory: workspaceDirectory,
             findApplication: { name in
                 // A bundle identifier if the model said one ("com.spotify.client"), otherwise the
-                // display name the user actually spoke.
-                NSWorkspace.shared.urlForApplication(withBundleIdentifier: name) ?? Self.applicationURL(named: name)
+                // installed app name that matches what the user actually spoke.
+                if let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: name) {
+                    return applicationURL
+                }
+                let installedApplicationName = InstalledAppResolver.resolveOnThisMac(spoken: name) ?? name
+                return Self.applicationURL(named: installedApplicationName)
             },
             launchApplication: { applicationURL in
                 let configuration = NSWorkspace.OpenConfiguration()
@@ -800,7 +884,11 @@ final class MacActionRunner {
                 findFiles: { query in await ScreenNavigation.findFiles(named: query) },
                 revealFiles: { fileURLs in NSWorkspace.shared.activateFileViewerSelecting(fileURLs) },
                 findOnPage: { text in await ScreenNavigation.findOnPage(text) },
-                switchTab: { target in BrowserControl.switchTab(to: target) }
+                switchTab: { target in BrowserControl.switchTab(to: target) },
+                preparePageControl: {
+                    WindowPositionManager.requestAccessibilityPermission()
+                    WindowPositionManager.requestScreenRecordingPermission()
+                }
             )
         )
     }
@@ -812,6 +900,7 @@ final class MacActionRunner {
         let searchDirectories = [
             URL(fileURLWithPath: "/Applications"),
             URL(fileURLWithPath: "/System/Applications"),
+            URL(fileURLWithPath: "/System/Applications/Utilities"),
             // Safari (and only Safari) lives here since macOS 26, not in /Applications.
             URL(fileURLWithPath: "/System/Cryptexes/App/System/Applications"),
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications"),
@@ -876,7 +965,7 @@ extension MacAction {
             [
                 "type": "function",
                 "name": "open_app",
-                "description": "Open or switch to a Mac app by its name, e.g. 'Spotify'. Use this instead of the agent for simply opening an app.",
+                "description": "Open or switch to any installed Mac app by the name the user said, e.g. 'Chrome', 'VS Code' or 'Terminal'. A fresh screenshot follows; continue the user's requested work in the app instead of stopping after it opens.",
                 "parameters": ["type": "object", "properties": ["name": ["type": "string", "description": "The app's name as the user said it."]], "required": ["name"]],
             ],
             [
@@ -934,6 +1023,19 @@ extension MacAction {
                         "site": ["type": "string", "enum": WebSearchSite.allCases.map(\.rawValue), "description": "Where to search. Leave it out for the web."],
                     ],
                     "required": ["query"],
+                ],
+            ],
+            [
+                "type": "function",
+                "name": "control_page",
+                "description": "Work inside YouTube. search opens the search results, open_video opens a video by title or a YouTube link, follow opens that person's channel results. A fresh screenshot follows; then click the matching title, thumbnail, or Subscribe button.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "action": ["type": "string", "enum": ["search", "open_video", "follow"], "description": "search, open_video, or follow."],
+                        "query": ["type": "string", "description": "The search words, video title, YouTube link, or person's name."],
+                    ],
+                    "required": ["action", "query"],
                 ],
             ],
             [
@@ -1013,6 +1115,20 @@ extension MacAction {
                         "name": ["type": "string", "description": "Only for a folder inside the location: its name. Leave it out to open the location itself."],
                     ],
                     "required": ["location"],
+                ],
+            ],
+            [
+                "type": "function",
+                "name": "copy_item",
+                "description": "Copy a file or a whole folder between the user's standard folders. The source stays in place and an existing destination is never replaced.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "name": ["type": "string", "description": "The file or folder name, including its extension."],
+                        "from": ["type": "string", "enum": locations, "description": "Where the item is now."],
+                        "to": ["type": "string", "enum": locations, "description": "Where to copy it."],
+                    ],
+                    "required": ["name", "from", "to"],
                 ],
             ],
             [
@@ -1103,6 +1219,11 @@ extension MacAction {
             guard let site else { return .badArguments(.invalidQuery) }
             return .action(.webSearch(query: query, site: site))
 
+        case "control_page":
+            guard let query = MacActionValidation.searchQuery(string("query")) else { return .badArguments(.invalidQuery) }
+            guard let action = PageControl(rawValue: string("action")) else { return .badArguments(.invalidQuery) }
+            return .action(.controlPage(action: action, query: query))
+
         case "minimize_all", "restore_windows":
             // An app name is only matched against running apps, never resolved to a path, but it
             // gets open_app's checks all the same.
@@ -1144,6 +1265,11 @@ extension MacAction {
             guard let location = MacActionLocation.named(string("location")) else { return .badArguments(.unknownLocation(string("location"))) }
             let name = string("name")
             return .action(.openFolder(name: name.isEmpty ? nil : name, location: location))
+
+        case "copy_item":
+            guard let source = MacActionLocation.named(string("from")) else { return .badArguments(.unknownLocation(string("from"))) }
+            guard let destination = MacActionLocation.named(string("to")) else { return .badArguments(.unknownLocation(string("to"))) }
+            return .action(.copyItem(name: string("name"), from: source, to: destination))
 
         case "find_files":
             guard let query = MacActionValidation.searchQuery(string("query")) else { return .badArguments(.invalidQuery) }

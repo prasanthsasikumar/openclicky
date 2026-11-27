@@ -29,4 +29,15 @@ struct WebSearchURLTests {
         #expect(MacActionValidation.searchQuery(String(repeating: "x", count: 200)) != nil)
         #expect(MacActionValidation.searchQuery(String(repeating: "x", count: 201)) == nil)
     }
+
+    @Test func youtubeOpensAWatchLinkAndSearchesATitle() {
+        let watch = YouTubePage.watchURL(from: "https://www.youtube.com/watch?v=abc123")
+        #expect(watch?.absoluteString == "https://www.youtube.com/watch?v=abc123")
+        #expect(YouTubePage.watchURL(from: "https://youtu.be/abc123")?.host == "youtu.be")
+        #expect(YouTubePage.watchURL(from: "https://www.youtube.com/shorts/abc123")?.path == "/shorts/abc123")
+        #expect(YouTubePage.watchURL(from: "lo-fi radio") == nil)
+        #expect(YouTubePage.watchURL(from: "https://evil.example/watch?v=abc") == nil)
+        #expect(YouTubePage.channelSearchURL(name: "MKBHD").absoluteString.contains("search_query=MKBHD"))
+        #expect(YouTubePage.channelSearchURL(name: "MKBHD").absoluteString.contains("sp=EgIQAg%3D%3D"))
+    }
 }

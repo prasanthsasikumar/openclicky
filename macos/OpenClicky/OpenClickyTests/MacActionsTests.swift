@@ -280,6 +280,34 @@ struct MacActionRunnerTests {
         #expect(outcome.thenLooksAtScreen)
     }
 
+    @Test func copyingFilesAndFoldersPreservesTheSourceAndNeverOverwrites() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let downloads = root.appendingPathComponent("Downloads")
+        let documents = root.appendingPathComponent("Documents")
+        try FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        try Data("source".utf8).write(to: downloads.appendingPathComponent("Report.txt"))
+        try FileManager.default.createDirectory(at: downloads.appendingPathComponent("Project"), withIntermediateDirectories: true)
+        try Data("notes".utf8).write(to: downloads.appendingPathComponent("Project/notes.txt"))
+        let recorder = Recorder()
+        let runner = makeRunner(root: root, recorder: recorder)
+
+        #expect(await runner.perform(.copyItem(name: "Report.txt", from: .downloads, to: .documents)) == .copiedItem(name: "Report.txt", from: .downloads, to: .documents))
+        #expect(try String(contentsOf: documents.appendingPathComponent("Report.txt"), encoding: .utf8) == "source")
+        #expect(FileManager.default.fileExists(atPath: downloads.appendingPathComponent("Report.txt").path))
+        #expect(await runner.perform(.copyItem(name: "Project", from: .downloads, to: .documents)) == .copiedItem(name: "Project", from: .downloads, to: .documents))
+        #expect(FileManager.default.fileExists(atPath: documents.appendingPathComponent("Project/notes.txt").path))
+        try Data("keep".utf8).write(to: documents.appendingPathComponent("Existing.txt"))
+        try Data("replace".utf8).write(to: downloads.appendingPathComponent("Existing.txt"))
+        #expect(await runner.perform(.copyItem(name: "Existing.txt", from: .downloads, to: .documents)) == .copyDestinationExists(name: "Existing.txt", location: .documents))
+        #expect(try String(contentsOf: documents.appendingPathComponent("Existing.txt"), encoding: .utf8) == "keep")
+        #expect(await runner.perform(.copyItem(name: "Missing.txt", from: .downloads, to: .documents)) == .nothingToCopy(name: "Missing.txt", location: .downloads))
+        #expect(await runner.perform(.copyItem(name: "../escape", from: .downloads, to: .documents)) == .invalidName)
+        #expect(recorder.revealedURLs.map(\.lastPathComponent) == ["Report.txt", "Project"])
+        #expect(!MacActionOutcome.copiedItem(name: "Private.txt", from: .downloads, to: .documents).logDescription.contains("Private"))
+    }
+
     @Test func findingOnThePageTypesOnlyIntoAFindBar() async throws {
         let root = try makeTemporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -321,7 +349,41 @@ struct MacActionRunnerTests {
 
         let outcome = await runner.perform(.openApp(name: "Spotify"))
         #expect(outcome == .openedApp("Spotify"))
+        #expect(outcome.thenLooksAtScreen)
+        #expect(outcome.toolOutput.contains("Continue"))
         #expect(recorder.launchedApplications == [URL(fileURLWithPath: "/Applications/Spotify.app")])
+    }
+
+    @Test func youtubeSearchVideoAndFollowOpenTheMatchingPage() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = Recorder()
+        var asked = 0
+        let asking = MacActionRunner(
+            homeDirectory: root,
+            workspaceDirectory: root.appendingPathComponent("OpenClicky"),
+            findApplication: { _ in nil },
+            launchApplication: { _ in },
+            openURL: { url in recorder.openedURLs.append(url) },
+            revealInFinder: { _ in },
+            setVolume: { _ in },
+            sendMediaKey: { _ in },
+            extras: MacActionRunner.Extras(preparePageControl: { asked += 1 })
+        )
+
+        #expect(await asking.perform(.controlPage(action: .search, query: "lo-fi")) == .pageReady(action: .search, query: "lo-fi"))
+        #expect(await asking.perform(.controlPage(action: .openVideo, query: "https://www.youtube.com/watch?v=abc123")) == .pageReady(action: .openVideo, query: "https://www.youtube.com/watch?v=abc123"))
+        #expect(await asking.perform(.controlPage(action: .openVideo, query: "lo-fi radio")) == .pageReady(action: .openVideo, query: "lo-fi radio"))
+        #expect(await asking.perform(.controlPage(action: .follow, query: "MKBHD")) == .pageReady(action: .follow, query: "MKBHD"))
+        #expect(asked == 4)
+        #expect(recorder.openedURLs.map(\.absoluteString) == [
+            "https://www.youtube.com/results?search_query=lo-fi",
+            "https://www.youtube.com/watch?v=abc123",
+            "https://www.youtube.com/results?search_query=lo-fi%20radio",
+            "https://www.youtube.com/results?search_query=MKBHD&sp=EgIQAg%3D%3D",
+        ])
+        #expect(MacActionOutcome.pageReady(action: .follow, query: "MKBHD").thenLooksAtScreen)
+        #expect(MacActionOutcome.pageReady(action: .follow, query: "MKBHD").toolOutput.contains("Subscribe"))
     }
 
     @Test func anAppThatIsNotInstalledIsReportedNotGuessedAt() async throws {
@@ -664,6 +726,7 @@ struct MacActionParsingTests {
         #expect(MacAction.parse(toolName: "open_folder", arguments: ["location": "downloads"]) == .action(.openFolder(name: nil, location: .downloads)))
         #expect(MacAction.parse(toolName: "open_folder", arguments: ["location": "icloud"]) == .badArguments(.unknownLocation("icloud")))
         #expect(MacAction.parse(toolName: "find_files", arguments: ["query": "tax return"]) == .action(.findFiles(query: "tax return")))
+        #expect(MacAction.parse(toolName: "copy_item", arguments: ["name": "report.pdf", "from": "downloads", "to": "documents"]) == .action(.copyItem(name: "report.pdf", from: .downloads, to: .documents)))
         #expect(MacAction.parse(toolName: "find_on_page", arguments: ["text": "price"]) == .action(.findOnPage(text: "price")))
         #expect(MacAction.parse(toolName: "switch_tab", arguments: ["which": "newest"]) == .action(.switchTab(.newest)))
         #expect(MacAction.parse(toolName: "switch_tab", arguments: ["which": "named", "name": "cars and bids"]) == .action(.switchTab(.named("cars and bids"))))
@@ -722,7 +785,7 @@ struct FastActionToolDefinitionTests {
 
     @Test func everyFastActionIsOfferedToTheModel() {
         let names = MacAction.realtimeToolDefinitions().compactMap { $0["name"] as? String }
-        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows", "scroll", "stop_scrolling", "open_folder", "find_files", "find_on_page", "switch_tab"])
+        #expect(names == ["open_app", "open_url", "create_folder", "reveal_in_finder", "set_volume", "media_control", "web_search", "control_page", "minimize_all", "check_email", "draft_email", "play_music", "restore_windows", "scroll", "stop_scrolling", "open_folder", "copy_item", "find_files", "find_on_page", "switch_tab"])
     }
 
     @Test func createFolderDeclaresTheClosedLocationSet() throws {
@@ -800,6 +863,9 @@ struct FastActionToolDefinitionTests {
             case .webSearch(let query, let site):
                 #expect(query == arguments["query"] as? String)
                 #expect(site.rawValue == arguments["site"] as? String)
+            case .controlPage(let action, let query):
+                #expect(action.rawValue == arguments["action"] as? String)
+                #expect(query == arguments["query"] as? String)
             case .minimizeAll(let keptApp):
                 #expect(keptApp == arguments["keep"] as? String)
             case .restoreWindows(let app):
@@ -821,6 +887,10 @@ struct FastActionToolDefinitionTests {
             case .openFolder(let name, let location):
                 #expect(name == arguments["name"] as? String)
                 #expect(location.rawValue == arguments["location"] as? String)
+            case .copyItem(let name, let source, let destination):
+                #expect(name == arguments["name"] as? String)
+                #expect(source.rawValue == arguments["from"] as? String)
+                #expect(destination.rawValue == arguments["to"] as? String)
             case .findFiles(let query):
                 #expect(query == arguments["query"] as? String)
             case .findOnPage(let text):

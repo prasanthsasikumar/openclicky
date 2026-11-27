@@ -257,9 +257,13 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking \
     at. \
     Do simple local things yourself with the fast tools (open_app, open_url, web_search, create_folder, \
-    reveal_in_finder, open_folder, find_files, find_on_page, scroll, stop_scrolling, set_volume, media_control, play_music, minimize_all, \
+    reveal_in_finder, open_folder, copy_item, control_page, find_files, find_on_page, scroll, stop_scrolling, set_volume, media_control, play_music, minimize_all, \
     restore_windows, check_email, draft_email) and then say what they give back in a few words. You cannot know live facts (the weather, news, \
     scores, prices, opening hours): call web_search for them and answer from the results, never say you cannot check. \
+    If a request starts by opening an app and then doing something there, call open_app first and continue from the fresh screenshot its result attaches. \
+    For YouTube, call control_page: search to search, open_video to open a video by its title or a YouTube link, follow to open that person's channel. \
+    Then click the matching title, thumbnail, or Subscribe button and keep going until the video is playing or the person is followed. \
+    Use the same pattern in other apps: open the app or page, then click the control they named. Click Subscribe or Follow only when they asked to follow or subscribe. \
     When they tell you to click, open or press something on screen ("click the first link", "open that video"), call \
     click with the element's on-screen text; do not point at it or explain instead. "Scroll down", "go back to the top" \
     is the scroll tool; "scroll down slowly" is amount slow, "keep scrolling" or "scroll slowly so I can read" is amount \
@@ -1465,7 +1469,7 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                 let location = CompanionManager.screenLocation(forScreenshotPoint: target.point, in: capture)
                 let clickOutput: String
                 let clickLog: String
-                if ScreenNavigation.clickIsRisky(label: label, text: elementText) {
+                if ScreenNavigation.clickIsRisky(label: label, text: elementText, userRequest: userRequest) {
                     // Pointed at, never pressed: a misheard "click send" must not send.
                     self.onPointAt?(target.point, label, capture)
                     clickLog = "refused, it could commit something"
@@ -1500,8 +1504,10 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
                         clickLog = "refused, OpenClicky's own window"
                         clickOutput = "Not clicked: that spot is on OpenClicky's own window."
                     case .notAllowed:
+                        WindowPositionManager.requestAccessibilityPermission()
+                        WindowPositionManager.requestScreenRecordingPermission()
                         clickLog = "refused, no Accessibility permission"
-                        clickOutput = MacActionOutcome.needsAccessibility.spokenSentence
+                        clickOutput = MacActionOutcome.needsAccessibility.spokenSentence + " I asked macOS to allow ATMIYA AI. Turn on Accessibility and Screen Recording, then ask again."
                     }
                 }
                 guard !Task.isCancelled else { return }

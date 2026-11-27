@@ -124,7 +124,7 @@ nonisolated enum ScreenNavigation {
     /// pointed at and left for the person to click. Whole words only: "Posts" and "Ordering" pass.
     static let riskyClickWords: [String] = [
         "send", "buy", "pay", "purchase", "order", "checkout", "check out", "delete", "remove",
-        "erase", "trash", "submit", "confirm", "transfer", "donate", "subscribe", "unsubscribe",
+        "erase", "trash", "submit", "confirm", "transfer", "donate", "subscribe", "unsubscribe", "follow",
         "sign out", "log out", "uninstall", "publish", "post", "place order", "book now",
     ]
 
@@ -134,12 +134,24 @@ nonisolated enum ScreenNavigation {
         return !words.isDisjoint(with: ["video", "videos", "thumbnail", "image", "picture", "photo", "play", "player"])
     }
 
-    static func clickIsRisky(label: String, text: String) -> Bool {
+    static func clickIsRisky(label: String, text: String, userRequest: String? = nil) -> Bool {
         let words = "\(label) \(text)".lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
         let joined = " " + words.joined(separator: " ") + " "
-        return riskyClickWords.contains { joined.contains(" \($0) ") }
+        let risky = riskyClickWords.contains { joined.contains(" \($0) ") }
+        guard risky else { return false }
+        // Subscribe and Follow stay blocked unless the person asked to follow or subscribe.
+        // Buy, send, delete, and the rest stay blocked even then.
+        let followWords = ["subscribe", "unsubscribe", "follow"]
+        let isFollowControl = followWords.contains { joined.contains(" \($0) ") }
+        let hasOtherRisk = riskyClickWords.contains { word in
+            !followWords.contains(word) && joined.contains(" \(word) ")
+        }
+        let request = (userRequest ?? "").lowercased()
+        let askedToFollow = request.contains("follow") || request.contains("subscribe")
+        if isFollowControl && !hasOtherRisk && askedToFollow { return false }
+        return true
     }
 
     /// The topmost ordinary window under `point` (CG coordinates), from a front-to-back list.

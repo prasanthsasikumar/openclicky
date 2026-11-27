@@ -214,34 +214,60 @@ struct ProductivityView: View {
     }
 
     private var workflows: some View {
-        featureSection("Reusable workflows", symbol: "arrow.triangle.branch") {
+        featureSection("Recipes and reusable workflows", symbol: "arrow.triangle.branch") {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("\(skills.activeIds.count) active · \(skills.librarySkills.count) available")
                         .font(.system(size: 13, weight: .semibold))
                     Spacer()
+                    if !skills.hasStarterWorkflows {
+                        Button("Add starter recipes") { skills.installStarterWorkflows() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(SettingsLook.accent)
+                            .pointerCursor()
+                    }
                     Button("Open workflow folder") { NSWorkspace.shared.open(skills.libraryDirectory) }
                         .buttonStyle(.bordered).pointerCursor()
                 }
+                Text("Save a useful process once, then run it again as a fresh agent task.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
                 if skills.librarySkills.isEmpty {
-                    Text("Add a SKILL.md workflow to teach ATMIYA AI a repeatable process.")
+                    Label("Add the starter recipes or place a SKILL.md workflow in the folder.", systemImage: "square.stack.3d.up")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 } else {
                     ForEach(skills.librarySkills.prefix(8), id: \.id) { skill in
-                        Toggle(isOn: Binding(
-                            get: { skills.activeIds.contains(skill.id) },
-                            set: { skills.setActive(skill.id, $0) }
-                        )) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(skill.name).font(.system(size: 12, weight: .medium))
-                                Text(skill.description).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
+                        HStack(alignment: .center, spacing: 12) {
+                            Toggle(isOn: Binding(
+                                get: { skills.activeIds.contains(skill.id) },
+                                set: { skills.setActive(skill.id, $0) }
+                            )) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(skill.name).font(.system(size: 12, weight: .medium))
+                                    Text(skill.description).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
+                                }
                             }
+                            .toggleStyle(.switch)
+                            Button("Run") { runWorkflow(skill) }
+                                .buttonStyle(.bordered)
+                                .help("Run this workflow as a new agent task")
+                                .pointerCursor()
                         }
-                        .toggleStyle(.switch)
                     }
+                }
+                if let error = skills.lastError {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11)).foregroundStyle(SettingsLook.warning)
                 }
             }
         }
+    }
+
+    private func runWorkflow(_ skill: SkillFile) {
+        if !skills.activeIds.contains(skill.id) { skills.setActive(skill.id, true) }
+        let request = """
+        Run my \"\(skill.name)\" reusable workflow now. Follow its active SKILL.md instructions. Ask for any missing input. Use only local or connected sources I have already granted access to, and require my approval before external writes or sensitive actions.
+        """
+        companionManager.submitTextToAgent(request, startsNewThread: true, attachesScreen: false)
     }
 
     private var automation: some View {

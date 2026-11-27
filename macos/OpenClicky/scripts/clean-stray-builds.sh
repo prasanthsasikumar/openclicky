@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Removes every OpenClicky.app bundle that is NOT the installed copy, so Spotlight only ever
-# offers one OpenClicky. Build products in DerivedData (Xcode's default folder, the release
+# Removes every ATMIYA AI.app bundle that is NOT the installed copy, so Spotlight only ever
+# offers one ATMIYA AI. Build products in DerivedData (Xcode's default folder, the release
 # script's build/ folder, headless builds) are indexed like real apps and show up as
 # "OpenClicky — Debug" / "OpenClicky — Release". They are rebuilt on demand, so deleting is safe.
 #
@@ -12,9 +12,9 @@
 #   scripts/clean-stray-builds.sh --dry-run  # just list
 set -euo pipefail
 
-APP_NAME="OpenClicky"
-BUNDLE_ID="org.openclicky.app"
-DEBUG_BUNDLE_ID="org.openclicky.app.debug"
+APP_NAME="ATMIYA AI"
+BUNDLE_ID="org.atmiya.app"
+DEBUG_BUNDLE_ID="org.atmiya.app.debug"
 INSTALL_DIR="${OPENCLICKY_INSTALL_DIR:-/Applications}"
 DRY_RUN=0
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1

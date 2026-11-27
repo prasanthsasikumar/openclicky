@@ -67,6 +67,10 @@ struct ScreenNavigationTests {
         #expect(!ScreenNavigation.clickIsRisky(label: "orders", text: "Your Orders"))
         // A cookie banner has to be clickable to browse by voice at all (2026-10-29).
         #expect(!ScreenNavigation.clickIsRisky(label: "Accept All button", text: "Accept All"))
+        #expect(ScreenNavigation.clickIsRisky(label: "Subscribe", text: "Subscribe"))
+        #expect(!ScreenNavigation.clickIsRisky(label: "Subscribe", text: "Subscribe", userRequest: "follow MKBHD"))
+        #expect(ScreenNavigation.clickIsRisky(label: "Subscribe", text: "Subscribe", userRequest: "play the first video"))
+        #expect(ScreenNavigation.clickIsRisky(label: "Buy", text: "Subscribe and buy", userRequest: "follow MKBHD"))
     }
 
     /// "Scroll up" on a page that could not move was answered "Scrolled up." twice (2026-10-29).
