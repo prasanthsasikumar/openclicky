@@ -790,7 +790,7 @@
       quiz.panel.appendChild(done);
       send({ type: 'say', text: score });
       log('quiz: ' + quiz.score + ' of ' + n);
-    }, Math.max(2200, (words / WORDS_PER_SECOND + 1.1) * 1000)));
+    }, Math.max(2200, (words / Pen.WORDS_PER_SECOND + 1.1) * 1000)));
   }
 
   function clearQuizzes() {
