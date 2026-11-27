@@ -66,6 +66,10 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
         windowProcedure = WindowProcedure;
     }
 
+    /// <summary>The stage has just come up over every topmost window (it re-asserts HWND_TOPMOST when it is placed): the
+    /// pointer, its caption and the island must be raised back above it (AppComposition).</summary>
+    public event Action? CameToFront;
+
     public void Present(PixelRect frame, double scale)
     {
         placement = (frame, scale);
@@ -261,6 +265,7 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
         webView.Bounds = new System.Drawing.Rectangle(0, 0, Math.Max(1, frame.Width), Math.Max(1, frame.Height));
         webView.IsVisible = true;
         NativeSetWindowPos(windowHandle, HWND_TOPMOST, frame.Left, frame.Top, Math.Max(1, frame.Width), Math.Max(1, frame.Height), SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        CameToFront?.Invoke();
     }
 
     private nint WindowProcedure(nint handle, uint message, nint wParam, nint lParam)
