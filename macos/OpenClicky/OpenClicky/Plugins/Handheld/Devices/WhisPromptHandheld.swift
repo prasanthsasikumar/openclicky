@@ -30,7 +30,7 @@ enum WhisPromptHandheld {
         productID: 0x8001,
         microphoneName: "WhisPrompt Mic Stream",
         controls: controls,
-        defaultBindings: HandheldBindings(),
+        defaultBindings: defaultBindings,
         decode: decode
     )
 
@@ -40,6 +40,18 @@ enum WhisPromptHandheld {
         HandheldControl(id: "keyB", name: "Key B", gestures: [.single, .double]),
         HandheldControl(id: "keyC", name: "Key C", gestures: [.single, .double]),
     ]
+
+    /// Key A is the voice key; B and C stand in for the keys a hand is away from while it holds
+    /// the device.
+    static let defaultBindings = HandheldBindings([
+        (controlID: "keyA", gesture: .single, action: .dictateToggle),
+        (controlID: "keyA", gesture: .double, action: .typeQuestion),
+        (controlID: "keyA", gesture: .longStart, action: .dictateHold),
+        (controlID: "keyB", gesture: .single, action: .keyCombination(HandheldKeyCombination(keyCode: 36, modifierFlags: 0, displayText: "Enter"))),
+        (controlID: "keyB", gesture: .double, action: .goToWaitingTerminal),
+        (controlID: "keyC", gesture: .single, action: .keyCombination(HandheldKeyCombination(keyCode: 51, modifierFlags: 0, displayText: "Delete"))),
+        (controlID: "keyC", gesture: .double, action: .keyCombination(HandheldKeyCombination(keyCode: 6, modifierFlags: HandheldKeyCombination.commandFlag, displayText: "⌘Z"))),
+    ])
 
     private static let controlIDByKeyByte: [UInt8: String] = [0x02: "keyA", 0x01: "keyB", 0x00: "keyC"]
     private static let gestureByGestureByte: [UInt8: HandheldGesture] = [
