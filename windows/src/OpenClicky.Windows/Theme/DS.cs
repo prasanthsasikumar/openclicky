@@ -8,6 +8,7 @@
 //  OpenClickyTheme.xaml for XAML; this class is what code-built views use.
 //
 
+using OpenClicky.Core.Localization;
 using System.Windows;
 using System.Windows.Media;
 
@@ -87,10 +88,28 @@ public static class DS
 
     public static class Fonts
     {
-        /// <summary>SF Pro → Segoe UI Variable (Text optical size for UI text), Segoe UI before Windows 11.</summary>
-        public static readonly FontFamily Ui = new("Segoe UI Variable Text, Segoe UI");
+        private static readonly FontFamily LatinUi = new("Segoe UI Variable Text, Segoe UI");
+        private static readonly FontFamily LatinDisplay = new("Segoe UI Variable Display, Segoe UI");
+        private static FontFamily? urduUi;
+        private static FontFamily? urduDisplay;
+
+        /// <summary>SF Pro → Segoe UI Variable (Text optical size for UI text), Segoe UI before Windows 11. On the Urdu
+        /// screens: Urdu in Noto Nastaliq Urdu (Assets/Fonts, read from beside the exe), English words in Segoe UI (UrduComposite).</summary>
+        public static FontFamily Ui => L.IsRightToLeft ? urduUi ??= UrduComposite("Segoe UI Variable Text, Segoe UI") : LatinUi;
         /// <summary>Headlines (15 pt semibold on the cards).</summary>
-        public static readonly FontFamily Display = new("Segoe UI Variable Display, Segoe UI");
+        public static FontFamily Display => L.IsRightToLeft ? urduDisplay ??= UrduComposite("Segoe UI Variable Display, Segoe UI") : LatinDisplay;
+
+        /// <summary>Arabic script (Urdu) from Noto Nastaliq Urdu, everything else (English words, keys, digits) from
+        /// <paramref name="latin"/>: a composite family, so Latin text keeps the app's own font.</summary>
+        public static FontFamily UrduComposite(string latin)
+        {
+            var noto = new Uri(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Fonts") + System.IO.Path.DirectorySeparatorChar).AbsoluteUri + "#Noto Nastaliq Urdu";
+            var family = new FontFamily { LineSpacing = 1.9, Baseline = 1.45 };
+            family.FamilyNames.Add(System.Windows.Markup.XmlLanguage.GetLanguage("en-us"), "OpenClicky Urdu");
+            family.FamilyMaps.Add(new FontFamilyMap { Unicode = "0600-06FF,0750-077F,08A0-08FF,FB50-FDFF,FE70-FEFF", Target = noto });
+            family.FamilyMaps.Add(new FontFamilyMap { Unicode = "0000-FFFF", Target = latin });
+            return family;
+        }
         /// <summary>SF Mono → Cascadia Mono, Consolas.</summary>
         public static readonly FontFamily Mono = new("Cascadia Mono, Consolas");
         /// <summary>SF Symbols → Segoe Fluent Icons (Windows 11), Segoe MDL2 Assets (Windows 10).</summary>

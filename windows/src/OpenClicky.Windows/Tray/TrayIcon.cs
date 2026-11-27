@@ -5,6 +5,7 @@
 // showDictationWindow(section: .words), notchHUDManager.openPanel, showSettings, firstRunTour.replay,
 // quitWithFarewell). The icon is Assets\OpenClicky.ico when the app ships one, else the mark drawn here.
 
+using OpenClicky.Core.Localization;
 using System.IO;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -47,7 +48,7 @@ public sealed class TrayIcon : IDisposable
         this.readState = readState;
         icon = LoadIcon();
         notifyIcon = new NotifyIcon { Icon = icon, Text = "OpenClicky", Visible = false };
-        notifyIcon.ContextMenuStrip = new ContextMenuStrip { ShowCheckMargin = true, ShowImageMargin = false };
+        notifyIcon.ContextMenuStrip = new ContextMenuStrip { ShowCheckMargin = true, ShowImageMargin = false, RightToLeft = L.IsRightToLeft ? RightToLeft.Yes : RightToLeft.No };
         notifyIcon.ContextMenuStrip.Opening += (_, _) => BuildMenu(notifyIcon.ContextMenuStrip);
         // Either click opens the menu, as on the Mac.
         notifyIcon.MouseUp += (_, arguments) =>
@@ -77,21 +78,21 @@ public sealed class TrayIcon : IDisposable
     {
         var state = readState();
         menu.Items.Clear();
-        menu.Items.Add(new ToolStripLabel($"● OpenClicky — {state.StatusText}")
+        menu.Items.Add(new ToolStripLabel($"● OpenClicky — {L.T(state.StatusText)}")
         {
             Font = new Font(SystemFonts.MenuFont ?? Control.DefaultFont, FontStyle.Bold),
             ForeColor = state.StatusText == "Ready" ? Color.FromArgb(0x2E, 0x9E, 0x4F) : Color.FromArgb(0xD9, 0x7A, 0x00),
         });
-        menu.Items.Add(new ToolStripLabel($"Hold Ctrl + Win to talk · hold {state.DictationKeyLabel} to dictate") { ForeColor = SystemColors.GrayText });
+        menu.Items.Add(new ToolStripLabel(L.F("Hold Ctrl + Win to talk · hold {0} to dictate", state.DictationKeyLabel)) { ForeColor = SystemColors.GrayText });
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(Item("Agent Mode", () => AgentModeToggled?.Invoke(), state.IsAgentModeEnabled));
+        menu.Items.Add(Item(L.T("Agent Mode"), () => AgentModeToggled?.Invoke(), state.IsAgentModeEnabled));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(Item("Open OpenClicky", () => OpenWindowRequested?.Invoke()));
-        menu.Items.Add(Item("Open the Island", () => OpenIslandRequested?.Invoke()));
-        menu.Items.Add(Item("Settings…", () => SettingsRequested?.Invoke(), shortcut: "Ctrl+,"));
-        menu.Items.Add(Item("Replay Welcome…", () => ReplayWelcomeRequested?.Invoke()));
+        menu.Items.Add(Item(L.T("Open OpenClicky"), () => OpenWindowRequested?.Invoke()));
+        menu.Items.Add(Item(L.T("Open the Island"), () => OpenIslandRequested?.Invoke()));
+        menu.Items.Add(Item(L.T("Settings…"), () => SettingsRequested?.Invoke(), shortcut: "Ctrl+,"));
+        menu.Items.Add(Item(L.T("Replay Welcome…"), () => ReplayWelcomeRequested?.Invoke()));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(Item("Quit OpenClicky", () => QuitRequested?.Invoke()));
+        menu.Items.Add(Item(L.T("Quit OpenClicky"), () => QuitRequested?.Invoke()));
     }
 
     private static ToolStripMenuItem Item(string title, Action onClick, bool? isOn = null, string? shortcut = null)

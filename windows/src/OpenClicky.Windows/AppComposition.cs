@@ -70,6 +70,10 @@ public sealed class AppComposition : ICompanionHost, IDisposable
         dispatcher = application.Dispatcher;
         platform = new PlatformServices(dispatcher);
         preferences = Preferences.Shared;
+        // The screens' language, before any window is built: their words and fonts are read as they are made.
+        Core.Localization.L.SetLanguage(Core.Localization.AppLanguage.Resolve(
+            preferences.GetString(Core.Localization.AppLanguage.PreferenceKey), ReplyLanguage.CurrentCode));
+        AppLog.Write($"launch: screens in {Core.Localization.L.Language}");
         dictationSettings = DictationSettings.Shared;
 
         OpenClickyConfiguration.EnsureSettingsFileExists();

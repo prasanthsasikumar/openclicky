@@ -7,6 +7,7 @@
 //  clickable thing shows the hand cursor (the Mac's pointerCursor()) and dims a touch on hover.
 //
 
+using OpenClicky.Core.Localization;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -33,6 +34,8 @@ internal static class IslandUi
             TextWrapping = wrapping,
             VerticalAlignment = VerticalAlignment.Center,
             IsHitTestVisible = false,
+            // Urdu (any right-to-left text) reads from the right, with its punctuation where it belongs.
+            FlowDirection = TextDirection.IsRightToLeft(text) ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
         };
     }
 

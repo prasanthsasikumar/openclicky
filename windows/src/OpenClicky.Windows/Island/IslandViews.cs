@@ -11,6 +11,7 @@
 //  the models (Refresh) and animates its indicators every frame (Tick).
 //
 
+using OpenClicky.Core.Localization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -107,7 +108,7 @@ internal sealed class PeekLineView : Grid, IIslandContent
             var dot = Text("·", 11, DS.HUD.Text3Brush);
             SetColumn(dot, 1);
             Children.Add(dot);
-            var open = Text("click to open", 11, DS.HUD.Text3Brush);
+            var open = Text(L.T("click to open"), 11, DS.HUD.Text3Brush);
             open.HorizontalAlignment = HorizontalAlignment.Left;
             open.Margin = new Thickness(8, 0, 12, 0);
             SetColumn(open, 2);
@@ -456,7 +457,7 @@ internal sealed class PermissionCardView : Grid, IIslandContent
 
         var buttons = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0) };
         buttons.Children.Add(PrimaryButton(prompt.ButtonTitle, () => hub.GrantPermissionCommand.Execute(null)));
-        var later = QuietButton("later", () => hub.PermissionLaterCommand.Execute(null), IslandTexts.PermissionLaterToolTip);
+        var later = QuietButton(L.T("later"), () => hub.PermissionLaterCommand.Execute(null), IslandTexts.PermissionLaterToolTip);
         later.Margin = new Thickness(0, 6, 0, 0);
         buttons.Children.Add(later);
         SetColumn(buttons, 2);
@@ -689,8 +690,9 @@ internal sealed class TourCardView : Grid, IIslandContent
         copy.Children.Add(Text(card.Title, 15, DS.HUD.TextBrush, FontWeights.SemiBold, DS.Fonts.Display, TextTrimming.CharacterEllipsis));
         var detail = Text(card.Detail, 12, DS.HUD.Text2Brush, wrapping: TextWrapping.Wrap, trimming: TextTrimming.CharacterEllipsis);
         detail.Margin = new Thickness(0, 3, 0, 0);
-        detail.LineHeight = 16;
-        detail.MaxHeight = 16 * 3 + 1;
+        // Nastaliq needs taller lines: Urdu gets two of them in the room English has three.
+        detail.LineHeight = L.IsRightToLeft ? 24 : 16;
+        detail.MaxHeight = L.IsRightToLeft ? 24 * 2 + 1 : 16 * 3 + 1;
         copy.Children.Add(detail);
         if (card.Field is { } fieldKind)
         {
@@ -737,10 +739,10 @@ internal sealed class TourCardView : Grid, IIslandContent
             var micGlyph = Glyph(Icons.Microphone, 10, brush);
             micGlyph.Margin = new Thickness(0, 0, 4, 0);
             line.Children.Add(micGlyph);
-            var name = Text($"listening through {microphoneName} · ", 12, brush, weight, trimming: TextTrimming.CharacterEllipsis);
+            var name = Text(L.F("listening through {0} · ", microphoneName), 12, brush, weight, trimming: TextTrimming.CharacterEllipsis);
             name.MaxWidth = 230;
             line.Children.Add(name);
-            var change = Text("change", 12, brush, weight);
+            var change = Text(L.T("change"), 12, brush, weight);
             change.TextDecorations = TextDecorations.Underline;
             line.Children.Add(change);
             var button = Clickable(line, () => hub.TourChangeMicrophoneCommand.Execute(null));
@@ -820,7 +822,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
         controls.Children.Add(gear);
         // Quick action: hide the pointer, or bring it back.
         var eye = new IslandIconButton(hub.IsClickyCursorEnabled ? Icons.HidePointer : Icons.ShowPointer, 12,
-            hub.IsClickyCursorEnabled ? "Hide the pointer" : "Show the pointer", () =>
+            hub.IsClickyCursorEnabled ? L.T("Hide the pointer") : L.T("Show the pointer"), () =>
             {
                 model.Dismiss();
                 hub.TogglePointerCommand.Execute(null);
@@ -831,7 +833,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
         var markKeys = MarkerShortcuts.Wanted(OpenClicky.Core.Configuration.OpenClickyConfiguration.Settings.MarkerShortcut,
             OpenClicky.Core.Plugins.DrawStage.DrawStageLesson.IsEnabled(OpenClicky.Core.Configuration.Preferences.Shared, OpenClicky.Core.Plugins.Teacher.TeacherPlugin.IsEnabled));
         var marker = new IslandIconButton(Icons.Marker, 12,
-            "Mark part of the screen to ask about" + (markKeys is { } keys ? $" ({MarkerShortcuts.Title(keys)})" : ""), () =>
+            L.T("Mark part of the screen to ask about") + (markKeys is { } keys ? $" ({MarkerShortcuts.Title(keys)})" : ""), () =>
         {
             model.Dismiss();
             hub.MarkAreaCommand.Execute(null);
@@ -930,7 +932,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
             isBlocked ? DS.HUD.PointerBrush : DS.HUD.BandControlBrush, new CornerRadius(DS.HUD.PillHeight / 2));
         pill.MinWidth = DS.HUD.PillHeight;
         pill.Height = DS.HUD.PillHeight;
-        System.Windows.Automation.AutomationProperties.SetName(pill, hub.EngineBlockedPillLabel ?? $"dictation is heard by {hub.DictationEngineName}");
+        System.Windows.Automation.AutomationProperties.SetName(pill, hub.EngineBlockedPillLabel ?? L.F("dictation is heard by {0}", hub.DictationEngineName));
         return pill;
     }
 
@@ -965,7 +967,7 @@ internal sealed class FullPanelView : Grid, IIslandContent
         cell.Children.Add(title);
         if (shortcut.IsLive)
         {
-            var dot = new Ellipse { Width = 6, Height = 6, Fill = DS.HUD.LiveBrush, Margin = new Thickness(4, 0, 0, 0), ToolTip = "hands-free is on" };
+            var dot = new Ellipse { Width = 6, Height = 6, Fill = DS.HUD.LiveBrush, Margin = new Thickness(4, 0, 0, 0), ToolTip = L.T("hands-free is on") };
             DockPanel.SetDock(dot, Dock.Left);
             cell.Children.Add(dot);
         }

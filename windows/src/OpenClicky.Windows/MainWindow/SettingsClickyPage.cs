@@ -144,6 +144,11 @@ internal sealed partial class SettingsRowFactory
         var companion = services.Companion;
         switch (item.Id)
         {
+            case "clicky.screenLanguage":
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query,
+                    Ui.Picker(Core.Localization.AppLanguage.Choices,
+                        services.Preferences.GetString(Core.Localization.AppLanguage.PreferenceKey) ?? Core.Localization.AppLanguage.SameAsSpoken,
+                        value => services.Preferences.Set(Core.Localization.AppLanguage.PreferenceKey, value), 220)));
             case "clicky.language":
                 return new LiveContent(() =>
                 {

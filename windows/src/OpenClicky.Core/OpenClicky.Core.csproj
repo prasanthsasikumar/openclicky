@@ -13,4 +13,8 @@
     <InternalsVisibleTo Include="OpenClicky.Core.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The screens' words in other languages, English → translation (Localization/L.cs). -->
+    <EmbeddedResource Include="Localization\*.json" />
+  </ItemGroup>
 </Project>

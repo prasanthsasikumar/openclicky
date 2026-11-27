@@ -10,6 +10,7 @@
 //  the drag helper and the relaunch flows are gone.
 //
 
+using OpenClicky.Core.Localization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace OpenClicky.Core.Companion;
@@ -33,33 +34,33 @@ public static class PermissionSteps
     /// <summary>What the permission is for, in the card's own words.</summary>
     public static string Headline(this PermissionStep step) => step switch
     {
-        PermissionStep.OnlineSpeech => "windows dictation needs online speech",
-        _ => "i need the microphone to hear you",
+        PermissionStep.OnlineSpeech => L.T("windows dictation needs online speech"),
+        _ => L.T("i need the microphone to hear you"),
     };
 
     /// <summary>The line under the headline before the button was pressed.</summary>
     public static string Detail(this PermissionStep step) => step switch
     {
-        PermissionStep.OnlineSpeech => "it sends what you dictate to microsoft’s speech service. turn it on?",
-        _ => "only while you hold a shortcut or go hands-free.",
+        PermissionStep.OnlineSpeech => L.T("it sends what you dictate to microsoft’s speech service. turn it on?"),
+        _ => L.T("only while you hold a shortcut or go hands-free."),
     };
 
     /// <summary>The line once the request is out and Windows' privacy settings are open.</summary>
     public static string WaitingDetail(this PermissionStep step) => step switch
     {
-        PermissionStep.OnlineSpeech => "switch on online speech recognition in settings, then dictate again.",
-        _ => "switch on microphone access for desktop apps in settings.",
+        PermissionStep.OnlineSpeech => L.T("switch on online speech recognition in settings, then dictate again."),
+        _ => L.T("switch on microphone access for desktop apps in settings."),
     };
 
     public static string ButtonTitle(this PermissionStep step) => step switch
     {
-        PermissionStep.OnlineSpeech => "turn on",
-        _ => "grant",
+        PermissionStep.OnlineSpeech => L.T("turn on"),
+        _ => L.T("grant"),
     };
 
     public static string WaitingButtonTitle(this PermissionStep step) => step switch
     {
-        _ => "open",
+        _ => L.T("open"),
     };
 }
 
@@ -97,7 +98,7 @@ public sealed record PermissionPrompt(PermissionStep Step, PermissionStatus Stat
         get
         {
             var steps = PermissionSteps.Relevant(Status);
-            return $"step {steps.ToList().IndexOf(Step) + 1} of {steps.Count}";
+            return L.F("step {0} of {1}", steps.ToList().IndexOf(Step) + 1, steps.Count);
         }
     }
 }

@@ -291,6 +291,9 @@ public sealed class SettingsCatalog
         };
         List<SettingsItem> items =
         [
+            Item("clicky.screenLanguage", "Language", "Screen language",
+                "The language of the island, the tour and what Clicky says when something goes wrong. Changes the next time OpenClicky starts.",
+                ["screen language", "app language", "interface", "ui", "urdu", "اردو", "english", "right to left", "rtl", "translate"]),
             Item("clicky.language", "Language", "Language", "Clicky speaks and listens in this.",
                 ["language", "english", "hindi", "tamil", "spanish", "french", "speak", "reply", "listen"]),
             Item("clicky.speechVoice", "Voice", "Voice", "Who speaks the answers: the cloud voice, or this PC’s own voice, free and offline.",

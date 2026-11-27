@@ -10,6 +10,7 @@
 //
 
 using CommunityToolkit.Mvvm.ComponentModel;
+using OpenClicky.Core.Localization;
 using OpenClicky.Core.Shortcuts;
 
 namespace OpenClicky.Core.Companion;
@@ -159,61 +160,61 @@ public static class FirstRunTourCards
         switch (step)
         {
             case FirstRunTourStep.Meet:
-                return new FirstRunTourCard(step, "hi, i’m clicky",
-                    "your pointer’s new sidekick. i’ll show you three things. it takes about a minute.",
-                    none, TourSymbols.Wave, null, false, null, false, null, "let’s go", "skip tour");
+                return new FirstRunTourCard(step, L.T("hi, i’m clicky"),
+                    L.T("your pointer’s new sidekick. i’ll show you three things. it takes about a minute."),
+                    none, TourSymbols.Wave, null, false, null, false, null, L.T("let’s go"), L.T("skip tour"));
             case FirstRunTourStep.Dictate:
                 // Many laptops have no right Ctrl; right Alt (beside the space bar) works from its first press.
                 return new FirstRunTourCard(step,
-                    inputs.DictationKey == DictationHotkeys.Default ? "hold right ctrl or right alt and say something" : $"hold {dictationKeyLabel} and say something",
+                    inputs.DictationKey == DictationHotkeys.Default ? L.T("hold right ctrl or right alt and say something") : L.F("hold {0} and say something", dictationKeyLabel),
                     inputs.DictationKey == DictationHotkeys.Default
-                        ? "no right ctrl? right alt is just right of the space bar. try “hello openclicky, this is my first take”, then let go."
-                        : "try “hello openclicky, this is my first take”, then let go.",
+                        ? L.T("no right ctrl? right alt is just right of the space bar. try “hello openclicky, this is my first take”, then let go.")
+                        : L.T("try “hello openclicky, this is my first take”, then let go."),
                     new[] { IslandTexts.ShortKeycapLabel(inputs.DictationKey) }, null, inputs.Status, inputs.StatusIsGood,
                     inputs.MicrophoneName, inputs.OffersMicrophoneChange, null,
-                    inputs.SuggestsBuiltInMicrophone ? "use built-in mic" : null, "skip");
+                    inputs.SuggestsBuiltInMicrophone ? L.T("use built-in mic") : null, L.T("skip"));
             case FirstRunTourStep.Account when inputs.AccountCardAsksForEmail:
-                return new FirstRunTourCard(step, "switch on asking",
-                    "add your email for a free account and i’ll answer questions and do things for you. no password.",
+                return new FirstRunTourCard(step, L.T("switch on asking"),
+                    L.T("add your email for a free account and i’ll answer questions and do things for you. no password."),
                     none, TourSymbols.Envelope, inputs.Status, inputs.StatusIsGood, null, false,
                     inputs.NeedsCode ? FirstRunTourFieldKind.Code : FirstRunTourFieldKind.Email,
-                    inputs.NeedsCode ? "confirm" : "start", "skip");
+                    inputs.NeedsCode ? L.T("confirm") : L.T("start"), L.T("skip"));
             case FirstRunTourStep.Account:
-                return new FirstRunTourCard(step, "you’re on a free account",
-                    "it has a limited number of free credits. if you already pay for openai, claude or another ai, add that key in settings and use it right here.",
-                    none, TourSymbols.Sparkles, null, false, null, false, null, "add my key", "continue");
+                return new FirstRunTourCard(step, L.T("you’re on a free account"),
+                    L.T("it has a limited number of free credits. if you already pay for openai, claude or another ai, add that key in settings and use it right here."),
+                    none, TourSymbols.Sparkles, null, false, null, false, null, L.T("add my key"), L.T("continue"));
             case FirstRunTourStep.Talk when inputs.IsShowingDemo:
-                return new FirstRunTourCard(step, "watch this",
-                    "i’m looking at your screen. i’ll point at something and tell you about it.",
-                    none, TourSymbols.Eye, null, false, null, false, null, null, "skip");
+                return new FirstRunTourCard(step, L.T("watch this"),
+                    L.T("i’m looking at your screen. i’ll point at something and tell you about it."),
+                    none, TourSymbols.Eye, null, false, null, false, null, null, L.T("skip"));
             case FirstRunTourStep.Talk:
-                return new FirstRunTourCard(step, inputs.CanAsk ? "your turn: ask me something" : "you can ask me things too",
+                return new FirstRunTourCard(step, inputs.CanAsk ? L.T("your turn: ask me something") : L.T("you can ask me things too"),
                     inputs.CanAsk
-                        ? $"hold {inputs.DictationKey.TalkKeysText()} and ask “what’s this?” about anything on your screen. i answer out loud and point."
-                        : "about anything on your screen, out loud, and i’ll point at it. add your email to switch it on, free.",
+                        ? L.F("hold {0} and ask “what’s this?” about anything on your screen. i answer out loud and point.", inputs.DictationKey.TalkKeysText())
+                        : L.T("about anything on your screen, out loud, and i’ll point at it. add your email to switch it on, free."),
                     inputs.DictationKey.TalkKeycapLabels(), null, inputs.Status, inputs.StatusIsGood, null, false, null,
-                    inputs.CanAsk ? "next" : "add email", "skip");
+                    inputs.CanAsk ? L.T("next") : L.T("add email"), L.T("skip"));
             case FirstRunTourStep.Act:
-                return new FirstRunTourCard(step, inputs.CanAsk ? "hand me a task" : "i can do things for you too",
-                    inputs.CanAsk ? TaskExamples(inputs.UsesAgent, inputs.DictationKey) : "open apps, make folders, and more, just by asking. add your email to switch it on, free.",
+                return new FirstRunTourCard(step, inputs.CanAsk ? L.T("hand me a task") : L.T("i can do things for you too"),
+                    inputs.CanAsk ? TaskExamples(inputs.UsesAgent, inputs.DictationKey) : L.T("open apps, make folders, and more, just by asking. add your email to switch it on, free."),
                     inputs.DictationKey.TalkKeycapLabels(), null, inputs.Status, inputs.StatusIsGood, null, false, null,
-                    inputs.CanAsk ? "next" : "add email", "skip");
+                    inputs.CanAsk ? L.T("next") : L.T("add email"), L.T("skip"));
             case FirstRunTourStep.Done:
-                return new FirstRunTourCard(step, "you’re all set",
-                    "hover the island at the top any time. keys, microphone and the rest live in settings.",
-                    none, TourSymbols.Checkmark, null, false, null, false, null, "open settings", "done");
+                return new FirstRunTourCard(step, L.T("you’re all set"),
+                    L.T("hover the island at the top any time. keys, microphone and the rest live in settings."),
+                    none, TourSymbols.Checkmark, null, false, null, false, null, L.T("open settings"), L.T("done"));
             default:
-                return new FirstRunTourCard(step, "open me when your pc starts?",
-                    $"then {dictationKeyLabel} works from the moment you sign in, without opening me first.",
+                return new FirstRunTourCard(step, L.T("open me when your pc starts?"),
+                    L.F("then {0} works from the moment you sign in, without opening me first.", dictationKeyLabel),
                     none, TourSymbols.Power, inputs.Status, inputs.StatusIsGood, null, false, null,
-                    inputs.StatusIsGood ? null : "yes, open at sign-in", inputs.StatusIsGood ? "close" : "not now");
+                    inputs.StatusIsGood ? null : L.T("yes, open at sign-in"), inputs.StatusIsGood ? L.T("close") : L.T("not now"));
         }
     }
 
     /// <summary>What to try on the task step: the agent (own keys) works in apps; a free account has the quick actions.</summary>
     public static string TaskExamples(bool usesAgent, DictationHotkey dictationKey = DictationHotkeys.Default) => usesAgent
-        ? $"hold {dictationKey.TalkKeysText()} and say “add a note to my notes: buy milk”, or “organize my downloads folder so it’s easier to find things”."
-        : $"hold {dictationKey.TalkKeysText()} and say “make a folder on my desktop called hello clicky”, or “open notepad”.";
+        ? L.F("hold {0} and say “add a note to my notes: buy milk”, or “organize my downloads folder so it’s easier to find things”.", dictationKey.TalkKeysText())
+        : L.F("hold {0} and say “make a folder on my desktop called hello clicky”, or “open notepad”.", dictationKey.TalkKeysText());
 
     /// <summary>The keycaps' press, pressed down together and held, then let go, every 2.4 s (KeyboardSketch.pressAmount).</summary>
     public static double PressAmount(double timeSeconds)

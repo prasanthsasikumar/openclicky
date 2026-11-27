@@ -12,6 +12,7 @@
 //  the marked part, never the marker over it.
 //
 
+using OpenClicky.Core.Localization;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -78,7 +79,7 @@ public sealed class ScreenMarkerWindow : IScreenMarkerSurface, IDisposable
             Padding = new Thickness(16, 8, 16, 8), IsHitTestVisible = false,
             Child = new TextBlock
             {
-                Text = "Draw round what you want to ask about  ·  Esc to cancel", Foreground = Brushes.White, FontSize = 15,
+                Text = L.T("Draw round what you want to ask about  ·  Esc to cancel"), Foreground = Brushes.White, FontSize = 15,
                 FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
             },
         };

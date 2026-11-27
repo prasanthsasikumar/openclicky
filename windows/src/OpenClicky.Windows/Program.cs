@@ -31,6 +31,9 @@ public static class Program
 
         if (args.Contains("--openclicky-ui-demo"))
         {
+            // --language ur: the demo's screens in that language (the Urdu screens' check).
+            var languageIndex = Array.IndexOf(args, "--language");
+            if (languageIndex >= 0 && languageIndex + 1 < args.Length) Core.Localization.L.SetLanguage(args[languageIndex + 1]);
             var folderIndex = Array.IndexOf(args, "--shots");
             UiDemo.Run(folderIndex >= 0 && folderIndex + 1 < args.Length ? args[folderIndex + 1] : null);
             return 0;
