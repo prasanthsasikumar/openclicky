@@ -114,7 +114,15 @@ struct HandheldDeviceViewTests {
         #expect(HandheldDeviceViewMessage.selectedControlID(fromMessageBody: ["type": "select", "control": "keyC"]) == "keyC")
         #expect(HandheldDeviceViewMessage.selectedControlID(fromMessageBody: ["type": "hover", "control": "keyC"]) == nil)
         #expect(HandheldDeviceViewMessage.selectedControlID(fromMessageBody: "keyC") == nil)
-        #expect(HandheldDeviceViewMessage.configurationScript(for: WhisPromptHandheld.device, selectedControlID: "keyA", reduceMotion: false)
-            .contains("\"keyA\":{\"name\":\"Key A\",\"part\":\"按键1\"}"))
+        let script = HandheldDeviceViewMessage.configurationScript(
+            for: WhisPromptHandheld.device, bindings: WhisPromptHandheld.device.defaultBindings, selectedControlID: "keyA", reduceMotion: false)
+        #expect(script.contains("\"name\":\"Key A\",\"part\":\"按键1\""))
+        // The labels beside the picture: what each gesture does, and nothing for one that does nothing.
+        #expect(script.contains("{\"action\":\"Dictate (hold)\",\"mark\":\"hold\"}"))
+        #expect(script.contains("{\"action\":\"Switch windows\",\"mark\":\"•\"}"))
+        let keyBGestures = HandheldDeviceViewMessage.gesturesByControlID(for: WhisPromptHandheld.device, bindings: WhisPromptHandheld.device.defaultBindings)["keyB"]
+        #expect(keyBGestures?.map { $0["mark"] } == ["•", "••"])
+        #expect(HandheldDeviceViewMessage.gesturesScript(for: WhisPromptHandheld.device, bindings: WhisPromptHandheld.device.defaultBindings)
+            .hasPrefix("window.handheldViewer && window.handheldViewer.setGestures({"))
     }
 }

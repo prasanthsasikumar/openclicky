@@ -15,7 +15,7 @@ import WebKit
 
 @MainActor
 struct HandheldViewerPageTests {
-    /// The smallest binary glTF: one triangle in one node, named like a control's part.
+    /// A tiny binary glTF: one triangle used twice, as a body and as a part named like a control's.
     private func makeOneTriangleModel(partName: String) -> Data {
         let positions: [Float32] = [0, 0, 0, 1, 0, 0, 0, 1, 0]
         let normals: [Float32] = [0, 0, 1, 0, 0, 1, 0, 0, 1]
@@ -24,8 +24,13 @@ struct HandheldViewerPageTests {
         normals.forEach { value in withUnsafeBytes(of: value.bitPattern.littleEndian) { binaryChunk.append(contentsOf: $0) } }
         let description: [String: Any] = [
             "asset": ["version": "2.0"],
-            "scenes": [["nodes": [0]]],
-            "nodes": [["name": partName, "mesh": 0]],
+            "scenes": [["nodes": [0, 1]]],
+            // A body, and above it the part that is a button. Both scaled like the real model's
+            // parts, which are in millimetres.
+            "nodes": [
+                ["name": "body", "mesh": 0, "scale": [0.001, 0.001, 0.001]],
+                ["name": partName, "mesh": 0, "scale": [0.001, 0.001, 0.001], "translation": [0, 0.002, 0]],
+            ],
             "meshes": [["primitives": [["attributes": ["POSITION": 0, "NORMAL": 1], "mode": 4]]]],
             "accessors": [
                 ["bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"],
@@ -61,7 +66,7 @@ struct HandheldViewerPageTests {
         let webViewConfiguration = WKWebViewConfiguration()
         webViewConfiguration.setURLSchemeHandler(HandheldViewerSchemeHandler(modelFile: modelFile), forURLScheme: HandheldViewerScheme.scheme)
         webViewConfiguration.userContentController.addUserScript(WKUserScript(
-            source: HandheldDeviceViewMessage.configurationScript(for: WhisPromptHandheld.device, selectedControlID: "keyA", reduceMotion: true),
+            source: HandheldDeviceViewMessage.configurationScript(for: WhisPromptHandheld.device, bindings: WhisPromptHandheld.device.defaultBindings, selectedControlID: "keyA", reduceMotion: true),
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 400, height: 300), configuration: webViewConfiguration)
         webView.load(URLRequest(url: HandheldViewerScheme.pageURL))
@@ -75,5 +80,19 @@ struct HandheldViewerPageTests {
             if pageState == "ready" || pageState.contains("could not") { break }
         }
         #expect(pageState == "ready")
+
+        // The chosen button lifts a little and stays on the device. (It once moved a thousand
+        // times too far, because its move was divided by its mesh's scale: the chosen button
+        // was gone and the others flew in from far away.)
+        // A page that is not on a screen is given no frames of its own, so one is asked for.
+        let distance = try? await webView.evaluateJavaScript("window.handheldViewer.drawNow(); window.handheldViewer.distanceFromRest('keyA')")
+        let distanceFromRest = (distance as? NSNumber)?.doubleValue ?? -1
+        #expect(distanceFromRest > 0.01)
+        #expect(distanceFromRest < 0.08)
+
+        // The button has its label beside the picture, saying what its gestures do.
+        let labelText = try? await webView.evaluateJavaScript("document.querySelector('.callout') ? document.querySelector('.callout').textContent : ''")
+        #expect((labelText as? String)?.contains("Key A") == true)
+        #expect((labelText as? String)?.contains("Dictate (hold)") == true)
     }
 }

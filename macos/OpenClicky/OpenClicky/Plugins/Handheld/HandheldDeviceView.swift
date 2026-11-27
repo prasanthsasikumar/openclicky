@@ -61,19 +61,52 @@ enum HandheldDeviceViewMessage {
         return message["control"] as? String
     }
 
+    /// The short mark a gesture goes by on the picture's labels.
+    static func mark(for gesture: HandheldGesture) -> String {
+        switch gesture {
+        case .single: return "•"
+        case .double: return "••"
+        case .longStart: return "hold"
+        case .down, .longEnd: return ""
+        }
+    }
+
+    /// What each control's gestures do, for the labels beside the picture: control id → a line
+    /// per gesture that does something.
+    static func gesturesByControlID(for device: HandheldDevice, bindings: HandheldBindings) -> [String: [[String: String]]] {
+        var gesturesByControlID: [String: [[String: String]]] = [:]
+        for control in device.controls where device.modelPartNameByControlID[control.id] != nil {
+            gesturesByControlID[control.id] = HandheldBindings.bindableGestures(of: control).compactMap { gesture in
+                let action = bindings.action(controlID: control.id, gesture: gesture)
+                guard action != .nothing else { return nil }
+                return ["mark": mark(for: gesture), "action": action.title]
+            }
+        }
+        return gesturesByControlID
+    }
+
+    private static func javaScriptLiteral(_ value: Any) -> String {
+        (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    }
+
+    /// Tells the page a binding changed, so its labels say what each gesture does now.
+    static func gesturesScript(for device: HandheldDevice, bindings: HandheldBindings) -> String {
+        "window.handheldViewer && window.handheldViewer.setGestures(\(javaScriptLiteral(gesturesByControlID(for: device, bindings: bindings))))"
+    }
+
     /// Written into the page before its script runs: which part of the model is which control,
-    /// which one is chosen, and whether motion is reduced.
-    static func configurationScript(for device: HandheldDevice, selectedControlID: String?, reduceMotion: Bool) -> String {
-        var controls: [String: [String: String]] = [:]
+    /// what its gestures do, which one is chosen, and whether motion is reduced.
+    static func configurationScript(for device: HandheldDevice, bindings: HandheldBindings, selectedControlID: String?, reduceMotion: Bool) -> String {
+        let gestures = gesturesByControlID(for: device, bindings: bindings)
+        var controls: [String: [String: Any]] = [:]
         for control in device.controls {
             guard let partName = device.modelPartNameByControlID[control.id] else { continue }
-            controls[control.id] = ["name": control.name, "part": partName]
+            controls[control.id] = ["name": control.name, "part": partName, "gestures": gestures[control.id] ?? []]
         }
         let configuration: [String: Any] = [
             "controls": controls, "selected": selectedControlID ?? NSNull(), "reduceMotion": reduceMotion,
         ]
-        let encoded = (try? JSONSerialization.data(withJSONObject: configuration, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-        return "window.handheldViewerConfiguration = \(encoded);"
+        return "window.handheldViewerConfiguration = \(javaScriptLiteral(configuration));"
     }
 
     /// A control id is only letters and digits; anything else never reaches the page's script.
@@ -126,7 +159,7 @@ struct HandheldDeviceView: NSViewRepresentable {
         let webViewConfiguration = WKWebViewConfiguration()
         webViewConfiguration.setURLSchemeHandler(HandheldViewerSchemeHandler(modelFile: HandheldDeviceModelFile.url(for: device)), forURLScheme: HandheldViewerScheme.scheme)
         webViewConfiguration.userContentController.addUserScript(WKUserScript(
-            source: HandheldDeviceViewMessage.configurationScript(for: device, selectedControlID: plugin.selectedControlID, reduceMotion: reduceMotion),
+            source: HandheldDeviceViewMessage.configurationScript(for: device, bindings: plugin.bindings, selectedControlID: plugin.selectedControlID, reduceMotion: reduceMotion),
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webViewConfiguration.userContentController.add(context.coordinator, name: HandheldDeviceViewMessage.handlerName)
 
@@ -136,6 +169,7 @@ struct HandheldDeviceView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
         context.coordinator.shownSelectedControlID = plugin.selectedControlID
+        context.coordinator.shownBindings = plugin.bindings
         // A press on the real device dips the same button on the picture.
         plugin.onControlPressed = { [weak coordinator = context.coordinator] controlID in
             coordinator?.callViewer("press", controlID: controlID)
@@ -145,6 +179,10 @@ struct HandheldDeviceView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        if context.coordinator.shownBindings != plugin.bindings {
+            context.coordinator.shownBindings = plugin.bindings
+            webView.evaluateJavaScript(HandheldDeviceViewMessage.gesturesScript(for: device, bindings: plugin.bindings), completionHandler: nil)
+        }
         guard context.coordinator.shownSelectedControlID != plugin.selectedControlID, let selectedControlID = plugin.selectedControlID else { return }
         context.coordinator.shownSelectedControlID = selectedControlID
         context.coordinator.callViewer("select", controlID: selectedControlID)
@@ -160,6 +198,7 @@ struct HandheldDeviceView: NSViewRepresentable {
         let plugin: HandheldPlugin
         weak var webView: WKWebView?
         var shownSelectedControlID: String?
+        var shownBindings: HandheldBindings?
 
         init(plugin: HandheldPlugin) {
             self.plugin = plugin
@@ -199,9 +238,9 @@ struct HandheldDeviceRow: View {
     var body: some View {
         VStack(spacing: 6) {
             HandheldDeviceView(plugin: plugin, device: device, reduceMotion: systemReduceMotion || DictationSettings.shared.reduceAnimation)
-                .frame(height: 300)
+                .frame(height: 340)
                 .accessibilityLabel("\(device.displayName). Click a button on it to choose what it does.")
-            Text("\(selectedControlName) · click a button on the device to choose another, drag to turn it")
+            Text("\(selectedControlName) · click a button or its label to choose another, drag the device to turn it")
                 .font(SettingsLook.caption)
                 .foregroundStyle(.secondary)
         }

@@ -3,16 +3,20 @@
 // tells the app which button was clicked so the page can show that button's choices.
 //
 // The app writes `window.handheldViewerConfiguration` before this runs:
-//   { controls: { keyA: { name: "Key A", part: "<the model's node name>" }, … },
+//   { controls: { keyA: { name: "Key A", part: "<the model's node name>",
+//                         gestures: [{ mark: "•", action: "Dictate (hold)" }, …] }, … },
 //     selected: "keyA", reduceMotion: false }
-// and afterwards calls `window.handheldViewer.select(id)` and `.press(id)`.
+// and afterwards calls `window.handheldViewer.select(id)`, `.press(id)` and
+// `.setGestures({ keyA: [{ mark, action }, …], … })` when a binding changes.
 // A click on a button posts { type: "select", control: id } to the app.
 
 import * as THREE from './three/three.module.min.js';
 
 const configuration = window.handheldViewerConfiguration || { controls: {}, selected: null, reduceMotion: false };
 const canvas = document.getElementById('device');
-const partLabel = document.getElementById('part-label');
+const calloutLayer = document.getElementById('callouts');
+const lineLayer = document.getElementById('lines');
+const ground = document.getElementById('ground');
 const statusLine = document.getElementById('status');
 
 // Colours by the role a part plays, matched on what its name contains. The device itself is
@@ -34,7 +38,11 @@ const hoverLift = 0.035;
 const pressDip = 0.03;
 const pressSeconds = 0.16;
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+// `?capture` keeps each finished frame in the canvas, which a screenshot tool needs to read it
+// back; on screen it is not needed and costs a copy per frame.
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias: true, alpha: true, preserveDrawingBuffer: location.search.includes('capture'),
+});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 50);
@@ -49,6 +57,10 @@ const turntable = new THREE.Group();
 scene.add(turntable);
 const restingYaw = 3.76;
 const restingPitch = 0.2;
+// The device floats: a slow rise and fall, a share of its size, with the faintest sway.
+const floatSeconds = 5.2;
+const floatHeight = 0.022;
+const floatSway = 0.018;
 let yaw = restingYaw;
 let pitch = restingPitch;
 
@@ -139,14 +151,19 @@ function placeDevice(device) {
   holder.add(device);
   turntable.add(holder);
 
+  const deviceBounds = new THREE.Box3().setFromObject(device);
   for (const [controlID, control] of Object.entries(configuration.controls)) {
     const mesh = device.children.find((child) => child.name === control.part);
     if (!mesh) continue;
+    mesh.geometry.computeBoundingBox();
     // A button moves along the axis it sticks out on: the largest part of the line from the
     // device's middle to the button's middle.
     const partCentre = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
     const fromDeviceCentre = partCentre.clone().sub(new THREE.Box3().setFromObject(device).getCenter(new THREE.Vector3()));
-    const relative = new THREE.Vector3(fromDeviceCentre.x / size.x, fromDeviceCentre.y / size.y, fromDeviceCentre.z / size.z);
+    // Measured against the device's size on each axis; a device with no depth on an axis has no
+    // direction along it.
+    const share = (distance, extent) => (extent > 0 ? distance / extent : 0);
+    const relative = new THREE.Vector3(share(fromDeviceCentre.x, size.x), share(fromDeviceCentre.y, size.y), share(fromDeviceCentre.z, size.z));
     const outward = new THREE.Vector3();
     const largest = Math.max(Math.abs(relative.x), Math.abs(relative.y), Math.abs(relative.z));
     if (largest === Math.abs(relative.x)) outward.set(Math.sign(relative.x), 0, 0);
@@ -155,9 +172,88 @@ function placeDevice(device) {
     mesh.userData.controlID = controlID;
     controlParts.set(controlID, {
       mesh, restPosition: mesh.position.clone(), outward,
+      // The middle of the part in its own space: where its label's line ends.
+      middle: mesh.geometry.boundingBox.getCenter(new THREE.Vector3()),
       travel: Math.max(size.x, size.y, size.z), lift: 0, dip: 0, pressedUntil: 0,
     });
   }
+  void deviceBounds;
+}
+
+// Where a part's middle is on the page, in pixels.
+function pagePoint(part) {
+  const point = part.mesh.localToWorld(part.middle.clone()).project(camera);
+  return { x: (point.x + 1) / 2 * canvas.clientWidth, y: (1 - point.y) / 2 * canvas.clientHeight };
+}
+
+/** Control id → { box, line, dot, side }. */
+const callouts = new Map();
+
+function gestureLines(gestures) {
+  return (gestures || []).map((gesture) => {
+    const line = document.createElement('div');
+    line.className = 'gesture';
+    const mark = document.createElement('b');
+    mark.textContent = gesture.mark;
+    line.append(mark, document.createTextNode(gesture.action));
+    line.title = gesture.action;
+    return line;
+  });
+}
+
+// One label per button, on the side of the device its button is on when the device rests, top to
+// bottom in the order the buttons are. They stay put while the device is turned; their lines follow.
+function buildCallouts() {
+  turntable.rotation.set(restingPitch, restingYaw, 0);
+  turntable.updateMatrixWorld(true);
+  const placed = [...controlParts].map(([controlID, part]) => ({ controlID, point: pagePoint(part) }));
+  for (const side of ['left', 'right']) {
+    const onThisSide = placed
+      .filter((entry) => (entry.point.x < canvas.clientWidth / 2) === (side === 'left'))
+      .sort((first, second) => first.point.y - second.point.y);
+    onThisSide.forEach((entry, index) => {
+      const control = configuration.controls[entry.controlID];
+      const box = document.createElement('div');
+      box.className = `callout ${side}`;
+      box.style[side] = '6px';
+      box.style.top = `${Math.round((index + 0.5) / onThisSide.length * 100)}%`;
+      box.style.transform = 'translateY(-50%)';
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = control.name;
+      box.append(name, ...gestureLines(control.gestures));
+      box.addEventListener('click', () => choose(entry.controlID));
+      box.addEventListener('pointerenter', () => { hoveredControlID = entry.controlID; showLooks(); wantFrame(); });
+      box.addEventListener('pointerleave', () => { hoveredControlID = null; showLooks(); wantFrame(); });
+      calloutLayer.append(box);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('r', '3.5');
+      lineLayer.append(line, dot);
+      callouts.set(entry.controlID, { box, line, dot, side });
+    });
+  }
+}
+
+function drawLines() {
+  const pageBox = canvas.getBoundingClientRect();
+  for (const [controlID, callout] of callouts) {
+    const part = controlParts.get(controlID);
+    const end = pagePoint(part);
+    const box = callout.box.getBoundingClientRect();
+    const startX = (callout.side === 'left' ? box.right : box.left) - pageBox.left;
+    const startY = box.top - pageBox.top + 15;
+    const elbowX = startX + (callout.side === 'left' ? 22 : -22);
+    callout.line.setAttribute('points', `${startX},${startY} ${elbowX},${startY} ${end.x},${end.y}`);
+    callout.dot.setAttribute('cx', end.x);
+    callout.dot.setAttribute('cy', end.y);
+  }
+}
+
+function choose(controlID) {
+  window.handheldViewer.select(controlID);
+  window.handheldViewer.press(controlID);
+  window.webkit?.messageHandlers?.handheld?.postMessage({ type: 'select', control: controlID });
 }
 
 function showLooks() {
@@ -166,6 +262,11 @@ function showLooks() {
     const isHovered = controlID === hoveredControlID;
     part.mesh.material.emissive.copy(highlightColour);
     part.mesh.material.emissiveIntensity = isSelected ? 0.55 : (isHovered ? 0.28 : 0);
+    const callout = callouts.get(controlID);
+    if (callout) {
+      callout.box.classList.toggle('chosen', isSelected);
+      callout.line.classList.toggle('chosen', isSelected);
+    }
   }
 }
 
@@ -183,13 +284,26 @@ function drawFrame(now) {
       part.dip += (wantsDip - part.dip) * 0.35;
     }
     if (Math.abs(wantsLift - part.lift) > 0.002 || Math.abs(wantsDip - part.dip) > 0.002 || wantsDip === 1) somethingIsStillMoving = true;
+    // A part's position is in the device's own space, the same space its size was measured in,
+    // whatever scale the part's mesh carries (the model's parts are in millimetres, scaled down).
     const distance = (part.lift * hoverLift - part.dip * pressDip) * part.travel;
-    part.mesh.position.copy(part.restPosition).addScaledVector(part.outward, distance / part.mesh.scale.x);
+    part.mesh.position.copy(part.restPosition).addScaledVector(part.outward, distance);
   }
-  turntable.rotation.set(pitch, yaw, 0);
+  // The float: up and down and the faintest sway, still when motion is reduced. Its shadow on
+  // the ground shrinks a little as the device rises.
+  const floatPhase = configuration.reduceMotion ? 0 : Math.sin(now / 1000 * (2 * Math.PI / floatSeconds));
+  turntable.position.y = floatPhase * floatHeight * 1.75;
+  turntable.rotation.set(pitch, yaw + floatPhase * floatSway, 0);
+  turntable.updateMatrixWorld(true);
+  ground.style.transform = `scale(${1 - floatPhase * 0.06})`;
+  ground.style.opacity = String(0.9 - floatPhase * 0.12);
   renderer.render(scene, camera);
-  if (somethingIsStillMoving) wantFrame();
+  drawLines();
+  // The float never ends, so while the page can be seen there is always a next frame.
+  if (somethingIsStillMoving || (!configuration.reduceMotion && !document.hidden)) wantFrame();
 }
+
+document.addEventListener('visibilitychange', wantFrame);
 
 // Which button is under the pointer, if any.
 const raycaster = new THREE.Raycaster();
@@ -229,13 +343,6 @@ canvas.addEventListener('pointermove', (pointerEvent) => {
     wantFrame();
   }
   canvas.style.cursor = controlID ? 'pointer' : 'grab';
-  if (controlID) {
-    partLabel.textContent = configuration.controls[controlID].name;
-    partLabel.style.transform = `translate(${pointerEvent.clientX + 14}px, ${pointerEvent.clientY + 12}px)`;
-    partLabel.style.opacity = '1';
-  } else {
-    partLabel.style.opacity = '0';
-  }
 });
 
 canvas.addEventListener('pointerup', (pointerEvent) => {
@@ -243,10 +350,7 @@ canvas.addEventListener('pointerup', (pointerEvent) => {
   dragStart = null;
   if (!wasAClick) return;
   const controlID = controlUnder(pointerEvent);
-  if (!controlID) return;
-  window.handheldViewer.select(controlID);
-  window.handheldViewer.press(controlID);
-  window.webkit?.messageHandlers?.handheld?.postMessage({ type: 'select', control: controlID });
+  if (controlID) choose(controlID);
 });
 
 canvas.addEventListener('pointerleave', () => {
@@ -255,7 +359,6 @@ canvas.addEventListener('pointerleave', () => {
     showLooks();
     wantFrame();
   }
-  partLabel.style.opacity = '0';
 });
 
 // A double click puts the device back the way it rests.
@@ -280,6 +383,33 @@ window.handheldViewer = {
     wantFrame();
     setTimeout(wantFrame, pressSeconds * 1000 + 20);
   },
+  /** How far a button is from where it rests, as a share of the device's size. For tests. */
+  distanceFromRest(controlID) {
+    const part = controlParts.get(controlID);
+    if (!part) return null;
+    return part.mesh.position.distanceTo(part.restPosition) / part.travel;
+  },
+  /** A binding changed: the labels say what each gesture does now. */
+  setGestures(gesturesByControlID) {
+    for (const [controlID, gestures] of Object.entries(gesturesByControlID)) {
+      const callout = callouts.get(controlID);
+      if (!callout) continue;
+      callout.box.querySelectorAll('.gesture').forEach((line) => line.remove());
+      callout.box.append(...gestureLines(gestures));
+    }
+    wantFrame();
+  },
+  /** Draws one frame at once. For tests: a page that is not on screen is given no frames. */
+  drawNow() {
+    drawFrame(performance.now());
+  },
+  /** What the last frame drew and onto what. For tests and for finding a blank picture's cause. */
+  drawnState() {
+    return {
+      triangles: renderer.info.render.triangles, canvasWidth: canvas.width, canvasHeight: canvas.height,
+      cssWidth: canvas.clientWidth, cssHeight: canvas.clientHeight, turntableY: turntable.position.y,
+    };
+  },
   /** For looking at it from outside the app: the angles, so a good resting view can be found. */
   turnTo(newYaw, newPitch) {
     yaw = newYaw;
@@ -293,6 +423,7 @@ resize();
 
 loadModel('model.glb').then((device) => {
   placeDevice(device);
+  buildCallouts();
   showLooks();
   statusLine.remove();
   wantFrame();
