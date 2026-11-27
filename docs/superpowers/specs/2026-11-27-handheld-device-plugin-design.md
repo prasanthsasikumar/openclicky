@@ -174,9 +174,8 @@ Coding agents plugin.
 When the device connects and has a microphone, the settings page offers "Use its microphone while
 it is connected" (off by default). On, takes and questions record from it while it is present and
 return to the person's own choice when it is unplugged; the stored `preferredMicrophoneUID` is
-never overwritten. It applies to dictation takes and to ⌃⌥ questions, not to always-on
-hands-free, where another microphone switches echo cancellation off (`RealtimeVoiceClient`); the
-row's detail line says so. (Designer's call.) The choice reaches three consumers wired together
+never overwritten. (First built for dictation takes and ⌃⌥ questions only; since 2026-11-27 it
+applies to every lane, see "What changed while building".) The choice reaches three consumers wired together
 in `CompanionManager.start` (about lines 1448–1455), and `MicrophoneDevices.keptEngineIsStale`
 already guards a device that went away. Builder's call how: the smallest hook that allows it. The crash of
 2026-11-07 (tap format after a device change) and the closed-lid rule are in this area; a
@@ -261,9 +260,11 @@ line.
   read: neither records a permission prompt, so a prompt and a long-running command look the same.
   At 10 s every build or test run would have posted a notice. No new parser state was needed: a
   stall is the existing tool activity plus the log's last write time.
-- **The device microphone does not cover fast voice.** It stands in for dictation and classic
-  ⌃⌥ questions; the Realtime client (fast voice ⌃⌥ and hands-free) keeps the person's microphone,
-  because it cannot tell push-to-talk from always-on when choosing echo cancellation.
+- **The device microphone covers every lane** (changed 2026-11-27 at the owner's request; it
+  first stood in for dictation and classic ⌃⌥ questions only). A microphone that hears some
+  lanes and not others was confusing, so it now stands in for the person's choice everywhere,
+  fast voice and hands-free included. On fast voice it records without echo cancellation, as
+  any microphone other than the Mac's default does.
 - **Binding rows carry the device id** (`handheld.binding.<device>.<control>.<gesture>`): a
   page's rows are fixed until it is drawn again, so they are built for every supported device and
   shown for the one the page is about.

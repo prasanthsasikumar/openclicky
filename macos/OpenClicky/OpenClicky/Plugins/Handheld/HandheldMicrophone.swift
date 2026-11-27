@@ -6,9 +6,10 @@
 //  person's chosen microphone without ever replacing that choice: unplug the device, switch the
 //  option or the plugin off, and takes are heard through their own microphone again.
 //
-//  For dictation and for questions on the classic ⌃⌥ lane. Fast voice and hands-free keep the
-//  person's own microphone: there another microphone switches echo cancellation off
-//  (`RealtimeVoiceClient`), and a device held near the speakers would hear Clicky's own answers.
+//  For everything that records: dictation, questions, fast voice and hands-free. One microphone
+//  for every lane, the same as the person's own choice in Settings (asked for on 2026-11-27: a
+//  microphone that hears some lanes and not others is confusing). On fast voice any microphone
+//  other than the Mac's default records without echo cancellation (`RealtimeVoiceClient`).
 //
 
 import Foundation
@@ -17,7 +18,7 @@ import Foundation
 enum HandheldMicrophone {
     static let useDeviceMicrophoneKey = "openclicky.handheld.useDeviceMicrophone"
     static let rowTitle = "Use its microphone while it is connected"
-    static let rowDetail = "For dictation and ⌃⌥ questions. Fast voice and hands-free keep your own microphone."
+    static let rowDetail = "For everything OpenClicky listens to: dictation, questions, fast voice and hands-free."
 
     /// The microphone takes and questions record from: the handheld's while the plugin is on, the
     /// option is on, the device is connected and its microphone is present; otherwise the

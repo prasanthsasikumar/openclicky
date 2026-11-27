@@ -82,7 +82,7 @@ Open TextEdit with a scratch document and click into it before each step.
 - [ ] Unplug between takes: the next take (fn) uses your own microphone again.
 - [ ] Unplug during a take: the take ends, no crash (no new `.ips` in
       `~/Library/Logs/DiagnosticReports`).
-- [ ] With fast voice on, ⌃⌥ and hands-free still use your own microphone.
+- [ ] With fast voice on, ⌃⌥ and hands-free record from the handheld's microphone too.
 
 ## 8. The battery byte
 

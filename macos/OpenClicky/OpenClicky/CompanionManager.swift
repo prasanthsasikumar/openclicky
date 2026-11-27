@@ -1475,15 +1475,19 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    /// Hands the microphone to everything that records. Takes and classic ⌃⌥ questions use the
-    /// person's choice, or a connected handheld's own microphone when that was asked for
-    /// (`HandheldMicrophone`); fast voice and hands-free always use the person's choice.
+    /// The one microphone everything records from: the person's choice, or a connected handheld's
+    /// own microphone when that was asked for (`HandheldMicrophone`). One microphone for every
+    /// lane, so what hears a take is never a different device from what hears a question.
+    private var microphoneUIDForEverything: String? {
+        HandheldMicrophone.currentUID(personsChoiceUID: dictationSettings.preferredMicrophoneUID)
+    }
+
+    /// Hands that microphone to everything that records.
     private func applyMicrophoneChoice() {
-        let personsChoiceUID = dictationSettings.preferredMicrophoneUID
-        let takesAndQuestionsUID = HandheldMicrophone.currentUID(personsChoiceUID: personsChoiceUID)
-        dictationTakeController.dictationManager.preferredMicrophoneUID = takesAndQuestionsUID
-        buddyDictationManager.preferredMicrophoneUID = takesAndQuestionsUID
-        realtimeVoiceClient.preferredMicrophoneUID = personsChoiceUID
+        let microphoneUID = microphoneUIDForEverything
+        dictationTakeController.dictationManager.preferredMicrophoneUID = microphoneUID
+        buddyDictationManager.preferredMicrophoneUID = microphoneUID
+        realtimeVoiceClient.preferredMicrophoneUID = microphoneUID
     }
 
     private func handleCompanionShortcut(_ shortcutEvent: CompanionShortcutEvent) {
@@ -3231,8 +3235,7 @@ extension CompanionManager {
         guard !isStandardHandsFreeOn else { return }
         isStandardHandsFreeOn = true
         standardHandsFreeQuietSince = Date()
-        // Hands-free keeps the person's own microphone, never a handheld's standing in for it.
-        let microphone = dictationSettings.preferredMicrophoneUID
+        let microphone = microphoneUIDForEverything
         Task { [weak self] in
             guard let self else { return }
             do {
