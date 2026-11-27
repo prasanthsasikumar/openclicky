@@ -24,6 +24,10 @@
 //
 //  --language asks the lesson in that language (ReplyLanguage: ur for Urdu), whatever Settings say.
 //
+//  --scroll <folder> checks that marks pointing at the screen follow it when it scrolls (ScrollFollowSmoke).
+//
+//    OpenClicky --openclicky-drawstage-smoke --scroll <folder>
+//
 
 using System.Collections.Concurrent;
 using System.IO;
@@ -72,7 +76,10 @@ internal static class DrawStageSmoke
                 var followUp = thenIndex >= 0 && thenIndex + 1 < args.Length ? args[thenIndex + 1] : null;
                 var programIndex = Array.IndexOf(args, "--program");
                 var programOut = programIndex >= 0 && programIndex + 1 < args.Length ? args[programIndex + 1] : null;
-                exitCode = programPath is not null && (programPath.StartsWith("reply:", StringComparison.Ordinal) || programPath.StartsWith("lesson:", StringComparison.Ordinal))
+                var scrollIndex = Array.IndexOf(args, "--scroll");
+                exitCode = scrollIndex >= 0 && scrollIndex + 1 < args.Length
+                    ? await ScrollFollowSmoke.RunAsync(args[scrollIndex + 1])
+                    : programPath is not null && (programPath.StartsWith("reply:", StringComparison.Ordinal) || programPath.StartsWith("lesson:", StringComparison.Ordinal))
                     ? await RunAnswerAsync(programPath, followUp, shotPath, args.Contains("--voice"), args.Contains("--save"), args.Contains("--pieces"), programOut,
                         args.Contains("--replay"))
                     : await RunAsync(programPath, shotPath, pace);

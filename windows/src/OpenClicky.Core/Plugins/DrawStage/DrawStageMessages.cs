@@ -4,8 +4,8 @@
 //
 //  The messages between the app and the drawing stage's page (Assets/DrawStage/stage.js), as JSON
 //  objects with a "type". The app sends beginStream, continueStream, feed, lineStarted, lineEnded,
-//  finishNow, clear, measure, recording, saving, photo and piece; the page sends ready, line, programRan,
-//  lineDue, finished, bounds, save, close, photoWanted, pieceWanted, log and error.
+//  finishNow, clear, measure, recording, saving, photo, piece and scrolled; the page sends ready, line, programRan,
+//  lineDue, finished, bounds, save, close, photoWanted, pieceWanted, screenMarks, log and error.
 //
 
 using System.Text.Json;
@@ -118,6 +118,40 @@ public static class DrawStageMessages
         }
         return message.ToJsonString();
     }
+
+    /// <summary>The page's "screenMarks": the marks pointing at the screen under them, each its id and box in page pixels;
+    /// null when the message isn't one.</summary>
+    public static IReadOnlyList<(string Id, double X, double Y, double Width, double Height)>? ScreenMarks(string json)
+    {
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject message || message["type"]?.GetValue<string>() != "screenMarks") return null;
+            var marks = new List<(string, double, double, double, double)>();
+            foreach (var node in message["marks"] as JsonArray ?? [])
+            {
+                if (node is not JsonObject mark || mark["id"] is not JsonValue idValue || !idValue.TryGetValue<string>(out var id)) continue;
+                double Num(string key) => mark[key] is JsonValue value && value.TryGetValue<double>(out var d) && double.IsFinite(d) ? d : 0;
+                marks.Add((id, Num("x"), Num("y"), Num("w"), Num("h")));
+            }
+            return marks;
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Marks to move with the screen under them (page pixels): each by dx, dy; the part that scrolled runs from
+    /// <c>from</c> to <c>to</c> along the way it moved, and a mark moved out of it has scrolled out of sight.</summary>
+    public static string Scrolled(IEnumerable<(string Id, double Dx, double Dy, double From, double To)> moves) => new JsonObject
+    {
+        ["type"] = "scrolled",
+        ["moves"] = new JsonArray([.. moves.Select(move => (JsonNode)new JsonObject
+        {
+            ["id"] = move.Id, ["dx"] = Math.Round(move.Dx, 2), ["dy"] = Math.Round(move.Dy, 2),
+            ["from"] = Math.Round(move.From, 2), ["to"] = Math.Round(move.To, 2),
+        })]),
+    }.ToJsonString();
 
     /// <summary>"image/png", "image/gif", "image/webp", else "image/jpeg", from the file's first bytes.</summary>
     public static string MediaTypeOf(byte[] data) =>

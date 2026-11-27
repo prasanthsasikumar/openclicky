@@ -9,7 +9,8 @@
 //  content is a Windows.UI.Composition visual tree, and WebView2 runs in visual hosting mode
 //  (CoreWebView2CompositionController) with a transparent background: the page's alpha reaches
 //  the desktop. Left out of screenshots like every floating OpenClicky window, so the next
-//  question's screenshot sees the screen, not the drawing.
+//  question's screenshot sees the screen, not the drawing. Marks pointing at the screen follow it
+//  when it scrolls (StageScrollWatch).
 //
 //  The page loads from the app's folder through a virtual host and may not navigate anywhere
 //  else; it has no network (its Content-Security-Policy) and no bridge but web messages.
@@ -55,6 +56,7 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
     private System.Windows.Threading.DispatcherTimer? pointerWatch;
     private bool takesMouse;
     private bool dragging;
+    private readonly StageScrollWatch scrollWatch;
 
     public Action<string>? MessageReceived { get; set; }
 
@@ -64,6 +66,7 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
     public DrawStageWindow()
     {
         windowProcedure = WindowProcedure;
+        scrollWatch = new StageScrollWatch(Post);
     }
 
     /// <summary>The stage has just come up over every topmost window (it re-asserts HWND_TOPMOST when it is placed): the
@@ -82,6 +85,7 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
     public void Hide()
     {
         // Hidden, the page gets no frames (its loops and the 3D figures stop) until it is shown again.
+        scrollWatch.Pause();
         if (webView is not null) webView.IsVisible = false;
         if (windowHandle != 0) ShowWindow(windowHandle, SW_HIDE);
     }
@@ -100,6 +104,7 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
 
     public void Dispose()
     {
+        scrollWatch.Pause();
         webView?.Close();
         webView = null;
         windowTarget?.Dispose();
@@ -224,6 +229,7 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
         {
             var json = args.WebMessageAsJson;
             if (json.Contains("\"figures\"", StringComparison.Ordinal)) NoteFigureBoxes(json);
+            if (json.Contains("\"screenMarks\"", StringComparison.Ordinal) && placement is { } where) scrollWatch.Note(json, where.Frame, where.Scale);
             MessageReceived?.Invoke(json);
         };
         webView = controller;
@@ -265,6 +271,7 @@ internal sealed class DrawStageWindow : IDrawStageSurface, IDisposable
         webView.Bounds = new System.Drawing.Rectangle(0, 0, Math.Max(1, frame.Width), Math.Max(1, frame.Height));
         webView.IsVisible = true;
         NativeSetWindowPos(windowHandle, HWND_TOPMOST, frame.Left, frame.Top, Math.Max(1, frame.Width), Math.Max(1, frame.Height), SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        scrollWatch.Resume();
         CameToFront?.Invoke();
     }
 

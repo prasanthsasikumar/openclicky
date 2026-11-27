@@ -77,6 +77,7 @@ running up to about 3× faster or 2× slower than its natural speed so they fini
 | `measure` | answer with the drawing's box (`bounds`) |
 | `recording {on}` | while the drawing is recorded: no caption, no buttons, no mouse, paper behind the drawing's box |
 | `saving {text, state, fraction?}` | how a save is going (`working`, with how far through when known) or ended (`done`, `failed`): a bar beside the drawing |
+| `scrolled {moves: [{id, dx, dy, from, to}]}` | the screen under these marks scrolled: each glides by `dx`, `dy` page pixels; `from`..`to` is the part that scrolled, along the way it moved (a mark that leaves it has scrolled out of sight) |
 
 | Page → app | |
 |---|---|
@@ -89,6 +90,7 @@ running up to about 3× faster or 2× slower than its natural speed so they fini
 | `figurePart {text}` / `save {text}` | a part of a figure was clicked / the Picture or Video button was (`text`: `picture`, `video`) |
 | `close` | the drawing's close button was clicked: it goes, with its answer and any save, as with esc |
 | `bounds {x, y, w, h, pageWidth, pageHeight}` | the drawing's box: its cards, photos, figures and their tags |
+| `screenMarks {marks: [{id, x, y, w, h}]}` | the marks pointing at the screen under them, with their boxes in page pixels, whenever they change |
 | `log {text}` / `error {text}` | warnings, statement errors, a stopped program |
 
 ## Answering a question by drawing (phase 1)
@@ -388,6 +390,28 @@ card's box with the figures'), so the card can be grabbed even while it is still
 over the screen (pointing at what is under them) are never movable. A new drawing goes where it is drawn; a replay for
 a video keeps it where it was moved.
 
+## Following a scrolling page
+
+Marks drawn straight over the screen point at what is under them: a ring round a button, an arrow from the card to a
+line of code, a highlight, a word beside something. When that part of the screen scrolls they go with it. A mark is
+one of these when it is outside every card and photo (or any mark, when the drawing has none); an arrow from a card
+to the screen keeps its tail on the card and only its end moves. The page lists them with their boxes
+(`screenMarks`); while there are any, the app grabs a strip of the screen under each one, 240 pixels wide and the
+monitor's height, about ten times a second (the stage window is left out of screen grabs, so it sees the page, not
+the drawing). Marks close together share a strip.
+
+How a strip moved comes from matching rows of pixels (`ScrollFollow`): each row is hashed, and each row that changed
+votes for the shift that puts it on an identical row of the last grab. Rows of one colour and rows that didn't change
+don't vote, so a still screen, or a page whose lines repeat, never looks scrolled. The rows that agree give the part of
+the screen that scrolled: a mark there glides by the shift (an ease of about a fifth of a second), one on a toolbar
+above it stays, and one that the shift takes out of that part has scrolled out of sight: it fades and is forgotten.
+Columns do the same for a sideways scroll. A move is only believed up to 1.5 s after the person's last input (a wheel
+turned, a key, the mouse), so a video or an animation under a mark moves nothing; while the person does nothing the
+strips are grabbed twice a second. When OpenClicky's windows are let into screen captures
+(`--openclicky-capturable-windows`) the grab would see the drawing itself, so marks stay where they were drawn.
+`--openclicky-drawstage-smoke --scroll <folder>` checks it with a test page that scrolls by itself (before.png,
+after.png and the log go in the folder).
+
 ## Marking part of the screen
 
 The island's marker button (or Ctrl+Alt+M) dims the screen under the pointer a little and lets you draw a loop with a
@@ -481,6 +505,8 @@ dotnet build OpenClicky.Windows.sln
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke "lesson:how does a jet engine work?" --voice
 # a follow-up that adds to the drawing, then saving it (a PNG and an MP4 in Videos\OpenClicky)
 .\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke reply:src\OpenClicky.Windows\Assets\DrawStage\samples\jet-engine-cutaway-3d.js --then reply:src\OpenClicky.Windows\Assets\DrawStage\samples\jet-engine-followup-reply.md --voice --save
+# marks pointing at the screen follow a test page as it scrolls (before.png, after.png and log.txt in the folder)
+.\src\OpenClicky.Windows\bin\Debug\net8.0-windows10.0.19041.0\OpenClicky.exe --openclicky-drawstage-smoke --scroll scroll-test
 ```
 
 Set `OPENCLICKY_DRAWSTAGE_DEVTOOLS=1` to allow the page's dev tools and context menu. To preview the page in an

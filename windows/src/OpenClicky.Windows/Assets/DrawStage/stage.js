@@ -73,6 +73,10 @@
     svg.appendChild(defs());
     labelLayer = el('g', { class: 'labels' });
     svg.appendChild(labelLayer);
+    screenMarks = new Map();
+    if (glideFrame) cancelAnimationFrame(glideFrame);
+    glideFrame = 0;
+    reportScreenMarks();
   }
 
   // A new stream of statements: nothing pending, no lines, no button (what is drawn stays).
@@ -631,21 +635,8 @@
     if (m.do === 'text') labelLayer.appendChild(group); else svg.insertBefore(group, labelLayer);
     const rnd = random(index + 1);
     switch (m.do) {
-      case 'line': {
-        const pts = m.smooth ? m.pts : handPoints(m.pts, rnd, false);
-        stroke(group, smoothPath(pts), m, seconds);
-        break;
-      }
-      case 'arrow': {
-        const shaft = Math.max(0.1, seconds - 0.15);
-        stroke(group, smoothPath(m.smooth ? m.pts : handPoints(m.pts, rnd, false)), m, shaft);
-        const tip = m.pts[m.pts.length - 1], back = m.pts[m.pts.length - 2];
-        const angle = Math.atan2(tip[1] - back[1], tip[0] - back[0]);
-        const size = Math.min(22, Math.max(10, length(m.pts) * 0.25));
-        for (const side of [-1, 1]) {
-          const a = angle + Math.PI + side * 0.5;
-          stroke(group, smoothPath([tip, [tip[0] + Math.cos(a) * size, tip[1] + Math.sin(a) * size]]), m, 0.12, shaft);
-        }
+      case 'line': case 'arrow': {
+        lineInto(group, m, m.pts, seconds, rnd);
         break;
       }
       case 'poly': {
@@ -746,6 +737,149 @@
       default:
         log('unknown mark: ' + m.do);
     }
+    followScreen(m, group, index);
+  }
+
+  // A line or an arrow along pts (the hand's wobble unless smooth): an arrow's head is drawn in its last 0.15 s. With
+  // seconds 0 it is there at once (an arrow drawn again where the screen moved it).
+  function lineInto(group, m, pts, seconds, rnd) {
+    const path = smoothPath(m.smooth ? pts : handPoints(pts, rnd, false));
+    if (m.do !== 'arrow') { stroke(group, path, m, seconds); return; }
+    const shaft = seconds > 0 ? Math.max(0.1, seconds - 0.15) : 0;
+    stroke(group, path, m, shaft);
+    const tip = pts[pts.length - 1], back = pts[pts.length - 2];
+    const angle = Math.atan2(tip[1] - back[1], tip[0] - back[0]);
+    const size = Math.min(22, Math.max(10, length(pts) * 0.25));
+    for (const side of [-1, 1]) {
+      const a = angle + Math.PI + side * 0.5;
+      stroke(group, smoothPath([tip, [tip[0] + Math.cos(a) * size, tip[1] + Math.sin(a) * size]]), m, seconds > 0 ? 0.12 : 0, shaft);
+    }
+  }
+
+  // ------------------------------------------------------------------ marks that follow the screen
+  // A mark drawn straight over the screen (outside every card and photo, or any mark when there is none) points at what
+  // is under it: a ring round a button, an arrow to a line of code. The page lists those marks for the app (screenMarks:
+  // each one's id and box in page pixels), which watches the screen under them; when that scrolls the app says so
+  // (scrolled) and they glide along with it. One that goes out of the part that scrolled has scrolled out of sight: it
+  // fades and is forgotten. An arrow from a card to the screen keeps its tail on the card; only its points outside move.
+  const FOLLOWS = new Set(['line', 'arrow', 'poly', 'rect', 'ellipse', 'dot', 'text', 'highlight']);
+  const GLIDE = 0.22, FORGET = 0.3, PROBE_PAD = 6;
+  let screenMarks = new Map(), screenMarkCount = 0, lastScreenMarks = '[]', glideFrame = 0;
+
+  const boxOf = pts => {
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  };
+
+  // What is drawn in canvas units, for each kind that can point at the screen.
+  function markBox(m, group) {
+    switch (m.do) {
+      case 'line': case 'arrow': case 'poly': return boxOf(m.pts);
+      case 'rect': case 'highlight': return { x: m.at[0], y: m.at[1], w: m.w, h: m.h };
+      case 'ellipse': return { x: m.at[0] - m.rx, y: m.at[1] - m.ry, w: 2 * m.rx, h: 2 * m.ry };
+      case 'dot': return { x: m.at[0] - m.r, y: m.at[1] - m.r, w: 2 * m.r, h: 2 * m.r };
+      case 'text': {
+        const text = group.querySelector('text');
+        const b = text ? text.getBBox() : null;
+        return b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null;
+      }
+      default: return null;
+    }
+  }
+
+  function followScreen(m, group, index) {
+    if (!FOLLOWS.has(m.do)) return;
+    const frames = cards.slice();
+    for (const photo of photos.values()) frames.push(photo.box);
+    const onScreen = p => !frames.some(f => p[0] >= f.x && p[0] <= f.x + f.w && p[1] >= f.y && p[1] <= f.y + f.h);
+    let outside = null, box;
+    if (m.do === 'line' || m.do === 'arrow') {
+      outside = m.pts.map(onScreen);
+      if (!outside.some(Boolean)) return;
+      if (outside.every(Boolean)) outside = null;
+      box = boxOf(outside ? m.pts.filter((_, i) => outside[i]) : m.pts);
+    } else {
+      box = markBox(m, group);
+      if (!box || !onScreen([box.x + box.w / 2, box.y + box.h / 2])) return;
+    }
+    // An unseen box over what the mark points at: where it is on the page, whatever moved the board.
+    const probe = el('rect', {
+      x: box.x - PROBE_PAD, y: box.y - PROBE_PAD, width: box.w + 2 * PROBE_PAD, height: box.h + 2 * PROBE_PAD,
+      fill: 'none', stroke: 'none', 'pointer-events': 'none'
+    });
+    group.appendChild(probe);
+    const id = 'm' + (++screenMarkCount);
+    screenMarks.set(id, {
+      id, m, group, probe, index, outside, from: [box.x - PROBE_PAD, box.y - PROBE_PAD],
+      at: [0, 0], start: [0, 0], to: [0, 0], since: 0, leaving: false
+    });
+    reportScreenMarks();
+  }
+
+  function reportScreenMarks() {
+    const marks = [];
+    for (const mark of screenMarks.values()) {
+      if (mark.leaving) continue;
+      const r = mark.probe.getBoundingClientRect();
+      marks.push({ id: mark.id, x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) });
+    }
+    const key = JSON.stringify(marks);
+    if (key === lastScreenMarks) return;
+    lastScreenMarks = key;
+    send({ type: 'screenMarks', marks });
+  }
+
+  // The app's "scrolled": each mark moves by (dx, dy) page pixels; the part of the screen that scrolled runs from..to
+  // along the way it moved (page pixels).
+  function followScroll(message) {
+    const t = now();
+    for (const move of Array.isArray(message.moves) ? message.moves : []) {
+      const mark = screenMarks.get(move.id);
+      if (!mark || mark.leaving || !isFinite(move.dx) || !isFinite(move.dy)) continue;
+      const r = mark.probe.getBoundingClientRect(), wide = Number(mark.probe.getAttribute('width'));
+      const k = wide > 0 && r.width > 0 ? r.width / wide : 1;
+      mark.start = mark.at.slice();
+      mark.to = [mark.to[0] + move.dx / k, mark.to[1] + move.dy / k];
+      mark.since = t;
+      const centre = move.dx !== 0 ? r.left + r.width / 2 + move.dx : r.top + r.height / 2 + move.dy;
+      if (isFinite(move.from) && isFinite(move.to) && (centre < move.from || centre >= move.to)) mark.leaving = true;
+    }
+    if (!glideFrame) glideFrame = requestAnimationFrame(glideMarks);
+    reportScreenMarks();
+  }
+
+  function glideMarks() {
+    glideFrame = 0;
+    const t = now();
+    let moving = false;
+    for (const mark of [...screenMarks.values()]) {
+      const p = clamp((t - mark.since) / GLIDE, 0, 1), eased = 1 - Math.pow(1 - p, 3);
+      placeMark(mark, [mark.start[0] + (mark.to[0] - mark.start[0]) * eased, mark.start[1] + (mark.to[1] - mark.start[1]) * eased]);
+      if (p < 1) moving = true;
+      else if (mark.leaving) forgetMark(mark);
+    }
+    if (moving) glideFrame = requestAnimationFrame(glideMarks);
+    else reportScreenMarks();
+  }
+
+  function placeMark(mark, at) {
+    if (at[0] === mark.at[0] && at[1] === mark.at[1]) return;
+    mark.at = at;
+    mark.probe.setAttribute('x', mark.from[0] + (mark.outside ? at[0] : 0));
+    mark.probe.setAttribute('y', mark.from[1] + (mark.outside ? at[1] : 0));
+    if (!mark.outside) { mark.group.setAttribute('transform', `translate(${at[0].toFixed(2)} ${at[1].toFixed(2)})`); return; }
+    // An arrow from a card: drawn again with its points outside the card moved.
+    for (const node of [...mark.group.childNodes]) if (node !== mark.probe) node.remove();
+    const pts = mark.m.pts.map((p, i) => mark.outside[i] ? [p[0] + at[0], p[1] + at[1]] : p);
+    lineInto(mark.group, mark.m, pts, 0, random(mark.index + 1));
+    mark.group.appendChild(mark.probe);
+  }
+
+  function forgetMark(mark) {
+    screenMarks.delete(mark.id);
+    const gone = mark.group.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FORGET * 1000, fill: 'forwards' });
+    gone.onfinish = () => mark.group.remove();
   }
 
   // ------------------------------------------------------------------ photos the app found
@@ -807,6 +941,7 @@
   // bottom corner from the start.
   let dragArea = null, hitsCheckedAt = 0, lastHits = '';
   function showTools() {
+    reportScreenMarks();
     const finished = remembered && finishedSent && !recording;
     const canMove = movable();
     const box = recording ? null : contentBounds();
@@ -1069,6 +1204,7 @@
       case 'finishNow': finishing = true; break;
       case 'photo': showPhoto(message); break;
       case 'piece': if (window.Figure3D) window.Figure3D.pieceArrived(message); break;
+      case 'scrolled': followScroll(message); break;
       case 'saving': showSaving(message); break;
       case 'clear': reset(); resetPlace(); hideSaving(); break;
       default: log('unknown message: ' + message.type);
