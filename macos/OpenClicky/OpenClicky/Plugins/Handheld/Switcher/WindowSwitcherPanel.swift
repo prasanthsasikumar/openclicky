@@ -34,6 +34,12 @@ final class HandheldWindowSwitcher {
         }
     }
 
+    /// Closes the stack without going to any window, if it is open (tab cycling is taking the wheel).
+    func close() {
+        guard model.isOpen else { return }
+        dismiss()
+    }
+
     private func open(reduceMotion: Bool) {
         model.open(with: SwitcherWindowList.current())
         guard model.isOpen else {

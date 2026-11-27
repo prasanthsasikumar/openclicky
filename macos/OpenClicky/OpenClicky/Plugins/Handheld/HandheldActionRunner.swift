@@ -29,6 +29,8 @@ protocol HandheldActionHost: AnyObject {
     func goToWaitingTerminal()
     /// Opens the stack of open windows, or with it open goes to the window in front of it.
     func toggleWindowSwitcher()
+    /// Closes the stack of open windows without going to any of them, if it is open.
+    func closeWindowSwitcher()
     /// Switches tab cycling on or off: while on, the wheel moves between the front app's tabs.
     func toggleTabCycling()
     /// Ends tab cycling if it is on. The wheel must never stay taken away from scrolling.
@@ -158,9 +160,13 @@ final class HandheldActionRunner {
             host?.goToWaitingTerminal()
         case .openIsland:
             host?.openIsland()
+        // The window switcher and tab cycling both use the wheel, so one is on at a time and
+        // the one just asked for wins.
         case .switchWindows:
+            host?.stopTabCycling()
             host?.toggleWindowSwitcher()
         case .cycleTabs:
+            host?.closeWindowSwitcher()
             host?.toggleTabCycling()
         case .keyCombination(let combination):
             host?.postKeyCombination(combination)
@@ -290,7 +296,11 @@ extension CompanionManager: HandheldActionHost {
     }
 
     func stopTabCycling() {
-        HandheldTabCycling.shared.stop(reason: "everything held was released")
+        HandheldTabCycling.shared.stop(reason: "something else took over")
+    }
+
+    func closeWindowSwitcher() {
+        HandheldWindowSwitcher.shared.close()
     }
 
     func toggleWindowSwitcher() {

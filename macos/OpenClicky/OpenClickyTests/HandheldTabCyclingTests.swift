@@ -36,6 +36,21 @@ struct HandheldTabCyclingTests {
         #expect(host.tabCyclingStopCount == 1)
     }
 
+    /// Both modes use the wheel, so only one is on at a time and the one just asked for wins: a
+    /// single press during tab cycling ends it and opens the window switcher, and a double press
+    /// with the switcher open closes it and starts tab cycling.
+    @Test func theWheelHasOneModeAtATimeAndTheNewestWins() {
+        let host = RecordingHandheldActionHost()
+        let runner = HandheldActionRunner(host: host, schedule: ManualHandheldScheduler().schedule)
+        let bindings = WhisPromptHandheld.device.defaultBindings
+
+        runner.handle(HandheldEvent(controlID: "wheelButton", gesture: .single, sequence: 1), bindings: bindings)
+        #expect(host.wheelModeCalls == ["stop tab cycling", "toggle switcher"])
+
+        runner.handle(HandheldEvent(controlID: "wheelButton", gesture: .double, sequence: 2), bindings: bindings)
+        #expect(host.wheelModeCalls.suffix(2) == ["close switcher", "toggle tab cycling"])
+    }
+
     @Test func aClickDownIsTheNextTabAndAClickUpTheOneBefore() {
         let next = HandheldTabCycling.keyCombination(forScrollDeltaY: -5)
         let previous = HandheldTabCycling.keyCombination(forScrollDeltaY: 5)

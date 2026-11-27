@@ -19,6 +19,9 @@ final class RecordingHandheldActionHost: HandheldActionHost {
     private(set) var windowSwitcherToggleCount = 0
     private(set) var tabCyclingToggleCount = 0
     private(set) var tabCyclingStopCount = 0
+    private(set) var windowSwitcherCloseCount = 0
+    /// What was asked of the two wheel modes, in order.
+    private(set) var wheelModeCalls: [String] = []
     /// The app's side, played simply: a question listens from talk pressed to talk released unless
     /// the press is refused, and a tapped dictation key opens a take and the next tap ends it.
     var askIsListening = false
@@ -37,9 +40,10 @@ final class RecordingHandheldActionHost: HandheldActionHost {
     func postKeyCombination(_ combination: HandheldKeyCombination) { postedCombinations.append(combination) }
     func openIsland() { islandOpenCount += 1 }
     func goToWaitingTerminal() { goToWaitingTerminalCount += 1 }
-    func toggleWindowSwitcher() { windowSwitcherToggleCount += 1 }
-    func toggleTabCycling() { tabCyclingToggleCount += 1 }
-    func stopTabCycling() { tabCyclingStopCount += 1 }
+    func toggleWindowSwitcher() { windowSwitcherToggleCount += 1; wheelModeCalls.append("toggle switcher") }
+    func closeWindowSwitcher() { windowSwitcherCloseCount += 1; wheelModeCalls.append("close switcher") }
+    func toggleTabCycling() { tabCyclingToggleCount += 1; wheelModeCalls.append("toggle tab cycling") }
+    func stopTabCycling() { tabCyclingStopCount += 1; wheelModeCalls.append("stop tab cycling") }
 }
 
 /// A clock the test moves by hand, in place of real timers.
