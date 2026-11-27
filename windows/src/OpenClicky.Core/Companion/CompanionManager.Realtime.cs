@@ -73,6 +73,8 @@ public sealed partial class CompanionManager
             {
                 LastTranscript = text;
                 AppLog.Write($"talk: you said ({text.Length} chars)");
+                // A new question: the last answer's next questions go.
+                WithdrawNextQuestions();
                 // "Play it again" draws the drawing up again with its own voice; the fast voice keeps quiet meanwhile.
                 if (Plugins.DrawStage.DrawStageController.Shared.Current is { } drawingUp && TryReplayDrawing(text))
                 {

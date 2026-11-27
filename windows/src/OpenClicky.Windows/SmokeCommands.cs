@@ -115,6 +115,14 @@ internal static class SmokeCommands
             foreach (var path in Companion.UpdateCards.SaveDemo(updateDemoFolder, Argument("--openclicky-update-demo", 2) ?? "0.12.3")) Console.WriteLine($"smoke: {path}");
             return 0;
         }
+        // The next-questions card, drawn offscreen to a PNG.
+        if (Argument("--openclicky-next-questions-demo") is { } nextQuestionsPng)
+        {
+            ConsoleAttachment.Attach();
+            Console.WriteLine("smoke: " + Companion.NextQuestionsWindow.SaveDemo(nextQuestionsPng,
+                ["Why is the sky red at sunset?", "What color is the sky on Mars?", "Why are clouds white?"]));
+            return 0;
+        }
         if (Argument("--openclicky-action-smoke") is { } toolName)
         {
             ConsoleAttachment.Attach();

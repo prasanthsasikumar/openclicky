@@ -62,6 +62,7 @@ public sealed partial class CompanionManager
     {
         StopWatchingForGuidedStep();
         host.StopSettingsTour();
+        WithdrawNextQuestions();
         StopActiveAnswer();
         currentResponseCancellation?.Cancel();
         IsAskInFlight = false;
@@ -808,6 +809,8 @@ public sealed partial class CompanionManager
         {
             conversationHistory.RemoveRange(0, conversationHistory.Count - AskLanePrompts.MaximumRememberedExchanges);
         }
+        // Every finished exchange (the ask lane, the fast voice, a drawing, an agent) may have questions to ask next.
+        OfferNextQuestions(userTranscript, assistantResponse);
     }
 
     // MARK: - Pure rules (AskLaneFailureTests)
