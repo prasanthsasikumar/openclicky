@@ -112,6 +112,22 @@ nonisolated enum MicrophoneDevices {
         return deviceToSelect(preferredUID: preferredUID, connected: connected, defaultDeviceID: defaultInputDeviceID(), lidIsClosed: lidIsClosed()).deviceID
     }
 
+    /// The format to tap an engine's input in, once the microphone has been selected. The input
+    /// node goes on describing the Mac's default microphone after another device is selected on
+    /// it, and a tap in that format receives nothing when the chosen device runs at another rate:
+    /// on 2026-11-27 a 16 kHz handheld microphone beside the Mac's 48 kHz one made every take
+    /// silent. So: the device's own format when its rate is not the one the node reports,
+    /// otherwise the node's (which with echo cancellation on is not the device's, by design).
+    static func tapFormat(nodeFormat: AVAudioFormat, hardwareFormat: AVAudioFormat) -> AVAudioFormat {
+        guard hardwareFormat.sampleRate > 0, hardwareFormat.channelCount > 0,
+              hardwareFormat.sampleRate != nodeFormat.sampleRate else { return nodeFormat }
+        return hardwareFormat
+    }
+
+    static func tapFormat(of inputNode: AVAudioInputNode) -> AVAudioFormat {
+        tapFormat(nodeFormat: inputNode.outputFormat(forBus: 0), hardwareFormat: inputNode.inputFormat(forBus: 0))
+    }
+
     /// Whether an engine kept from the last take must be replaced before the next one. An engine
     /// started on one device goes on describing that device after it is unplugged: on 2026-11-07
     /// the input node of dictation's engine still said 8 kHz (a headset, gone) while the built-in

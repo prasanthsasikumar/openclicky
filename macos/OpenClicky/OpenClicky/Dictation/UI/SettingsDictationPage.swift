@@ -268,7 +268,7 @@ private struct MicrophoneTestRow: View {
         let engine = AVAudioEngine()
         MicrophoneDevices.apply(preferredUID: settings.preferredMicrophoneUID, to: engine)
         let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
+        let format = MicrophoneDevices.tapFormat(of: input)
         let microphoneName = MicrophoneDevices.effectiveInputName(preferredUID: settings.preferredMicrophoneUID) ?? "no microphone"
         AppLog.append("microphone test: \(microphoneName), \(Int(format.sampleRate)) Hz, \(format.channelCount) ch, permission \(AVCaptureDevice.authorizationStatus(for: .audio).rawValue)")
         guard format.sampleRate > 0 else {
