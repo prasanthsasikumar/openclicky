@@ -25,12 +25,19 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
     /// The pages the sidebar lists, in order.
     static let sidebarPages: [DictationSettingsPage] = [.dictation, .clicky, .island, .account, .privacy, .general]
 
+    /// The sidebar as it is drawn: the six pages, and Handheld after Island for someone who has
+    /// switched the handheld plugin on. Everyone else never sees it.
+    static func sidebarPages(handheldIsOn: Bool) -> [DictationSettingsPage] {
+        guard handheldIsOn else { return sidebarPages }
+        return [.dictation, .clicky, .island, .handheld, .account, .privacy, .general]
+    }
+
     /// The sidebar page a page opened from a row belongs to; a sidebar page is its own.
     var sidebarPage: DictationSettingsPage {
         switch self {
         case .orb: return .dictation
-        case .calendars, .handheld: return .island
-        case .dictation, .clicky, .island, .account, .privacy, .general: return self
+        case .calendars: return .island
+        case .dictation, .clicky, .island, .account, .privacy, .general, .handheld: return self
         }
     }
 
@@ -87,7 +94,8 @@ enum DictationSettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .dictation, .orb: return Color(red: 0.039, green: 0.518, blue: 1.0)
         case .clicky: return Color(red: 0.686, green: 0.322, blue: 0.871)
-        case .island, .calendars, .handheld: return Color(red: 0.11, green: 0.11, blue: 0.118)
+        case .island, .calendars: return Color(red: 0.11, green: 0.11, blue: 0.118)
+        case .handheld: return Color(red: 0.96, green: 0.49, blue: 0.11)
         case .account: return Color(red: 0.204, green: 0.78, blue: 0.349)
         case .privacy: return Color(red: 0.369, green: 0.361, blue: 0.902)
         case .general: return Color(red: 0.557, green: 0.557, blue: 0.576)

@@ -214,7 +214,7 @@ struct DictationRootView: View {
                 get: { model.isSearching ? nil : DictationDestination.settings(model.destination.sidebarPage) },
                 set: { chosen in if let chosen { model.select(chosen) } }
             )) {
-                ForEach(DictationSettingsPage.sidebarPages) { page in pageRow(page, matches: matches) }
+                ForEach(DictationSettingsPage.sidebarPages(handheldIsOn: HandheldPlugin.shared.isEnabled)) { page in pageRow(page, matches: matches) }
             }
             .listStyle(.sidebar)
             .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search settings")

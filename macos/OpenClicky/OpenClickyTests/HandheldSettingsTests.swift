@@ -91,4 +91,13 @@ struct HandheldSettingsTests {
         #expect(HandheldKeyCombination.recorded(keyCode: 6, modifiers: [.command], characters: "z")
                 == HandheldKeyCombination(keyCode: 6, modifierFlags: HandheldKeyCombination.commandFlag, displayText: "⌘Z"))
     }
+
+    @Test func theSidebarListsHandheldOnlyWhileThePluginIsOn() {
+        #expect(DictationSettingsPage.sidebarPages(handheldIsOn: false) == DictationSettingsPage.sidebarPages)
+        #expect(DictationSettingsPage.sidebarPages(handheldIsOn: true).map(\.title)
+                == ["Dictation", "Clicky", "Island", "Handheld", "Keys & Account", "Privacy", "General"])
+        // It is a sidebar page of its own, so it is the one selected while it is open.
+        #expect(DictationSettingsPage.handheld.sidebarPage == .handheld)
+        #expect(DictationSettingsPage.handheld.searchTitle == "Handheld")
+    }
 }
