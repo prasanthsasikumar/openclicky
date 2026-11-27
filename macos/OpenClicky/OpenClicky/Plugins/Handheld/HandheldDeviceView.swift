@@ -5,9 +5,10 @@
 //  The handheld's 3D picture on its settings page: the device turns under the pointer, and a
 //  click on one of its buttons chooses that button, whose choices the page then shows.
 //
-//  OpenClicky ships no model of anyone's device. The picture is drawn from a model file the
-//  person has on their own Mac (`~/.openclicky/handheld/<device id>.glb`); without one the page
-//  shows the plain list of buttons instead. The page itself (`Viewer/`) is in the app and is
+//  The picture is drawn from a model of the device carried in the app (`Models/`, the maker's
+//  own model, not under this project's licence; see its README), or from a file of the person's
+//  own at `~/.openclicky/handheld/<device id>.glb`, which wins. A device with neither shows the
+//  plain list of buttons instead. The page itself (`Viewer/`) is in the app and is
 //  served, with three.js from the drawing stage's folder, over a scheme of its own.
 //
 
@@ -17,12 +18,19 @@ import WebKit
 
 /// Where a device's model file is looked for.
 enum HandheldDeviceModelFile {
-    static func url(for device: HandheldDevice, homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory())) -> URL {
-        homeDirectory.appendingPathComponent(".openclicky/handheld/\(device.id).glb")
+    /// The person's own file when there is one, else the model the app carries, else nil.
+    static func url(for device: HandheldDevice, homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory()),
+                    bundleResources: URL? = Bundle.main.resourceURL,
+                    fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> URL? {
+        let candidates = [
+            homeDirectory.appendingPathComponent(".openclicky/handheld/\(device.id).glb"),
+            bundleResources?.appendingPathComponent("handheld-\(device.id).glb"),
+        ]
+        return candidates.compactMap { $0 }.first { fileExists($0.path) }
     }
 
-    static func isAvailable(for device: HandheldDevice) -> Bool {
-        FileManager.default.fileExists(atPath: url(for: device).path)
+    static func isAvailable(for device: HandheldDevice, homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory())) -> Bool {
+        url(for: device, homeDirectory: homeDirectory) != nil
     }
 }
 
@@ -157,7 +165,7 @@ struct HandheldDeviceView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let webViewConfiguration = WKWebViewConfiguration()
-        webViewConfiguration.setURLSchemeHandler(HandheldViewerSchemeHandler(modelFile: HandheldDeviceModelFile.url(for: device)), forURLScheme: HandheldViewerScheme.scheme)
+        webViewConfiguration.setURLSchemeHandler(HandheldViewerSchemeHandler(modelFile: HandheldDeviceModelFile.url(for: device) ?? URL(fileURLWithPath: "/dev/null/no-model")), forURLScheme: HandheldViewerScheme.scheme)
         webViewConfiguration.userContentController.addUserScript(WKUserScript(
             source: HandheldDeviceViewMessage.configurationScript(for: device, bindings: plugin.bindings, selectedControlID: plugin.selectedControlID, reduceMotion: reduceMotion),
             injectionTime: .atDocumentStart, forMainFrameOnly: true))

@@ -107,9 +107,9 @@ The device has a fourth key, the wheel's own button (`wheelButton`), and every k
 ## 11. The page and the picture (added 2026-11-27)
 
 - [x] *(2026-11-27)* With the plugin on, "Handheld" is in the Settings sidebar after Island.
-- [ ] Without a model file the page lists every button's pickers.
-- [x] *(2026-11-27, "this is great")* With the maker's model copied to
-      `~/.openclicky/handheld/whisprompt.glb` (never in the repo or the app), the page shows the
+- [ ] A device with no model (none yet) lists every button's pickers.
+- [x] *(2026-11-27, "this is great"; then from a personal copy, since build 789 from the model
+      the app carries in `Models/`)* The page shows the
       device floating, labels beside each button, and a click on a button shows its pickers.
 - [ ] Build 783: Key B and Key C labels on the left, no header card, the device line last.
 
