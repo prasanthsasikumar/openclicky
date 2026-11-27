@@ -191,6 +191,43 @@ enum CursorWaveform {
 }
 
 /// Three dots that light one after another while Clicky thinks.
+/// The pencil beside the mouse while a drawing is on its way: it draws a short squiggle, the
+/// squiggle fades, and it starts again. Pure, so the view only places what these return.
+enum CursorSketching {
+    /// One round: the stroke, a rest with the whole squiggle showing, the fade.
+    static let period = 1.9
+    static let strokeSeconds = 1.25
+    static let restSeconds = 0.25
+    /// The squiggle's box, in points, and how many waves it has.
+    static let size = CGSize(width: 30, height: 14)
+    static let waves = 1.5
+
+    private static func local(_ time: TimeInterval) -> Double {
+        let local = time.truncatingRemainder(dividingBy: period)
+        return local < 0 ? local + period : local
+    }
+
+    /// How much of the squiggle is drawn at `time`, 0 to 1, eased at both ends.
+    static func progress(time: TimeInterval) -> Double {
+        let linear = min(1, local(time) / strokeSeconds)
+        return (1 - cos(.pi * linear)) / 2
+    }
+
+    /// The ink's opacity: full while it is drawn and rests, then fading to nothing before the next round.
+    static func inkOpacity(time: TimeInterval) -> Double {
+        let sinceRest = local(time) - strokeSeconds - restSeconds
+        guard sinceRest > 0 else { return 1 }
+        return max(0, 1 - sinceRest / (period - strokeSeconds - restSeconds))
+    }
+
+    /// The squiggle's point at `progress` (0 its left end, 1 its right), y down, inside `size`.
+    static func point(at progress: Double) -> CGPoint {
+        let clamped = min(1, max(0, progress))
+        return CGPoint(x: size.width * clamped,
+                       y: size.height / 2 - sin(2 * .pi * waves * clamped) * size.height / 2)
+    }
+}
+
 enum CursorThinkingDots {
     static let count = 3
     /// One full round of the three dots.

@@ -29,6 +29,13 @@ private final class DrawStagePromptAnchor {}
 
 enum DrawStageLesson {
     static let holdLine = "One moment, let me draw that for you."
+    /// Said a moment after the question, before it is known whether the model will draw: it
+    /// promises no drawing, so it is still true when the answer comes in words.
+    static let waitLine = "Let me work out how to show that."
+    /// By the pointer while the drawing is on its way, and what replaces it when the wait is long.
+    static let waitCaption = "working out how to show that…"
+    static let longWaitCaption = "still on it, a detailed one takes a moment…"
+    static let longWaitCaptionAfterSeconds: TimeInterval = 8
     static let outputTokens = 8192
     static let notAFollowUp = "NONE"
 

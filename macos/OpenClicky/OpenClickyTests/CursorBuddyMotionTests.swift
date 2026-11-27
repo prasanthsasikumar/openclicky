@@ -180,6 +180,35 @@ struct CursorBuddyMotionTests {
         }
     }
 
+    // MARK: Sketching pencil
+
+    @Test func thePencilDrawsItsSquiggleLeftToRightThenTheInkFades() {
+        #expect(CursorSketching.progress(time: 0) == 0)
+        #expect(abs(CursorSketching.progress(time: CursorSketching.strokeSeconds) - 1) < 0.0001)
+        var lastProgress = -1.0
+        for step in 0...50 {
+            let progress = CursorSketching.progress(time: CursorSketching.strokeSeconds * Double(step) / 50)
+            #expect(progress >= lastProgress)
+            lastProgress = progress
+        }
+        // The ink is whole while it is drawn and while it rests, and gone as the round ends.
+        #expect(CursorSketching.inkOpacity(time: CursorSketching.strokeSeconds / 2) == 1)
+        #expect(CursorSketching.inkOpacity(time: CursorSketching.strokeSeconds + CursorSketching.restSeconds) == 1)
+        #expect(CursorSketching.inkOpacity(time: CursorSketching.period - 0.001) < 0.01)
+        // The next round is the same as this one.
+        #expect(abs(CursorSketching.progress(time: 0.4) - CursorSketching.progress(time: 0.4 + CursorSketching.period)) < 0.0001)
+    }
+
+    @Test func theSquiggleStaysInsideItsBox() {
+        for step in 0...40 {
+            let point = CursorSketching.point(at: Double(step) / 40)
+            #expect(point.x >= 0 && point.x <= CursorSketching.size.width)
+            #expect(point.y >= -0.0001 && point.y <= CursorSketching.size.height + 0.0001)
+        }
+        #expect(CursorSketching.point(at: 0).x == 0)
+        #expect(CursorSketching.point(at: 1).x == CursorSketching.size.width)
+    }
+
     // MARK: Thinking dots
 
     @Test func theDotsLightOneAfterAnother() {

@@ -451,11 +451,19 @@ struct BlueCursorView: View {
 
             // Three dots taking turns — shown while the AI is processing (transcription, the
             // answer, waiting for the voice). They draw together into the pointer when it is done.
-            CursorThinkingDotsView(isActive: isThinkingHere, reduceMotion: reduceMotion)
-                .opacity(isThinkingHere ? cursorOpacity : 0)
+            CursorThinkingDotsView(isActive: isThinkingHere && !isSketchingHere, reduceMotion: reduceMotion)
+                .opacity(isThinkingHere && !isSketchingHere ? cursorOpacity : 0)
                 .position(cursorPosition)
                 .animation(Motion.pointerFollow(reduceMotion: reduceMotion), value: cursorPosition)
                 .animation(Motion.swap, value: companionManager.voiceState)
+
+            // A pencil sketching — in place of the dots while a drawing is on its way, so the
+            // wait for its first line reads as "it is being drawn" and not as nothing happening.
+            CursorSketchingView(isActive: isSketchingHere, reduceMotion: reduceMotion)
+                .opacity(isSketchingHere ? cursorOpacity : 0)
+                .position(cursorPosition)
+                .animation(Motion.pointerFollow(reduceMotion: reduceMotion), value: cursorPosition)
+                .animation(Motion.swap, value: isSketchingHere)
 
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
@@ -542,6 +550,10 @@ struct BlueCursorView: View {
 
     private var isThinkingHere: Bool {
         buddyIsVisibleOnThisScreen && companionManager.voiceState == .processing
+    }
+
+    private var isSketchingHere: Bool {
+        isThinkingHere && companionManager.isPreparingDrawing
     }
 
     /// The pointer bobs beside a mouse that has just come to rest, and all the while Clicky
@@ -1076,6 +1088,43 @@ struct CursorThinkingDotsView: View {
             .shadow(color: DS.Colors.overlayCursorColor.opacity(0.6), radius: 6, x: 0, y: 0)
             .animation(Motion.swap, value: isActive)
         }
+    }
+}
+
+// MARK: - Sketching pencil
+
+/// A pencil drawing a short squiggle beside the mouse while a drawing is on its way, over and
+/// over. It stops while it is not shown (a hidden animation still costs power). Under Reduce
+/// Motion it is a still pencil at the end of its squiggle.
+struct CursorSketchingView: View {
+    let isActive: Bool
+    let reduceMotion: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive || reduceMotion)) { timelineContext in
+            let time = timelineContext.date.timeIntervalSinceReferenceDate
+            let progress = reduceMotion ? 1 : CursorSketching.progress(time: time)
+            let tip = CursorSketching.point(at: progress)
+            ZStack(alignment: .topLeading) {
+                Path { path in
+                    let steps = 36
+                    path.move(to: CursorSketching.point(at: 0))
+                    for step in 1...steps { path.addLine(to: CursorSketching.point(at: Double(step) / Double(steps))) }
+                }
+                .trim(from: 0, to: progress)
+                .stroke(DS.Colors.overlayCursorColor, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                .opacity(reduceMotion ? 1 : CursorSketching.inkOpacity(time: time))
+                // The pencil symbol's point is at its lower left: that corner rides the stroke's end.
+                Image(systemName: "pencil")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(DS.Colors.overlayCursorColor)
+                    .frame(width: 18, height: 18)
+                    .offset(x: tip.x, y: tip.y - 18)
+            }
+            .frame(width: CursorSketching.size.width, height: CursorSketching.size.height, alignment: .topLeading)
+            .shadow(color: DS.Colors.overlayCursorColor.opacity(0.6), radius: 6, x: 0, y: 0)
+        }
+        .accessibilityHidden(true)
     }
 }
 
