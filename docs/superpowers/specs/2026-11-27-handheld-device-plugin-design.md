@@ -277,9 +277,11 @@ line.
   windows the wheel moves through) and tab cycling (`HandheldTabCycling`: an event tap that
   turns the wheel's clicks into ⌃Tab and ⌃⇧Tab, 30 s idle limit). The one just asked for wins.
 - **The page is in the Settings sidebar** while the plugin is on, and shows a 3D picture of the
-  device to pick buttons on (`HandheldDeviceView`, `Viewer/`). The maker's model is not ours to
-  ship: it is read only from `~/.openclicky/handheld/<device id>.glb` on the person's own Mac,
-  and without it the page lists the buttons.
+  device to pick buttons on (`HandheldDeviceView`, `Viewer/`). The maker's model was first
+  kept out of the repository and read only from `~/.openclicky/handheld/<device id>.glb`; on
+  2026-11-27 the owner decided to carry it in the app (`Models/handheld-whisprompt.glb`, 13 MB,
+  with a README saying it is the maker's and not under the MIT licence) so everyone with the
+  device sees the picture. A person's own file still wins; a device with neither lists its buttons.
 - **A chosen microphone is tapped in its own format** (`MicrophoneDevices.tapFormat`): the
   16 kHz handheld beside the 48 kHz Mac microphone recorded silence in every lane. The
   microphone pickers show the handheld's while it stands in, and a pick there switches it off.

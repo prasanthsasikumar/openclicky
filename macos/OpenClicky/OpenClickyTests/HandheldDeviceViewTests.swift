@@ -54,9 +54,24 @@ struct HandheldDeviceViewTests {
         }
     }
 
-    @Test func theModelIsLookedForUnderTheDevicesNameInThePersonsFolder() {
+    /// The app carries a model of each device it supports (since 2026-11-27, so everyone with
+    /// the device sees the picture); a file of the person's own under the device's name wins.
+    @Test func theModelIsThePersonsOwnFileElseTheOneInTheApp() {
         let home = URL(fileURLWithPath: "/Users/me")
-        #expect(HandheldDeviceModelFile.url(for: WhisPromptHandheld.device, homeDirectory: home).path == "/Users/me/.openclicky/handheld/whisprompt.glb")
+        let resources = URL(fileURLWithPath: "/App/Contents/Resources")
+        let own = "/Users/me/.openclicky/handheld/whisprompt.glb"
+        let inTheApp = "/App/Contents/Resources/handheld-whisprompt.glb"
+        func url(existing: Set<String>) -> String? {
+            HandheldDeviceModelFile.url(for: WhisPromptHandheld.device, homeDirectory: home, bundleResources: resources,
+                                        fileExists: { existing.contains($0) })?.path
+        }
+        #expect(url(existing: [own, inTheApp]) == own)
+        #expect(url(existing: [inTheApp]) == inTheApp)
+        #expect(url(existing: []) == nil)
+    }
+
+    @Test func theAppCarriesTheWhisPromptModel() {
+        #expect(HandheldDeviceModelFile.isAvailable(for: WhisPromptHandheld.device, homeDirectory: URL(fileURLWithPath: "/nobody")))
     }
 
     @Test func theDeviceSaysWhichPartOfItsModelIsWhichControl() {
