@@ -79,16 +79,22 @@ export function parseAppcast(xml) {
 }
 
 /**
- * heyclicky.com/changelog → [{ version, date, title, intro, groups: [{ head, items: [{ lead, text }] }] }].
+ * heyclicky.com/changelog → [{ version, mac, windows, date, title, intro, groups: [{ head, items: [{ lead, text }] }] }].
  * Markup: <article class="cl-entry"> <span class="cl-version">v<!-- -->1.0.48</span> <span class="cl-date">…</span>
  * <h2 class="cl-title">…</h2> <p class="cl-intro">…</p> <div class="cl-group"><h3 class="cl-group-head">new</h3>
  * <ul class="cl-items"><li><span class="cl-item-text"><strong class="cl-item-lead">Lead: </strong>text</span>
  * <span class="cl-reqs">requested by …</span></li>…
+ * Since November 2026 an entry names each app's version instead of one cl-version (Mac 1.1.5 shipped with Windows 1.1.6):
+ * <span class="cl-app-version" title="Mac 1.1.5">…</span><span class="cl-app-version" title="Windows 1.1.6">…</span>.
+ * Such an entry is keyed by its Windows version when it has one, else its Mac version: the site numbered entries that way
+ * before it showed both, so the versions already recorded in heyclicky-versions.json keep matching.
  */
 export function parseChangelog(html) {
   const entries = [];
   for (const article of splitByClass(html, "cl-entry")) {
-    const version = decode(firstByClass(article, "cl-version")).replace(/^v/i, "");
+    const apps = appVersions(article);
+    let version = decode(firstByClass(article, "cl-version")).replace(/^v/i, "");
+    if (!/^\d+(\.\d+)+/.test(version)) version = apps.windows ?? apps.mac ?? "";
     if (!/^\d+(\.\d+)+/.test(version)) continue;
     const groups = [];
     for (const group of splitByClass(article, "cl-group")) {
@@ -108,6 +114,7 @@ export function parseChangelog(html) {
     }
     entries.push({
       version,
+      ...apps,
       date: decode(firstByClass(article, "cl-date")),
       title: decode(firstByClass(article, "cl-title")),
       intro: decode(firstByClass(article, "cl-intro")),
@@ -115,6 +122,20 @@ export function parseChangelog(html) {
     });
   }
   return entries;
+}
+
+/** An entry's version per app, from its cl-app-version titles ("Mac 1.1.5", "Windows 1.1.6"): { mac?, windows? }. */
+function appVersions(article) {
+  const apps = {};
+  const re = new RegExp(`<[a-z0-9]+[^>]*${classAttr("cl-app-version")}[^>]*>`, "gi");
+  let m;
+  while ((m = re.exec(article))) {
+    const title = /\btitle="([^"]*)"/i.exec(m[0])?.[1] ?? "";
+    // A combined release keeps its range ("Mac 1.0.34-36"), as heyclicky-versions.json recorded it.
+    const named = /^\s*(mac|windows)\s+v?(\d+(?:\.\d+)+(?:-\d+)?)/i.exec(decode(title));
+    if (named) apps[named[1].toLowerCase()] = named[2];
+  }
+  return apps;
 }
 
 // ---------- Diff + render ----------
@@ -126,15 +147,22 @@ const compareVersionsDesc = (a, b) => {
   return 0;
 };
 
-/** Versions present in the appcast or the changelog but absent from `state.seen`, newest first. */
+/**
+ * Versions present in the appcast or the changelog but absent from `state.seen`, newest first. The appcast is the Mac app's,
+ * so an item goes with the entry that names its Mac version (an entry with no app versions names it as its version); one
+ * with no entry yet stands alone, under "<version> (Mac)" when an entry keyed by a Windows version already holds that number.
+ */
 export function findNew(state, appcastItems, changelogEntries) {
   const seen = state?.seen ?? {};
   const byVersion = new Map();
-  for (const a of appcastItems) byVersion.set(a.version, { version: a.version, appcast: a, entry: undefined });
-  for (const e of changelogEntries) {
-    const cur = byVersion.get(e.version) ?? { version: e.version, appcast: undefined, entry: undefined };
-    cur.entry = e;
-    byVersion.set(e.version, cur);
+  for (const e of changelogEntries) byVersion.set(e.version, { version: e.version, appcast: undefined, entry: e });
+  for (const a of appcastItems) {
+    const owner = [...byVersion.values()].find((v) => v.entry && (v.entry.mac ?? (v.entry.windows ? undefined : v.entry.version)) === a.version);
+    if (owner) owner.appcast = a;
+    else {
+      const key = byVersion.has(a.version) ? `${a.version} (Mac)` : a.version;
+      byVersion.set(key, { version: key, appcast: a, entry: undefined });
+    }
   }
   return [...byVersion.values()].filter((v) => !(v.version in seen)).sort((a, b) => compareVersionsDesc(a.version, b.version));
 }
@@ -143,7 +171,8 @@ export function findNew(state, appcastItems, changelogEntries) {
 export function renderEntry(entry, appcast) {
   const version = entry?.version ?? appcast?.version;
   const date = entry?.date || appcast?.date || "";
-  const lines = [`## v${version}${entry?.title ? ` — ${entry.title}` : ""}${date ? ` (${date})` : ""}`, ""];
+  const apps = [entry?.mac && `Mac ${entry.mac}`, entry?.windows && `Windows ${entry.windows}`].filter(Boolean).join(", ");
+  const lines = [`## v${version}${apps ? ` [${apps}]` : ""}${entry?.title ? ` — ${entry.title}` : ""}${date ? ` (${date})` : ""}`, ""];
   if (appcast?.url) lines.push(`Download: ${appcast.url}${appcast.build ? ` (build ${appcast.build})` : ""}`, "");
   if (entry?.intro) lines.push(entry.intro, "");
   for (const g of entry?.groups ?? []) {
