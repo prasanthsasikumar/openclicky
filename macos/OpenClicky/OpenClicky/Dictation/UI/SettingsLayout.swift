@@ -62,12 +62,18 @@ enum SettingsLayout {
     private static let islandGroups: [Group] = [
         Group(page: .island, title: "", itemIDs: ["general.hudPlacement", "appearance.peekDirection", "appearance.restOpens", "plugins.islandDefault"]),
         Group(page: .island, title: "Tiles", itemIDs: ["plugins.media", "calendar.enabled", "weather.enabled", "plugins.system"]),
-        Group(page: .island, title: "Tools", itemIDs: ["plugins.shelf", "plugins.clipboard", "plugins.notes", "plugins.timer", "plugins.mirror", "plugins.agents"]),
+        Group(page: .island, title: "Tools", itemIDs: ["plugins.shelf", "plugins.clipboard", "plugins.notes", "plugins.timer", "plugins.mirror", "plugins.agents", "plugins.agents.notices"]),
         Group(page: .island, title: "More", isAdvanced: true, itemIDs: [
             "appearance.style", "plugins.islandOrder", "calendar.quickAdd", "island.openCalendars", "weather.unit", "weather.location",
             "timer.focusMinutes", "timer.breakMinutes", "timer.longBreakMinutes",
+            // The handheld plugin: one switch for the few who own a device, its page only once it is on.
+            "handheld.enabled", "island.openHandheld",
         ]),
         Group(page: .calendars, title: nil, itemIDs: ["calendar.calendars", "calendar.calendar.*"]),
+        // The device first, with no header above it; which device is connected goes last.
+        Group(page: .handheld, title: "", itemIDs: ["handheld.device", "handheld.binding.*", "handheld.mouseNote"]),
+        Group(page: .handheld, title: "Microphone", itemIDs: ["handheld.microphone"]),
+        Group(page: .handheld, title: "Device", itemIDs: ["handheld.status", "handheld.makerAppNote"]),
     ]
 
     private static let accountGroups: [Group] = [

@@ -495,8 +495,13 @@ struct NotchEngineWarningView: View {
 /// input, the chosen one ticked.
 @MainActor
 enum MicrophoneMenu {
+    /// The microphone shown as chosen: a connected handheld's while it stands in, else the person's own choice.
+    static func shownUID(settings: DictationSettings) -> String? {
+        HandheldMicrophone.standInUID() ?? settings.preferredMicrophoneUID
+    }
+
     static func currentName(settings: DictationSettings) -> String {
-        if let uid = settings.preferredMicrophoneUID,
+        if let uid = shownUID(settings: settings),
            let device = MicrophoneDevices.available().first(where: { $0.uid == uid }) {
             return device.name
         }
@@ -505,7 +510,7 @@ enum MicrophoneMenu {
 
     /// Just the device's name ("External Microphone"), for a line with no room for more.
     static func deviceName(settings: DictationSettings) -> String {
-        if let uid = settings.preferredMicrophoneUID,
+        if let uid = shownUID(settings: settings),
            let device = MicrophoneDevices.available().first(where: { $0.uid == uid }) {
             return device.name
         }
@@ -518,14 +523,14 @@ enum MicrophoneMenu {
         let defaultItem = NSMenuItem(title: "Automatic (\(MicrophoneDevices.effectiveInputName(preferredUID: nil) ?? "none"))", action: #selector(MicrophoneMenuTarget.choose(_:)), keyEquivalent: "")
         defaultItem.target = target
         defaultItem.representedObject = ""
-        defaultItem.state = settings.preferredMicrophoneUID == nil ? .on : .off
+        defaultItem.state = shownUID(settings: settings) == nil ? .on : .off
         menu.addItem(defaultItem)
         menu.addItem(.separator())
         for device in MicrophoneDevices.available() {
             let item = NSMenuItem(title: device.name, action: #selector(MicrophoneMenuTarget.choose(_:)), keyEquivalent: "")
             item.target = target
             item.representedObject = device.uid
-            item.state = settings.preferredMicrophoneUID == device.uid ? .on : .off
+            item.state = shownUID(settings: settings) == device.uid ? .on : .off
             menu.addItem(item)
         }
         // popUp runs the menu to completion, so the target lives long enough.
@@ -541,6 +546,7 @@ private final class MicrophoneMenuTarget: NSObject {
 
     @MainActor @objc func choose(_ item: NSMenuItem) {
         let uid = item.representedObject as? String ?? ""
+        HandheldMicrophone.thePersonPickedAMicrophone()
         settings.preferredMicrophoneUID = uid.isEmpty ? nil : uid
     }
 }

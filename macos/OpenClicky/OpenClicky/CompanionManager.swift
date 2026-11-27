@@ -1445,16 +1445,49 @@ final class CompanionManager: ObservableObject {
         // The microphone chosen in settings is the one both ways in hear with: fn dictation and the
         // ⌃⌥ question. The question used the Mac's default input, which can be a headset or an
         // unplugged jack, and heard "no" while dictation, on the built-in microphone, heard fine.
-        dictationSettings.preferredMicrophoneUIDDidChange = { [weak self] uid in
-            self?.dictationTakeController.dictationManager.preferredMicrophoneUID = uid
-            self?.buddyDictationManager.preferredMicrophoneUID = uid
-            self?.realtimeVoiceClient.preferredMicrophoneUID = uid
+        dictationSettings.preferredMicrophoneUIDDidChange = { [weak self] _ in
+            self?.applyMicrophoneChoice()
         }
-        dictationTakeController.dictationManager.preferredMicrophoneUID = dictationSettings.preferredMicrophoneUID
-        buddyDictationManager.preferredMicrophoneUID = dictationSettings.preferredMicrophoneUID
-        realtimeVoiceClient.preferredMicrophoneUID = dictationSettings.preferredMicrophoneUID
+        // A handheld's own microphone can stand in while it is connected (Plugins/Handheld); the
+        // plugin says when that may have changed. It never fires while the plugin is off.
+        HandheldPlugin.shared.onMicrophoneChoiceChanged = { [weak self] in
+            self?.applyMicrophoneChoice()
+        }
+        applyMicrophoneChoice()
         AppUpdater.shared.start()
         clipboardHistoryMonitor.start()
+        // The handheld plugin listens for its device only when it is switched on (Plugins/Handheld).
+        HandheldPlugin.shared.attach(to: self)
+    }
+
+    /// A shortcut from something other than the keyboard (a handheld's button, `Plugins/Handheld`).
+    /// It takes the keyboard's own path, so everything that guards a key press guards this too.
+    /// Talk is delivered where the keyboard's talk is: through the shortcut transitions.
+    func performExternalShortcut(_ shortcutEvent: CompanionShortcutEvent) {
+        AppLog.append("external shortcut: \(shortcutEvent)")
+        switch shortcutEvent {
+        case .talkPressed:
+            handleShortcutTransition(.pressed)
+        case .talkReleased:
+            handleShortcutTransition(.released)
+        default:
+            handleCompanionShortcut(shortcutEvent)
+        }
+    }
+
+    /// The one microphone everything records from: the person's choice, or a connected handheld's
+    /// own microphone when that was asked for (`HandheldMicrophone`). One microphone for every
+    /// lane, so what hears a take is never a different device from what hears a question.
+    private var microphoneUIDForEverything: String? {
+        HandheldMicrophone.currentUID(personsChoiceUID: dictationSettings.preferredMicrophoneUID)
+    }
+
+    /// Hands that microphone to everything that records.
+    private func applyMicrophoneChoice() {
+        let microphoneUID = microphoneUIDForEverything
+        dictationTakeController.dictationManager.preferredMicrophoneUID = microphoneUID
+        buddyDictationManager.preferredMicrophoneUID = microphoneUID
+        realtimeVoiceClient.preferredMicrophoneUID = microphoneUID
     }
 
     private func handleCompanionShortcut(_ shortcutEvent: CompanionShortcutEvent) {
@@ -3202,7 +3235,7 @@ extension CompanionManager {
         guard !isStandardHandsFreeOn else { return }
         isStandardHandsFreeOn = true
         standardHandsFreeQuietSince = Date()
-        let microphone = buddyDictationManager.preferredMicrophoneUID
+        let microphone = microphoneUIDForEverything
         Task { [weak self] in
             guard let self else { return }
             do {

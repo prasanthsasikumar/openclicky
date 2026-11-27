@@ -338,7 +338,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         audioEngineDeviceID = nextDeviceID
         MicrophoneDevices.apply(preferredUID: preferredMicrophoneUID, to: audioEngine)
         let inputNode = audioEngine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+        let inputFormat = MicrophoneDevices.tapFormat(of: inputNode)
         // Which microphone a take records from, so a log of takes that heard nothing says whether
         // the input was a silent device (a virtual one, the headphone jack) or the engine.
         AppLog.append("microphone: \(MicrophoneDevices.effectiveInputName(preferredUID: preferredMicrophoneUID) ?? "none"), \(Int(inputFormat.sampleRate)) Hz, \(inputFormat.channelCount) ch")

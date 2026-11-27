@@ -237,6 +237,9 @@ final class AgentSessionWatcher: ObservableObject {
     static let tailBytes = 65_536
     static let watchedInterval: TimeInterval = 3
     static let backgroundInterval: TimeInterval = 20
+    /// The background pace while notices are on (`AgentSessionNotifier`): a finished session
+    /// should be said within seconds, not up to twenty later.
+    static let noticesInterval: TimeInterval = 5
 
     /// Live first, then newest.
     @Published private(set) var sessions: [AgentSession] = []
@@ -264,7 +267,17 @@ final class AgentSessionWatcher: ObservableObject {
     }
 
     var isPolling: Bool { timer != nil }
-    var pollInterval: TimeInterval { watchers > 0 ? Self.watchedInterval : Self.backgroundInterval }
+    var pollInterval: TimeInterval {
+        if watchers > 0 { return Self.watchedInterval }
+        return noticesAreOn ? Self.noticesInterval : Self.backgroundInterval
+    }
+
+    /// "Tell me when a session finishes or needs me" is on: the background poll runs faster.
+    var noticesAreOn = false {
+        didSet { if noticesAreOn != oldValue { rebuildTimer() } }
+    }
+    /// Called with the sessions after every look at the logs, whether or not anything changed.
+    var onRefresh: (([AgentSession]) -> Void)?
 
     /// The component's switch: on starts the slow poll, off stops everything and forgets.
     func setEnabled(_ enabled: Bool) {
@@ -307,6 +320,8 @@ final class AgentSessionWatcher: ObservableObject {
         for folder in subdirectories(of: roots.claudeProjects) {
             for file in recentFiles(in: folder, newerThan: cutoff) where file.url.pathExtension == "jsonl" {
                 let parse = AgentSessionParser.parseClaudeTail(tail(of: file.url))
+                // OpenClicky's own plan answers run Claude Code in the same scratch folder as Codex.
+                if AgentSessionParser.isOwnScratchRollout(cwd: parse.cwd) { continue }
                 found.append(AgentSession(id: file.url.path, agent: .claudeCode, project: project(from: parse.cwd, fallback: "claude"), title: parse.title, activity: parse.activity, lastEventAt: file.modifiedAt))
             }
         }
@@ -339,6 +354,7 @@ final class AgentSessionWatcher: ObservableObject {
         let live = Set(found.filter { $0.isLive(now: now) }.map(\.id))
         if found != sessions { sessions = found }
         if live != liveIDs { liveIDs = live }
+        onRefresh?(found)
     }
 
     // MARK: Pieces

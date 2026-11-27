@@ -8,8 +8,10 @@
 //  source rule in scripts/check-source-rules.sh, because a test reading ~/Documents prompts for access.
 //
 
+import AVFoundation
 import CoreAudio
 import Foundation
+import AVFoundation
 import Testing
 @testable import OpenClicky
 
@@ -75,6 +77,23 @@ struct HearingSettingsTests {
         let choice = MicrophoneDevices.deviceToSelect(preferredUID: usb.uid, connected: [builtIn], defaultDeviceID: builtIn.deviceID)
         #expect(choice.deviceID == builtIn.deviceID)
         #expect(choice.chosenUIDIsMissing)
+    }
+
+    /// 2026-11-27: with a 16 kHz two-channel microphone chosen (a handheld's) while the Mac's own
+    /// runs at 48 kHz, the engine's input node went on describing the Mac's microphone after the
+    /// device was selected. A tap in that format received no audio at all, so every take was silent.
+    @Test func aTapRecordsInTheChosenMicrophonesOwnFormatWhenTheNodeStillDescribesAnother() throws {
+        let macMicrophone = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        let handheld = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 2))
+        #expect(MicrophoneDevices.tapFormat(nodeFormat: macMicrophone, hardwareFormat: handheld) == handheld)
+        // The usual case, and echo cancellation's (more channels in than out, the same rate): the node's own.
+        #expect(MicrophoneDevices.tapFormat(nodeFormat: macMicrophone, hardwareFormat: macMicrophone) == macMicrophone)
+        let moreChannels = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
+        #expect(MicrophoneDevices.tapFormat(nodeFormat: macMicrophone, hardwareFormat: moreChannels) == macMicrophone)
+        // No device behind the node (the format is empty): nothing better to offer than the node's.
+        if let none = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 0, channels: 2, interleaved: false) {
+            #expect(MicrophoneDevices.tapFormat(nodeFormat: macMicrophone, hardwareFormat: none) == macMicrophone)
+        }
     }
 
     /// 2026-11-07: a headset unplugged between takes left dictation's long-lived engine reporting

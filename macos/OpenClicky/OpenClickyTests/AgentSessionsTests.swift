@@ -169,4 +169,30 @@ struct AgentSessionsTests {
         #expect(watcher.liveIDs.isEmpty)           // but published as no longer live
         #expect(watcher.peekLine == nil)
     }
+
+    @Test func openClickysOwnScratchRunsAreNotTheUsersSessions() {
+        let scratchFolder = FileManager.default.temporaryDirectory.appendingPathComponent("openclicky-plan-answers/abc", isDirectory: true).path
+        #expect(AgentSessionParser.isOwnScratchRollout(cwd: scratchFolder))
+        #expect(!AgentSessionParser.isOwnScratchRollout(cwd: "/Users/me/Code/app"))
+    }
+
+    @MainActor @Test func theWatcherPollsFasterInTheBackgroundWhileNoticesAreOn() {
+        let emptyFolder = FileManager.default.temporaryDirectory.appendingPathComponent("AgentSessionsTests-\(UUID().uuidString)", isDirectory: true)
+        let watcher = AgentSessionWatcher(roots: AgentLogRoots(claudeProjects: emptyFolder, codexSessions: emptyFolder))
+        #expect(watcher.pollInterval == AgentSessionWatcher.backgroundInterval)
+        watcher.noticesAreOn = true
+        #expect(watcher.pollInterval == AgentSessionWatcher.noticesInterval)
+        watcher.beginWatching()
+        #expect(watcher.pollInterval == AgentSessionWatcher.watchedInterval)
+    }
+
+    @MainActor @Test func everyRefreshIsReportedEvenWhenNothingChanged() {
+        let emptyFolder = FileManager.default.temporaryDirectory.appendingPathComponent("AgentSessionsTests-\(UUID().uuidString)", isDirectory: true)
+        let watcher = AgentSessionWatcher(roots: AgentLogRoots(claudeProjects: emptyFolder, codexSessions: emptyFolder))
+        var refreshCount = 0
+        watcher.onRefresh = { _ in refreshCount += 1 }
+        watcher.refreshNow()
+        watcher.refreshNow()
+        #expect(refreshCount == 2)
+    }
 }

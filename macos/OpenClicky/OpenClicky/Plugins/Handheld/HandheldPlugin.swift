@@ -1,0 +1,197 @@
+//
+//  HandheldPlugin.swift
+//  OpenClicky
+//
+//  Handheld devices as a plugin: for the few people who own a supported push-to-talk handheld,
+//  its buttons drive OpenClicky. Off unless switched on in Settings → Island › More, and while it
+//  is off nothing of it exists: no HID manager, no timer, no prompt. Everything it needs lives in
+//  this folder; the rest of the app knows it through `HandheldActionHost` and one line in
+//  `CompanionManager.start`.
+//
+
+import AppKit
+import Combine
+import Foundation
+
+@MainActor
+final class HandheldPlugin: ObservableObject {
+    static let enabledKey = "openclicky.handheld.enabled"
+    private static let lastSeenDeviceKey = "openclicky.handheld.lastDevice"
+    /// The handheld's own app. With it running too, each press is acted on twice.
+    static let makerAppBundleIdentifier = "ai.whisprompt.desktop"
+
+    static let shared = HandheldPlugin(
+        defaults: .standard,
+        makeSource: { IOKitHandheldReportSource() },
+        makerAppIsRunning: { !NSRunningApplication.runningApplications(withBundleIdentifier: makerAppBundleIdentifier).isEmpty }
+    )
+
+    @Published private(set) var isEnabled: Bool
+    @Published private(set) var connectedDevice: HandheldDevice?
+    /// The device whose bindings the page shows while none is connected.
+    @Published private(set) var lastSeenDevice: HandheldDevice?
+    /// The bindings of the connected device, or of the last one seen.
+    @Published private(set) var bindings = HandheldBindings()
+    /// "Use its microphone while it is connected" (`HandheldMicrophone`). Off until asked for.
+    @Published private(set) var usesDeviceMicrophone: Bool
+
+    /// The control whose choices the settings page shows under the device's picture: the one
+    /// last clicked there, the device's first control until then.
+    var selectedControlID: String? {
+        guard let device = deviceShown else { return nil }
+        if let chosenControlID, device.control(withID: chosenControlID) != nil { return chosenControlID }
+        return device.controls.first?.id
+    }
+    @Published private var chosenControlID: String?
+    /// Called with a control's id when it is pressed on the real device, for the picture to show.
+    var onControlPressed: ((String) -> Void)?
+
+    func selectControl(withID controlID: String) {
+        guard deviceShown?.control(withID: controlID) != nil, controlID != selectedControlID else { return }
+        chosenControlID = controlID
+        onSettingsShapeChanged?()
+    }
+
+    var makerAppIsAlsoRunning: Bool { makerAppIsRunning() }
+    /// Called when the rows Settings should show change (the switch, a device coming or going), so
+    /// an open Settings page is drawn again. Set by the plugin's settings rows.
+    var onSettingsShapeChanged: (() -> Void)?
+    /// Called when the microphone takes should record from may have changed: the option, or a
+    /// device coming or going. The app then asks `HandheldMicrophone` again.
+    var onMicrophoneChoiceChanged: (() -> Void)?
+    /// A USB microphone can show up a moment after its device's buttons do, so the app is told
+    /// once more after this long.
+    private static let microphoneSettleSeconds: TimeInterval = 2
+    /// The device the page is about: the connected one, else the last one seen.
+    var deviceShown: HandheldDevice? { connectedDevice ?? lastSeenDevice }
+
+    private let defaults: UserDefaults
+    private let bindingsStore: HandheldBindingsStore
+    private let makeSource: () -> HandheldReportSource
+    private let makerAppIsRunning: () -> Bool
+    private weak var host: HandheldActionHost?
+    private var listener: HandheldListener?
+    private var actionRunner: HandheldActionRunner?
+
+    init(defaults: UserDefaults, makeSource: @escaping () -> HandheldReportSource, makerAppIsRunning: @escaping () -> Bool) {
+        self.defaults = defaults
+        self.bindingsStore = HandheldBindingsStore(defaults: defaults)
+        self.makeSource = makeSource
+        self.makerAppIsRunning = makerAppIsRunning
+        isEnabled = defaults.bool(forKey: Self.enabledKey)
+        usesDeviceMicrophone = defaults.bool(forKey: HandheldMicrophone.useDeviceMicrophoneKey)
+        if let lastSeenDeviceID = defaults.string(forKey: Self.lastSeenDeviceKey),
+           let device = HandheldDeviceCatalog.all.first(where: { $0.id == lastSeenDeviceID }) {
+            lastSeenDevice = device
+            bindings = bindingsStore.bindings(for: device)
+        }
+    }
+
+    /// Called once as the app starts. Listening begins only if the plugin is switched on.
+    func attach(to host: HandheldActionHost) {
+        self.host = host
+        if isEnabled { startListening() }
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        guard enabled != isEnabled else { return }
+        isEnabled = enabled
+        defaults.set(enabled, forKey: Self.enabledKey)
+        if enabled {
+            startListening()
+        } else {
+            stopListening()
+        }
+        onSettingsShapeChanged?()
+    }
+
+    func setUsesDeviceMicrophone(_ usesDeviceMicrophone: Bool) {
+        guard usesDeviceMicrophone != self.usesDeviceMicrophone else { return }
+        self.usesDeviceMicrophone = usesDeviceMicrophone
+        defaults.set(usesDeviceMicrophone, forKey: HandheldMicrophone.useDeviceMicrophoneKey)
+        onMicrophoneChoiceChanged?()
+    }
+
+    /// The Mac is about to sleep: a held key's release would never be heard.
+    func systemWillSleep() {
+        actionRunner?.releaseEverythingHeld(reason: "the Mac is going to sleep")
+    }
+
+    func setAction(_ action: HandheldAction, controlID: String, gesture: HandheldGesture) {
+        guard let device = deviceShown else { return }
+        bindings.set(action, controlID: controlID, gesture: gesture)
+        bindingsStore.save(bindings, for: device)
+    }
+
+    func resetBindings() {
+        guard let device = deviceShown else { return }
+        bindingsStore.reset(device)
+        bindings = bindingsStore.bindings(for: device)
+    }
+
+    private func startListening() {
+        guard listener == nil, let host else { return }
+        let newActionRunner = HandheldActionRunner(host: host)
+        let newListener = HandheldListener(source: makeSource())
+        newListener.onEvent = { [weak self] device, event in
+            self?.deviceWasSeen(device)
+            guard let self else { return }
+            if event.gesture == .single || event.gesture == .double || event.gesture == .longStart {
+                self.onControlPressed?(event.controlID)
+            }
+            newActionRunner.handle(event, bindings: self.bindings)
+        }
+        newListener.onDisconnect = { [weak self] _ in
+            newActionRunner.releaseEverythingHeld(reason: "device disconnected")
+            self?.connectedDevice = nil
+            self?.onSettingsShapeChanged?()
+            self?.onMicrophoneChoiceChanged?()
+        }
+        listener = newListener
+        actionRunner = newActionRunner
+        newListener.$connectedDevice
+            .compactMap { $0 }
+            .sink { [weak self] device in self?.deviceWasSeen(device) }
+            .store(in: &listenerSubscriptions)
+        newListener.start()
+        sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.systemWillSleep() }
+        }
+    }
+
+    /// Registered only while listening.
+    private var sleepObserver: NSObjectProtocol?
+
+    private var listenerSubscriptions: Set<AnyCancellable> = []
+
+    private func stopListening() {
+        actionRunner?.releaseEverythingHeld(reason: "plugin switched off")
+        if let sleepObserver { NSWorkspace.shared.notificationCenter.removeObserver(sleepObserver) }
+        sleepObserver = nil
+        listener?.stop()
+        listenerSubscriptions.removeAll()
+        listener = nil
+        actionRunner = nil
+        connectedDevice = nil
+        onMicrophoneChoiceChanged?()
+    }
+
+    private func deviceWasSeen(_ device: HandheldDevice) {
+        guard connectedDevice?.id != device.id else { return }
+        connectedDevice = device
+        if lastSeenDevice?.id != device.id {
+            lastSeenDevice = device
+            defaults.set(device.id, forKey: Self.lastSeenDeviceKey)
+        }
+        bindings = bindingsStore.bindings(for: device)
+        onSettingsShapeChanged?()
+        onMicrophoneChoiceChanged?()
+        if usesDeviceMicrophone, device.microphoneName != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.microphoneSettleSeconds) { [weak self] in
+                self?.onMicrophoneChoiceChanged?()
+            }
+        }
+    }
+}

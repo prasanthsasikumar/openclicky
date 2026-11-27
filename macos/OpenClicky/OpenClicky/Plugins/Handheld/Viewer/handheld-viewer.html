@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Handheld</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1d1d1f; --quiet: rgba(60, 60, 67, 0.62); --line: rgba(60, 60, 67, 0.3); --chip: rgba(0, 0, 0, 0.06); }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #f5f5f7; --quiet: rgba(235, 235, 245, 0.6); --line: rgba(235, 235, 245, 0.28); --chip: rgba(255, 255, 255, 0.1); }
+  }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  body { font: 12px -apple-system, system-ui, sans-serif; color: var(--ink); -webkit-user-select: none; cursor: default; position: relative; }
+  canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; outline: none; }
+  /* The soft shadow the device floats over. */
+  #ground { position: absolute; left: 50%; bottom: 14px; width: 150px; height: 18px; margin-left: -75px; border-radius: 50%;
+            background: radial-gradient(closest-side, rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0)); pointer-events: none; }
+  /* The lines from each label to its button. */
+  #lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #lines polyline { fill: none; stroke: var(--line); stroke-width: 1; }
+  #lines polyline.chosen { stroke: #ff6a00; stroke-width: 1.4; }
+  #lines circle { fill: #ff6a00; stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.5; }
+  /* One label per button: its name and what each gesture does. */
+  .callout { position: absolute; width: 150px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+  .callout:hover { background: var(--chip); }
+  .callout.right { text-align: left; }
+  .callout.left { text-align: left; }
+  .callout .name { font-size: 14px; font-weight: 600; }
+  .callout.chosen .name { color: #ff6a00; }
+  .callout .gesture { margin-top: 3px; color: var(--quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .callout .gesture b { display: inline-block; min-width: 34px; font-weight: 600; color: var(--ink); opacity: 0.75; }
+  #status { position: absolute; left: 0; right: 0; top: 46%; text-align: center; color: var(--quiet); }
+</style>
+</head>
+<body>
+<div id="ground"></div>
+<canvas id="device" tabindex="-1" aria-label="The handheld. Click a button to choose what it does."></canvas>
+<svg id="lines" aria-hidden="true"></svg>
+<div id="callouts"></div>
+<div id="status">Loading…</div>
+<script type="module" src="viewer.js"></script>
+</body>
+</html>

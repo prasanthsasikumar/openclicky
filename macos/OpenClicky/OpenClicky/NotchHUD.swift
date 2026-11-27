@@ -863,12 +863,38 @@ final class NotchHUDManager {
 
     /// The extras that need a background hand (the agents watcher, the usage store) follow
     /// their switch in Settings.
+    /// Notices for sessions in a terminal (`AgentSessionNotifier`): made only while the Coding
+    /// agents plugin and its notices switch are both on, dropped when either goes off.
+    private(set) var agentSessionNotifier: AgentSessionNotifier?
+
+    private func syncAgentSessionNotices(agentsOn: Bool) {
+        let noticesOn = agentsOn && UserDefaults.standard.bool(forKey: AgentSessionNotifier.enabledKey)
+        guard noticesOn != (agentSessionNotifier != nil) else { return }
+        agentSessions.noticesAreOn = noticesOn
+        guard noticesOn else {
+            agentSessionNotifier = nil
+            agentSessions.onRefresh = nil
+            return
+        }
+        let notifier = AgentSessionNotifier(
+            post: { [weak self] notice, action in
+                guard let companionManager = self?.companionManager else { return }
+                companionManager.islandNotices.post(notice, action: action)
+                companionManager.dictationTakeController.earcons.play(.notify)
+            },
+            focusTerminal: { session in TerminalWindowFinder.bringForward(session) })
+        agentSessionNotifier = notifier
+        agentSessions.onRefresh = { [weak notifier] sessions in notifier?.observe(sessions) }
+        agentSessions.refreshNow()
+    }
+
     private func syncOptionalComponents() {
         let enabled = instances.first?.model.enabledComponentIDs
             ?? IslandComponentSettings.enabledIDs(in: IslandComponentRegistry.all, settings: IslandComponentSettings(defaults: .standard))
         let agentsOn = enabled.contains(IslandPluginRegistry.agentsID)
         agentSessions.setEnabled(agentsOn)
         claudeUsage.setEnabled(agentsOn)
+        syncAgentSessionNotices(agentsOn: agentsOn)
         media.setEnabled(enabled.contains(IslandPluginRegistry.mediaID))
     }
     #if DEBUG

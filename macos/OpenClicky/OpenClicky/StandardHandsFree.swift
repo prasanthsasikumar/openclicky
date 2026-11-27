@@ -224,7 +224,7 @@ nonisolated final class StandardHandsFreeListener: @unchecked Sendable {
         guard !isRunning else { return }
         MicrophoneDevices.apply(preferredUID: preferredMicrophoneUID, to: engine)
         let inputNode = engine.inputNode
-        let hardwareFormat = inputNode.outputFormat(forBus: 0)
+        let hardwareFormat = MicrophoneDevices.tapFormat(of: inputNode)
         guard hardwareFormat.sampleRate > 0, hardwareFormat.channelCount > 0,
               let monoFormat = AVAudioFormat(standardFormatWithSampleRate: hardwareFormat.sampleRate, channels: 1),
               let targetFormat = AVAudioFormat(standardFormatWithSampleRate: Double(UtteranceDetector.sampleRate), channels: 1),

@@ -98,7 +98,7 @@ struct IslandSettingsView: View {
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(0.09)))
             .padding(.bottom, 8)
 
-            ForEach(DictationSettingsPage.sidebarPages) { sidebarPage in
+            ForEach(DictationSettingsPage.sidebarPages(handheldIsOn: HandheldPlugin.shared.isEnabled)) { sidebarPage in
                 let isSelected = query.isEmpty && page.sidebarPage == sidebarPage
                 Button(action: { select(sidebarPage) }) {
                     HStack(spacing: 9) {

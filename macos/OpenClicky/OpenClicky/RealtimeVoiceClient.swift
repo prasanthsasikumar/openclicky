@@ -1994,7 +1994,7 @@ nonisolated final class RealtimeAudioEngine: @unchecked Sendable {
         }
         engine.connect(playerNode, to: engine.mainMixerNode, format: Self.playbackFormat)
 
-        let hardwareFormat = inputNode.outputFormat(forBus: 0)
+        let hardwareFormat = MicrophoneDevices.tapFormat(of: inputNode)
         guard hardwareFormat.sampleRate > 0, hardwareFormat.channelCount > 0 else {
             throw RealtimeVoiceError.audio("no microphone input available")
         }
