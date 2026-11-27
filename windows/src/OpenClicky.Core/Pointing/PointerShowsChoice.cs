@@ -3,6 +3,8 @@
 // always, while the mouse moves, or after a shake. Two settings underneath: IsClickyCursorEnabled and
 // PointerPresence.
 
+using OpenClicky.Core.Localization;
+
 namespace OpenClicky.Core.Pointing;
 
 public enum PointerShowsChoice
@@ -31,19 +33,19 @@ public static class PointerShowsChoices
 
     public static string Title(this PointerShowsChoice choice) => choice switch
     {
-        PointerShowsChoice.WhileTalking => "While I talk",
-        PointerShowsChoice.Always => "Always",
-        PointerShowsChoice.WhileMoving => "While the mouse moves",
-        _ => "After a shake",
+        PointerShowsChoice.WhileTalking => L.T("While I talk"),
+        PointerShowsChoice.Always => L.T("Always"),
+        PointerShowsChoice.WhileMoving => L.T("While the mouse moves"),
+        _ => L.T("After a shake"),
     };
 
     /// <summary>The pointer's line under the picker.</summary>
     public static string Detail(this PointerShowsChoice choice) => choice switch
     {
-        PointerShowsChoice.WhileTalking => "Appears when you ask and leaves once Clicky is done.",
-        PointerShowsChoice.Always => "Follows the mouse everywhere.",
-        PointerShowsChoice.WhileMoving => "Fades a few seconds after the mouse rests.",
-        _ => "Hidden until you shake, or until Clicky needs it.",
+        PointerShowsChoice.WhileTalking => L.T("Appears when you ask and leaves once Clicky is done."),
+        PointerShowsChoice.Always => L.T("Follows the mouse everywhere."),
+        PointerShowsChoice.WhileMoving => L.T("Fades a few seconds after the mouse rests."),
+        _ => L.T("Hidden until you shake, or until Clicky needs it."),
     };
 
     /// <summary>

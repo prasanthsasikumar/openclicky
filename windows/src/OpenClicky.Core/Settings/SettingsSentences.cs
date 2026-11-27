@@ -12,6 +12,7 @@ using System.Text.RegularExpressions;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Providers;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Settings;
 
@@ -33,8 +34,8 @@ public static class DictationCleanUp
     /// <summary>The row's copy. There is no on-device model on Windows, so the words are always tidied online.</summary>
     public static string Detail(bool hasModel)
     {
-        var needsModelNote = hasModel ? "" : " Needs an AI key (Settings → Keys & Account) or a free OpenClicky account.";
-        return "Adds punctuation and fixes numbers. Your words are sent online to be tidied, so they appear when you let go. Off: words type straight in as you speak." + needsModelNote;
+        var needsModelNote = hasModel ? "" : L.T(" Needs an AI key (Settings → Keys & Account) or a free OpenClicky account.");
+        return L.T("Adds punctuation and fixes numbers. Your words are sent online to be tidied, so they appear when you let go. Off: words type straight in as you speak.") + needsModelNote;
     }
 }
 
@@ -43,11 +44,11 @@ public static class WordsPageSentences
     /// <summary>Where a take's voice and words go, as the Your words page shows it.</summary>
     public static string EngineSentenceInSentenceCase(DictationSettings settings, bool hasPolisher)
     {
-        var history = settings.Incognito ? "Incognito: nothing is saved." : "Your history stays on this PC.";
+        var history = settings.Incognito ? L.T("Incognito: nothing is saved.") : L.T("Your history stays on this PC.");
         if (!settings.Engine.IsOnDevice()) return settings.Engine.AudioDestinationSentence() + " " + history;
         if (DictationEngineResolver.WantsModelPolish(settings) && hasPolisher)
-            return "Your voice stays on this PC; the words go to a model for polish. " + history;
-        return settings.Incognito ? "Your voice stays on this PC, and nothing is saved." : "Your voice and your history stay on this PC.";
+            return L.T("Your voice stays on this PC; the words go to a model for polish. ") + history;
+        return settings.Incognito ? L.T("Your voice stays on this PC, and nothing is saved.") : L.T("Your voice and your history stay on this PC.");
     }
 
     /// <summary>The same, lower case (the rule the Mac's tests pin down).</summary>
@@ -77,16 +78,23 @@ public static class WordsPageSentences
     public static string WordCount(string text)
     {
         var count = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-        return count == 1 ? "1 word" : $"{count} words";
+        return Plural(count, "word");
     }
 
-    public static string Plural(int count, string unit) => count == 1 ? $"1 {unit}" : $"{count.ToString("N0", CultureInfo.CurrentCulture)} {unit}s";
+    /// <summary>"1 take", "12 takes"; in another language the number and the unit's own word ("12 ٹیک": Urdu counts
+    /// without an English s). The units are translated where they are shown (LocalizationTests.TranslatedWhereShown).</summary>
+    public static string Plural(int count, string unit)
+    {
+        var number = count.ToString("N0", CultureInfo.CurrentCulture);
+        if (L.Language != "en") return $"{number} {L.T(unit)}";
+        return count == 1 ? $"1 {unit}" : $"{number} {unit}s";
+    }
 
     /// <summary>"Couldn't finish: no key", or "Couldn't finish".</summary>
     public static string FailureLine(TakeRecord take)
     {
         var reason = take.FailureReason?.Trim();
-        return string.IsNullOrEmpty(reason) ? "Couldn't finish" : $"Couldn't finish: {reason}";
+        return string.IsNullOrEmpty(reason) ? L.T("Couldn't finish") : L.F("Couldn't finish: {0}", reason);
     }
 
     /// <summary>The take's detail line: "13 Oct 2026, 3:04 PM · 4 s · sarvam · Pasted".</summary>
@@ -118,8 +126,8 @@ public static class WordsPageSentences
             .OrderByDescending(group => group.Key)
             .Select(group =>
             {
-                var title = group.Key == todayDate ? "Today"
-                    : group.Key == todayDate.AddDays(-1) ? "Yesterday"
+                var title = group.Key == todayDate ? L.T("Today")
+                    : group.Key == todayDate.AddDays(-1) ? L.T("Yesterday")
                     : group.Key.ToString("dddd, d MMM", culture);
                 return new DayGroup(title, group.Key, group.ToList());
             })
@@ -159,25 +167,25 @@ public static class ProviderKeys
         ProviderKey.Xai => "xAI (Grok)",
         ProviderKey.Sarvam => "Sarvam",
         ProviderKey.ElevenLabs => "ElevenLabs",
-        ProviderKey.GoogleCloud => "Google Cloud voice",
+        ProviderKey.GoogleCloud => L.T("Google Cloud voice"),
         ProviderKey.AmazonPolly => "Amazon Polly",
         _ => "Spotify",
     };
 
     public static string Detail(this ProviderKey provider) => provider switch
     {
-        ProviderKey.OpenAI => "Answers, fast voice and hands-free.",
-        ProviderKey.Anthropic => "Claude answers your questions about the screen.",
-        ProviderKey.OpenRouter => "One key for Claude, GPT, Gemini, Llama and more.",
-        ProviderKey.Gemini => "Answers and a voice. From Google AI Studio.",
-        ProviderKey.Groq => "Very fast answers on open models.",
-        ProviderKey.Mistral => "Mistral’s own models.",
-        ProviderKey.Xai => "Grok, from xAI.",
-        ProviderKey.Sarvam => "Speaks answers in a natural voice (Bulbul), and the Sarvam dictation engine for Indian languages.",
-        ProviderKey.ElevenLabs => "Speaks answers in ElevenLabs’ voice, on your own ElevenLabs account.",
-        ProviderKey.GoogleCloud => "Speaks answers. A Google Cloud API key with the Text-to-Speech API switched on; an AI Studio key won’t do.",
-        ProviderKey.AmazonPolly => "Speaks answers in Amazon’s neural voices. Paste access key ID:secret key, then :region if it isn’t us-east-1.",
-        _ => "Finds the song you asked for. Paste client id:client secret from developer.spotify.com; without it OpenClicky’s own lookup is used.",
+        ProviderKey.OpenAI => L.T("Answers, fast voice and hands-free."),
+        ProviderKey.Anthropic => L.T("Claude answers your questions about the screen."),
+        ProviderKey.OpenRouter => L.T("One key for Claude, GPT, Gemini, Llama and more."),
+        ProviderKey.Gemini => L.T("Answers and a voice. From Google AI Studio."),
+        ProviderKey.Groq => L.T("Very fast answers on open models."),
+        ProviderKey.Mistral => L.T("Mistral’s own models."),
+        ProviderKey.Xai => L.T("Grok, from xAI."),
+        ProviderKey.Sarvam => L.T("Speaks answers in a natural voice (Bulbul), and the Sarvam dictation engine for Indian languages."),
+        ProviderKey.ElevenLabs => L.T("Speaks answers in ElevenLabs’ voice, on your own ElevenLabs account."),
+        ProviderKey.GoogleCloud => L.T("Speaks answers. A Google Cloud API key with the Text-to-Speech API switched on; an AI Studio key won’t do."),
+        ProviderKey.AmazonPolly => L.T("Speaks answers in Amazon’s neural voices. Paste access key ID:secret key, then :region if it isn’t us-east-1."),
+        _ => L.T("Finds the song you asked for. Paste client id:client secret from developer.spotify.com; without it OpenClicky’s own lookup is used."),
     };
 
     public static string Placeholder(this ProviderKey provider) => provider switch
@@ -187,9 +195,9 @@ public static class ProviderKeys
         ProviderKey.OpenRouter => "sk-or-…",
         ProviderKey.Gemini => "AIza…",
         ProviderKey.Groq => "gsk_…",
-        ProviderKey.Mistral => "Mistral key",
+        ProviderKey.Mistral => L.T("Mistral key"),
         ProviderKey.Xai => "xai-…",
-        ProviderKey.Sarvam => "Sarvam key",
+        ProviderKey.Sarvam => L.T("Sarvam key"),
         ProviderKey.ElevenLabs => "sk_…",
         ProviderKey.GoogleCloud => "AIza…",
         ProviderKey.AmazonPolly => "AKIA…:secret",
@@ -283,10 +291,10 @@ public static class PlanSubscription
         var command = plan == AnswerSource.ClaudeCodePlan ? "claude" : "codex login";
         return status switch
         {
-            null => "Checking…",
-            PlanCliStatus.NotInstalled => plan == AnswerSource.ClaudeCodePlan ? "Claude Code isn’t installed on this PC." : "Codex isn’t installed on this PC.",
-            PlanCliStatus.InstalledSignedOut => $"Installed, not signed in. Run “{command}” in a terminal and sign in.",
-            _ => isOn ? "Signed in. Answering with your plan when it’s the one picked (Settings → Clicky)." : "Signed in. Switch on to answer with your plan.",
+            null => L.T("Checking…"),
+            PlanCliStatus.NotInstalled => plan == AnswerSource.ClaudeCodePlan ? L.T("Claude Code isn’t installed on this PC.") : L.T("Codex isn’t installed on this PC."),
+            PlanCliStatus.InstalledSignedOut => L.F("Installed, not signed in. Run “{0}” in a terminal and sign in.", command),
+            _ => isOn ? L.T("Signed in. Answering with your plan when it’s the one picked (Settings → Clicky).") : L.T("Signed in. Switch on to answer with your plan."),
         };
     }
 
@@ -306,7 +314,7 @@ public static class AccountRows
             ProviderRouteKind.Backend => AnswerSource.OpenClickyAccount.DisplayName(),
             ProviderRouteKind.AnswerProvider => route.Source!.Value.DisplayName(),
             ProviderRouteKind.OpenAIDirect => AnswerSource.OpenAI.DisplayName(),
-            _ => "nothing set up yet",
+            _ => L.T("nothing set up yet"),
         };
     }
 
@@ -316,12 +324,12 @@ public static class AccountRows
         if (usesOwnKeys)
         {
             return (hasAccountToken
-                ? "OpenAI runs straight on your own key, not metered. AssemblyAI is on your account."
-                : "OpenAI runs straight on your own key, not metered. AssemblyAI needs an account.", "Your key");
+                ? L.T("OpenAI runs straight on your own key, not metered. AssemblyAI is on your account.")
+                : L.T("OpenAI runs straight on your own key, not metered. AssemblyAI needs an account."), L.T("Your key"));
         }
         return hasAccountToken
-            ? ("Through OpenClicky, counted against your free allowance.", "Allowance")
-            : ("Through OpenClicky. Needs an account or your own OpenAI key.", "Needs account");
+            ? (L.T("Through OpenClicky, counted against your free allowance."), L.T("Allowance"))
+            : (L.T("Through OpenClicky. Needs an account or your own OpenAI key."), L.T("Needs account"));
     }
 
     /// <summary>What the "Free allowance" row shows.</summary>
@@ -331,16 +339,16 @@ public static class AccountRows
     {
         if (summary is not null)
         {
-            if (summary.Byok) return new("Your keys", "OpenClicky meters nothing: every request runs on your own key.", null, null);
-            if (!summary.IsMetered) return new("Not metered", "This backend meters nothing: every request runs without an allowance.", null, null);
-            if (summary.IsSwitchedOff) return new("Paused", BillingSummary.SwitchedOffMessage, null, null);
+            if (summary.Byok) return new(L.T("Your keys"), L.T("OpenClicky meters nothing: every request runs on your own key."), null, null);
+            if (!summary.IsMetered) return new(L.T("Not metered"), L.T("This backend meters nothing: every request runs without an allowance."), null, null);
+            if (summary.IsSwitchedOff) return new(L.T("Paused"), BillingSummary.SwitchedOffMessage, null, null);
             var fraction = Math.Clamp(summary.FractionUsed, 0, 1);
             return new($"{(int)Math.Round(summary.FractionUsed * 100, MidpointRounding.AwayFromZero)}% used", null, fraction, summary.UsageDetails());
         }
-        if (usesOwnKeys) return new("Your keys", "No account needed: your keys in shell.json go straight to OpenAI and Anthropic, and nothing is metered.", null, null);
+        if (usesOwnKeys) return new(L.T("Your keys"), L.T("No account needed: your keys in shell.json go straight to OpenAI and Anthropic, and nothing is metered."), null, null);
         // No sign-in, so there is no allowance to fetch (waiting for a summary said Loading… forever).
-        if (!hasAccountToken) return new("Sign in to see usage", null, 0, null);
-        return new(errorText ?? "Loading…", null, null, null);
+        if (!hasAccountToken) return new(L.T("Sign in to see usage"), null, 0, null);
+        return new(errorText ?? L.T("Loading…"), null, null, null);
     }
 
     /// <summary>"prasanth" for a signed-in address, else the first name and the last initial ("Prasanth S."), else "You".</summary>
@@ -348,7 +356,7 @@ public static class AccountRows
     {
         if (email is not null) return email.Split('@')[0];
         var nameParts = (fullUserName ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (nameParts.Length == 0) return "You";
+        if (nameParts.Length == 0) return L.T("You");
         if (nameParts.Length > 1) return $"{nameParts[0]} {char.ToUpper(nameParts[^1][0], CultureInfo.CurrentCulture)}.";
         return nameParts[0];
     }
@@ -358,10 +366,10 @@ public static class AccountRows
 
     /// <summary>The sidebar foot's second line.</summary>
     public static string AccountStanding(bool isSignedInWithEmail, bool isGuestWithoutEmail) =>
-        isSignedInWithEmail ? "Signed in" : isGuestWithoutEmail ? "Trying it free" : "Personal · no account";
+        isSignedInWithEmail ? L.T("Signed in") : isGuestWithoutEmail ? L.T("Trying it free") : L.T("Personal · no account");
 
     /// <summary>"••••abcd", or "None" with no token.</summary>
-    public static string MaskedToken(string? token) => token is null ? "None" : ProviderKeys.Masked(token);
+    public static string MaskedToken(string? token) => token is null ? L.T("None") : ProviderKeys.Masked(token);
 }
 
 public static class EmailAccountFormRules

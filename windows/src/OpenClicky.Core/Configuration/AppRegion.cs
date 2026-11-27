@@ -8,6 +8,7 @@
 // file live with DictationLanguage in OpenClicky.Core.Dictation.
 
 using System.Globalization;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Configuration;
 
@@ -23,8 +24,8 @@ public static class AppRegions
 
     public static string Title(this AppRegion region) => region switch
     {
-        AppRegion.India => "India",
-        _ => "Rest of the world",
+        AppRegion.India => L.T("India"),
+        _ => L.T("Rest of the world"),
     };
 
     /// <summary>Whether the settings offer what only Indian users need.</summary>

@@ -12,6 +12,7 @@
 
 using System.Text.Json.Nodes;
 using OpenClicky.Core.Companion;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.CodingAgents;
 
@@ -20,8 +21,8 @@ public static class CodingAgentsPlugin
 {
     /// <summary>Up to three session rows on the left, Claude's plan-limit rings on the right.</summary>
     public static IslandComponent Component { get; } = new(
-        IslandPluginRegistry.AgentsId, "Coding agents", "", 76, IsPlugin: true,
-        SettingsDetail: "Follows Claude Code and Codex sessions on this PC from their own logs, and reads Claude Code's sign-in on this PC for the plan limits.");
+        IslandPluginRegistry.AgentsId, L.T("Coding agents"), "", 76, IsPlugin: true,
+        SettingsDetail: L.T("Follows Claude Code and Codex sessions on this PC from their own logs, and reads Claude Code's sign-in on this PC for the plan limits."));
 }
 
 public enum AgentKind

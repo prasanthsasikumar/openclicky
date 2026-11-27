@@ -3,6 +3,8 @@
 // lower-case names ("signal" … "aqua"), Signal by default. The window, taskbar and tray icons follow
 // the pick; the Start menu and Explorer keep the exe's red icon, as Finder does on the Mac.
 
+using OpenClicky.Core.Localization;
+
 namespace OpenClicky.Core.Dictation;
 
 public enum AppIconColor
@@ -23,11 +25,11 @@ public static class AppIconColors
 
     public static string Title(this AppIconColor color) => color switch
     {
-        AppIconColor.Signal => "Signal",
-        AppIconColor.Ultraviolet => "Ultraviolet",
-        AppIconColor.Sunset => "Sunset",
-        AppIconColor.Paper => "Paper",
-        _ => "Aqua",
+        AppIconColor.Signal => L.T("Signal"),
+        AppIconColor.Ultraviolet => L.T("Ultraviolet"),
+        AppIconColor.Sunset => L.T("Sunset"),
+        AppIconColor.Paper => L.T("Paper"),
+        _ => L.T("Aqua"),
     };
 
     /// <summary>The colours from scripts/make-app-icon.py.</summary>

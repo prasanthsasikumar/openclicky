@@ -12,6 +12,7 @@
 
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.Media;
 
@@ -19,8 +20,8 @@ namespace OpenClicky.Core.Plugins.Media;
 public static class MediaPlugin
 {
     public static IslandComponent Component { get; } = new(
-        IslandPluginRegistry.MediaId, "Now playing", "", 84, IsPlugin: true,
-        SettingsDetail: "Shows what Spotify, a browser or Media Player is playing, with artwork, progress and controls.");
+        IslandPluginRegistry.MediaId, L.T("Now playing"), "", 84, IsPlugin: true,
+        SettingsDetail: L.T("Shows what Spotify, a browser or Media Player is playing, with artwork, progress and controls."));
 }
 
 /// <summary>One read of the track.</summary>

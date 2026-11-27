@@ -9,6 +9,7 @@ using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Plugins;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Shortcuts;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Settings;
 
@@ -63,13 +64,13 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("dictation.openWords", "Your words", "Every take, with search. Try dictation here.",
+            Item("dictation.openWords", L.T("Your words"), L.T("Every take, with search. Try dictation here."),
                 ["history", "takes", "try"], DictationDestination.Of(DictationSection.Words)),
-            Item("dictation.openWriting", "How it writes", "Dictionary, snippets and per-app styles.",
+            Item("dictation.openWriting", L.T("How it writes"), L.T("Dictionary, snippets and per-app styles."),
                 ["dictionary", "snippets", "styles"], DictationDestination.Of(DictationSection.Writing)),
-            Item("dictation.openOrb", "The orb", "Style, theme, size and when it appears.",
+            Item("dictation.openOrb", L.T("The orb"), L.T("Style, theme, size and when it appears."),
                 ["orb", "pill", "look", "theme", "size"], DictationDestination.Of(DictationSettingsPage.Orb)),
-            Item("island.openCalendars", "Calendars", "Which calendars the island shows.",
+            Item("island.openCalendars", L.T("Calendars"), L.T("Which calendars the island shows."),
                 ["calendar", "calendars", "hide", "show", "account"], DictationDestination.Of(DictationSettingsPage.Calendars)),
         ];
     }
@@ -84,15 +85,15 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("words.takes", DictationSection.Words, "Your takes", "Every take you dictated, with search and filters.",
+            Item("words.takes", DictationSection.Words, L.T("Your takes"), L.T("Every take you dictated, with search and filters."),
                 ["history", "takes", "transcript", "past", "record", "recording", "retry", "dictated"]),
-            Item("words.tryIt", DictationSection.Words, "Try it here", "A box to dictate into and see what OpenClicky writes.",
+            Item("words.tryIt", DictationSection.Words, L.T("Try it here"), L.T("A box to dictate into and see what OpenClicky writes."),
                 ["test", "practice", "try", "scratch"]),
-            Item("writing.dictionary", DictationSection.Writing, "Dictionary", "Names and terms written exactly as you expect.",
+            Item("writing.dictionary", DictationSection.Writing, L.T("Dictionary"), L.T("Names and terms written exactly as you expect."),
                 ["dictionary", "terms", "names", "spelling", "vocabulary", "words", "misheard"]),
-            Item("writing.snippets", DictationSection.Writing, "Snippets", "Say a short phrase, get a longer text.",
+            Item("writing.snippets", DictationSection.Writing, L.T("Snippets"), L.T("Say a short phrase, get a longer text."),
                 ["snippet", "shortcut", "text expansion", "template", "signature", "address", "email"]),
-            Item("writing.styles", DictationSection.Writing, "Styles", "How you sound, app by app: the rules the AI clean-up reads.",
+            Item("writing.styles", DictationSection.Writing, L.T("Styles"), L.T("How you sound, app by app: the rules the AI clean-up reads."),
                 ["style", "tone", "formal", "casual", "per app", "rules", "apps"]),
         ];
     }
@@ -108,23 +109,23 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("general.appearance", "Appearance", "This window, the orb and its transcript box follow this. The island stays black.",
+            Item("general.appearance", L.T("Appearance"), L.T("This window, the orb and its transcript box follow this. The island stays black."),
                 ["light", "dark", "auto", "match windows", "theme", "mode", "colour", "color"]),
-            Item("general.hudPlacement", "Where it lives", "The top of the screen, a drawer on the left or right edge, or hidden until you use a shortcut.",
+            Item("general.hudPlacement", L.T("Where it lives"), L.T("The top of the screen, a drawer on the left or right edge, or hidden until you use a shortcut."),
                 ["top", "notch", "island", "hud", "side", "edge", "drawer", "hide", "hidden", "position", "placement", "shortcuts only"]),
-            Item("general.trayIcon", "Show in the tray", "Off is fine: the island is OpenClicky’s home.",
+            Item("general.trayIcon", L.T("Show in the tray"), L.T("Off is fine: the island is OpenClicky’s home."),
                 ["tray", "notification area", "system tray", "icon", "taskbar", "menu bar"]),
-            Item("general.appIcon", "App icon", "Its colour on this window, the taskbar and the tray. The Start menu keeps the red one.",
+            Item("general.appIcon", L.T("App icon"), L.T("Its colour on this window, the taskbar and the tray. The Start menu keeps the red one."),
                 ["icon", "colour", "color", "taskbar", "tray", "app icon", "signal", "ultraviolet", "sunset", "paper", "aqua", "purple", "blue", "pink", "red"]),
-            Item("general.openAtLogin", "Open at sign-in", $"So {dictationKeyName} always works.",
+            Item("general.openAtLogin", L.T("Open at sign-in"), L.F("So {0} always works.", dictationKeyName),
                 ["startup", "launch", "restart", "login", "log in", "sign in", "boot"]),
-            Item("general.walkthrough", "Welcome tour", "Clicky shows you dictating, asking and handing over a task, from the island.",
+            Item("general.walkthrough", L.T("Welcome tour"), L.T("Clicky shows you dictating, asking and handing over a task, from the island."),
                 ["onboarding", "setup", "replay", "tour", "first run"]),
-            Item("general.settingsTour", "Settings tour", "A one-minute look around this window: Clicky points at what matters most.",
+            Item("general.settingsTour", L.T("Settings tour"), L.T("A one-minute look around this window: Clicky points at what matters most."),
                 ["tour", "crash course", "show me around", "help", "guide", "replay", "walkthrough"]),
-            Item("general.reduceMotion", "Reduce motion", "The orb and the island appear and leave without animating.",
+            Item("general.reduceMotion", L.T("Reduce motion"), L.T("The orb and the island appear and leave without animating."),
                 ["animation", "motion", "accessibility", "calm"]),
-            Item("about.autoUpdate", "Check for updates daily", "Updates come from OpenClicky’s GitHub releases.",
+            Item("about.autoUpdate", L.T("Check for updates daily"), L.T("Updates come from OpenClicky’s GitHub releases."),
                 ["update", "updates", "automatic", "velopack", "version"]),
         ];
     }
@@ -139,13 +140,13 @@ public sealed class SettingsCatalog
     {
         var rightHandKeyNote = key switch
         {
-            DictationHotkey.RightControl => " Edits, hands-free and Ctrl twice use the left Ctrl.",
-            DictationHotkey.LeftControl => " Edits, hands-free and Ctrl twice use the right Ctrl.",
-            DictationHotkey.RightAlt => " A key typed with right Alt held (é, €) cancels the take.",
-            DictationHotkey.RightShift => " A key typed with right Shift held (a capital) cancels the take.",
+            DictationHotkey.RightControl => L.T(" Edits, hands-free and Ctrl twice use the left Ctrl."),
+            DictationHotkey.LeftControl => L.T(" Edits, hands-free and Ctrl twice use the right Ctrl."),
+            DictationHotkey.RightAlt => L.T(" A key typed with right Alt held (é, €) cancels the take."),
+            DictationHotkey.RightShift => L.T(" A key typed with right Shift held (a capital) cancels the take."),
             _ => "",
         };
-        return "Hold to talk anywhere." + rightHandKeyNote;
+        return L.T("Hold to talk anywhere.") + rightHandKeyNote;
     }
 
     public IReadOnlyList<SettingsItem> DictationKeyItems() =>
@@ -153,14 +154,14 @@ public sealed class SettingsCatalog
         new()
         {
             Id = "keyboard.dictationKey",
-            Title = "Dictation key", Detail = DictationKeyDetail(settings.DictationKey),
+            Title = L.T("Dictation key"), Detail = DictationKeyDetail(settings.DictationKey),
             Keywords = ["hotkey", "push to talk", "right control", "right ctrl", "right alt", "altgr", "right shift", "caps lock", "dictate", "shortcut"],
         },
         new()
         {
             Id = "keyboard.tapKeepsListening",
-            Title = "Tap to keep listening",
-            Detail = "Off: hold the key while you talk, as on the Mac. On: a quick tap starts a take and the next tap finishes it.",
+            Title = L.T("Tap to keep listening"),
+            Detail = L.T("Off: hold the key while you talk, as on the Mac. On: a quick tap starts a take and the next tap finishes it."),
             Keywords = ["tap", "toggle", "hold", "push to talk", "latch", "keep listening"],
         },
     ];
@@ -183,23 +184,23 @@ public sealed class SettingsCatalog
         [
             .. DictationKeyItems(),
             .. engineItems,
-            Item("dictation.language", "Language", "Pins every engine to one language, or lets it detect.",
+            Item("dictation.language", L.T("Language"), L.T("Pins every engine to one language, or lets it detect."),
                 ["language", "english", "hindi", "tamil", "spanish", "french", "german", "pin", "auto-detect", "detect"]),
             // Only while the words are pinned to an Indian language (or, in India, could be one).
-            Item("dictation.script", "Script for Indian languages", "Same words, written two ways.",
+            Item("dictation.script", L.T("Script for Indian languages"), L.T("Same words, written two ways."),
                 ["script", "roman", "native", "devanagari", "hinglish", "transliteration"],
                 () => settings.Language.IsIndian || (settings.Region.OffersIndianOptions() && settings.Language == DictationLanguage.Auto)),
-            Item("dictation.cleanUp", "Clean up my words with AI", "Adds punctuation and fixes numbers.",
+            Item("dictation.cleanUp", L.T("Clean up my words with AI"), L.T("Adds punctuation and fixes numbers."),
                 ["polish", "clean up", "cleanup", "clean-up", "ai", "punctuation", "grammar", "model", "offline takes"]),
-            Item("dictation.input", "Input", "Automatic follows Windows’ default microphone. Clicky listens through it too.",
+            Item("dictation.input", L.T("Input"), L.T("Automatic follows Windows’ default microphone. Clicky listens through it too."),
                 ["microphone", "mic", "device", "input", "headset", "headphones"]),
-            Item("dictation.micTest", "Test your microphone", "Hear whether the chosen input picks you up.",
+            Item("dictation.micTest", L.T("Test your microphone"), L.T("Hear whether the chosen input picks you up."),
                 ["microphone", "mic", "level", "test"]),
-            Item("dictation.inactivityTimeout", "End a quiet take after", "A tapped take finishes on its own after this much silence.",
+            Item("dictation.inactivityTimeout", L.T("End a quiet take after"), L.T("A tapped take finishes on its own after this much silence."),
                 ["inactivity", "timeout", "silence", "minutes", "quiet"]),
-            Item("dictation.pasteLast", "Paste last take", "Put your last take at the cursor again.",
+            Item("dictation.pasteLast", L.T("Paste last take"), L.T("Put your last take at the cursor again."),
                 ["paste", "again", "re-insert", "last"]),
-            Item("dictation.sounds", "Sounds", "Tones when a take starts, stops or finishes.",
+            Item("dictation.sounds", L.T("Sounds"), L.T("Tones when a take starts, stops or finishes."),
                 ["sound", "tone", "earcon", "audio", "beep", "mute", "quiet"]),
         ];
     }
@@ -214,7 +215,7 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("clicky.assistantName", "Its name", "What your assistant is called and answers to, like Dyna or Professor Pip.",
+            Item("clicky.assistantName", L.T("Its name"), L.T("What your assistant is called and answers to, like Dyna or Professor Pip."),
                 ["name", "rename", "call it", "assistant", "persona", "dyna", "nickname"]),
             Item("clicky.answerSimpler", "Simpler words", "Everyday words a young child knows, and hard words explained. Clicky also turns this on when you ask it to.",
                 ["simple", "simpler", "easy", "easier", "words", "kids", "child", "children", "level", "explain", "style", "remember"]),
@@ -222,32 +223,32 @@ public sealed class SettingsCatalog
                 ["short", "shorter", "brief", "long", "length", "less", "talk less", "style", "remember"]),
             Item("clicky.answerYesNoFirst", "Yes or no first", "A yes-or-no question gets yes or no first, then why. Clicky also turns this on when you ask it to.",
                 ["yes", "no", "first", "straight", "direct", "answer", "style", "remember"]),
-            Item("clicky.answerSource", "Answers come from", "Automatic uses your own keys first, then plans you switched on, then the free credits.",
+            Item("clicky.answerSource", L.T("Answers come from"), L.T("Automatic uses your own keys first, then plans you switched on, then the free credits."),
                 ["provider", "model", "openai", "anthropic", "claude", "openrouter", "gemini", "groq", "mistral", "grok", "codex", "subscription", "plan", "answers"]),
-            Item("clicky.model", "Claude model", "When Claude answers: Sonnet is quicker, Opus thinks harder.",
+            Item("clicky.model", L.T("Claude model"), L.T("When Claude answers: Sonnet is quicker, Opus thinks harder."),
                 ["model", "claude", "sonnet", "opus", "smarter", "quicker"]),
-            Item("clicky.pointerColor", "Pointer colour", "The colour it flies and glows in.",
+            Item("clicky.pointerColor", L.T("Pointer colour"), L.T("The colour it flies and glows in."),
                 ["pointer", "cursor", "colour", "color", "red", "blue", "green", "theme"]),
-            Item("clicky.pointerStyle", "Pointer shape", "A triangle, an arrow, a dot or a ring.",
+            Item("clicky.pointerStyle", L.T("Pointer shape"), L.T("A triangle, an arrow, a dot or a ring."),
                 ["pointer", "cursor", "shape", "style", "arrow", "dot", "ring", "triangle", "design"]),
-            Item("clicky.pointer", "Show the pointer", "It flies to what Clicky means.",
+            Item("clicky.pointer", L.T("Show the pointer"), L.T("It flies to what Clicky means."),
                 ["pointer", "cursor", "buddy", "orange", "visible", "hide", "always", "while the mouse moves", "after a shake", "shake", "while i talk"]),
-            Item("clicky.agentMode", "Agent mode", "Clicky can hand work to Codex.",
+            Item("clicky.agentMode", L.T("Agent mode"), L.T("Clicky can hand work to Codex."),
                 ["agent", "codex", "tasks", "automation"]),
-            Item("clicky.workspace", "Workspace", "Where agents keep their files.",
+            Item("clicky.workspace", L.T("Workspace"), L.T("Where agents keep their files."),
                 ["workspace", "folder", "codex", "files", "directory"]),
         ];
     }
 
     /// <summary>"Always listening": instant on fast voice, else after the person stops talking.</summary>
     public static string HandsFreeDetail(bool usesRealtime) => usesRealtime
-        ? "Hands-free: just talk, no keys. Instant with fast voice on."
-        : "Hands-free: just talk, no keys. Clicky answers once you stop talking.";
+        ? L.T("Hands-free: just talk, no keys. Instant with fast voice on.")
+        : L.T("Hands-free: just talk, no keys. Clicky answers once you stop talking.");
 
     public const string CaptionsDetail =
         "What Clicky says, written beside the pointer as it speaks. Automatically when you typed the question, or the sound is off or low.";
 
-    public const string FastVoiceNeedsKeyDetail = "Instant replies need your own OpenAI or Gemini key. Without one, Clicky answers in the standard voice.";
+    public static string FastVoiceNeedsKeyDetail => L.T("Instant replies need your own OpenAI or Gemini key. Without one, Clicky answers in the standard voice.");
 
     /// <summary>Models of the person's own (Ollama, LM Studio, any OpenAI-compatible server) and who writes drawings.</summary>
     public IReadOnlyList<SettingsItem> ModelsItems()
@@ -258,26 +259,26 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("models.ollama", "Ollama", "Models running on this PC with Ollama. Free, private and offline; pick one that sees images (gemma3, llava, qwen2.5-vl).",
+            Item("models.ollama", "Ollama", L.T("Models running on this PC with Ollama. Free, private and offline; pick one that sees images (gemma3, llava, qwen2.5-vl)."),
                 ["ollama", "local", "offline", "private", "llama", "gemma", "qwen", "model", "free"]),
-            Item("models.lmStudio", "LM Studio", "Models running on this PC in LM Studio (start its server on port 1234).",
+            Item("models.lmStudio", "LM Studio", L.T("Models running on this PC in LM Studio (start its server on port 1234)."),
                 ["lm studio", "lmstudio", "local", "offline", "private", "model", "free"]),
-            Item("models.custom", "Your own server", "Any OpenAI-compatible endpoint: vLLM, llama.cpp, LocalAI, DeepSeek, Together, and others, with a key if it needs one.",
+            Item("models.custom", L.T("Your own server"), L.T("Any OpenAI-compatible endpoint: vLLM, llama.cpp, LocalAI, DeepSeek, Together, and others, with a key if it needs one."),
                 ["openai compatible", "custom", "server", "endpoint", "vllm", "llama.cpp", "localai", "deepseek", "together", "self-hosted", "api"]),
             Item("models.speech", "Speech server", SpeechServerDetail,
                 ["speech", "voice", "hearing", "transcription", "speech to text", "text to speech", "tts", "stt", "whisper", "kokoro", "piper",
                  "phonon", "chatterbox", "gemma", "speaches", "localai", "ollama", "local", "offline", "private", "self-hosted", "server", "free"]),
-            Item("clicky.drawingSource", "Drawings come from", "Who writes the answers drawn on your screen. A stronger model draws better; answers can stay quick.",
+            Item("clicky.drawingSource", L.T("Drawings come from"), L.T("Who writes the answers drawn on your screen. A stronger model draws better; answers can stay quick."),
                 ["drawing", "draw", "diagram", "teacher", "3d", "model", "explain", "whiteboard"]),
-            Item("clicky.drawingDetail", "How detailed", "More parts and finer detail take longer to draw. Very detailed suits a strong model.",
+            Item("clicky.drawingDetail", L.T("How detailed"), L.T("More parts and finer detail take longer to draw. Very detailed suits a strong model."),
                 ["drawing", "detail", "detailed", "parts", "realistic", "real", "quality", "3d", "simple", "complex"]),
-            Item("clicky.pieceMaker", "3D pieces come from", "A complex thing (a plane, a car, an animal) is built from pieces made one at a time, each one clickable.",
+            Item("clicky.pieceMaker", L.T("3D pieces come from"), L.T("A complex thing (a plane, a car, an animal) is built from pieces made one at a time, each one clickable."),
                 ["3d", "generator", "pieces", "model", "mesh", "hunyuan", "llama-mesh", "ollama", "lm studio", "gpu", "graphics card", "realistic"]),
-            Item("clicky.drawingInstructions", "Your drawing instructions", "Added to every drawing's instructions: a style, a level, what to show more of.",
+            Item("clicky.drawingInstructions", L.T("Your drawing instructions"), L.T("Added to every drawing's instructions: a style, a level, what to show more of."),
                 ["drawing", "prompt", "instructions", "style", "custom", "realistic", "kids", "colours", "language", "3d", "2d"]),
-            Item("clicky.drawingScriptFont", "Urdu in drawings", "The font Urdu words are drawn in. Noto Nastaliq Urdu comes with OpenClicky; a Nastaliq font you installed (IndoPak Nastaleeq, Jameel Noori Nastaleeq) can be used by its name.",
+            Item("clicky.drawingScriptFont", L.T("Urdu in drawings"), L.T("The font Urdu words are drawn in. Noto Nastaliq Urdu comes with OpenClicky; a Nastaliq font you installed (IndoPak Nastaleeq, Jameel Noori Nastaleeq) can be used by its name."),
                 ["urdu", "font", "nastaliq", "nastaleeq", "arabic", "script", "indopak", "jameel", "noori", "drawing", "language"]),
-            Item("clicky.markerShortcut", "Mark the screen with", "Keys that let you circle part of the screen to ask about it, while drawn answers are on. Word uses Ctrl+Alt+M for comments.",
+            Item("clicky.markerShortcut", L.T("Mark the screen with"), L.T("Keys that let you circle part of the screen to ask about it, while drawn answers are on. Word uses Ctrl+Alt+M for comments."),
                 ["marker", "mark", "circle", "highlight", "shortcut", "hotkey", "keys", "ctrl+alt+m", "screen", "ask about"]),
         ];
     }
@@ -294,15 +295,15 @@ public sealed class SettingsCatalog
         };
         List<SettingsItem> items =
         [
-            Item("clicky.screenLanguage", "Language", "Screen language",
-                "The language of the island, the tour and what Clicky says when something goes wrong. Changes the next time OpenClicky starts.",
+            Item("clicky.screenLanguage", L.T("Language"), L.T("Screen language"),
+                L.T("The language of the island, the tour and what Clicky says when something goes wrong. Changes the next time OpenClicky starts."),
                 ["screen language", "app language", "interface", "ui", "urdu", "اردو", "english", "right to left", "rtl", "translate"]),
-            Item("clicky.language", "Language", "Language", "Clicky speaks and listens in this.",
+            Item("clicky.language", L.T("Language"), L.T("Language"), L.T("Clicky speaks and listens in this."),
                 ["language", "english", "hindi", "tamil", "spanish", "french", "speak", "reply", "listen"]),
             Item("clicky.nextQuestions", "Voice", "Next questions",
                 "After an answer, a few questions you could ask next, to tap. Made by your own key or model, never the free allowance.",
                 ["next questions", "follow up", "follow-up", "suggestions", "suggested questions", "what to ask", "ideas", "curious", "buttons", "chips"]),
-            Item("clicky.speechVoice", "Voice", "Voice", "Who speaks the answers: the cloud voice, or this PC’s own voice, free and offline.",
+            Item("clicky.speechVoice", L.T("Voice"), L.T("Voice"), L.T("Who speaks the answers: the cloud voice, or this PC’s own voice, free and offline."),
                 ["voice", "speech", "tts", "text to speech", "elevenlabs", "eleven labs", "kokoro", "offline", "on device",
                  "pc voice", "windows voice", "narrator", "credits", "allowance", "left"]),
             Item("clicky.captions", "Voice", "Captions", CaptionsDetail,
@@ -317,14 +318,14 @@ public sealed class SettingsCatalog
         // its switch would do nothing, so the row shows the way to a key instead.
         if (usesRealtime)
         {
-            items.Add(Item("clicky.fastVoice", "Fast voice", "Fast voice", "Talks back instantly, over OpenAI Realtime or Gemini Live.",
+            items.Add(Item("clicky.fastVoice", L.T("Fast voice"), L.T("Fast voice"), L.T("Talks back instantly, over OpenAI Realtime or Gemini Live."),
                 ["realtime", "voice", "fast", "openai", "gemini", "live"]));
         }
         // Hands-free works on every lane that can answer: instantly with fast voice, otherwise the standard lane
         // hears each turn on this PC once the person stops talking.
         if (usesRealtime || OpenClickyConfiguration.IsConfiguredFor(shellSettings()))
         {
-            items.Add(Item("clicky.alwaysListening", "Fast voice", "Always listening", HandsFreeDetail(usesRealtime),
+            items.Add(Item("clicky.alwaysListening", L.T("Fast voice"), L.T("Always listening"), HandsFreeDetail(usesRealtime),
                 ["hands-free", "hands free", "always on", "listening"]));
         }
         if (usesRealtime)
@@ -333,28 +334,28 @@ public sealed class SettingsCatalog
             var credentials = ProviderCredentials.FromSettings(shellSettings());
             if (credentials.GeminiKey is not null && (credentials.OpenAIKey is not null || credentials.AccountToken is not null))
             {
-                items.Add(Item("clicky.realtimeProvider", "Fast voice", "Fast voice with", RealtimeProviderDetail,
+                items.Add(Item("clicky.realtimeProvider", L.T("Fast voice"), L.T("Fast voice with"), RealtimeProviderDetail,
                     ["realtime", "gemini", "openai", "live", "provider", "fast voice", "hands-free"]));
             }
         }
         else
         {
-            items.Add(Item("clicky.fastVoiceNeedsKey", "Fast voice", "Fast voice", FastVoiceNeedsKeyDetail,
+            items.Add(Item("clicky.fastVoiceNeedsKey", L.T("Fast voice"), L.T("Fast voice"), FastVoiceNeedsKeyDetail,
                 ["realtime", "voice", "fast", "openai", "gemini", "key"]));
         }
         // "Check my email" and "draft an email": which inbox they go to.
-        items.Add(Item("clicky.emailApp", "Doing things", "Email", EmailAppDetail,
+        items.Add(Item("clicky.emailApp", L.T("Doing things"), L.T("Email"), EmailAppDetail,
             ["email", "mail", "gmail", "outlook", "inbox", "draft"]));
         items.Add(new SettingsItem
         {
-            Id = "clicky.emailNeverSent", Section = "Doing things", Chrome = SettingsItemChrome.Footer,
+            Id = "clicky.emailNeverSent", Section = L.T("Doing things"), Chrome = SettingsItemChrome.Footer,
             Title = EmailNeverSentText, Detail = EmailNeverSentText, Keywords = ["send", "email"],
         });
         return items;
     }
 
-    public const string EmailAppDetail = "Which inbox “check my email” and “draft an email” open. Automatic is Gmail.";
-    public const string EmailNeverSentText = "Nothing is ever sent by voice.";
+    public static string EmailAppDetail => L.T("Which inbox “check my email” and “draft an email” open. Automatic is Gmail.");
+    public static string EmailNeverSentText => L.T("Nothing is ever sent by voice.");
 
     // MARK: - Plugins (SettingsPluginsPage.swift)
 
@@ -378,14 +379,14 @@ public sealed class SettingsCatalog
             },
             new SettingsItem
             {
-                Id = "plugins.islandDefault", Section = "On the island",
-                Title = "Default component", Detail = "What the open island shows when nothing else is going on.",
+                Id = "plugins.islandDefault", Section = L.T("On the island"),
+                Title = L.T("Default component"), Detail = L.T("What the open island shows when nothing else is going on."),
                 Keywords = ["island", "component", "panel", "shortcuts", "default", "slot"],
             },
             new SettingsItem
             {
-                Id = "plugins.islandOrder", Section = "On the island",
-                Title = "Component order", Detail = "The order of the island's buttons when there is more than one to flip to.",
+                Id = "plugins.islandOrder", Section = L.T("On the island"),
+                Title = L.T("Component order"), Detail = L.T("The order of the island's buttons when there is more than one to flip to."),
                 Keywords = ["island", "component", "order", "capsule", "arrange", "reorder"],
             },
         ];
@@ -402,28 +403,28 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("appearance.peekDirection", "When you hover it", "Sideways keeps a thin strip along the top edge; downwards drops it open a little.",
+            Item("appearance.peekDirection", L.T("When you hover it"), L.T("Sideways keeps a thin strip along the top edge; downwards drops it open a little."),
                 ["hover", "peek", "sideways", "downwards", "grow", "direction", "island"]),
-            Item("appearance.style", "Style", "Liquid glass, blend or black.",
+            Item("appearance.style", L.T("Style"), L.T("Liquid glass, blend or black."),
                 ["style", "glass", "liquid", "blend", "black", "look", "island", "transparent"]),
-            Item("calendar.enabled", "Calendar", "Today and the week on the island's home.",
+            Item("calendar.enabled", L.T("Calendar"), L.T("Today and the week on the island's home."),
                 ["calendar", "events", "meetings", "agenda", "outlook", "week", "today"]),
-            Item("weather.enabled", "Weather", "Now and the next hours, from Open-Meteo.",
+            Item("weather.enabled", L.T("Weather"), L.T("Now and the next hours, from Open-Meteo."),
                 ["weather", "temperature", "forecast", "rain", "open-meteo"]),
-            Item("weather.unit", "Temperature", "Celsius or Fahrenheit.", ["celsius", "fahrenheit", "unit", "temperature", "weather"]),
-            Item("weather.location", "Weather location", "Where Windows says you are, or a place you type.",
+            Item("weather.unit", L.T("Temperature"), L.T("Celsius or Fahrenheit."), ["celsius", "fahrenheit", "unit", "temperature", "weather"]),
+            Item("weather.location", L.T("Weather location"), L.T("Where Windows says you are, or a place you type."),
                 ["location", "city", "place", "town", "weather", "gps"]),
-            Item("timer.focusMinutes", "Focus", "How long a focus round lasts.", ["timer", "focus", "pomodoro", "minutes"]),
-            Item("timer.breakMinutes", "Break", "The short break between rounds.", ["timer", "break", "pomodoro", "minutes"]),
-            Item("timer.longBreakMinutes", "Long break", "After every fourth round.", ["timer", "long break", "pomodoro", "minutes"]),
-            Item("calendar.access", "Calendar", "Lets the island read your calendars. Nothing is changed or sent.",
+            Item("timer.focusMinutes", L.T("Focus"), L.T("How long a focus round lasts."), ["timer", "focus", "pomodoro", "minutes"]),
+            Item("timer.breakMinutes", L.T("Break"), L.T("The short break between rounds."), ["timer", "break", "pomodoro", "minutes"]),
+            Item("timer.longBreakMinutes", L.T("Long break"), L.T("After every fourth round."), ["timer", "long break", "pomodoro", "minutes"]),
+            Item("calendar.access", L.T("Calendar"), L.T("Lets the island read your calendars. Nothing is changed or sent."),
                 ["calendar", "permission", "privacy", "access", "allow"]),
-            Item("calendar.calendars", "Calendars", "Switch off a calendar to keep it off the island.",
+            Item("calendar.calendars", L.T("Calendars"), L.T("Switch off a calendar to keep it off the island."),
                 ["calendar", "calendars", "hide", "show", "account", "outlook"]),
         ];
     }
 
-    public const string RealtimeProviderDetail = "Who talks back in fast voice and hands-free. Automatic is OpenAI, whose pointing is tuned best.";
+    public static string RealtimeProviderDetail => L.T("Who talks back in fast voice and hands-free. Automatic is OpenAI, whose pointing is tuned best.");
 
     /// <summary>The fast voice picker's choices (RealtimeProviderRow on the Mac): automatic, then each vendor.</summary>
     public static IReadOnlyList<(string Id, string Title)> RealtimeProviderChoices { get; } =
@@ -444,20 +445,20 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("orb.visible", "", "Show the orb", $"Off: {dictationKeyName} still works everywhere, just without narration.",
+            Item("orb.visible", "", L.T("Show the orb"), L.F("Off: {0} still works everywhere, just without narration.", dictationKeyName),
                 ["orb", "pill", "hide", "visible"]),
-            Item("orb.look", "Look", "Style", "Pill, classic or pixel.", ["pill", "classic", "pixel", "style", "shape", "look"]),
-            Item("orb.theme", "Look", "Theme", "Black, coral or mist.", ["colour", "color", "black", "coral", "mist"]),
-            Item("orb.size", "Look", "Size", "Full or mini.", ["full", "mini", "small", "big"]),
-            Item("orb.hidesWhenIdle", "When it appears", "Hide when idle", "Appears when a take starts, leaves when it’s done.",
+            Item("orb.look", L.T("Look"), L.T("Style"), L.T("Pill, classic or pixel."), ["pill", "classic", "pixel", "style", "shape", "look"]),
+            Item("orb.theme", L.T("Look"), L.T("Theme"), L.T("Black, coral or mist."), ["colour", "color", "black", "coral", "mist"]),
+            Item("orb.size", L.T("Look"), L.T("Size"), L.T("Full or mini."), ["full", "mini", "small", "big"]),
+            Item("orb.hidesWhenIdle", L.T("When it appears"), L.T("Hide when idle"), L.T("Appears when a take starts, leaves when it’s done."),
                 ["hide", "idle", "not in use"]),
-            Item("orb.restsExpanded", "When it appears", "Rest with the box open", "Keeps the transcript box showing between takes.",
+            Item("orb.restsExpanded", L.T("When it appears"), L.T("Rest with the box open"), L.T("Keeps the transcript box showing between takes."),
                 ["box", "transcript", "expanded"]),
-            Item("orb.opensBoxWhenPasteUnverified", "When it appears", "Open the box if a paste can’t be confirmed",
-                "So words never vanish when an app ignores the paste.", ["paste", "visibility", "box", "unverified", "confirm"]),
-            Item("orb.isDraggable", "When it appears", "Free to drag", "Off pins the orb at the bottom centre.",
+            Item("orb.opensBoxWhenPasteUnverified", L.T("When it appears"), L.T("Open the box if a paste can’t be confirmed"),
+                L.T("So words never vanish when an app ignores the paste."), ["paste", "visibility", "box", "unverified", "confirm"]),
+            Item("orb.isDraggable", L.T("When it appears"), L.T("Free to drag"), L.T("Off pins the orb at the bottom centre."),
                 ["drag", "move", "pin", "position", "center", "centre", "bottom"]),
-            Item("orb.tooltips", "When it appears", "Tooltips", "A short hint under the orb.", ["hint", "help"]),
+            Item("orb.tooltips", L.T("When it appears"), L.T("Tooltips"), L.T("A short hint under the orb."), ["hint", "help"]),
         ];
     }
 
@@ -472,12 +473,12 @@ public sealed class SettingsCatalog
         var key = dictationKey.KeycapLabel();
         return itemId switch
         {
-            "keyboard.dictate" => new([key], "hold"),
-            "keyboard.edit" => new([key, "Ctrl"], "hold"),
-            "keyboard.cancel" => new(["Esc"], $"or {key} twice"),
-            "keyboard.talk" => new(dictationKey.TalkKeycapLabels(), "hold"),
-            "keyboard.type" => new(["Ctrl"], "tap twice"),
-            "keyboard.handsFree" => new([key, "Ctrl"], "tap twice"),
+            "keyboard.dictate" => new([key], L.T("hold")),
+            "keyboard.edit" => new([key, "Ctrl"], L.T("hold")),
+            "keyboard.cancel" => new(["Esc"], L.F("or {0} twice", key)),
+            "keyboard.talk" => new(dictationKey.TalkKeycapLabels(), L.T("hold")),
+            "keyboard.type" => new(["Ctrl"], L.T("tap twice")),
+            "keyboard.handsFree" => new([key, "Ctrl"], L.T("tap twice")),
             _ => new([], null),
         };
     }
@@ -492,19 +493,19 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("keyboard.edit", "Dictation", "Edit selected text", "Hold and say the change, like “make it formal”.",
+            Item("keyboard.edit", L.T("Dictation"), L.T("Edit selected text"), L.T("Hold and say the change, like “make it formal”."),
                 ["hey clicky", "edit", "rewrite", "control", "ctrl", "selection"]),
-            Item("keyboard.cancel", "Dictation", "Cancel a take", "Nothing is pasted.",
+            Item("keyboard.cancel", L.T("Dictation"), L.T("Cancel a take"), L.T("Nothing is pasted."),
                 ["esc", "escape", "discard", "stop", "double-tap"]),
-            Item("keyboard.talk", "Clicky", "Talk to Clicky", "Ask about anything on screen. It answers out loud and points.",
+            Item("keyboard.talk", L.T("Clicky"), L.T("Talk to Clicky"), L.T("Ask about anything on screen. It answers out loud and points."),
                 ["ctrl", "win", "windows key", "control windows", "voice", "ask", "companion"]),
-            Item("keyboard.mouseTalk", "Clicky", "Talk with a mouse button", "Hold it to ask, let go to send, like the keys. For a wireless mouse away from the keyboard.",
+            Item("keyboard.mouseTalk", L.T("Clicky"), L.T("Talk with a mouse button"), L.T("Hold it to ask, let go to send, like the keys. For a wireless mouse away from the keyboard."),
                 ["mouse", "button", "side button", "back button", "forward button", "middle", "wireless", "remote", "trigger"]),
-            Item("keyboard.type", "Clicky", "Type to Clicky", "A one-line composer opens in the island.",
+            Item("keyboard.type", L.T("Clicky"), L.T("Type to Clicky"), L.T("A one-line composer opens in the island."),
                 ["ctrl", "composer", "island", "text", "control twice"]),
             // Hands-free runs on fast voice or, without a realtime key, on the standard lane; with nothing that
             // can answer the keys would do nothing, so it isn't listed.
-            Item("keyboard.handsFree", "Clicky", "Hands-free", "Always-on listening. Same keys to stop.",
+            Item("keyboard.handsFree", L.T("Clicky"), L.T("Hands-free"), L.T("Always-on listening. Same keys to stop."),
                 ["always on", "realtime", "listening", "hands free"], () => usesRealtime || OpenClickyConfiguration.IsConfiguredFor(shellSettings())),
         ];
     }
@@ -515,39 +516,39 @@ public sealed class SettingsCatalog
     [
         new()
         {
-            Id = "account.keys", Section = "Your keys",
-            Title = "Your keys", Detail = "Keys from AI providers (they answer, clean up and speak) and voice services.",
+            Id = "account.keys", Section = L.T("Your keys"),
+            Title = L.T("Your keys"), Detail = L.T("Keys from AI providers (they answer, clean up and speak) and voice services."),
             Keywords = ["api key", "byok", "own key", "provider", "add key", "openai", "openaiApiKey", "anthropic", "claude",
                         "anthropicApiKey", "openrouter", "llama", "deepseek", "gemini", "google", "ai studio", "groq",
                         "mistral", "xai", "grok", "sarvam", "saaras", "elevenlabs", "polly", "google cloud", "voice", "test"],
         },
         new()
         {
-            Id = "account.keysNote", Section = "Your keys", Chrome = SettingsItemChrome.Footer,
+            Id = "account.keysNote", Section = L.T("Your keys"), Chrome = SettingsItemChrome.Footer,
             Title = "Where keys go", Detail = KeysNoteText, Keywords = ["shell.json", "byok"],
         },
         new()
         {
-            Id = "account.claudeCodePlan", Section = "Subscriptions",
-            Title = "Claude Code (your Claude plan)", Detail = "Answer questions through Claude Code, signed in to your Claude plan.",
+            Id = "account.claudeCodePlan", Section = L.T("Subscriptions"),
+            Title = L.T("Claude Code (your Claude plan)"), Detail = L.T("Answer questions through Claude Code, signed in to your Claude plan."),
             Keywords = ["claude code", "claude plan", "pro", "max", "subscription", "anthropic"],
         },
         new()
         {
-            Id = "account.codexPlan", Section = "Subscriptions",
-            Title = "Codex (your ChatGPT plan)", Detail = "Answer questions through Codex, signed in with ChatGPT.",
+            Id = "account.codexPlan", Section = L.T("Subscriptions"),
+            Title = L.T("Codex (your ChatGPT plan)"), Detail = L.T("Answer questions through Codex, signed in with ChatGPT."),
             Keywords = ["codex", "chatgpt", "plus", "pro", "subscription", "openai"],
         },
         new()
         {
-            Id = "account.plansNote", Section = "Subscriptions", Chrome = SettingsItemChrome.Footer,
+            Id = "account.plansNote", Section = L.T("Subscriptions"), Chrome = SettingsItemChrome.Footer,
             Title = "What a plan can do", Detail = PlansNoteText, Keywords = ["subscription", "plan"],
         },
     ];
 
-    public const string KeysNoteText = "Your keys go straight to that provider, never through OpenClicky, and are used instead of the free credits. Stored in %USERPROFILE%\\.openclicky\\shell.json.";
+    public static string KeysNoteText => L.F("Your keys go straight to that provider, never through OpenClicky, and are used instead of the free credits. Stored in {0}.", @"%USERPROFILE%\.openclicky\shell.json");
 
-    public const string PlansNoteText = "A plan answers questions, points, and does quick actions like opening apps or making folders. Bigger tasks need the agent. Codex answers in one go, a few seconds after you ask.";
+    public static string PlansNoteText => L.T("A plan answers questions, points, and does quick actions like opening apps or making folders. Bigger tasks need the agent. Codex answers in one go, a few seconds after you ask.");
 
     public IReadOnlyList<SettingsItem> AccountItems()
     {
@@ -558,25 +559,25 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("account.profile", "", "Account", "Sign in or out. A free account adds AI polish and spoken answers; dictation on this PC works without one.",
+            Item("account.profile", "", L.T("Account"), L.T("Sign in or out. A free account adds AI polish and spoken answers; dictation on this PC works without one."),
                 ["account", "sign in", "sign up", "sign out", "log in", "log out", "create", "email", "code", "free"]),
-            Item("account.plan", "Plan & usage", "Free allowance", "How much of this month’s free allowance is used.",
+            Item("account.plan", L.T("Plan & usage"), L.T("Free allowance"), L.T("How much of this month’s free allowance is used."),
                 ["billing", "allowance", "usage", "plan", "cost", "price", "limit"]),
-            Item("account.usage.sarvam", "Plan & usage", "Sarvam", "Billed by Sarvam to your key.", ["sarvam", "billing", "engine", "dashboard"],
+            Item("account.usage.sarvam", L.T("Plan & usage"), "Sarvam", L.T("Billed by Sarvam to your key."), ["sarvam", "billing", "engine", "dashboard"],
                 () => !string.IsNullOrWhiteSpace(shellSettings().SarvamKey)),
-            Item("account.usage.backend", "Plan & usage", "OpenAI and AssemblyAI", "Through OpenClicky.",
+            Item("account.usage.backend", L.T("Plan & usage"), L.T("OpenAI and AssemblyAI"), L.T("Through OpenClicky."),
                 ["openai", "assemblyai", "allowance", "metered", "engine"]),
-            Item("account.backendHost", "Backend", "Host", "Where OpenClicky’s model calls go. Change it in shell.json.",
+            Item("account.backendHost", L.T("Backend"), L.T("Host"), L.T("Where OpenClicky’s model calls go. Change it in shell.json."),
                 ["backend", "server", "url", "host", "shell.json"]),
-            Item("account.backendToken", "Backend", "Session token", "Written when you sign in.", ["token", "bearer", "shell.json", "session"]),
+            Item("account.backendToken", L.T("Backend"), L.T("Session token"), L.T("Written when you sign in."), ["token", "bearer", "shell.json", "session"]),
         ];
     }
 
     // MARK: - Privacy & Security (SettingsPrivacyPage.swift)
 
-    public const string PrivacySummaryText = "With This PC as the engine, what you dictate stays on this PC unless AI clean-up is on (edits need it too). The other engines send audio to the provider you chose. Questions to Clicky always go online with a picture of your screen, and fast voice and hands-free send your voice to OpenAI.";
+    public static string PrivacySummaryText => L.T("With This PC as the engine, what you dictate stays on this PC unless AI clean-up is on (edits need it too). The other engines send audio to the provider you chose. Questions to Clicky always go online with a picture of your screen, and fast voice and hands-free send your voice to OpenAI.");
 
-    public const string MicrophonePermissionDetail = "Listens only during a take. With This PC as the engine, audio never leaves it.";
+    public static string MicrophonePermissionDetail => L.T("Listens only during a take. With This PC as the engine, audio never leaves it.");
 
     /// <summary>A path as the page shows it: the profile and local app data folders as their %VARIABLES%.</summary>
     public static string DisplayPath(string path)
@@ -596,28 +597,28 @@ public sealed class SettingsCatalog
         };
         return
         [
-            Item("privacy.microphone", "Permissions", "Microphone", MicrophonePermissionDetail, ["permission", "mic", "audio", "grant", "allow"]),
-            Item("privacy.readNearbyText", "Permissions", "Read nearby text", "Helps spell names and terms on screen right.",
+            Item("privacy.microphone", L.T("Permissions"), L.T("Microphone"), MicrophonePermissionDetail, ["permission", "mic", "audio", "grant", "allow"]),
+            Item("privacy.readNearbyText", L.T("Permissions"), L.T("Read nearby text"), L.T("Helps spell names and terms on screen right."),
                 ["context", "screen", "spelling", "names", "ui automation", "accessibility"]),
-            Item("privacy.pauseBeforeSendingScreen", "Permissions", "Pause before sending my screen", "A moment to press esc before Clicky sends your screen.",
+            Item("privacy.pauseBeforeSendingScreen", L.T("Permissions"), L.T("Pause before sending my screen"), L.T("A moment to press esc before Clicky sends your screen."),
                 ["screenshot", "screen", "cancel", "esc", "send", "wait", "consent"]),
-            Item("privacy.memoryOnThisMac", "What it keeps", "Keep my memory on this PC only", "History, dictionary and styles stay here. Questions to Clicky still go online.",
+            Item("privacy.memoryOnThisMac", L.T("What it keeps"), L.T("Keep my memory on this PC only"), L.T("History, dictionary and styles stay here. Questions to Clicky still go online."),
                 ["local", "memory", "cloud", "sync", "data"]),
-            Item("privacy.incognito", "What it keeps", "Incognito", "Takes still paste, but nothing is saved to history.", ["private", "history", "don't save"]),
-            Item("privacy.clipboardHistory", "What it keeps", "Clipboard history", "Capture what you copy, so it shows in history too.",
+            Item("privacy.incognito", L.T("What it keeps"), L.T("Incognito"), L.T("Takes still paste, but nothing is saved to history."), ["private", "history", "don't save"]),
+            Item("privacy.clipboardHistory", L.T("What it keeps"), L.T("Clipboard history"), L.T("Capture what you copy, so it shows in history too."),
                 ["clipboard", "copy", "pasteboard"]),
-            Item("privacy.retryFailedTakes", "What it keeps", "Keep failed takes to retry", "Up to 100 takes or 1 GB. Off removes them now.",
+            Item("privacy.retryFailedTakes", L.T("What it keeps"), L.T("Keep failed takes to retry"), L.T("Up to 100 takes or 1 GB. Off removes them now."),
                 ["retry", "audio", "recording", "failed", "network"]),
-            Item("privacy.deleteTakes", "What it keeps", "Delete all takes", "Your dictionary and snippets stay.", ["delete", "wipe", "history", "erase", "data"]),
-            Item("privacy.whereHistory", "Where things live", "History", DisplayPath(OpenClickyPaths.DictationDatabaseFile),
+            Item("privacy.deleteTakes", L.T("What it keeps"), L.T("Delete all takes"), L.T("Your dictionary and snippets stay."), ["delete", "wipe", "history", "erase", "data"]),
+            Item("privacy.whereHistory", L.T("Where things live"), L.T("History"), DisplayPath(OpenClickyPaths.DictationDatabaseFile),
                 ["sqlite", "database", "file", "folder", "takes"]),
-            Item("privacy.whereSpace", "Where things live", "Styles, dictionary, snippets", DisplayPath(OpenClickyPaths.DictationDirectory),
+            Item("privacy.whereSpace", L.T("Where things live"), L.T("Styles, dictionary, snippets"), DisplayPath(OpenClickyPaths.DictationDirectory),
                 ["json", "file", "folder", "shortcuts"]),
-            Item("privacy.whereKeys", "Where things live", "Keys and account", DisplayPath(OpenClickyPaths.ShellSettingsFile),
+            Item("privacy.whereKeys", L.T("Where things live"), L.T("Keys and account"), DisplayPath(OpenClickyPaths.ShellSettingsFile),
                 ["shell.json", "token", "file", "key"]),
             new()
             {
-                Id = "privacy.summary", Section = "Where things live", Chrome = SettingsItemChrome.Footer,
+                Id = "privacy.summary", Section = L.T("Where things live"), Chrome = SettingsItemChrome.Footer,
                 Title = "Privacy summary", Detail = PrivacySummaryText, Keywords = ["policy", "privacy", "what leaves", "readme"],
             },
         ];
@@ -627,7 +628,7 @@ public sealed class SettingsCatalog
 
     /// <summary>The version line, "Version 0.9.0 (312) · Open source, MIT".</summary>
     public static string VersionLine(string shortVersion, string buildNumber) =>
-        string.IsNullOrEmpty(buildNumber) ? $"Version {shortVersion} · Open source, MIT" : $"Version {shortVersion} ({buildNumber}) · Open source, MIT";
+        string.IsNullOrEmpty(buildNumber) ? L.F("Version {0} · Open source, MIT", shortVersion) : L.F("Version {0} ({1}) · Open source, MIT", shortVersion, buildNumber);
 
     public IReadOnlyList<SettingsItem> AboutItems()
     {
@@ -639,8 +640,8 @@ public sealed class SettingsCatalog
         [
             Item("about.app", "", "OpenClicky", VersionLine(AppVersion.ShortVersion, AppVersion.BuildNumber),
                 ["version", "about", "build", "mit", "license", "update", "updates", "velopack", "check now"]),
-            Item("about.source", "Help", "Source code", "Issues and pull requests welcome.", ["github", "source", "license", "mit", "code"]),
-            Item("about.reportBug", "Help", "Report a bug", "Attach the log. It lists what each take did, not what you said.",
+            Item("about.source", L.T("Help"), L.T("Source code"), L.T("Issues and pull requests welcome."), ["github", "source", "license", "mit", "code"]),
+            Item("about.reportBug", L.T("Help"), L.T("Report a bug"), L.T("Attach the log. It lists what each take did, not what you said."),
                 ["bug", "log", "issue", "problem", "feedback", "app.log"]),
         ];
     }

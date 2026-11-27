@@ -12,6 +12,7 @@
 
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.ClipboardList;
 
@@ -19,8 +20,8 @@ namespace OpenClicky.Core.Plugins.ClipboardList;
 public static class ClipboardPlugin
 {
     public static IslandComponent Component { get; } = new(
-        IslandPluginRegistry.ClipboardId, "Clipboard", "", 130, IsPlugin: true,
-        SettingsDetail: "Keeps the last 30 things you copied while OpenClicky runs, in memory only. Copies password managers mark as private are skipped.");
+        IslandPluginRegistry.ClipboardId, L.T("Clipboard"), "", 130, IsPlugin: true,
+        SettingsDetail: L.T("Keeps the last 30 things you copied while OpenClicky runs, in memory only. Copies password managers mark as private are skipped."));
 }
 
 /// <summary>What one copy held, reduced to what can be shown in a row and put back on the clipboard.</summary>

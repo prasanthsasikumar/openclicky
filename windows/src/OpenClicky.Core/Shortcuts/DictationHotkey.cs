@@ -8,6 +8,8 @@
 //  the copy-and-paste hand), with Left Ctrl, Right Alt, Right Shift and Caps Lock as alternatives.
 //
 
+using OpenClicky.Core.Localization;
+
 namespace OpenClicky.Core.Shortcuts;
 
 public enum DictationHotkey
@@ -157,12 +159,12 @@ public static class DictationHotkeys
 
     public static string DisplayName(this DictationHotkey hotkey) => hotkey switch
     {
-        DictationHotkey.RightControl => "right control",
-        DictationHotkey.LeftControl => "left control",
-        DictationHotkey.RightAlt => "right alt",
-        DictationHotkey.RightShift => "right shift",
-        DictationHotkey.CapsLock => "caps lock",
-        _ => "right control",
+        DictationHotkey.RightControl => L.T("right control"),
+        DictationHotkey.LeftControl => L.T("left control"),
+        DictationHotkey.RightAlt => L.T("right alt"),
+        DictationHotkey.RightShift => L.T("right shift"),
+        DictationHotkey.CapsLock => L.T("caps lock"),
+        _ => L.T("right control"),
     };
 
     /// <summary>Talk's keycaps (Ctrl + Win). A Ctrl dictating is talk's Ctrl too, so it is named by its side;

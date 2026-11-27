@@ -15,6 +15,7 @@ using OpenClicky.Core.Providers;
 using OpenClicky.Core.Settings;
 using WpfUi = Wpf.Ui.Controls;
 using EmailFlowState = OpenClicky.Core.Providers.OpenClickyAuthSession.EmailFlowState;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -45,15 +46,15 @@ internal static class WindowsUserName
 internal sealed class AccountSheet : SheetWindow
 {
     private AccountSheet(Window owner, DictationSettings settings, OpenClickyAuthSession auth, Action? onUseOwnKey)
-        : base(owner, settings, "Account", 460)
+        : base(owner, settings, L.T("Account"), 460)
     {
         var form = new EmailAccountForm(auth, onSignedIn: Close, onUseOwnKey: onUseOwnKey is null ? null : () => { Close(); onUseOwnKey(); });
         var body = Ui.VStack(14,
-            Ui.Text("your free openclicky account", 20, SettingsLook.TextPrimary, FontWeights.SemiBold),
-            Ui.Text("polished dictation and spoken answers, on us: up to $10 of use a month once your email is confirmed.", SettingsLook.CaptionSize, SettingsLook.TextSecondary),
+            Ui.Text(L.T("your free openclicky account"), 20, SettingsLook.TextPrimary, FontWeights.SemiBold),
+            Ui.Text(L.T("polished dictation and spoken answers, on us: up to $10 of use a month once your email is confirmed."), SettingsLook.CaptionSize, SettingsLook.TextSecondary),
             form);
         SetBody(body, new Thickness(28, 6, 28, 20));
-        AddFooterButton("not now", Close, isCancel: true);
+        AddFooterButton(L.T("not now"), Close, isCancel: true);
         Closed += (_, _) => form.CancelWork();
     }
 
@@ -116,8 +117,8 @@ internal sealed class EmailAccountForm : ContentControl
     private StackPanel EmailStep(EmailFlowState state)
     {
         var isSending = state is EmailFlowState.SendingState;
-        var field = new WpfUi.TextBox { PlaceholderText = "your email", Text = email, MinWidth = 220 };
-        var continueButton = Ui.Button(isSending ? "one moment…" : "continue", SubmitEmail, WpfUi.ControlAppearance.Primary,
+        var field = new WpfUi.TextBox { PlaceholderText = L.T("your email"), Text = email, MinWidth = 220 };
+        var continueButton = Ui.Button(isSending ? L.T("one moment…") : "continue", SubmitEmail, WpfUi.ControlAppearance.Primary,
             isEnabled: !isSending && EmailAccountFormRules.CanSubmitEmail(email));
         continueButton.IsDefault = true;
         field.TextChanged += (_, _) =>
@@ -130,9 +131,9 @@ internal sealed class EmailAccountForm : ContentControl
         continueButton.Margin = new Thickness(8, 0, 0, 0);
         row.Children.Add(continueButton);
         row.Children.Add(field);
-        var stack = Ui.VStack(10, row, Ui.Text("no password. we'll send a link to confirm it's you.", SettingsLook.CaptionSize, SettingsLook.TextSecondary));
+        var stack = Ui.VStack(10, row, Ui.Text(L.T("no password. we'll send a link to confirm it's you."), SettingsLook.CaptionSize, SettingsLook.TextSecondary));
         if (state is EmailFlowState.FailedState failed) stack.Children.Add(Spaced(Ui.Text(failed.Message, SettingsLook.CaptionSize, SettingsLook.Danger)));
-        if (onUseOwnKey is not null) stack.Children.Add(Spaced(Ui.LinkButton("use my own key instead", onUseOwnKey)));
+        if (onUseOwnKey is not null) stack.Children.Add(Spaced(Ui.LinkButton(L.T("use my own key instead"), onUseOwnKey)));
         Dispatcher.BeginInvoke(() => field.Focus(), System.Windows.Threading.DispatcherPriority.Input);
         return stack;
     }
@@ -142,7 +143,7 @@ internal sealed class EmailAccountForm : ContentControl
         var isChecking = state is EmailFlowState.CheckingCodeState;
         var isSending = state is EmailFlowState.SendingState;
         var field = new WpfUi.TextBox { PlaceholderText = "123456", Text = code, Width = 130, MaxLength = 7 };
-        var signInButton = Ui.Button(isChecking ? "checking…" : "sign in", SubmitCode, WpfUi.ControlAppearance.Primary,
+        var signInButton = Ui.Button(isChecking ? L.T("checking…") : L.T("sign in"), SubmitCode, WpfUi.ControlAppearance.Primary,
             isEnabled: !isChecking && EmailAccountFormRules.CanSubmitCode(code));
         signInButton.IsDefault = true;
         field.TextChanged += (_, _) =>
@@ -151,12 +152,12 @@ internal sealed class EmailAccountForm : ContentControl
             signInButton.IsEnabled = !isChecking && EmailAccountFormRules.CanSubmitCode(code);
         };
         var stack = Ui.VStack(10,
-            Ui.Text($"you already have an account. we sent a 6-digit code to {address}.", 13, SettingsLook.TextPrimary),
+            Ui.Text(L.F("you already have an account. we sent a 6-digit code to {0}.", address), 13, SettingsLook.TextPrimary),
             Ui.HStack(8, field, signInButton));
         if (auth.LastErrorText is { } codeError) stack.Children.Add(Spaced(Ui.Text(codeError, SettingsLook.CaptionSize, SettingsLook.Danger)));
         var links = Ui.HStack(14,
-            Ui.LinkButton(isSending ? "sending…" : "send a new code", SendNewCode),
-            Ui.LinkButton("use a different email", () =>
+            Ui.LinkButton(isSending ? L.T("sending…") : L.T("send a new code"), SendNewCode),
+            Ui.LinkButton(L.T("use a different email"), () =>
             {
                 work.Cancel();
                 auth.ResetFlow();
@@ -268,17 +269,17 @@ internal sealed class AccountProfileRow : ContentControl
         if (auth.AccountEmail is { } accountEmail)
         {
             text.Children.Add(Ui.Text(accountEmail, 15, SettingsLook.TextPrimary, FontWeights.SemiBold));
-            text.Children.Add(Ui.Text("Signing out keeps your history on this PC.", SettingsLook.CaptionSize, SettingsLook.TextSecondary));
+            text.Children.Add(Ui.Text(L.T("Signing out keeps your history on this PC."), SettingsLook.CaptionSize, SettingsLook.TextSecondary));
             if (billing.Summary?.IsUnconfirmed == true)
             {
                 var note = Ui.HStack(6,
-                    Ui.Text(resendNote ?? "Unconfirmed. Check your inbox for the code.", SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false),
-                    Ui.LinkButton("Resend", Resend));
+                    Ui.Text(resendNote ?? L.T("Unconfirmed. Check your inbox for the code."), SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false),
+                    Ui.LinkButton(L.T("Resend"), Resend));
                 note.Margin = new Thickness(0, 6, 0, 0);
                 text.Children.Add(note);
                 if (auth.ConfirmByCodeSupported) text.Children.Add(new GuestConfirmationCodeField(auth, billing.Refresh) { Margin = new Thickness(0, 8, 0, 0) });
             }
-            action = Ui.Button("Sign Out", () =>
+            action = Ui.Button(L.T("Sign Out"), () =>
             {
                 auth.SignOut();
                 ShellSettingsRevision.NoteChanged();
@@ -287,10 +288,10 @@ internal sealed class AccountProfileRow : ContentControl
         else
         {
             var isGuest = auth.IsGuestWithoutEmail;
-            text.Children.Add(Ui.Text(isGuest ? "Trying OpenClicky" : "Not signed in", 15, SettingsLook.TextPrimary, FontWeights.SemiBold));
+            text.Children.Add(Ui.Text(isGuest ? L.T("Trying OpenClicky") : L.T("Not signed in"), 15, SettingsLook.TextPrimary, FontWeights.SemiBold));
             text.Children.Add(Ui.Text(isGuest
-                ? "Free on OpenClicky’s credits, on this PC. Add your email to keep the account, or your own key for more."
-                : "A free account adds AI polish and spoken answers. Dictation on this PC works without one.", SettingsLook.CaptionSize, SettingsLook.TextSecondary));
+                ? L.T("Free on OpenClicky’s credits, on this PC. Add your email to keep the account, or your own key for more.")
+                : L.T("A free account adds AI polish and spoken answers. Dictation on this PC works without one."), SettingsLook.CaptionSize, SettingsLook.TextSecondary));
             // Signed out by a dead sign-in, not by the person: say why, where they look.
             if (!isGuest && auth.SessionExpiredNotice is { } expired)
             {
@@ -298,7 +299,7 @@ internal sealed class AccountProfileRow : ContentControl
                 expiredText.Margin = new Thickness(0, 4, 0, 0);
                 text.Children.Add(expiredText);
             }
-            action = Ui.Button(isGuest ? "Add Email…" : "Sign In…", () =>
+            action = Ui.Button(isGuest ? L.T("Add Email…") : L.T("Sign In…"), () =>
                 AccountSheet.Show(actions.OwnerWindow, services.Settings, auth, onUseOwnKey: () => actions.ShowSettings(DictationSettingsPage.Account)),
                 WpfUi.ControlAppearance.Primary);
         }
@@ -326,7 +327,7 @@ internal sealed class AccountProfileRow : ContentControl
             var sent = await services.Auth.ResendLinkAsync();
             await Dispatcher.InvokeAsync(() =>
             {
-                resendNote = sent ? "Sent. Check your inbox." : "Couldn’t send it. Try again in a minute.";
+                resendNote = sent ? L.T("Sent. Check your inbox.") : L.T("Couldn’t send it. Try again in a minute.");
                 Render();
             });
         });
@@ -339,7 +340,7 @@ internal sealed class GuestConfirmationCodeField : StackPanel
     private readonly OpenClickyAuthSession auth;
     private readonly Action onConfirmed;
     private readonly AccountWorkSlot work = new();
-    private readonly WpfUi.TextBox field = new() { PlaceholderText = "code from the email", Width = 170, MaxLength = 7 };
+    private readonly WpfUi.TextBox field = new() { PlaceholderText = L.T("code from the email"), Width = 170, MaxLength = 7 };
     private readonly WpfUi.Button confirmButton;
     private readonly TextBlock errorText = Ui.Text("", SettingsLook.CaptionSize, SettingsLook.Danger);
 
@@ -361,7 +362,7 @@ internal sealed class GuestConfirmationCodeField : StackPanel
     {
         var digits = new string(field.Text.Where(character => !char.IsWhiteSpace(character)).ToArray());
         if (!EmailAccountFormRules.CanSubmitCode(digits) || work.IsRunning) return;
-        confirmButton.Content = "checking…";
+        confirmButton.Content = L.T("checking…");
         confirmButton.IsEnabled = false;
         errorText.Visibility = Visibility.Collapsed;
         work.Start(async _ =>

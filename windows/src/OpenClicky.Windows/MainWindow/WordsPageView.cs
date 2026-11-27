@@ -17,6 +17,7 @@ using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Settings;
 using WpfUi = Wpf.Ui.Controls;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -31,7 +32,7 @@ internal sealed class WordsPageView : ScrollViewer
     private DictationSettings Settings => services.Settings;
 
     private readonly WpfUi.TextBox tryItHereBox;
-    private readonly TextBlock tryItHereCount = Ui.Text("0 words", SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false);
+    private readonly TextBlock tryItHereCount = Ui.Text(L.T("0 words"), SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false);
     private readonly WpfUi.Button copyTryItButton;
     private readonly WpfUi.Button clearTryItButton;
     private readonly ContentControl thisWeek = new() { Focusable = false, HorizontalContentAlignment = HorizontalAlignment.Stretch };
@@ -67,17 +68,17 @@ internal sealed class WordsPageView : ScrollViewer
         column.Children.Add(new LiveContent(HowToDictateSection, Changes.Of(Settings), Changes.Shell));
 
         // Try it here: the box a take lands in when this window is in front and no field took it.
-        column.Children.Add(SettingsFormView.SectionHeader("Try it here"));
+        column.Children.Add(SettingsFormView.SectionHeader(L.T("Try it here")));
         tryItHereBox = new WpfUi.TextBox
         {
-            PlaceholderText = "With this window in front, your words land here.",
+            PlaceholderText = L.T("With this window in front, your words land here."),
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 72,
             VerticalContentAlignment = VerticalAlignment.Top,
         };
-        copyTryItButton = Ui.Button("Copy", () => services.Clipboard.SetText(tryItHereBox.Text), isEnabled: false);
-        clearTryItButton = Ui.Button("Clear", () => tryItHereBox.Text = "", isEnabled: false);
+        copyTryItButton = Ui.Button(L.T("Copy"), () => services.Clipboard.SetText(tryItHereBox.Text), isEnabled: false);
+        clearTryItButton = Ui.Button(L.T("Clear"), () => tryItHereBox.Text = "", isEnabled: false);
         tryItHereBox.TextChanged += (_, _) =>
         {
             tryItHereCount.Text = WordsPageSentences.WordCount(tryItHereBox.Text);
@@ -91,20 +92,20 @@ internal sealed class WordsPageView : ScrollViewer
         tryItFoot.Children.Add(tryItHereCount);
         column.Children.Add(Ui.Card(Ui.VStack(0, tryItHereBox, tryItFoot)));
 
-        column.Children.Add(SettingsFormView.SectionHeader("This week"));
+        column.Children.Add(SettingsFormView.SectionHeader(L.T("This week")));
         column.Children.Add(thisWeek);
 
         // Your takes: search, ask, filters.
-        column.Children.Add(SettingsFormView.SectionHeader("Your takes"));
+        column.Children.Add(SettingsFormView.SectionHeader(L.T("Your takes")));
         searchField = new WpfUi.TextBox
         {
-            PlaceholderText = "What did I say about…?",
+            PlaceholderText = L.T("What did I say about…?"),
             Icon = new WpfUi.SymbolIcon { Symbol = WpfUi.SymbolRegular.Search24 },
             IconPlacement = WpfUi.ElementPlacement.Left,
             ClearButtonEnabled = true,
         };
-        Ui.AutomationProperties(searchField, "Search your takes");
-        askButton = Ui.Button("Ask", Ask, isEnabled: false, toolTip: "Ask a model across your takes (Enter)");
+        Ui.AutomationProperties(searchField, L.T("Search your takes"));
+        askButton = Ui.Button(L.T("Ask"), Ask, isEnabled: false, toolTip: L.T("Ask a model across your takes (Enter)"));
         searchField.TextChanged += (_, _) =>
         {
             query = searchField.Text;
@@ -166,9 +167,9 @@ internal sealed class WordsPageView : ScrollViewer
     {
         var keyLabel = Settings.DictationKey.KeycapLabel();
         var unavailableReason = DictationEngineResolver.UnavailableReason(Settings.Engine);
-        var howTo = Ui.Card(Ui.Row($"Hold {keyLabel} in any app, speak, let go.",
-            "Words are tidied for the app in front and pasted at the cursor. Tap to start, tap to finish; Esc discards.", "",
-            Ui.Keys([keyLabel], "hold")));
+        var howTo = Ui.Card(Ui.Row(L.F("Hold {0} in any app, speak, let go.", keyLabel),
+            L.T("Words are tidied for the app in front and pasted at the cursor. Tap to start, tap to finish; Esc discards."), "",
+            Ui.Keys([keyLabel], L.T("hold"))));
 
         var dot = new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, unavailableReason is null ? SettingsLook.Success : SettingsLook.Danger);
@@ -184,7 +185,7 @@ internal sealed class WordsPageView : ScrollViewer
         engineRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         engineRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         engineRow.Children.Add(text);
-        var change = Ui.Button("Change Engine…", () => actions.ShowSettings(DictationSettingsPage.Dictation), toolTip: "Opens Settings → Dictation");
+        var change = Ui.Button(L.T("Change Engine…"), () => actions.ShowSettings(DictationSettingsPage.Dictation), toolTip: L.T("Opens Settings → Dictation"));
         change.Margin = new Thickness(16, 0, 0, 0);
         change.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(change, 1);
@@ -197,7 +198,7 @@ internal sealed class WordsPageView : ScrollViewer
     private Border ThisWeekCard(TakeStats stats, IReadOnlyList<DayWords> wordsPerDay)
     {
         var count = Ui.Text(stats.WordsThisWeek.ToString("N0", CultureInfo.CurrentCulture), 30, SettingsLook.TextPrimary, FontWeights.SemiBold, wrap: false);
-        var takesLine = Ui.Text($"words in {WordsPageSentences.Plural(stats.TakesThisWeek, "take")}", SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false);
+        var takesLine = Ui.Text(L.F("words in {0}", WordsPageSentences.Plural(stats.TakesThisWeek, "take")), SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false);
         var top = new Grid();
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -223,10 +224,10 @@ internal sealed class WordsPageView : ScrollViewer
         var stack = new StackPanel();
         stack.Children.Add(top);
         stack.Children.Add(Ui.Divider());
-        var today = LabeledLine("Today", $"{WordsPageSentences.Plural(stats.WordsToday, "word")} · {WordsPageSentences.Plural(stats.TakesToday, "take")}");
+        var today = LabeledLine(L.T("Today"), $"{WordsPageSentences.Plural(stats.WordsToday, "word")} · {WordsPageSentences.Plural(stats.TakesToday, "take")}");
         today.Margin = new Thickness(0);
         stack.Children.Add(today);
-        stack.Children.Add(LabeledLine("All time", WordsPageSentences.Plural(stats.AllTimeTakes, "take")));
+        stack.Children.Add(LabeledLine(L.T("All time"), WordsPageSentences.Plural(stats.AllTimeTakes, "take")));
         return Ui.Card(stack, new Thickness(16, 14, 16, 14));
     }
 
@@ -267,11 +268,11 @@ internal sealed class WordsPageView : ScrollViewer
 
     private void RenderFilters(IReadOnlyList<Core.Dictation.AppUsage> appsUsed)
     {
-        var appOptions = new List<(string Id, string Title)> { ("", "All apps") };
+        var appOptions = new List<(string Id, string Title)> { ("", L.T("All apps")) };
         appOptions.AddRange(appsUsed.Select(app => (app.AppProcessName, app.Name ?? icons.Name(app.AppProcessName) ?? app.AppProcessName)));
         var appPicker = Ui.Picker(appOptions, appFilter ?? "", id => { appFilter = id.Length == 0 ? null : id; Reload(); }, 200);
-        var kindOptions = new List<(string Id, string Title)> { ("", "Every kind of take"), ("dictate", "Dictations"), ("edit", "Hey Clicky edits") };
-        if (Settings.ClipboardHistoryEnabled || modeFilter == TakeMode.Clipboard) kindOptions.Add(("clipboard", "Clipboard"));
+        var kindOptions = new List<(string Id, string Title)> { ("", L.T("Every kind of take")), ("dictate", L.T("Dictations")), ("edit", L.T("Hey Clicky edits")) };
+        if (Settings.ClipboardHistoryEnabled || modeFilter == TakeMode.Clipboard) kindOptions.Add(("clipboard", L.T("Clipboard")));
         var kindPicker = Ui.Picker(kindOptions, modeFilter switch { TakeMode.Dictate => "dictate", TakeMode.Edit => "edit", TakeMode.Clipboard => "clipboard", _ => "" },
             id =>
             {
@@ -290,7 +291,7 @@ internal sealed class WordsPageView : ScrollViewer
             row.Children.Add(picker);
             return row;
         }
-        filters.Content = Ui.VStack(8, Labeled("App", appPicker), Labeled("Kind", kindPicker));
+        filters.Content = Ui.VStack(8, Labeled(L.T("App"), appPicker), Labeled(L.T("Kind"), kindPicker));
     }
 
     /// <summary>Enter in the field: a question goes to the model over the matching takes.</summary>
@@ -315,15 +316,15 @@ internal sealed class WordsPageView : ScrollViewer
     {
         answerArea.Children.Clear();
         if (!isAsking && answer is null) return;
-        var caption = isAsking ? "Asking a model"
-            : answerSources.Count == 0 ? "Answer from your latest takes"
-            : $"Answer from {WordsPageSentences.Plural(answerSources.Count, "take")} that match";
+        var caption = isAsking ? L.T("Asking a model")
+            : answerSources.Count == 0 ? L.T("Answer from your latest takes")
+            : L.F("Answer from {0} that match", WordsPageSentences.Plural(answerSources.Count, "take"));
         answerArea.Children.Add(SettingsFormView.SectionHeader(caption));
         var body = new StackPanel();
         if (isAsking)
         {
             body.Children.Add(Ui.HStack(10, new WpfUi.ProgressRing { IsIndeterminate = true, Width = 16, Height = 16 },
-                Ui.Text("Asking across your takes…", SettingsLook.RowTitleSize, SettingsLook.TextSecondary, wrap: false)));
+                Ui.Text(L.T("Asking across your takes…"), SettingsLook.RowTitleSize, SettingsLook.TextSecondary, wrap: false)));
         }
         else
         {
@@ -338,7 +339,7 @@ internal sealed class WordsPageView : ScrollViewer
                 Padding = new Thickness(0),
             };
             answerText.SetResourceReference(Control.ForegroundProperty, SettingsLook.TextPrimary);
-            var close = Ui.Button("Close", () => { answer = null; answerSources = []; RenderAnswer(); }, WpfUi.ControlAppearance.Transparent, toolTip: "Close the answer");
+            var close = Ui.Button(L.T("Close"), () => { answer = null; answerSources = []; RenderAnswer(); }, WpfUi.ControlAppearance.Transparent, toolTip: L.T("Close the answer"));
             var top = new DockPanel();
             DockPanel.SetDock(close, Dock.Right);
             top.Children.Add(close);
@@ -357,7 +358,7 @@ internal sealed class WordsPageView : ScrollViewer
                 var words = Ui.Text(source.DisplayText.Replace('\n', ' '), SettingsLook.RowTitleSize, SettingsLook.TextPrimary, wrap: false);
                 words.Margin = new Thickness(10, 0, 10, 0);
                 line.Children.Add(words);
-                var reveal = new Button { Content = line, Template = Ui.TransparentButtonTemplate(), Cursor = Cursors.Hand, ToolTip = "Show this take in the list", HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                var reveal = new Button { Content = line, Template = Ui.TransparentButtonTemplate(), Cursor = Cursors.Hand, ToolTip = L.T("Show this take in the list"), HorizontalContentAlignment = HorizontalAlignment.Stretch };
                 var takeToReveal = source;
                 reveal.Click += (_, _) => Reveal(takeToReveal);
                 body.Children.Add(reveal);
@@ -400,7 +401,7 @@ internal sealed class WordsPageView : ScrollViewer
             catch (TakeStoreException error)
             {
                 AppLog.Write($"history couldn't be read: {error.Message}");
-                historyProblem = "History couldn't be read just now. The log says why.";
+                historyProblem = L.T("History couldn't be read just now. The log says why.");
                 takes = [];
             }
         }
@@ -412,7 +413,7 @@ internal sealed class WordsPageView : ScrollViewer
         // Without these lines a take missing from history, or a delete that did nothing, has no explanation anywhere.
         if (store is null)
         {
-            searchFootnote.Text = "History can't be saved on this PC right now. Takes still paste; the log says why.";
+            searchFootnote.Text = L.T("History can't be saved on this PC right now. Takes still paste; the log says why.");
             searchFootnote.SetResourceReference(TextBlock.ForegroundProperty, SettingsLook.Danger);
         }
         else if (historyProblem is not null)
@@ -422,7 +423,7 @@ internal sealed class WordsPageView : ScrollViewer
         }
         else
         {
-            searchFootnote.Text = "Type to filter your takes; press Enter to ask a model across them.";
+            searchFootnote.Text = L.T("Type to filter your takes; press Enter to ask a model across them.");
             searchFootnote.SetResourceReference(TextBlock.ForegroundProperty, SettingsLook.TextSecondary);
         }
         RenderTakes();
@@ -433,7 +434,7 @@ internal sealed class WordsPageView : ScrollViewer
         takesArea.Children.Clear();
         if (takes.Count == 0)
         {
-            var empty = Ui.Text(query.Length == 0 ? "Your dictations will land here, with the app each one went to." : "No matching takes. Press Enter to ask anyway.",
+            var empty = Ui.Text(query.Length == 0 ? L.T("Your dictations will land here, with the app each one went to.") : L.T("No matching takes. Press Enter to ask anyway."),
                 SettingsLook.RowTitleSize, SettingsLook.TextSecondary);
             empty.HorizontalAlignment = HorizontalAlignment.Center;
             empty.Margin = new Thickness(0, 14, 0, 14);
@@ -482,14 +483,14 @@ internal sealed class WordsPageView : ScrollViewer
         {
             var pin = Ui.Text("", 10, SettingsLook.Accent, wrap: false);
             pin.FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
-            pin.ToolTip = "Pinned";
+            pin.ToolTip = L.T("Pinned");
             pin.Margin = new Thickness(0, 0, 8, 0);
             pin.VerticalAlignment = VerticalAlignment.Center;
             extras.Children.Add(pin);
         }
         if (take.Mode == TakeMode.Edit)
         {
-            var tag = Ui.Tag("Hey Clicky");
+            var tag = Ui.Tag(L.T("Hey Clicky"));
             tag.Margin = new Thickness(0, 0, 8, 0);
             extras.Children.Add(tag);
         }
@@ -500,17 +501,17 @@ internal sealed class WordsPageView : ScrollViewer
             failure.Margin = new Thickness(0, 0, 8, 0);
             failure.VerticalAlignment = VerticalAlignment.Center;
             extras.Children.Add(failure);
-            if (canRetry) extras.Children.Add(SmallButton("Retry", () => _ = services.History.RetryAsync(take.Id), "Hear the saved recording again"));
-            extras.Children.Add(SmallButton("Delete", () => Delete(take), "Delete this take", WpfUi.ControlAppearance.Danger));
+            if (canRetry) extras.Children.Add(SmallButton(L.T("Retry"), () => _ = services.History.RetryAsync(take.Id), L.T("Hear the saved recording again")));
+            extras.Children.Add(SmallButton(L.T("Delete"), () => Delete(take), L.T("Delete this take"), WpfUi.ControlAppearance.Danger));
         }
         else if (isSelected)
         {
-            extras.Children.Add(SmallButton("Details…", () => Open(take), "Open the take to edit, pin, paste again or delete it"));
-            extras.Children.Add(SmallButton("Copy", () => Copy(take), "Copy the take"));
+            extras.Children.Add(SmallButton(L.T("Details…"), () => Open(take), L.T("Open the take to edit, pin, paste again or delete it")));
+            extras.Children.Add(SmallButton(L.T("Copy"), () => Copy(take), L.T("Copy the take")));
         }
         else if (revisedTakeIds.Contains(take.Id))
         {
-            extras.Children.Add(Ui.Text("Edited", SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false));
+            extras.Children.Add(Ui.Text(L.T("Edited"), SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false));
         }
         Grid.SetColumn(extras, 2);
         grid.Children.Add(extras);
@@ -535,16 +536,17 @@ internal sealed class WordsPageView : ScrollViewer
         {
             if (arguments.ClickCount == 2) { Open(take); arguments.Handled = true; }
         };
-        row.ToolTip = $"{(take.Mode == TakeMode.Edit ? "Hey Clicky edit" : "Dictation")} into {take.AppName ?? "an unknown app"}. Double-click to open.";
+        row.ToolTip = L.F("{0} into {1}. Double-click to open.",
+            take.Mode == TakeMode.Edit ? L.T("Hey Clicky edit") : L.T("Dictation"), take.AppName ?? L.T("an unknown app"));
         var menu = new ContextMenu();
-        menu.Items.Add(MenuItem("Copy", () => Copy(take), take.DisplayText.Length > 0));
-        menu.Items.Add(MenuItem("Details…", () => Open(take)));
-        if (take.Status == TakeStatus.Failed && canRetry) menu.Items.Add(MenuItem("Retry", () => _ = services.History.RetryAsync(take.Id)));
+        menu.Items.Add(MenuItem(L.T("Copy"), () => Copy(take), take.DisplayText.Length > 0));
+        menu.Items.Add(MenuItem(L.T("Details…"), () => Open(take)));
+        if (take.Status == TakeStatus.Failed && canRetry) menu.Items.Add(MenuItem(L.T("Retry"), () => _ = services.History.RetryAsync(take.Id)));
         menu.Items.Add(new Separator());
-        menu.Items.Add(MenuItem("Delete", () => Delete(take)));
+        menu.Items.Add(MenuItem(L.T("Delete"), () => Delete(take)));
         row.ContextMenu = menu;
         Ui.AutomationProperties(row, take.DisplayText.Length == 0 ? WordsPageSentences.FailureLine(take) : take.DisplayText,
-            $"{take.AppName ?? "Unknown app"}, {take.CreatedAt.LocalDateTime.ToString("t", CultureInfo.CurrentCulture)}");
+            $"{take.AppName ?? L.T("Unknown app")}, {take.CreatedAt.LocalDateTime.ToString("t", CultureInfo.CurrentCulture)}");
         return row;
     }
 
@@ -579,7 +581,7 @@ internal sealed class WordsPageView : ScrollViewer
     {
         if (!HistoryWrite("delete", take.Id, () => services.TakeStore?.Delete(take.Id)))
         {
-            historyProblem = "Couldn't delete that take. The log says why.";
+            historyProblem = L.T("Couldn't delete that take. The log says why.");
         }
         if (selectedTakeId == take.Id) selectedTakeId = null;
         services.History.HistoryDidChange();
@@ -613,18 +615,18 @@ internal static class TakeDetailSheet
 {
     public static void Show(Window owner, MainWindowServices services, AppIconCache icons, TakeRecord take)
     {
-        var sheet = new SheetWindow(owner, services.Settings, take.AppName ?? "Take", 580);
+        var sheet = new SheetWindow(owner, services.Settings, take.AppName ?? L.T("Take"), 580);
         var header = Ui.HStack(10, AppIconView.Make(icons, take.AppProcessName, 24),
-            Ui.VStack(2, Ui.Text(take.AppName ?? "Take", 14, SettingsLook.TextPrimary, FontWeights.SemiBold, wrap: false),
+            Ui.VStack(2, Ui.Text(take.AppName ?? L.T("Take"), 14, SettingsLook.TextPrimary, FontWeights.SemiBold, wrap: false),
                 Ui.Text(WordsPageSentences.TakeDetailLine(take), SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false)));
         var editor = new WpfUi.TextBox { Text = take.DisplayText, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 140, VerticalContentAlignment = VerticalAlignment.Top };
         var body = new StackPanel();
         body.Children.Add(Ui.Card(header));
-        body.Children.Add(SettingsFormView.SectionHeader("Written"));
+        body.Children.Add(SettingsFormView.SectionHeader(L.T("Written")));
         body.Children.Add(editor);
         if (take.RawText != take.FormattedText && take.RawText.Length > 0)
         {
-            body.Children.Add(SettingsFormView.SectionHeader("What you said"));
+            body.Children.Add(SettingsFormView.SectionHeader(L.T("What you said")));
             body.Children.Add(Ui.Card(Ui.Text(take.RawText, SettingsLook.RowTitleSize, SettingsLook.TextSecondary)));
         }
         if (take.FailureReason is { } failureReason)
@@ -634,14 +636,14 @@ internal static class TakeDetailSheet
             body.Children.Add(failure);
         }
         sheet.SetBody(body);
-        sheet.AddFooterButton("Copy", () => services.Clipboard.SetText(editor.Text), alignLeft: true);
-        sheet.AddFooterButton(take.Pinned ? "Unpin" : "Pin", () =>
+        sheet.AddFooterButton(L.T("Copy"), () => services.Clipboard.SetText(editor.Text), alignLeft: true);
+        sheet.AddFooterButton(take.Pinned ? L.T("Unpin") : L.T("Pin"), () =>
         {
             WordsPageView.HistoryWrite(take.Pinned ? "unpin" : "pin", take.Id, () => services.TakeStore?.SetPinned(!take.Pinned, take.Id));
             services.History.HistoryDidChange();
             sheet.Close();
         }, alignLeft: true);
-        var pasteAgain = sheet.AddFooterButton("Paste Again", () =>
+        var pasteAgain = sheet.AddFooterButton(L.T("Paste Again"), () =>
         {
             var textToPaste = editor.Text;
             sheet.Close();
@@ -655,17 +657,17 @@ internal static class TakeDetailSheet
             };
             timer.Start();
         }, alignLeft: true);
-        pasteAgain.ToolTip = "Minimizes OpenClicky, then pastes into the app behind it";
-        sheet.AddFooterButton("Delete", () =>
+        pasteAgain.ToolTip = L.T("Minimizes OpenClicky, then pastes into the app behind it");
+        sheet.AddFooterButton(L.T("Delete"), () =>
         {
             WordsPageView.HistoryWrite("delete", take.Id, () => services.TakeStore?.Delete(take.Id));
             services.History.HistoryDidChange();
             sheet.Close();
         }, alignLeft: true, appearance: WpfUi.ControlAppearance.Danger);
-        sheet.AddFooterButton("Close", sheet.Close, isCancel: true);
-        var save = sheet.AddFooterButton("Save Edit", () =>
+        sheet.AddFooterButton(L.T("Close"), sheet.Close, isCancel: true);
+        var save = sheet.AddFooterButton(L.T("Save Edit"), () =>
         {
-            WordsPageView.HistoryWrite("save edit", take.Id, () => services.TakeStore?.Revise(take.Id, editor.Text, "history"));
+            WordsPageView.HistoryWrite(L.T("save edit"), take.Id, () => services.TakeStore?.Revise(take.Id, editor.Text, "history"));
             services.History.HistoryDidChange();
             sheet.Close();
         }, isDefault: true);

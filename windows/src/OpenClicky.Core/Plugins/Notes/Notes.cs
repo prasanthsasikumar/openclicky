@@ -9,6 +9,7 @@
 
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.Notes;
 
@@ -16,8 +17,8 @@ namespace OpenClicky.Core.Plugins.Notes;
 public static class NotesPlugin
 {
     public static IslandComponent Component { get; } = new(
-        IslandPluginRegistry.NotesId, "Notes", "", 120, IsPlugin: true,
-        SettingsDetail: "A quick notepad on the island. Click it to type; it saves on this PC as you go and never leaves it.");
+        IslandPluginRegistry.NotesId, L.T("Notes"), "", 120, IsPlugin: true,
+        SettingsDetail: L.T("A quick notepad on the island. Click it to type; it saves on this PC as you go and never leaves it."));
 }
 
 /// <summary>

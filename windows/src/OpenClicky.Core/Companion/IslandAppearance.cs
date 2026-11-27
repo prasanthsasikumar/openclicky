@@ -11,6 +11,7 @@
 //
 
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Companion;
 
@@ -56,9 +57,9 @@ public static class IslandLooks
     /// <summary>The picker's names.</summary>
     public static string Title(this IslandLook look) => look switch
     {
-        IslandLook.Blend => "Blend",
-        IslandLook.Black => "Black",
-        _ => "Liquid Glass",
+        IslandLook.Blend => L.T("Blend"),
+        IslandLook.Black => L.T("Black"),
+        _ => L.T("Liquid Glass"),
     };
 
     /// <summary>The line under the picker for the chosen style.</summary>
@@ -99,7 +100,7 @@ public static class IslandPeekDirections
 
     public static string RawValue(this IslandPeekDirection direction) => direction == IslandPeekDirection.Down ? "down" : "sideways";
 
-    public static string Title(this IslandPeekDirection direction) => direction == IslandPeekDirection.Down ? "Downwards" : "Sideways";
+    public static string Title(this IslandPeekDirection direction) => direction == IslandPeekDirection.Down ? L.T("Downwards") : L.T("Sideways");
 
     public static IslandPeekDirection Current(Preferences preferences) => preferences.GetString(DefaultsKey) switch
     {

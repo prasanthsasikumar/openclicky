@@ -12,6 +12,7 @@ using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Settings;
 
@@ -289,7 +290,7 @@ public sealed class DetachedDictationHistoryActions(TakeStore? takeStore, TakeAu
     }
 
     public Task<string> AskHistoryAsync(string question) =>
-        Task.FromResult("Asking across your takes needs the dictation controller, which this build doesn’t have yet.");
+        Task.FromResult(L.T("Asking across your takes needs the dictation controller, which this build doesn’t have yet."));
 
     public void PasteLast() => AppLog.Write("dictation: paste last asked for (not wired in this build)");
 
@@ -313,7 +314,7 @@ public sealed class UnconfiguredAppUpdater : ObservableObject, IAppUpdater
         set => SetProperty(ref automaticallyChecks, value);
     }
 
-    public string LastCheckDescription => "never checked";
+    public string LastCheckDescription => L.T("never checked");
 
     public void CheckNow() { }
 }
@@ -331,7 +332,7 @@ public sealed class DetachedModelDownload(string downloadSizeText) : ObservableO
 
     public string DownloadSizeText { get; } = downloadSizeText;
 
-    public void Download() => State = ModelDownloadState.Failed("Downloads come with the speech engines, which this build doesn’t have yet.");
+    public void Download() => State = ModelDownloadState.Failed(L.T("Downloads come with the speech engines, which this build doesn’t have yet."));
 
     public void CancelDownload() => State = ModelDownloadState.NotInstalled;
 
@@ -364,17 +365,17 @@ public sealed class DetachedSettingsServices(IProcessRunner? processes = null) :
 
     public static string VoiceTitle(string voiceId) => voiceId switch
     {
-        "automatic" => "Automatic",
-        "account" => "Free voice (ElevenLabs)",
+        "automatic" => L.T("Automatic"),
+        "account" => L.T("Free voice (ElevenLabs)"),
         "openai" => "OpenAI",
-        "elevenlabs" => "ElevenLabs (your key)",
+        "elevenlabs" => L.T("ElevenLabs (your key)"),
         "google" => "Google Cloud",
         "gemini" => "Google Gemini",
         "polly" => "Amazon Polly",
         "sarvam" => "Sarvam",
-        "kokoro" => "Kokoro (on this PC)",
+        "kokoro" => L.T("Kokoro (on this PC)"),
         "server" => "Your speech server",
-        _ => "This PC",
+        _ => L.T("This PC"),
     };
 
     private static readonly string[] AllVoiceIds = ["automatic", "account", "openai", "elevenlabs", "google", "gemini", "polly", "sarvam", "kokoro", "server", "mac"];
@@ -413,23 +414,23 @@ public sealed class DetachedSettingsServices(IProcessRunner? processes = null) :
         string sentence;
         if (picked != "automatic" && picked != speaking)
         {
-            var standIn = speaking == "account" ? "the free voice" : "this PC’s voice";
-            sentence = picked == "kokoro" ? $"{standIn} until Kokoro is downloaded." : $"{standIn}: {VoiceTitle(picked)} needs its key under Keys & Account.";
+            var standIn = speaking == "account" ? L.T("the free voice") : L.T("this PC’s voice");
+            sentence = picked == "kokoro" ? L.F("{0} until Kokoro is downloaded.", standIn) : L.F("{0}: {1} needs its key under Keys & Account.", standIn, VoiceTitle(picked));
         }
         else
         {
             sentence = speaking switch
             {
-                "openai" => "OpenAI, on your own key.",
-                "elevenlabs" => "ElevenLabs, on your own key.",
-                "google" => "Google Cloud, on your own key.",
-                "gemini" => "Google Gemini, on your own key.",
-                "polly" => "Amazon Polly, on your own key.",
-                "sarvam" => "Sarvam, on your own key.",
-                "kokoro" => "Kokoro, on this PC. Free, offline, nothing counted.",
+                "openai" => L.T("OpenAI, on your own key."),
+                "elevenlabs" => L.T("ElevenLabs, on your own key."),
+                "google" => L.T("Google Cloud, on your own key."),
+                "gemini" => L.T("Google Gemini, on your own key."),
+                "polly" => L.T("Amazon Polly, on your own key."),
+                "sarvam" => L.T("Sarvam, on your own key."),
+                "kokoro" => L.T("Kokoro, on this PC. Free, offline, nothing counted."),
+                "account" => L.T("ElevenLabs, through OpenClicky."),
                 "server" => "Your speech server. Free, private, nothing counted.",
-                "account" => "ElevenLabs, through OpenClicky.",
-                _ => "this PC’s voice. Free, offline, nothing counted.",
+                _ => L.T("this PC’s voice. Free, offline, nothing counted."),
             };
         }
         return new VoicePickerState

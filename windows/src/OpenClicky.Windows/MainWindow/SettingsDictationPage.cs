@@ -13,6 +13,7 @@ using OpenClicky.Core.Platform;
 using OpenClicky.Core.Settings;
 using OpenClicky.Core.Shortcuts;
 using WpfUi = Wpf.Ui.Controls;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -21,11 +22,11 @@ internal sealed partial class SettingsRowFactory
     /// <summary>The key picker's label ("Right Ctrl").</summary>
     public static string DictationKeyTitle(DictationHotkey key) => key switch
     {
-        DictationHotkey.RightControl => "Right Ctrl",
-        DictationHotkey.LeftControl => "Left Ctrl",
-        DictationHotkey.RightAlt => "Right Alt (AltGr)",
-        DictationHotkey.RightShift => "Right Shift",
-        _ => "Caps Lock",
+        DictationHotkey.RightControl => L.T("Right Ctrl"),
+        DictationHotkey.LeftControl => L.T("Left Ctrl"),
+        DictationHotkey.RightAlt => L.T("Right Alt (AltGr)"),
+        DictationHotkey.RightShift => L.T("Right Shift"),
+        _ => L.T("Caps Lock"),
     };
 
     /// <summary>The language the "Pin one" choice comes back to (same key the Mac's Styles page used).</summary>
@@ -52,11 +53,11 @@ internal sealed partial class SettingsRowFactory
             case "dictation.language":
                 return LiveSettingsCard(() => DictationLanguageRow(item, query));
             case "dictation.script":
-                return LiveSettingsCard(() => Ui.Row(item.Title, "Same words, written two ways. The AI clean-up writes it.", query,
+                return LiveSettingsCard(() => Ui.Row(item.Title, L.T("Same words, written two ways. The AI clean-up writes it."), query,
                     Ui.Picker(new[]
                     {
-                        (DictationScript.Native, "Native · नमस्ते, आप कैसे हैं?"),
-                        (DictationScript.Roman, "Roman · namaste, aap kaise hain?"),
+                        (DictationScript.Native, L.T("Native · नमस्ते, आप कैसे हैं?")),
+                        (DictationScript.Roman, L.T("Roman · namaste, aap kaise hain?")),
                     }, Settings.Script, script => Settings.Script = script, 220)));
             case "dictation.cleanUp":
                 return new LiveContent(() => Ui.Card(Ui.Row(item.Title, DictationCleanUp.Detail(hasModel: DictationEngineResolver.MakePolisher() is not null), query,
@@ -70,10 +71,10 @@ internal sealed partial class SettingsRowFactory
                 return Ui.Card(new MicrophoneTestRow(item, query, services));
             case "dictation.inactivityTimeout":
                 return LiveSettingsCard(() => Ui.Row(item.Title, item.Detail, query,
-                    Ui.Picker(new[] { (1, "1 minute"), (3, "3 minutes"), (5, "5 minutes"), (10, "10 minutes"), (0, "Never") },
+                    Ui.Picker(new[] { (1, L.T("1 minute")), (3, L.T("3 minutes")), (5, L.T("5 minutes")), (10, L.T("10 minutes")), (0, L.T("Never")) },
                         Settings.InactivityTimeoutMinutes, minutes => Settings.InactivityTimeoutMinutes = minutes, 140)));
             case "dictation.pasteLast":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Paste Now", services.History.PasteLast)));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button(L.T("Paste Now"), services.History.PasteLast)));
             case "dictation.sounds":
                 return SettingsToggleRow(item.Title, item.Detail, query, () => Settings.Sounds, isOn => Settings.Sounds = isOn, nameof(DictationSettings.Sounds));
             default:
@@ -119,9 +120,9 @@ internal sealed partial class SettingsRowFactory
                 var reason = Ui.Text(WordsPageSentences.SentenceCased(unavailableReason) + ".", SettingsLook.CaptionSize, SettingsLook.Danger);
                 var fix = choice switch
                 {
-                    DictationEngineChoice.Sarvam => Ui.Button("Add Key…", () => actions.ShowSettings(DictationSettingsPage.Account)),
+                    DictationEngineChoice.Sarvam => Ui.Button(L.T("Add Key…"), () => actions.ShowSettings(DictationSettingsPage.Account)),
                     DictationEngineChoice.Server => Ui.Button("Set Up…", () => actions.ShowSettings(DictationSettingsPage.Clicky)),
-                    _ => Ui.Button("Sign In…", () => actions.ShowSettings(DictationSettingsPage.Account)),
+                    _ => Ui.Button(L.T("Sign In…"), () => actions.ShowSettings(DictationSettingsPage.Account)),
                 };
                 var fixRow = new DockPanel { Margin = new Thickness(30, 10, 0, 0), LastChildFill = true };
                 DockPanel.SetDock(fix, Dock.Right);
@@ -136,15 +137,15 @@ internal sealed partial class SettingsRowFactory
     }
 
     /// <summary>The engine Parakeet takes over from: the built-in Moonshine, or Windows speech in a build without it.</summary>
-    private static string FallbackEngineName => MoonshineFacts.IsInstalled ? "the built-in Moonshine" : "Windows speech recognition";
+    private static string FallbackEngineName => MoonshineFacts.IsInstalled ? L.T("the built-in Moonshine") : L.T("Windows speech recognition");
 
     private static string ParakeetCaption(ModelDownloadState state) => state.Kind switch
     {
-        ModelDownloadState.Stage.NotInstalled => $"Not downloaded yet. Takes stay with {FallbackEngineName} until it is.",
-        ModelDownloadState.Stage.Downloading => $"Downloading, {(int)Math.Round(state.Fraction * 100)}%. Takes stay with {FallbackEngineName} until it’s ready.",
-        ModelDownloadState.Stage.Unpacking => "Unpacking. Almost there.",
-        ModelDownloadState.Stage.Failed => state.Message ?? "The download failed.",
-        _ => "Downloaded. It loads while you speak, so takes start straight away.",
+        ModelDownloadState.Stage.NotInstalled => L.F("Not downloaded yet. Takes stay with {0} until it is.", FallbackEngineName),
+        ModelDownloadState.Stage.Downloading => L.F("Downloading, {0}%. Takes stay with {1} until it’s ready.", (int)Math.Round(state.Fraction * 100), FallbackEngineName),
+        ModelDownloadState.Stage.Unpacking => L.T("Unpacking. Almost there."),
+        ModelDownloadState.Stage.Failed => state.Message ?? L.T("The download failed."),
+        _ => L.T("Downloaded. It loads while you speak, so takes start straight away."),
     };
 
     /// <summary>A model's download under its option: download (progress, cancel, retry), or remove it.</summary>
@@ -156,20 +157,20 @@ internal sealed partial class SettingsRowFactory
         switch (state.Kind)
         {
             case ModelDownloadState.Stage.NotInstalled:
-                controls.Children.Add(Ui.Button($"Download {model.DownloadSizeText}", model.Download));
+                controls.Children.Add(Ui.Button(L.F("Download {0}", model.DownloadSizeText), model.Download));
                 break;
             case ModelDownloadState.Stage.Downloading:
                 controls.Children.Add(new ProgressBar { Width = 110, Value = state.Fraction, Maximum = 1, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
-                controls.Children.Add(Ui.Button("Cancel", model.CancelDownload));
+                controls.Children.Add(Ui.Button(L.T("Cancel"), model.CancelDownload));
                 break;
             case ModelDownloadState.Stage.Unpacking:
                 controls.Children.Add(new WpfUi.ProgressRing { IsIndeterminate = true, Width = 18, Height = 18 });
                 break;
             case ModelDownloadState.Stage.Failed:
-                controls.Children.Add(Ui.Button("Try Again", model.Download));
+                controls.Children.Add(Ui.Button(L.T("Try Again"), model.Download));
                 break;
             default:
-                controls.Children.Add(Ui.Button("Remove", model.Remove));
+                controls.Children.Add(Ui.Button(L.T("Remove"), model.Remove));
                 break;
         }
         DockPanel.SetDock(controls, Dock.Right);
@@ -187,7 +188,7 @@ internal sealed partial class SettingsRowFactory
     {
         var isAuto = Settings.Language == DictationLanguage.Auto;
         var controls = new StackPanel { Orientation = Orientation.Horizontal };
-        controls.Children.Add(Ui.Picker(new[] { (true, "Auto-detect"), (false, "Pin one") }, isAuto, chooseAuto =>
+        controls.Children.Add(Ui.Picker(new[] { (true, L.T("Auto-detect")), (false, L.T("Pin one")) }, isAuto, chooseAuto =>
         {
             if (chooseAuto) Settings.LanguageCode = DictationLanguage.Auto.Code;
             else if (Settings.Language == DictationLanguage.Auto) Settings.LanguageCode = LanguageToPin().Code;
@@ -223,13 +224,13 @@ internal sealed partial class SettingsRowFactory
         var devices = microphones.Available();
         var automaticName = microphones.EffectiveInputName(null) ?? "none";
         var chosen = Settings.PreferredMicrophoneUID is { } chosenId ? devices.FirstOrDefault(device => device.Id == chosenId) : null;
-        var currentName = chosen?.Name ?? microphones.EffectiveInputName(null) ?? "no microphone found";
-        var options = new List<(string Id, string Title)> { ("", $"Automatic ({automaticName})") };
+        var currentName = chosen?.Name ?? microphones.EffectiveInputName(null) ?? L.T("no microphone found");
+        var options = new List<(string Id, string Title)> { ("", L.F("Automatic ({0})", automaticName)) };
         options.AddRange(devices.Select(device => (device.Id, device.Name)));
         // A chosen microphone that isn't connected stays listed, so the picker never shows a blank.
-        if (Settings.PreferredMicrophoneUID is { } missingId && chosen is null) options.Add((missingId, "Not connected"));
+        if (Settings.PreferredMicrophoneUID is { } missingId && chosen is null) options.Add((missingId, L.T("Not connected")));
         var picker = Ui.Picker(options, Settings.PreferredMicrophoneUID ?? "", id => Settings.PreferredMicrophoneUID = id.Length == 0 ? null : id, 200, maxWidth: 280);
-        return Ui.Row(item.Title, $"Automatic follows Windows’ default microphone. Clicky listens through it too. Now: {currentName}.", query, picker);
+        return Ui.Row(item.Title, L.F("Automatic follows Windows’ default microphone. Clicky listens through it too. Now: {0}.", currentName), query, picker);
     }
 
     /// <summary>"Speak to Test": the chosen input's level as five bars while it listens.</summary>
@@ -266,8 +267,8 @@ internal sealed partial class SettingsRowFactory
                 }
                 controls.Children.Add(meter);
             }
-            controls.Children.Add(Ui.Button(isTesting ? "Stop" : "Speak to Test", () => { if (isTesting) StopTest(); else _ = StartTestAsync(); }));
-            Content = Ui.Row(item.Title, isTesting ? "Speak, and the bars should follow your voice." : item.Detail, query, controls);
+            controls.Children.Add(Ui.Button(isTesting ? L.T("Stop") : L.T("Speak to Test"), () => { if (isTesting) StopTest(); else _ = StartTestAsync(); }));
+            Content = Ui.Row(item.Title, isTesting ? L.T("Speak, and the bars should follow your voice.") : item.Detail, query, controls);
         }
 
         private async Task StartTestAsync()
@@ -285,8 +286,8 @@ internal sealed partial class SettingsRowFactory
             {
                 newCapture.Dispose();
                 AppLog.Write($"microphone test: couldn't start: {error.Message}");
-                Content = Ui.Row(item.Title, "Couldn’t open the microphone. Check Privacy & Security › Microphone.", query,
-                    Ui.Button("Speak to Test", () => _ = StartTestAsync()), SettingsLook.Danger);
+                Content = Ui.Row(item.Title, L.T("Couldn’t open the microphone. Check Privacy & Security › Microphone."), query,
+                    Ui.Button(L.T("Speak to Test"), () => _ = StartTestAsync()), SettingsLook.Danger);
             }
         }
 

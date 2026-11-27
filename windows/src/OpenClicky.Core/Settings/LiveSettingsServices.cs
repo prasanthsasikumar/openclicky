@@ -9,6 +9,7 @@ using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Speech;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Settings;
 
@@ -83,7 +84,7 @@ public sealed class LiveSettingsServices(IModelDownload kokoro, IModelDownload p
         try
         {
             await CloudVoiceSpeaker.AudioAsync("ok", SpeechVoiceChoices.FromStored(voiceId), cancellationToken: cancellationToken);
-            return "✓ Works. It can speak your answers.";
+            return L.T("✓ Works. It can speak your answers.");
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
@@ -114,28 +115,28 @@ public sealed class LiveSettingsServices(IModelDownload kokoro, IModelDownload p
         string sentence;
         if (picked != SpeechVoiceChoice.Automatic && picked != speaking)
         {
-            var standIn = speaking == SpeechVoiceChoice.Account ? "the free voice" : "this PC’s voice";
+            var standIn = speaking == SpeechVoiceChoice.Account ? L.T("the free voice") : L.T("this PC’s voice");
             sentence = picked switch
             {
-                SpeechVoiceChoice.Kokoro => $"{standIn} until Kokoro is downloaded.",
+                SpeechVoiceChoice.Kokoro => L.F("{0} until Kokoro is downloaded.", standIn),
                 SpeechVoiceChoice.Server => $"{standIn}: pick a voice model for your speech server under Your models.",
-                _ => $"{standIn}: {picked.Title()} needs its key under Keys & Account.",
+                _ => L.F("{0}: {1} needs its key under Keys & Account.", standIn, picked.Title()),
             };
         }
         else
         {
             sentence = speaking switch
             {
-                SpeechVoiceChoice.OpenAI => "OpenAI, on your own key.",
-                SpeechVoiceChoice.ElevenLabs => "ElevenLabs, on your own key.",
-                SpeechVoiceChoice.Google => "Google Cloud, on your own key.",
-                SpeechVoiceChoice.Gemini => "Google Gemini, on your own key.",
-                SpeechVoiceChoice.Polly => "Amazon Polly, on your own key.",
-                SpeechVoiceChoice.Sarvam => "Sarvam, on your own key.",
-                SpeechVoiceChoice.Kokoro => "Kokoro, on this PC. Free, offline, nothing counted.",
+                SpeechVoiceChoice.OpenAI => L.T("OpenAI, on your own key."),
+                SpeechVoiceChoice.ElevenLabs => L.T("ElevenLabs, on your own key."),
+                SpeechVoiceChoice.Google => L.T("Google Cloud, on your own key."),
+                SpeechVoiceChoice.Gemini => L.T("Google Gemini, on your own key."),
+                SpeechVoiceChoice.Polly => L.T("Amazon Polly, on your own key."),
+                SpeechVoiceChoice.Sarvam => L.T("Sarvam, on your own key."),
+                SpeechVoiceChoice.Kokoro => L.T("Kokoro, on this PC. Free, offline, nothing counted."),
+                SpeechVoiceChoice.Account => L.T("ElevenLabs, through OpenClicky."),
                 SpeechVoiceChoice.Server => $"{OpenClickyConfiguration.Settings.SpeechServerVoiceModel?.Trim()}, on your speech server. Free, private, nothing counted.",
-                SpeechVoiceChoice.Account => "ElevenLabs, through OpenClicky.",
-                _ => "this PC’s voice. Free, offline, nothing counted.",
+                _ => L.T("this PC’s voice. Free, offline, nothing counted."),
             };
         }
         return new VoicePickerState
@@ -187,6 +188,8 @@ public sealed class RecordedVoiceTourNarrator(RecordedVoice recordedVoice) : ISe
 {
     public async Task<bool> SayAsync(string line, CancellationToken cancellationToken)
     {
+        // The recordings are English: in another screen language the tour shows its bubbles without them.
+        if (L.Language != "en") return false;
         if (RawValues.FromRawValue<RecordedVoice.Line>(line) is not { } recordedLine) return false;
         var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!recordedVoice.Play(recordedLine, () => finished.TrySetResult())) return false;

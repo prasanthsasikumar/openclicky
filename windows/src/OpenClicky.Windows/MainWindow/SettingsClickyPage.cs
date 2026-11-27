@@ -15,6 +15,7 @@ using OpenClicky.Core.Providers;
 using OpenClicky.Core.Settings;
 using OpenClicky.Core.Shortcuts;
 using OpenClicky.Core.Speech;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -68,11 +69,11 @@ internal sealed partial class SettingsRowFactory
                 return CompanionToggle(item, query, () => companion.IsAgentModeEnabled, companion.SetAgentModeEnabled, nameof(ICompanionSettings.IsAgentModeEnabled));
             case "clicky.workspace":
                 return new LiveContent(() => Ui.Card(Ui.Row(item.Title, SettingsCatalog.DisplayPath(OpenClickyConfiguration.WorkspacePath), query,
-                    Ui.HStack(8, Ui.Button("Show in Explorer", () =>
+                    Ui.HStack(8, Ui.Button(L.T("Show in Explorer"), () =>
                     {
                         Directory.CreateDirectory(OpenClickyConfiguration.WorkspacePath);
                         Ui.RevealInExplorer(OpenClickyConfiguration.WorkspacePath);
-                    }), Ui.Button("Change…", ChooseWorkspaceFolder)))), Changes.Shell);
+                    }), Ui.Button(L.T("Change…"), ChooseWorkspaceFolder)))), Changes.Shell);
             default:
                 return null;
         }
@@ -93,7 +94,7 @@ internal sealed partial class SettingsRowFactory
             Width = 190, Text = AssistantName.Cleaned(OpenClickyConfiguration.Settings.AssistantName) ?? "", PlaceholderText = AssistantName.Default,
             MaxLength = AssistantName.MaximumLength, VerticalAlignment = VerticalAlignment.Center,
         };
-        Ui.AutomationProperties(field, "Assistant name");
+        Ui.AutomationProperties(field, L.T("Assistant name"));
         void Save()
         {
             var name = AssistantName.Cleaned(field.Text);
@@ -113,23 +114,23 @@ internal sealed partial class SettingsRowFactory
         var credentials = ProviderCredentials.Current();
         var available = credentials.AnswerSourcesInOrder;
         var picked = AnswerSources.FromRawValue(OpenClickyConfiguration.Settings.AnswerSource);
-        var options = new List<(string Id, string Title)> { ("auto", "Automatic") };
+        var options = new List<(string Id, string Title)> { ("auto", L.T("Automatic")) };
         options.AddRange(available.Select(source => (source.Id(), source.DisplayName())));
         // A pick that is no longer set up stays visible, so the menu does not jump.
-        if (picked is { } stale && !available.Contains(stale)) options.Add((stale.Id(), $"{stale.DisplayName()} (not set up)"));
+        if (picked is { } stale && !available.Contains(stale)) options.Add((stale.Id(), L.F("{0} (not set up)", stale.DisplayName())));
         var picker = Ui.Picker(options, picked?.Id() ?? "auto", choice =>
         {
             OpenClickyConfiguration.Update(shell => shell.AnswerSource = choice == "auto" ? null : choice);
             ShellSettingsRevision.NoteChanged();
         }, 220);
-        return Ui.Row(item.Title, $"Now: {AccountRows.NowAnswering(credentials)}", query, picker);
+        return Ui.Row(item.Title, L.F("Now: {0}", AccountRows.NowAnswering(credentials)), query, picker);
     }
 
     private void ChooseWorkspaceFolder()
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog
         {
-            Title = "Choose the agents' workspace",
+            Title = L.T("Choose the agents' workspace"),
             InitialDirectory = Directory.Exists(OpenClickyConfiguration.WorkspacePath) ? OpenClickyConfiguration.WorkspacePath : OpenClickyPaths.HomeDirectory,
         };
         if (dialog.ShowDialog(actions.OwnerWindow) != true) return;
@@ -153,7 +154,7 @@ internal sealed partial class SettingsRowFactory
                 return new LiveContent(() =>
                 {
                     var currentCode = ReplyLanguage.CurrentCode;
-                    return Ui.Card(Ui.Row(item.Title, "Clicky speaks and listens in this. Dictation has its own, on the Dictation page.", query,
+                    return Ui.Card(Ui.Row(item.Title, L.T("Clicky speaks and listens in this. Dictation has its own, on the Dictation page."), query,
                         Ui.Picker(ReplyLanguage.ChoicesFor(Settings.Region, currentCode).Select(choice => (choice.Code, choice.Name)), currentCode, code =>
                         {
                             OpenClickyConfiguration.Update(shell => shell.Language = code);
@@ -189,7 +190,7 @@ internal sealed partial class SettingsRowFactory
                 {
                     var picked = Core.Actions.EmailApps.Named(OpenClickyConfiguration.Settings.EmailApp)?.RawValue() ?? "auto";
                     return Ui.Card(Ui.Row(item.Title, item.Detail, query,
-                        Ui.Picker(new[] { ("auto", "Automatic"), ("gmail", "Gmail"), ("outlook", "Outlook") }, picked, choice =>
+                        Ui.Picker(new[] { ("auto", L.T("Automatic")), ("gmail", "Gmail"), ("outlook", "Outlook") }, picked, choice =>
                         {
                             OpenClickyConfiguration.Update(shell => shell.EmailApp = choice == "auto" ? null : choice);
                             ShellSettingsRevision.NoteChanged();
@@ -208,7 +209,7 @@ internal sealed partial class SettingsRowFactory
                         companion.RealtimeProviderChanged();
                     }, 170))), Changes.Shell);
             case "clicky.fastVoiceNeedsKey":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Add Key…", () => actions.ShowSettings(DictationSettingsPage.Account))));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button(L.T("Add Key…"), () => actions.ShowSettings(DictationSettingsPage.Account))));
             default:
                 return null;
         }
@@ -224,7 +225,7 @@ internal sealed partial class SettingsRowFactory
         var voices = services.Services;
         var picker = voices.VoicePicker(Settings.Region);
         var stack = new StackPanel();
-        stack.Children.Add(Ui.Card(Ui.Row(item.Title, $"Now: {picker.NowSpeakingSentence}", query,
+        stack.Children.Add(Ui.Card(Ui.Row(item.Title, L.F("Now: {0}", picker.NowSpeakingSentence), query,
             Ui.Picker(picker.Offered.Select(option => (option.Id, option.Title)), picker.PickedId, voiceId =>
             {
                 voices.PickVoice(voiceId);
@@ -236,10 +237,10 @@ internal sealed partial class SettingsRowFactory
         if (picker.HasMoreVoices)
         {
             var vendors = Settings.Region.OffersIndianOptions()
-                ? "OpenAI, ElevenLabs, Gemini, Google Cloud, Amazon Polly or Sarvam"
-                : "OpenAI, ElevenLabs, Gemini, Google Cloud or Amazon Polly";
-            stack.Children.Add(Ui.Card(Ui.Row("More voices", $"Add an {vendors} key under Keys & Account, and its voice shows up here.", query,
-                Ui.Button("Add a Key…", () => actions.ShowSettings(DictationSettingsPage.Account)))));
+                ? L.T("OpenAI, ElevenLabs, Gemini, Google Cloud, Amazon Polly or Sarvam")
+                : L.T("OpenAI, ElevenLabs, Gemini, Google Cloud or Amazon Polly");
+            stack.Children.Add(Ui.Card(Ui.Row(L.T("More voices"), L.F("Add an {0} key under Keys & Account, and its voice shows up here.", vendors), query,
+                Ui.Button(L.T("Add a Key…"), () => actions.ShowSettings(DictationSettingsPage.Account)))));
         }
         return stack;
     }
@@ -257,12 +258,12 @@ internal sealed partial class SettingsRowFactory
             _ = services.Services.PreviewVoiceAsync("gemini");
         }, 200, maxWidth: 240);
         var language = ReplyLanguage.EnglishName(ReplyLanguage.CurrentCode);
-        var detail = $"Gemini speaks {language} natively, without an English accent. Picking one says a line in it; the fast voice on Gemini uses it too.";
+        var detail = L.F("Gemini speaks {0} natively, without an English accent. Picking one says a line in it; the fast voice on Gemini uses it too.", language);
         if (ReplyLanguage.CurrentCode != "en" && SpeechVoiceChoices.FromStored(shell.SpeechVoice) != SpeechVoiceChoice.Gemini)
         {
-            detail += $" Pick “{SpeechVoiceChoice.Gemini.Title()}” above for {language} answers in it.";
+            detail += L.F(" Pick “{0}” above for {1} answers in it.", SpeechVoiceChoice.Gemini.Title(), language);
         }
-        return Ui.Card(Ui.Row("Gemini voice", detail, "", Ui.HStack(8, picker, Ui.Button("Preview", () => _ = services.Services.PreviewVoiceAsync("gemini")))));
+        return Ui.Card(Ui.Row(L.T("Gemini voice"), detail, "", Ui.HStack(8, picker, Ui.Button(L.T("Preview"), () => _ = services.Services.PreviewVoiceAsync("gemini")))));
     }
 
     /// <summary>Kokoro's rows: the download (progress, cancel, retry), then which speaker, a preview, and removing the download.</summary>
@@ -273,18 +274,18 @@ internal sealed partial class SettingsRowFactory
         switch (state.Kind)
         {
             case ModelDownloadState.Stage.NotInstalled:
-                yield return Ui.Card(Ui.Row("Kokoro", $"An open voice model that runs on this PC, free and offline. {kokoro.DownloadSizeText} to download.", "",
-                    Ui.Button("Download", kokoro.Download)));
+                yield return Ui.Card(Ui.Row("Kokoro", L.F("An open voice model that runs on this PC, free and offline. {0} to download.", kokoro.DownloadSizeText), "",
+                    Ui.Button(L.T("Download"), kokoro.Download)));
                 break;
             case ModelDownloadState.Stage.Downloading:
-                yield return Ui.Card(Ui.Row("Downloading Kokoro", $"{(int)Math.Round(state.Fraction * 100)}% of {kokoro.DownloadSizeText}. Answers keep the current voice until it’s ready.", "",
-                    Ui.HStack(8, new ProgressBar { Width = 120, Maximum = 1, Value = state.Fraction }, Ui.Button("Cancel", kokoro.CancelDownload))));
+                yield return Ui.Card(Ui.Row(L.T("Downloading Kokoro"), L.F("{0}% of {1}. Answers keep the current voice until it’s ready.", (int)Math.Round(state.Fraction * 100), kokoro.DownloadSizeText), "",
+                    Ui.HStack(8, new ProgressBar { Width = 120, Maximum = 1, Value = state.Fraction }, Ui.Button(L.T("Cancel"), kokoro.CancelDownload))));
                 break;
             case ModelDownloadState.Stage.Unpacking:
-                yield return Ui.Card(Ui.Row("Unpacking Kokoro", "Almost there.", "", new Wpf.Ui.Controls.ProgressRing { IsIndeterminate = true, Width = 18, Height = 18 }));
+                yield return Ui.Card(Ui.Row(L.T("Unpacking Kokoro"), L.T("Almost there."), "", new Wpf.Ui.Controls.ProgressRing { IsIndeterminate = true, Width = 18, Height = 18 }));
                 break;
             case ModelDownloadState.Stage.Failed:
-                yield return Ui.Card(Ui.Row("Kokoro", state.Message, "", Ui.Button("Try Again", kokoro.Download), SettingsLook.Danger));
+                yield return Ui.Card(Ui.Row("Kokoro", state.Message, "", Ui.Button(L.T("Try Again"), kokoro.Download), SettingsLook.Danger));
                 break;
             default:
                 var language = ReplyLanguage.CurrentCode;
@@ -299,9 +300,9 @@ internal sealed partial class SettingsRowFactory
                             _ = services.Services.PreviewVoiceAsync("kokoro");
                         }, 180, maxWidth: 220)
                         : null,
-                    Ui.Button("Preview", () => _ = services.Services.PreviewVoiceAsync("kokoro")));
-                yield return Ui.Card(Ui.Row("Kokoro voice", "The first answer after launch takes a few seconds while the model loads.", "", speakerControls));
-                yield return Ui.Card(Ui.Row("Kokoro download", "About 400 MB in %LOCALAPPDATA%\\OpenClicky.", "", Ui.Button("Remove", () =>
+                    Ui.Button(L.T("Preview"), () => _ = services.Services.PreviewVoiceAsync("kokoro")));
+                yield return Ui.Card(Ui.Row(L.T("Kokoro voice"), L.T("The first answer after launch takes a few seconds while the model loads."), "", speakerControls));
+                yield return Ui.Card(Ui.Row(L.T("Kokoro download"), L.T("About 400 MB in %LOCALAPPDATA%\\OpenClicky."), "", Ui.Button(L.T("Remove"), () =>
                 {
                     kokoro.Remove();
                     if (OpenClickyConfiguration.Settings.SpeechVoice == "kokoro")
@@ -334,18 +335,18 @@ internal sealed partial class SettingsRowFactory
             ShellSettingsRevision.NoteChanged();
             _ = PreviewSystemVoiceAsync(voiceId);
         }, 200, maxWidth: 240);
-        yield return Ui.Card(Ui.Row("This PC’s voice", installed.Count == 0 ? "No voice for this language is installed yet." : "Picking one says a line in it.", "",
-            Ui.HStack(8, picker, Ui.Button("Preview", () => _ = PreviewSystemVoiceAsync(OpenClickyConfiguration.Settings.MacVoiceIdentifier)))));
-        yield return Ui.Card(Ui.Row("Better voices",
-            "Windows downloads more natural voices once, then they run offline. Get Voices opens Settings › Time & language › Speech.", "",
-            Ui.Button("Get Voices…", () => Ui.OpenExternal("ms-settings:speech"))));
+        yield return Ui.Card(Ui.Row(L.T("This PC’s voice"), installed.Count == 0 ? L.T("No voice for this language is installed yet.") : L.T("Picking one says a line in it."), "",
+            Ui.HStack(8, picker, Ui.Button(L.T("Preview"), () => _ = PreviewSystemVoiceAsync(OpenClickyConfiguration.Settings.MacVoiceIdentifier)))));
+        yield return Ui.Card(Ui.Row(L.T("Better voices"),
+            L.T("Windows downloads more natural voices once, then they run offline. Get Voices opens Settings › Time & language › Speech."), "",
+            Ui.Button(L.T("Get Voices…"), () => Ui.OpenExternal("ms-settings:speech"))));
     }
 
     private async Task PreviewSystemVoiceAsync(string? voiceId)
     {
         try
         {
-            var wav = await services.SystemVoice.RenderWavAsync("hi, i'm clicky. this is how i sound.", ReplyLanguage.CurrentCode, voiceId);
+            var wav = await services.SystemVoice.RenderWavAsync(L.T("hi, i'm clicky. this is how i sound."), ReplyLanguage.CurrentCode, voiceId);
             await services.AudioPlayer.PlayToCompletionAsync(wav);
         }
         catch (Exception error)

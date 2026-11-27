@@ -12,6 +12,7 @@ using OpenClicky.Core.Dictation;
 using OpenClicky.Core.Platform;
 using OpenClicky.Core.Settings;
 using WpfUi = Wpf.Ui.Controls;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -40,17 +41,17 @@ internal sealed partial class SettingsRowFactory
                     if (!isOn) services.AudioStore.DiscardAll();
                 }, nameof(DictationSettings.RetainFailedTakeAudio));
             case "privacy.deleteTakes":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Delete History…", DeleteHistory, WpfUi.ControlAppearance.Danger)));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button(L.T("Delete History…"), DeleteHistory, WpfUi.ControlAppearance.Danger)));
             case "privacy.whereHistory":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Show in Explorer", () => Ui.RevealInExplorer(OpenClickyPaths.DictationDatabaseFile))));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button(L.T("Show in Explorer"), () => Ui.RevealInExplorer(OpenClickyPaths.DictationDatabaseFile))));
             case "privacy.whereSpace":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Show in Explorer", () =>
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button(L.T("Show in Explorer"), () =>
                 {
                     Directory.CreateDirectory(OpenClickyPaths.DictationDirectory);
                     Ui.RevealInExplorer(OpenClickyPaths.DictationDirectory);
                 })));
             case "privacy.whereKeys":
-                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button("Show in Explorer", () => Ui.RevealInExplorer(OpenClickyPaths.ShellSettingsFile))));
+                return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Button(L.T("Show in Explorer"), () => Ui.RevealInExplorer(OpenClickyPaths.ShellSettingsFile))));
             default:
                 return null;
         }
@@ -70,22 +71,22 @@ internal sealed partial class SettingsRowFactory
         {
             var dot = new System.Windows.Shapes.Ellipse { Width = 8, Height = 8 };
             dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, SettingsLook.Success);
-            return Ui.Row(item.Title, item.Detail, query, Ui.HStack(6, dot, Ui.Text("Allowed", SettingsLook.RowTitleSize, SettingsLook.TextSecondary, wrap: false)));
+            return Ui.Row(item.Title, item.Detail, query, Ui.HStack(6, dot, Ui.Text(L.T("Allowed"), SettingsLook.RowTitleSize, SettingsLook.TextSecondary, wrap: false)));
         }
         var whatIsOff = consent switch
         {
-            MicrophoneConsent.DeniedForDevice => " Microphone access is off for this PC.",
-            MicrophoneConsent.DeniedForAllApps => " “Let apps access your microphone” is off.",
-            MicrophoneConsent.DeniedForDesktopApps => " “Let desktop apps access your microphone” is off.",
+            MicrophoneConsent.DeniedForDevice => L.T(" Microphone access is off for this PC."),
+            MicrophoneConsent.DeniedForAllApps => L.T(" “Let apps access your microphone” is off."),
+            MicrophoneConsent.DeniedForDesktopApps => L.T(" “Let desktop apps access your microphone” is off."),
             _ => "",
         };
         return Ui.Row(item.Title, item.Detail + whatIsOff, query,
-            Ui.Button("Allow…", services.MicrophonePermission.OpenPrivacySettings, WpfUi.ControlAppearance.Primary));
+            Ui.Button(L.T("Allow…"), services.MicrophonePermission.OpenPrivacySettings, WpfUi.ControlAppearance.Primary));
     }
 
     private void DeleteHistory()
     {
-        if (!SheetWindow.Confirm(actions.OwnerWindow, Settings, "Delete every take on this PC?", "This can’t be undone.", "Delete All History")) return;
+        if (!SheetWindow.Confirm(actions.OwnerWindow, Settings, L.T("Delete every take on this PC?"), L.T("This can’t be undone."), L.T("Delete All History"))) return;
         try { services.TakeStore?.DeleteAll(); }
         catch (TakeStoreException error) { AppLog.Write($"history delete all failed: {error.Message}"); }
         services.AudioStore.DiscardAll();
@@ -96,7 +97,7 @@ internal sealed partial class SettingsRowFactory
     {
         var note = Ui.Highlighted(SettingsCatalog.PrivacySummaryText, query, SettingsLook.CaptionSize, SettingsLook.TextSecondary);
         var link = Ui.HStack(3,
-            Ui.Text("The full privacy policy is in the project’s", SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false),
+            Ui.Text(L.T("The full privacy policy is in the project’s"), SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false),
             Ui.LinkButton("README", () => Ui.OpenExternal(AppVersion.ReadmeUrl)),
             Ui.Text(".", SettingsLook.CaptionSize, SettingsLook.TextSecondary, wrap: false));
         link.Margin = new Thickness(0, 4, 0, 0);
@@ -121,7 +122,7 @@ internal sealed partial class SettingsRowFactory
             case "about.reportBug":
                 return Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.HStack(8,
                     Ui.Button("Show Log", () => Ui.RevealInExplorer(AppLog.FilePath)),
-                    Ui.Button("Open Issues ↗", () => Ui.OpenExternal(AppVersion.IssuesUrl)))));
+                    Ui.Button(L.T("Open Issues ↗"), () => Ui.OpenExternal(AppVersion.IssuesUrl)))));
             default:
                 return null;
         }
@@ -148,7 +149,7 @@ internal sealed partial class SettingsRowFactory
         };
         version.SetResourceReference(Control.ForegroundProperty, SettingsLook.TextSecondary);
         text.Children.Add(version);
-        var checkNow = Ui.Button("Check Now", services.Updater.CheckNow, isEnabled: services.Updater.IsConfigured);
+        var checkNow = Ui.Button(L.T("Check Now"), services.Updater.CheckNow, isEnabled: services.Updater.IsConfigured);
         checkNow.VerticalAlignment = VerticalAlignment.Center;
         var row = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(checkNow, Dock.Right);

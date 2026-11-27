@@ -11,6 +11,7 @@ using OpenClicky.Core.Plugins.DrawStage;
 using OpenClicky.Core.Providers;
 using OpenClicky.Core.Settings;
 using WpfUi = Wpf.Ui.Controls;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Windows.AppWindow;
 
@@ -80,8 +81,8 @@ internal sealed partial class SettingsRowFactory
         WpfUi.PasswordBox? keyField = null;
         if (source == AnswerSource.CustomOpenAI)
         {
-            keyField = new WpfUi.PasswordBox { Width = 150, PlaceholderText = "key (optional)", Password = shell.CustomOpenAIKey ?? "", VerticalAlignment = VerticalAlignment.Center };
-            Ui.AutomationProperties(keyField, "Your server's key");
+            keyField = new WpfUi.PasswordBox { Width = 150, PlaceholderText = L.T("key (optional)"), Password = shell.CustomOpenAIKey ?? "", VerticalAlignment = VerticalAlignment.Center };
+            Ui.AutomationProperties(keyField, L.T("Your server's key"));
         }
 
         async void Connect()
@@ -89,13 +90,13 @@ internal sealed partial class SettingsRowFactory
             var typed = urlField.Text.Trim().Length > 0 ? urlField.Text.Trim() : source.DefaultBaseUrl() ?? "";
             if (ProviderCredentials.BaseUrl(typed) is not { } baseUrl)
             {
-                selfHosted.Status[source] = "That isn't an http:// or https:// address.";
+                selfHosted.Status[source] = L.T("That isn't an http:// or https:// address.");
                 redraw();
                 return;
             }
             var key = keyField?.Password.Trim();
             selfHosted.Connecting.Add(source);
-            selfHosted.Status[source] = $"Connecting to {baseUrl}…";
+            selfHosted.Status[source] = L.F("Connecting to {0}…", baseUrl);
             redraw();
             try
             {
@@ -114,7 +115,8 @@ internal sealed partial class SettingsRowFactory
                     }
                 });
                 ShellSettingsRevision.NoteChanged();
-                selfHosted.Status[source] = $"Connected: {served.Count} model{(served.Count == 1 ? "" : "s")}. Pick it under “Answers come from” or “Drawings come from”.";
+                selfHosted.Status[source] = L.F("Connected: {0}. Pick it under “Answers come from” or “Drawings come from”.",
+                    WordsPageSentences.Plural(served.Count, "model"));
             }
             catch (LocalModelsException failure)
             {
@@ -125,7 +127,7 @@ internal sealed partial class SettingsRowFactory
             catch (Exception failure) when (failure is not OutOfMemoryException)
             {
                 AppLog.Write($"settings: connecting {source.Id()} failed ({failure.GetType().Name}: {failure.Message})");
-                selfHosted.Status[source] = $"Couldn't turn it on: {failure.Message}";
+                selfHosted.Status[source] = L.F("Couldn't turn it on: {0}", failure.Message);
             }
             finally
             {
@@ -134,16 +136,16 @@ internal sealed partial class SettingsRowFactory
             }
         }
 
-        var connectButton = Ui.Button(isConnecting ? "Connecting…" : savedUrl is null ? "Turn on" : "Refresh", Connect,
+        var connectButton = Ui.Button(isConnecting ? L.T("Connecting…") : savedUrl is null ? L.T("Turn on") : L.T("Refresh"), Connect,
             savedUrl is null ? WpfUi.ControlAppearance.Primary : WpfUi.ControlAppearance.Secondary, isEnabled: !isConnecting,
-            toolTip: "Save the address and list the models it serves");
+            toolTip: L.T("Save the address and list the models it serves"));
         urlField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) Connect(); };
 
         UIElement? modelPicker = null;
         var known = selfHosted.Models.TryGetValue(source, out var list) ? list : null;
         if (savedUrl is not null && known is { Count: > 0 })
         {
-            var options = known.Select(name => (name, LocalModels.LooksLikeItSeesImages(name) ? $"{name} (sees images)" : name)).ToList();
+            var options = known.Select(name => (name, LocalModels.LooksLikeItSeesImages(name) ? L.F("{0} (sees images)", name) : name)).ToList();
             modelPicker = Ui.Picker(options, model is not null && known.Contains(model) ? model : known[0], choice =>
             {
                 OpenClickyConfiguration.Update(saved =>
@@ -155,7 +157,7 @@ internal sealed partial class SettingsRowFactory
             }, 170);
             Ui.AutomationProperties(modelPicker, $"{source.ShortName()} model");
         }
-        var offButton = savedUrl is null ? null : Ui.Button("Turn off", () =>
+        var offButton = savedUrl is null ? null : Ui.Button(L.T("Turn off"), () =>
         {
             OpenClickyConfiguration.Update(saved => SetSavedUrl(saved, source, null));
             ShellSettingsRevision.NoteChanged();
@@ -192,9 +194,9 @@ internal sealed partial class SettingsRowFactory
         var shell = OpenClickyConfiguration.Settings;
         var available = ProviderCredentials.Current().AnswerSourcesInOrder;
         var picked = AnswerSources.FromRawValue(shell.DrawingSource);
-        var options = new List<(string Id, string Title)> { ("same", "Same as answers") };
+        var options = new List<(string Id, string Title)> { ("same", L.T("Same as answers")) };
         options.AddRange(available.Select(source => (source.Id(), source.DisplayName())));
-        if (picked is { } stale && !available.Contains(stale)) options.Add((stale.Id(), $"{stale.DisplayName()} (not set up)"));
+        if (picked is { } stale && !available.Contains(stale)) options.Add((stale.Id(), L.F("{0} (not set up)", stale.DisplayName())));
         var picker = Ui.Picker(options, picked?.Id() ?? "same", choice =>
         {
             OpenClickyConfiguration.Update(saved => saved.DrawingSource = choice == "same" ? null : choice);
@@ -202,9 +204,9 @@ internal sealed partial class SettingsRowFactory
         }, 200);
         var modelField = new WpfUi.TextBox
         {
-            Width = 170, Text = shell.DrawingModel ?? "", PlaceholderText = "its usual model", VerticalAlignment = VerticalAlignment.Center,
+            Width = 170, Text = shell.DrawingModel ?? "", PlaceholderText = L.T("its usual model"), VerticalAlignment = VerticalAlignment.Center,
         };
-        Ui.AutomationProperties(modelField, "Drawing model");
+        Ui.AutomationProperties(modelField, L.T("Drawing model"));
         void SaveModel()
         {
             var typed = modelField.Text.Trim();
@@ -222,7 +224,7 @@ internal sealed partial class SettingsRowFactory
     {
         var current = DrawStageLesson.DetailFrom(OpenClickyConfiguration.Settings.DrawingDetail);
         var picker = Ui.Picker(
-            [(DrawingDetail.Simple, "Simple"), (DrawingDetail.Detailed, "Detailed"), (DrawingDetail.VeryDetailed, "Very detailed")],
+            [(DrawingDetail.Simple, L.T("Simple")), (DrawingDetail.Detailed, L.T("Detailed")), (DrawingDetail.VeryDetailed, L.T("Very detailed"))],
             current,
             choice =>
             {
@@ -244,7 +246,7 @@ internal sealed partial class SettingsRowFactory
             Width = 190, Text = choice == "installed" ? saved! : "", PlaceholderText = "IndoPak Nastaleeq", VerticalAlignment = VerticalAlignment.Center,
             Visibility = choice == "installed" ? Visibility.Visible : Visibility.Collapsed,
         };
-        Ui.AutomationProperties(nameField, "Installed font's name");
+        Ui.AutomationProperties(nameField, L.T("Installed font's name"));
         void SaveName()
         {
             var typed = nameField.Text.Trim();
@@ -254,7 +256,7 @@ internal sealed partial class SettingsRowFactory
         }
         nameField.LostFocus += (_, _) => SaveName();
         nameField.KeyDown += (_, arguments) => { if (arguments.Key == System.Windows.Input.Key.Enter) SaveName(); };
-        var picker = Ui.Picker([("noto", "Noto Nastaliq Urdu"), ("system", "Windows' own (Segoe UI)"), ("installed", "A font on this PC")], choice, picked =>
+        var picker = Ui.Picker([("noto", "Noto Nastaliq Urdu"), ("system", L.T("Windows' own (Segoe UI)")), ("installed", L.T("A font on this PC"))], choice, picked =>
         {
             nameField.Visibility = picked == "installed" ? Visibility.Visible : Visibility.Collapsed;
             if (picked == "installed") { nameField.Focus(); return; }
@@ -308,7 +310,7 @@ internal sealed partial class SettingsRowFactory
             {
                 Width = 240, Text = shell.PieceMakerUrl ?? "", PlaceholderText = PieceMakers.DefaultUrl(kind), VerticalAlignment = VerticalAlignment.Center,
             };
-            Ui.AutomationProperties(urlField, "3D piece maker address");
+            Ui.AutomationProperties(urlField, L.T("3D piece maker address"));
             void SaveUrl()
             {
                 var typed = urlField.Text.Trim();
@@ -324,9 +326,9 @@ internal sealed partial class SettingsRowFactory
                 var modelField = new WpfUi.TextBox
                 {
                     Width = 280, Text = shell.PieceMakerModel ?? "", VerticalAlignment = VerticalAlignment.Center,
-                    PlaceholderText = kind == PieceMakerKind.LlamaMeshOllama ? PieceMakers.DefaultLlamaMeshModel : "its model name in LM Studio",
+                    PlaceholderText = kind == PieceMakerKind.LlamaMeshOllama ? PieceMakers.DefaultLlamaMeshModel : L.T("its model name in LM Studio"),
                 };
-                Ui.AutomationProperties(modelField, "LLaMA-Mesh model");
+                Ui.AutomationProperties(modelField, L.T("LLaMA-Mesh model"));
                 void SaveModel()
                 {
                     var typed = modelField.Text.Trim();
@@ -344,10 +346,10 @@ internal sealed partial class SettingsRowFactory
         var card = GraphicsCard.Value;
         var grade = PieceMakers.GradeFor(card?.MemoryGB);
         var (suggested, why) = PieceMakers.Recommend(grade);
-        var gradeName = grade switch { GraphicsGrade.High => "high", GraphicsGrade.Medium => "medium", _ => "low" };
-        var cardLine = card is { } found ? $"This PC: {found.Name}, {found.MemoryGB:0.#} GB ({gradeName})." : "This PC: no graphics card with its own memory found (low).";
-        var suggestion = suggested == kind ? "That's the one suggested for it." : $"Suggested: {PieceMakers.Choices.First(each => each.Kind == suggested).Title}.";
-        stack.Children.Add(Caption($"{cardLine} {why} {suggestion} A maker on another PC (its address above) uses that PC's card instead."));
+        var gradeName = grade switch { GraphicsGrade.High => L.T("high"), GraphicsGrade.Medium => L.T("medium"), _ => L.T("low") };
+        var cardLine = card is { } found ? L.F("This PC: {0}, {1} GB ({2}).", found.Name, found.MemoryGB.ToString("0.#", System.Globalization.CultureInfo.CurrentCulture), gradeName) : L.T("This PC: no graphics card with its own memory found (low).");
+        var suggestion = suggested == kind ? L.T("That's the one suggested for it.") : L.F("Suggested: {0}.", PieceMakers.Choices.First(each => each.Kind == suggested).Title);
+        stack.Children.Add(Caption(L.F("{0} {1} {2} A maker on another PC (its address above) uses that PC's card instead.", cardLine, why, suggestion)));
         return stack;
     }
 
@@ -364,12 +366,12 @@ internal sealed partial class SettingsRowFactory
         var box = new WpfUi.TextBox
         {
             Text = OpenClickyConfiguration.Settings.DrawingInstructions ?? "",
-            PlaceholderText = "e.g. Use bright colours. Show what's inside with a cutaway. Explain for a 9-year-old.",
+            PlaceholderText = L.T("e.g. Use bright colours. Show what's inside with a cutaway. Explain for a 9-year-old."),
             AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 76, MaxHeight = 160,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxLength = DrawStageLesson.LongestInstructions,
             Margin = new Thickness(0, 10, 0, 0),
         };
-        Ui.AutomationProperties(box, "Your drawing instructions");
+        Ui.AutomationProperties(box, L.T("Your drawing instructions"));
         box.LostFocus += (_, _) =>
         {
             var typed = box.Text.Trim();

@@ -13,6 +13,7 @@ using System.Globalization;
 using System.Text.Json;
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.Weather;
 
@@ -51,7 +52,7 @@ public static class WeatherUnits
     /// <summary>The letter after the degree sign on the tile.</summary>
     public static string Letter(this WeatherUnit unit) => unit == WeatherUnit.Fahrenheit ? "F" : "C";
 
-    public static string Title(this WeatherUnit unit) => unit == WeatherUnit.Fahrenheit ? "Fahrenheit" : "Celsius";
+    public static string Title(this WeatherUnit unit) => unit == WeatherUnit.Fahrenheit ? L.T("Fahrenheit") : L.T("Celsius");
 
     public static WeatherUnit Toggled(this WeatherUnit unit) => unit == WeatherUnit.Fahrenheit ? WeatherUnit.Celsius : WeatherUnit.Fahrenheit;
 

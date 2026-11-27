@@ -9,6 +9,8 @@
 //  reads the same on both.
 //
 
+using OpenClicky.Core.Localization;
+
 namespace OpenClicky.Core.Pointing;
 
 public enum HUDPlacement
@@ -41,17 +43,17 @@ public static class HUDPlacements
     public static string Title(this HUDPlacement placement) => placement switch
     {
         HUDPlacement.Notch => "top",
-        HUDPlacement.Left => "left edge",
-        HUDPlacement.Right => "right edge",
+        HUDPlacement.Left => L.T("left edge"),
+        HUDPlacement.Right => L.T("right edge"),
         _ => "hidden",
     };
 
     public static string Detail(this HUDPlacement placement) => placement switch
     {
-        HUDPlacement.Notch => "hangs from the top of the screen; hover it to open.",
-        HUDPlacement.Left => "a drawer on the left edge of every screen; hover the handle to open.",
-        HUDPlacement.Right => "a drawer on the right edge of every screen; hover the handle to open.",
-        _ => "nothing on screen until you use a shortcut. the tray icon opens the panel.",
+        HUDPlacement.Notch => L.T("hangs from the top of the screen; hover it to open."),
+        HUDPlacement.Left => L.T("a drawer on the left edge of every screen; hover the handle to open."),
+        HUDPlacement.Right => L.T("a drawer on the right edge of every screen; hover the handle to open."),
+        _ => L.T("nothing on screen until you use a shortcut. the tray icon opens the panel."),
     };
 
     /// <summary>True for the two drawer placements, whose island hangs from a screen edge instead of the top.</summary>

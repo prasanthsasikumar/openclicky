@@ -9,6 +9,7 @@
 
 using OpenClicky.Core.Companion;
 using OpenClicky.Core.Configuration;
+using OpenClicky.Core.Localization;
 
 namespace OpenClicky.Core.Plugins.SystemStats;
 
@@ -17,8 +18,8 @@ public static class SystemStatsPlugin
 {
     /// <summary>A ring, its name and the long figure under it.</summary>
     public static IslandComponent Component { get; } = new(
-        IslandPluginRegistry.SystemId, "System", "", 84, IsPlugin: true,
-        SettingsDetail: "CPU, memory, disk and battery at a glance, sampled only while the island shows them.");
+        IslandPluginRegistry.SystemId, L.T("System"), "", 84, IsPlugin: true,
+        SettingsDetail: L.T("CPU, memory, disk and battery at a glance, sampled only while the island shows them."));
 }
 
 /// <summary>One reading of the PC. Bytes are bytes; fractions run 0…1.</summary>
