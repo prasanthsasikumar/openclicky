@@ -252,7 +252,9 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     Keep spoken replies short (one or two sentences). Every request comes with a screenshot of the user's current screen \
     (with the pointer position noted): "this", "here", "that" refer to what is on screen, usually near the pointer. Look \
     at the screenshot and answer about it directly; never say you cannot see the screen and never mention a camera. \
-    Answer quick questions yourself. When the user asks how to do something, where something is, or what to \
+    Answer any question they ask, whether or not it is about the screen. Use web_search when the fact can change. \
+    When they ask what you can do, which prompts you have, or which keyboard tasks exist, list the tasks: answer a question, search the web, search YouTube and play a video, open a video, follow a person, open Chrome or Terminal, find a file, open Downloads, copy a file, check or draft email, set the volume, and scroll. Tell them to hold Control and Option to speak, or tap Control twice to type. \
+    When the user asks how to do something, where something is, or what to \
     click, point at it with the point_at tool while you explain, one call per step, in order, with the element's \
     exact on-screen text when it has any, and keep speaking between calls. Do not point for general questions or things they are obviously already looking \
     at. \

@@ -262,6 +262,11 @@ final class CompanionManager: ObservableObject {
                 self.lastTranscript = text
                 print("🗣️ (realtime) \(text)")
                 AppLog.append("talk: you said: \(text.prefix(300))")
+                if AtmiyaTasks.asksForTheList(text) {
+                    self.realtimeVoiceClient.stopSpeaking()
+                    self.showTaskPrompts()
+                    return
+                }
                 // Draw to explain on the fast-voice lane: a question a picture answers is drawn
                 // and narrated by the answer voice while the fast voice steps aside
                 // (CompanionManager+DrawStage.swift); anything else goes on as before.
@@ -667,7 +672,7 @@ final class CompanionManager: ObservableObject {
     private var activeAnswerSpeaker: StreamingAnswerSpeaker?
     private var activeAnswerPlayback: Task<Void, Error>?
 
-    /// The island's stop button: silence whatever Clicky is saying. Agent work keeps going.
+    /// The island's stop button. Voice stops, and a long job stops too so another request can start.
     func stopSpeaking() {
         // The island's stop button while a drawing plays does what esc does: the voice stops now
         // and what was drawn goes to its bubble, rather than the drawing being wiped.
@@ -675,12 +680,22 @@ final class CompanionManager: ObservableObject {
             escapeStopsTheDrawing()
             return
         }
-        guard voiceState == .responding else { return }
-        AppLog.append("ask: stopped speaking from the island")
-        interruptCurrentAnswer(includingAgentWork: false)
+        guard voiceState == .responding || agentActivityText != nil || realtimeVoiceClient.isBusy else { return }
+        AppLog.append("ask: stopped from the island")
+        stopCurrentWork()
+    }
+
+    /// Stops the job that is running now: the voice, the agent, scrolling, and a guide.
+    /// The next request can start immediately. Listening and dictation are left alone.
+    func stopCurrentWork() {
+        AppLog.append("work: stopped")
+        _ = ScreenNavigation.stopContinuousScroll()
+        interruptCurrentAnswer(includingAgentWork: true)
         realtimeVoiceClient.stopSpeaking()
-        // A cancelled answer skips its own reset to idle.
+        stopGuide()
         voiceState = .idle
+        agentActivityText = nil
+        showAskCaption("Stopped. You can ask again.", holdSeconds: 2)
         scheduleTransientHideIfNeeded()
     }
 
@@ -702,9 +717,9 @@ final class CompanionManager: ObservableObject {
 
     /// Silences everything this manager is saying and abandons the answer in progress: the queued
     /// pieces of a spoken answer, the response task, the answer voice, and a system-voice or
-    /// recorded notice. `includingAgentWork` also ends a running agent turn: a new question
-    /// replaces it, while the island's stop button only silences the voice and leaves the agent
-    /// working. The realtime session is left alone: its next turn cancels its own reply, and only
+    /// recorded notice. `includingAgentWork` also ends a running agent turn. Stop work, Esc, and
+    /// the island's stop button pass true so a long job ends and the next request can start.
+    /// The realtime session is left alone: its next turn cancels its own reply, and only
     /// the stop button silences it outright.
     private func interruptCurrentAnswer(includingAgentWork: Bool) {
         stopWatchingForGuidedStep()
@@ -1494,12 +1509,9 @@ final class CompanionManager: ObservableObject {
                 stopAskLane(from: "esc")
                 TeacherPlugin.clearBoard(reason: "esc")
             case .realtime:
-                // The fast voice lane: the reply stops, and an action still working says nothing
-                // when it finishes (its output stays in the conversation for the next turn).
+                // The fast voice lane, including a long agent job: stop it so the next request can start.
                 AppLog.append("realtime: stopped (esc)")
-                realtimeVoiceClient.stopSpeaking()
-                voiceState = .idle
-                showAskCaption("stopped", holdSeconds: 1.5)
+                stopCurrentWork()
                 TeacherPlugin.clearBoard(reason: "esc")
             case .nothing:
                 // Nothing else to stop: esc takes a lesson off the screen.
@@ -1523,6 +1535,10 @@ final class CompanionManager: ObservableObject {
     func submitTypedRequest(_ text: String) {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
+        if AtmiyaTasks.asksForTheList(trimmedText) {
+            showTaskPrompts()
+            return
+        }
         transientHideTask?.cancel()
         transientHideTask = nil
         if !isClickyCursorEnabled && !isOverlayVisible {
@@ -3079,6 +3095,30 @@ final class CompanionManager: ObservableObject {
 
     /// The Home tab's (i): the buddy types out what OpenClicky does, next to itself; a hidden
     /// buddy is shown for the duration.
+    /// A menu or typed request for the prompt list. The words stay on screen so they can be typed again.
+    func showTaskPrompts() {
+        let message = "Hold Control and Option and ask anything. Tap Control twice to type. "
+            + "Or pick a task from the menu bar. "
+            + AtmiyaTasks.spokenList
+        if !isOverlayVisible {
+            transientHideTask?.cancel()
+            transientHideTask = nil
+            showOverlayOnAllScreens()
+        }
+        streamCursorCaption(message, holdSeconds: 16)
+        scheduleTransientHideIfNeeded()
+    }
+
+    /// A task chosen from the menu bar. A finished prompt runs. One that still needs a name opens for typing.
+    func runKeyboardTask(_ task: AtmiyaTask) {
+        if task.runsImmediately {
+            submitTypedRequest(task.prompt)
+            return
+        }
+        notchHUDManager.composerDraft = task.prompt
+        openTextComposer()
+    }
+
     func explainWhatOpenClickyDoes() {
         let message = "hi, i'm openclicky. hold control + option and ask about anything on your screen. "
             + "i'll answer out loud and point at what you need. tap control twice to type instead, "
