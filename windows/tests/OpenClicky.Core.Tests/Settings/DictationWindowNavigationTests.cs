@@ -32,7 +32,7 @@ public sealed class DictationWindowNavigationTests
     public void ClickyOpensIntoItsSectionsAndEachRowHasOne()
     {
         var sections = SettingsLayout.SectionsOf(DictationSettingsPage.Clicky).Select(section => section.Title).ToList();
-        Assert.Equal(["Talking", "Hands-free", "Pointer", "Drawings", "Your models", "More"], sections);
+        Assert.Equal(["Talking", "How it answers", "Hands-free", "Pointer", "Drawings", "Your models", "More"], sections);
         Assert.Empty(SettingsLayout.SectionsOf(DictationSettingsPage.Dictation));
 
         var model = new DictationWindowModel();

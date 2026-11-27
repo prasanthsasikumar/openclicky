@@ -95,6 +95,10 @@ public sealed class OpenClickyShellSettings
     [JsonPropertyName("useClaudeCodePlan")] public bool? UseClaudeCodePlan { get; set; }
     [JsonPropertyName("useCodexPlan")] public bool? UseCodexPlan { get; set; }
 
+    /// <summary>How the person asked to be answered, remembered (Answers/AnswerStyle): any of "simpler", "shorter",
+    /// "yesOrNoFirst"; null for none.</summary>
+    [JsonPropertyName("answerStyle")] public List<string>? AnswerStyle { get; set; }
+
     /// <summary>What the assistant is called ("Dyna"); null is OpenClicky (AssistantName).</summary>
     [JsonPropertyName("assistantName")] public string? AssistantName { get; set; }
 
@@ -146,6 +150,7 @@ public sealed class OpenClickyShellSettings
         var copy = (OpenClickyShellSettings)MemberwiseClone();
         copy.CliCommand = [.. CliCommand];
         copy.WritableRoots = WritableRoots is null ? null : [.. WritableRoots];
+        copy.AnswerStyle = AnswerStyle is null ? null : [.. AnswerStyle];
         copy.AnswerModels = AnswerModels is null ? null : new Dictionary<string, string>(AnswerModels);
         return copy;
     }

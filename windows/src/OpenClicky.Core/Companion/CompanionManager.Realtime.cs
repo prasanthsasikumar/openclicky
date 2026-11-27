@@ -132,7 +132,8 @@ public sealed partial class CompanionManager
         client.WriteInPlaceHost = services.WriteInPlace;
         client.OnWroteInPlace = () => LastSuccessfulQuickActionAt = DateTimeOffset.Now;
         client.InstructionsProvider = () =>
-            AskLanePrompts.ComposeTalkInstructions(AskLanePrompts.WithReplyLanguage(client.BaseInstructions + PluginPromptLines()), TalkSkillsBlock());
+            AskLanePrompts.ComposeTalkInstructions(AskLanePrompts.WithReplyLanguage(client.BaseInstructions + PluginPromptLines())
+                + "\n\n" + AnswerStyle.PromptSection(AnswerStyle.Current), TalkSkillsBlock());
         client.PluginToolDefinitions = () => TeacherPlugin.IsEnabled ? TeacherPlugin.RealtimeToolDefinitions() : [];
         // With the drawing stage on, the Teacher's draw and picture tools are drawn on the stage instead of its board.
         client.OnPluginToolCall = (toolName, arguments, capture) => Task.FromResult(DrawingStageIsOn
@@ -159,9 +160,19 @@ public sealed partial class CompanionManager
                 return $"The agent could not run: {error.Message}";
             }
         };
-        client.DesktopActionToolDefinitions = DesktopAction.RealtimeToolDefinitions;
+        // set_answer_style rides with the quick actions: their dispatch is the one that takes any other tool name.
+        client.DesktopActionToolDefinitions = () => [.. DesktopAction.RealtimeToolDefinitions(), AnswerStyle.RealtimeToolDefinition()];
         client.OnDesktopAction = async (toolName, arguments) =>
         {
+            if (toolName == AnswerStyle.ToolName)
+            {
+                var styleArguments = arguments.Where(argument => argument.Value is not null)
+                    .ToDictionary(argument => argument.Key, argument => argument.Value!.ToString());
+                // The session's instructions were set when it started: the model is told the new style here, and the next session has it.
+                return AnswerStyle.Perform(styleArguments, AppLog.Write) is { } styleSentence
+                    ? new RealtimeToolResult(styleSentence, ModelOutput: $"Saved. {styleSentence} Now answer that way.")
+                    : new RealtimeToolResult("that style isn't one i know.", WasRejected: true);
+            }
             var outcome = await desktopActionRunner.PerformToolCallAsync(toolName, arguments);
             if (outcome is null) return null;
             if (outcome.DidSomething) LastSuccessfulQuickActionAt = DateTimeOffset.Now;

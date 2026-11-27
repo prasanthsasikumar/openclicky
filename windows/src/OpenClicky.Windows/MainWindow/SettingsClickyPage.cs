@@ -8,6 +8,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using OpenClicky.Core.Answers;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Pointing;
 using OpenClicky.Core.Providers;
@@ -38,6 +39,12 @@ internal sealed partial class SettingsRowFactory
             }
             case "clicky.assistantName":
                 return Ui.Card(AssistantNameRow(item, query));
+            case "clicky.answerSimpler":
+                return AnswerStyleToggle(item, query, AnswerStyleChoice.Simpler);
+            case "clicky.answerShorter":
+                return AnswerStyleToggle(item, query, AnswerStyleChoice.Shorter);
+            case "clicky.answerYesNoFirst":
+                return AnswerStyleToggle(item, query, AnswerStyleChoice.YesOrNoFirst);
             case "clicky.answerSource":
                 return new LiveContent(() => Ui.Card(AnswerSourceRow(item, query)), Changes.Shell);
             case "clicky.model":
@@ -70,6 +77,10 @@ internal sealed partial class SettingsRowFactory
                 return null;
         }
     }
+
+    /// <summary>One remembered answer style (shell.json's answerStyle): it follows a change made by asking, too.</summary>
+    private static LiveContent AnswerStyleToggle(SettingsItem item, string query, AnswerStyleChoice choice) =>
+        new(() => Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Toggle(AnswerStyle.IsOn(choice), on => AnswerStyle.Set(choice, on)))), Changes.Shell);
 
     private LiveContent CompanionToggle(SettingsItem item, string query, Func<bool> read, Action<bool> write, string propertyName) =>
         new(() => Ui.Card(Ui.Row(item.Title, item.Detail, query, Ui.Toggle(read(), write))), Changes.Of(services.Companion, propertyName));
