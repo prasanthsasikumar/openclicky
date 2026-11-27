@@ -1455,6 +1455,8 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceClient.preferredMicrophoneUID = dictationSettings.preferredMicrophoneUID
         AppUpdater.shared.start()
         clipboardHistoryMonitor.start()
+        // The handheld plugin listens for its device only when it is switched on (Plugins/Handheld).
+        HandheldPlugin.shared.attach(to: self)
     }
 
     /// A shortcut from something other than the keyboard (a handheld's button, `Plugins/Handheld`).
