@@ -180,9 +180,18 @@ final class DrawStageSession {
 }
 
 extension CompanionManager {
+    /// A drawing is on its way or being drawn and narrated by the answer voice. The fast voice's
+    /// own reply was cut for it, and that cut reply still reports that it started and finished:
+    /// those reports used to set the pointer to idle a second into the wait, so nothing at all
+    /// showed until the drawing began (seen 2026-11-27 in a live run).
+    var aDrawingHasTheVoice: Bool {
+        isPreparingDrawing || DrawStageSession.shared.state == .playing
+    }
+
     /// Answers `transcript` by drawing on the stage, speaking as it draws. True when it did (and
     /// the voice has finished, the bubble is up); false when the caller must answer it the
-    /// ordinary way, with nothing said or shown. Cancellation (a new question) is rethrown; esc
+    /// ordinary way, with nothing drawn and at most the waiting line said. While the first line is
+    /// on its way the pointer shows a pencil sketching (`isPreparingDrawing`) and a caption. Cancellation (a new question) is rethrown; esc
     /// stops the drawing early and still returns true with what was drawn in its bubble.
     /// `pointer` and `pointerCloseUp` are where the mouse was and what is under it (the ordinary
     /// lane's own); they go with the request only when the question is about the screen ("how does
@@ -231,12 +240,26 @@ extension CompanionManager {
         let control = DrawingAnswerControl()
         session.drawingStarted(on: cursorCapture.displayFrame, speech: speech, control: control)
         let askStartedAt = Date()
+        // The wait for the first line, which can be many seconds: a pencil sketches at the pointer
+        // with a caption beside it, and the caption changes when the wait turns out long.
+        isPreparingDrawing = true
+        showAskCaption(DrawStageLesson.waitCaption, holdSeconds: 60)
+        let longWaitCaption = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(DrawStageLesson.longWaitCaptionAfterSeconds * 1_000_000_000))
+            guard !Task.isCancelled, let self, self.isPreparingDrawing else { return }
+            self.showAskCaption(DrawStageLesson.longWaitCaption, holdSeconds: 180)
+        }
+        defer {
+            longWaitCaption.cancel()
+            isPreparingDrawing = false
+        }
         let result: DrawingAnswerResult
         do {
             result = try await DrawingAnswer.run(
                 stage: session.stage, displayFrame: cursorCapture.displayFrame, canvasWidth: canvasWidth, canvasHeight: canvasHeight,
                 writeReply: writeReply, speech: speech,
                 onFirstAudio: { [weak self] in
+                    self?.isPreparingDrawing = false
                     self?.voiceState = .responding
                     self?.dismissCursorCaption()
                     DrawStageSession.shared.noteLineHeard()
@@ -244,6 +267,7 @@ extension CompanionManager {
                 },
                 log: { AppLog.append("draw: \($0)") },
                 holdLine: DrawStageLesson.holdLine,
+                waitLine: DrawStageLesson.waitLine,
                 followUp: followUp,
                 control: control,
                 stopVoiceNow: { [weak self] in self?.answerVoicePlayer.stopPlayback() },
@@ -258,11 +282,14 @@ extension CompanionManager {
         } catch {
             // The account's voice allowance or answer budget, a vendor down: the ordinary lane says so.
             AppLog.append("draw: the drawing request failed (\(error)); answering in words")
+            dismissCursorCaption()
             session.drawingEnded(drew: false, drawing: nil)
             if session.state == .open { await minimiseDrawingToBubble(reason: "the follow-up was not drawn") }
             return false
         }
         guard result.drew else {
+            // Esc has put "stopped" there; anything else leaves the waiting caption to take away.
+            if !result.stoppedByThePerson { dismissCursorCaption() }
             session.drawingEnded(drew: false, drawing: nil)
             // A follow-up the model answered NONE to: the open drawing goes to its bubble and the
             // question is answered the ordinary way; a NONE on a fresh question gives the bubble back.
@@ -318,8 +345,11 @@ extension CompanionManager {
         TeacherPlugin.clearBoard(reason: "a drawing")
         voiceState = .processing
         isAskInFlight = true
+        // From this line on the fast voice's cut reply must not change the pointer's state (see `aDrawingHasTheVoice`).
+        isPreparingDrawing = true
         currentResponseTask = Task { @MainActor in
             defer {
+                isPreparingDrawing = false
                 if wasAlwaysOn { realtimeVoiceClient.startListeningContinuously() }
             }
             do {

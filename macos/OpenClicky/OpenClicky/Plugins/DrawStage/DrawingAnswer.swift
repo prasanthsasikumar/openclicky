@@ -19,12 +19,18 @@
 //
 //  When the first line is slow to come after the reply has shown it is a program (a strong model
 //  thinking, a detailed figure), a short hold line is said first so the wait doesn't feel broken.
+//
+//  The wait before the reply's first words is covered too: a waiting line ("Let me work out how to
+//  show that.") is said a moment after the question, before it is known whether the model will
+//  draw. It promises no drawing, so it is true when the answer comes in words instead; it is then
+//  let finish (cut mid-word it would sound broken) and the ordinary answer follows it.
 //  Windows twin: DrawingAnswer.cs.
 //
 
 import Foundation
 
-/// How a drawn answer went. `drew` false means nothing was drawn or said: the question is the caller's.
+/// How a drawn answer went. `drew` false means nothing was drawn and none of its lines was said
+/// (the waiting line may have been): the question is the caller's.
 struct DrawingAnswerResult: Equatable {
     let drew: Bool
     /// The say() lines the person heard start, in order.
@@ -69,7 +75,13 @@ enum DrawingAnswer {
     /// A page that hasn't said `ready` this long after the first feed is given up on.
     static let readinessTimeoutSeconds: TimeInterval = 5
 
-    /// The hold line's piece tag: not a stage line, so it never starts or ends a beat.
+    /// The waiting line is said when nothing has come back this long after the question.
+    static let waitLineAfterSeconds: TimeInterval = 0.8
+    /// After the waiting line, the hold line is left out unless this long has passed: two
+    /// "one moment" lines in a row are worse than a short silence.
+    static let holdLineGapAfterWaitLineSeconds: TimeInterval = 6
+
+    /// The hold and waiting lines' piece tag: not a stage line, so it never starts or ends a beat.
     private static let holdLineTag = -1
 
     /// Draws the answer `writeReply` streams (it calls its closure with the whole reply so far and
@@ -78,7 +90,8 @@ enum DrawingAnswer {
     /// run early keeping what was drawn; cancelling the calling task (a new question) rethrows
     /// CancellationError after `onInterrupted(programSoFar, linesHeard)` when a line was drawn, or
     /// after clearing the stage when nothing was. With `followUp` (the drawing on the stage), a
-    /// program that starts with keep() is drawn after it.
+    /// program that starts with keep() is drawn after it. `onFirstAudio` runs when the first line
+    /// of the drawing starts to be heard (not at the waiting or hold line).
     @MainActor
     static func run(
         stage: DrawStageController,
@@ -91,6 +104,8 @@ enum DrawingAnswer {
         log: @escaping (String) -> Void,
         holdLine: String? = nil,
         holdLineAfter: TimeInterval = holdLineAfterSeconds,
+        waitLine: String? = nil,
+        waitLineAfter: TimeInterval = waitLineAfterSeconds,
         readinessTimeout: TimeInterval = readinessTimeoutSeconds,
         followUp: DrawnAnswer? = nil,
         control: DrawingAnswerControl = DrawingAnswerControl(),
@@ -117,14 +132,19 @@ enum DrawingAnswer {
             stage.logged = nil
             control.stopAction = nil
             state.holdLineTimer?.cancel()
+            state.waitLineTimer?.cancel()
             state.readinessTimer?.cancel()
         }
 
         let playback = Task { @MainActor in
             try await speech.run(
-                onFirstAudio: onFirstAudio,
+                onFirstAudio: {},
                 onPieceStarted: { tag in
                     guard tag >= 0 else { return }
+                    if !state.firstLineHeard {
+                        state.firstLineHeard = true
+                        onFirstAudio()
+                    }
                     if tag < state.lines.count { state.linesHeard.append(state.lines[tag]) }
                     stage.lineStarted(tag)
                 },
@@ -132,10 +152,25 @@ enum DrawingAnswer {
             )
         }
 
-        func notDrawn(_ reason: String, stoppedByThePerson: Bool = false) -> DrawingAnswerResult {
+        func notDrawn(_ reason: String, stoppedByThePerson: Bool = false) async -> DrawingAnswerResult {
             log("\(reason); not drawn")
-            speech.cancel()
-            playback.cancel()
+            state.waitLineTimer?.cancel()
+            if state.waitLineSaidAt != nil, !stoppedByThePerson, !state.stopped, !Task.isCancelled {
+                // The waiting line is let finish; a new question or esc still cuts it at once.
+                speech.finish()
+                await withTaskCancellationHandler {
+                    _ = try? await playback.value
+                } onCancel: {
+                    playback.cancel()
+                    Task { @MainActor in
+                        speech.cancel()
+                        stopVoiceNow()
+                    }
+                }
+            } else {
+                speech.cancel()
+                playback.cancel()
+            }
             if state.opened { stage.clear(reason: reason) }
             return .notDrawn(stoppedByThePerson: stoppedByThePerson)
         }
@@ -155,6 +190,8 @@ enum DrawingAnswer {
                     try? await Task.sleep(nanoseconds: UInt64(holdLineAfter * 1_000_000_000))
                     // Only once the page is known to work: a stage that never starts must not promise a drawing.
                     guard !Task.isCancelled, stage.isReady, state.lines.isEmpty, !state.holdLineSaid, !state.stopped else { return }
+                    if let waitLineSaidAt = state.waitLineSaidAt,
+                       Date().timeIntervalSince(waitLineSaidAt) < holdLineGapAfterWaitLineSeconds { return }
                     state.holdLineSaid = true
                     log("the first line is slow; saying the hold line")
                     speech.enqueue(holdLine, tag: holdLineTag)
@@ -203,6 +240,18 @@ enum DrawingAnswer {
         let replyTask = Task { @MainActor in try await writeReply { replySoFar in replyGrew(replySoFar) } }
         state.replyTask = replyTask
 
+        if let waitLine {
+            state.waitLineTimer = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(waitLineAfter * 1_000_000_000))
+                // Not once the answer is known to come in words, a line is ready, or the stage failed.
+                guard !Task.isCancelled, state.decision != .notADrawing, state.lines.isEmpty, !state.holdLineSaid,
+                      !state.stopped, !state.stageFailed else { return }
+                state.waitLineSaidAt = Date()
+                log("nothing back yet; saying the waiting line")
+                speech.enqueue(waitLine, tag: holdLineTag)
+            }
+        }
+
         // Esc or the stop button: the reply and the voice stop now; what was drawn stays.
         control.stopAction = {
             guard !state.stopped else { return }
@@ -226,13 +275,13 @@ enum DrawingAnswer {
             if Task.isCancelled {
                 return try interrupted(state: state, stage: stage, speech: speech, playback: playback, log: log, onInterrupted: onInterrupted)
             }
-            if state.stageFailed { return notDrawn("the stage did not start") }
-            if state.decision == .notADrawing { return notDrawn("the model answered in words: \(replyHead(state.latestReply))") }
+            if state.stageFailed { return await notDrawn("the stage did not start") }
+            if state.decision == .notADrawing { return await notDrawn("the model answered in words: \(replyHead(state.latestReply))") }
             if state.stopped, state.linesHeard.isEmpty, state.fedProgram.isEmpty {
-                return notDrawn("stopped before anything was drawn", stoppedByThePerson: true)
+                return await notDrawn("stopped before anything was drawn", stoppedByThePerson: true)
             }
             if !state.stopped, state.lines.isEmpty {
-                return notDrawn("the program was not written (\(error))")
+                return await notDrawn("the program was not written (\(error))")
             }
             // Stopped, or the reply failed after lines were already drawn: finish with what came.
             log(state.stopped ? "finishing with what was drawn" : "the reply failed after lines were drawn (\(error)); finishing with what came")
@@ -240,11 +289,11 @@ enum DrawingAnswer {
         }
 
         if state.decision == .notADrawing || DrawStageLesson.decide(replySoFar: reply, done: true) == .notADrawing {
-            return notDrawn("the model answered in words: \(replyHead(reply.isEmpty ? state.latestReply : reply))")
+            return await notDrawn("the model answered in words: \(replyHead(reply.isEmpty ? state.latestReply : reply))")
         }
         let program = DrawStageLesson.programIn(reply)
-        if state.stageFailed { return notDrawn("the stage did not start") }
-        if program.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return notDrawn("the reply held no program") }
+        if state.stageFailed { return await notDrawn("the stage did not start") }
+        if program.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return await notDrawn("the reply held no program") }
         if followUp != nil, state.keeps == nil {
             let keep = DrawStageLesson.keepsTheDrawing(program, done: true) ?? false
             state.keeps = keep
@@ -282,16 +331,16 @@ enum DrawingAnswer {
         } catch let failure as SpeechQueue.Failure {
             log("voice failed (\(failure.underlyingError)); drawing the rest now")
             stage.finishNow()
-            unspoken = failure.unspokenText.filter { $0 != holdLine }
+            unspoken = failure.unspokenText.filter { $0 != holdLine && $0 != waitLine }
         } catch {
             // Cancelled: by the person (handled below) or by the task (handled above).
         }
         if Task.isCancelled {
             return try interrupted(state: state, stage: stage, speech: speech, playback: playback, log: log, onInterrupted: onInterrupted)
         }
-        if state.stageFailed, state.linesHeard.isEmpty { return notDrawn("the stage did not start") }
+        if state.stageFailed, state.linesHeard.isEmpty { return await notDrawn("the stage did not start") }
         if state.stopped, state.linesHeard.isEmpty, state.fedProgram.isEmpty {
-            return notDrawn("stopped before anything was drawn", stoppedByThePerson: true)
+            return await notDrawn("stopped before anything was drawn", stoppedByThePerson: true)
         }
         return DrawingAnswerResult(drew: true, spokenLines: state.linesHeard, unspokenAfterVoiceFailure: unspoken,
                                    program: program, keptTheDrawing: state.keeps == true, stoppedByThePerson: state.stopped)
@@ -337,6 +386,11 @@ enum DrawingAnswer {
         var stopped = false
         var holdLineSaid = false
         var holdLineTimer: Task<Void, Never>?
+        /// When the waiting line was handed to the voice; nil when it was not said.
+        var waitLineSaidAt: Date?
+        var waitLineTimer: Task<Void, Never>?
+        /// Whether a line of the drawing itself has started to be heard.
+        var firstLineHeard = false
         var readinessTimer: Task<Void, Never>?
         var replyTask: Task<String, Error>?
         let drawingEnded = Signal()

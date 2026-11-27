@@ -36,13 +36,16 @@ struct DrawingAnswerTests {
     }
 
     private func run(page: FakeDrawStagePage, reply: @escaping (@escaping @MainActor (String) -> Void) async throws -> String,
-                     speech: SpeechQueue, holdLine: String? = nil, holdLineAfter: TimeInterval = 2, readinessTimeout: TimeInterval = 5,
+                     speech: SpeechQueue, holdLine: String? = nil, holdLineAfter: TimeInterval = 2,
+                     waitLine: String? = nil, waitLineAfter: TimeInterval = 0.8, onFirstAudio: @escaping () -> Void = {},
+                     readinessTimeout: TimeInterval = 5,
                      followUp: DrawnAnswer? = nil, control: DrawingAnswerControl = DrawingAnswerControl(),
                      stopVoiceNow: @escaping () -> Void = {}, onInterrupted: ((String, [String]) -> Void)? = nil,
                      log: @escaping (String) -> Void = { _ in }) async throws -> DrawingAnswerResult {
         try await DrawingAnswer.run(stage: page.controller, displayFrame: screen, canvasWidth: 1280, canvasHeight: 800,
-                                    writeReply: reply, speech: speech, onFirstAudio: {}, log: log,
-                                    holdLine: holdLine, holdLineAfter: holdLineAfter, readinessTimeout: readinessTimeout, followUp: followUp,
+                                    writeReply: reply, speech: speech, onFirstAudio: onFirstAudio, log: log,
+                                    holdLine: holdLine, holdLineAfter: holdLineAfter, waitLine: waitLine, waitLineAfter: waitLineAfter,
+                                    readinessTimeout: readinessTimeout, followUp: followUp,
                                     control: control, stopVoiceNow: stopVoiceNow, onInterrupted: onInterrupted)
     }
 
@@ -228,6 +231,59 @@ struct DrawingAnswerTests {
         _ = try await run(page: quickPage, reply: streamed(twoBeats), speech: FakeSpeech.make(played: { quickPlayed.append($0) }),
                           holdLine: "One moment.", holdLineAfter: 2)
         #expect(quickPlayed == ["a", "b"])
+    }
+
+    // MARK: - The waiting line: said before the reply's first words, when they are slow to come
+
+    @Test func theWaitingLineIsSaidWhenTheReplyIsSlowToStartAndTheDrawingFollowsIt() async throws {
+        let page = FakeDrawStagePage()
+        var played: [String] = []
+        var playedWhenTheFirstLineWasHeard: [String]?
+        // Nothing comes back for 0.4 s: past a 0.1 s waiting threshold.
+        let slowToStart = streamed(twoBeats, pauseBeforeChunkSeconds: [0: 0.4])
+        let result = try await run(page: page, reply: slowToStart, speech: FakeSpeech.make(played: { played.append($0) }),
+                                   holdLine: "One moment.", holdLineAfter: 0.05, waitLine: "Let me work that out.", waitLineAfter: 0.1,
+                                   onFirstAudio: { playedWhenTheFirstLineWasHeard = played })
+        #expect(result.drew)
+        // The hold line is left out so soon after the waiting line.
+        #expect(played == ["Let me work that out.", "a", "b"])
+        #expect(result.spokenLines == ["a", "b"])
+        // The first-audio signal is for the drawing's own first line, not the waiting line.
+        #expect(playedWhenTheFirstLineWasHeard == ["Let me work that out."])
+    }
+
+    @Test func theWaitingLineIsNotSaidWhenTheReplyComesQuickly() async throws {
+        let page = FakeDrawStagePage()
+        var played: [String] = []
+        let result = try await run(page: page, reply: streamed(twoBeats), speech: FakeSpeech.make(played: { played.append($0) }),
+                                   waitLine: "Let me work that out.", waitLineAfter: 2)
+        #expect(result.drew)
+        #expect(played == ["a", "b"])
+    }
+
+    @Test func anAnswerInWordsAfterTheWaitingLineLetsItFinishAndDrawsNothing() async throws {
+        let page = FakeDrawStagePage()
+        var played: [String] = []
+        let slowNone = streamed("NONE", pauseBeforeChunkSeconds: [0: 0.4])
+        let result = try await run(page: page, reply: slowNone, speech: FakeSpeech.make(played: { played.append($0) }),
+                                   waitLine: "Let me work that out.", waitLineAfter: 0.1)
+        #expect(!result.drew)
+        #expect(result.spokenLines.isEmpty)
+        #expect(played == ["Let me work that out."])
+        #expect(!page.surface.postedTypes.contains("beginStream"))
+    }
+
+    @Test func theWaitingLineIsNotSaidOnceTheAnswerIsKnownToComeInWords() async throws {
+        let page = FakeDrawStagePage()
+        var played: [String] = []
+        // NONE is known at once, but the reply takes a while to end.
+        let result = try await run(page: page, reply: { onChunk in
+            onChunk("NONE")
+            try await Task.sleep(nanoseconds: 300_000_000)
+            return "NONE"
+        }, speech: FakeSpeech.make(played: { played.append($0) }), waitLine: "Let me work that out.", waitLineAfter: 0.1)
+        #expect(!result.drew)
+        #expect(played.isEmpty)
     }
 
     @Test func aStageThatNeverReportsReadyFallsThroughAfterTheTimeout() async throws {

@@ -5,7 +5,7 @@
 //  Debug only. `OpenClicky --openclicky-buddy-smoke [stay|exit]` makes the pointer play its states
 //  by itself, for a screen recording: four flights between fixed places on the main display (a
 //  long one, a medium one, a short hop), the hold on a target, the flight back to the mouse, then
-//  listening (with a made-up loudness), thinking, speaking and idle. Nothing is heard, asked or
+//  listening (with a made-up loudness), thinking, a drawing on its way, speaking and idle. Nothing is heard, asked or
 //  clicked and no window takes the keyboard. Each step is written to the log as "buddy smoke: …".
 //
 
@@ -79,7 +79,13 @@ enum BuddySmoke {
             companionManager.debugSetAudioPowerLevel(0)
             companionManager.debugSetVoiceState(.processing)
         }
-        at(3.0, "speaking for 3 s (no sound)") {
+        at(3.0, "a drawing on its way for 4 s (the pencil and its caption)") {
+            companionManager.isPreparingDrawing = true
+            companionManager.showAskCaption(DrawStageLesson.waitCaption, holdSeconds: 4)
+        }
+        at(4.0, "speaking for 3 s (no sound)") {
+            companionManager.isPreparingDrawing = false
+            companionManager.dismissCursorCaption()
             companionManager.debugSetVoiceState(.responding)
         }
         at(3.0, "idle beside the mouse for 4.5 s (it bobs once the mouse has been still 0.6 s)") {

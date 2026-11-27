@@ -71,6 +71,9 @@ final class CompanionManager: ObservableObject {
     @Published var cursorCaptionText: String = ""
     @Published var cursorCaptionOpacity: Double = 0.0
     @Published var isCursorCaptionVisible: Bool = false
+    /// A drawing was asked for and its first line has not been heard yet: the pointer shows a
+    /// pencil sketching instead of the thinking dots (CursorSketchingView).
+    @Published var isPreparingDrawing: Bool = false
 
     let buddyDictationManager = BuddyDictationManager()
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
@@ -276,7 +279,7 @@ final class CompanionManager: ObservableObject {
             }
         }
         realtimeVoiceClient.onResponseStarted = { [weak self] in
-            guard let self, self.usesRealtimeVoice else { return }
+            guard let self, self.usesRealtimeVoice, !self.aDrawingHasTheVoice else { return }
             if self.voiceState != .listening { self.voiceState = .responding }
         }
         // Speaking over a drawing stops it (as esc does) and sends it to its bubble.
@@ -285,7 +288,7 @@ final class CompanionManager: ObservableObject {
             self.escapeStopsTheDrawing()
         }
         realtimeVoiceClient.onResponseFinished = { [weak self] in
-            guard let self, self.usesRealtimeVoice, self.voiceState != .listening else { return }
+            guard let self, self.usesRealtimeVoice, self.voiceState != .listening, !self.aDrawingHasTheVoice else { return }
             self.voiceState = .idle
             self.scheduleTransientHideIfNeeded()
         }
@@ -1939,6 +1942,8 @@ final class CompanionManager: ObservableObject {
                         return
                     }
                     guard !Task.isCancelled else { return }
+                    // Not drawn: the ordinary answer is on its way, and the caption says so again.
+                    showAskCaption("“\(transcript)” · thinking…", holdSeconds: 30)
                 }
                 if !isGuidedStepContinuation, !drawingWasAttempted {
                     TeacherPlugin.startLesson(for: transcript, capture: screenCaptures.first(where: { $0.isCursorScreen }) ?? screenCaptures.first)

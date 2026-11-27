@@ -53,6 +53,9 @@ struct IslandSurface: View {
     let isSideDrawer: Bool
     /// Which edge a drawer hangs from (ignored under the notch).
     var drawerSide: HUDPlacement = .notch
+    /// The light inside the bottom corners while something is going on (see IslandGlow); nil for none.
+    var glow: IslandGlowTone? = nil
+    var reduceMotion: Bool = false
 
     private var isOpen: Bool {
         switch expansion {
@@ -74,6 +77,12 @@ struct IslandSurface: View {
                 tint.transition(.opacity)
             }
             DS.HUD.island.opacity(hasGlassLayer ? 0 : 1)
+            if let glow {
+                IslandGlowView(tone: glow, reduceMotion: reduceMotion)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.animation(Motion.swap))
+                    .accessibilityHidden(true)
+            }
         }
         .clipShape(outline)
         // The blur must fade out well inside the window's 16 pt margin: at 14 pt it ran to the
