@@ -39,6 +39,15 @@ extension SettingsCatalog {
                 keywords: ["plugin", "island", "teacher", "teach", "lesson", "draw", "explain", "whiteboard"],
                 view: AnyView(TeacherSettingsRow())),
             SettingsItem(
+                id: "plugins.agents.notices",
+                title: AgentSessionNotifier.settingsTitle, detail: AgentSessionNotifier.settingsDetail,
+                keywords: ["plugin", "island", "agents", "claude code", "codex", "terminal", "notify", "notification", "finished", "waiting"],
+                isRelevant: {
+                    IslandComponentSettings.enabledIDs(in: IslandComponentRegistry.all, settings: IslandComponentSettings(defaults: .standard))
+                        .contains(IslandPluginRegistry.agentsID)
+                },
+                view: AnyView(AgentSessionNoticesRow())),
+            SettingsItem(
                 id: "plugins.islandDefault",
                 title: "Shows first", detail: "What the open island shows when nothing else is going on.",
                 keywords: ["island", "component", "panel", "shortcuts", "transcript", "agent", "default", "slot", "dashboard"],
@@ -78,6 +87,24 @@ struct TeacherSettingsRow: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: DispatchQueue.main)) { _ in
             isOn = TeacherPlugin.lessonsAreOn()
+        }
+    }
+}
+
+/// "Tell me when a session finishes or needs me", under the Coding agents plugin's switch.
+struct AgentSessionNoticesRow: View {
+    @State private var isOn = UserDefaults.standard.bool(forKey: AgentSessionNotifier.enabledKey)
+
+    var body: some View {
+        SettingsRow(title: AgentSessionNotifier.settingsTitle, detail: AgentSessionNotifier.settingsDetail) {
+            SettingsSwitch(isOn: Binding(
+                get: { isOn },
+                set: { newValue in
+                    isOn = newValue
+                    UserDefaults.standard.set(newValue, forKey: AgentSessionNotifier.enabledKey)
+                }
+            ))
+            .accessibilityLabel(AgentSessionNotifier.settingsTitle)
         }
     }
 }

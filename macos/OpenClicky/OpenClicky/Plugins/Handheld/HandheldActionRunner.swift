@@ -164,7 +164,16 @@ extension CompanionManager: HandheldActionHost {
         notchHUDManager.openPanel()
     }
 
+    /// The session the terminal notices last spoke of (`AgentSessionNotifier`); with those notices
+    /// off, or nothing waiting, the newest live session's terminal.
     func goToWaitingTerminal() {
-        AppLog.append("handheld: go to the waiting terminal (nothing is waiting)")
+        let sessionToShow = notchHUDManager.agentSessionNotifier?.newestSessionNeedingAttention
+            ?? notchHUDManager.agentSessions.sessions.first
+        guard let sessionToShow else {
+            AppLog.append("handheld: go to the waiting terminal (no session to go to)")
+            showAskCaption("no terminal session to go to", holdSeconds: 2)
+            return
+        }
+        TerminalWindowFinder.bringForward(sessionToShow)
     }
 }
