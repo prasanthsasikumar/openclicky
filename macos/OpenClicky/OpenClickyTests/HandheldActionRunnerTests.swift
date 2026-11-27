@@ -16,6 +16,7 @@ final class RecordingHandheldActionHost: HandheldActionHost {
     private(set) var postedCombinations: [HandheldKeyCombination] = []
     private(set) var islandOpenCount = 0
     private(set) var goToWaitingTerminalCount = 0
+    private(set) var windowSwitcherToggleCount = 0
     /// The app's side, played simply: a question listens from talk pressed to talk released unless
     /// the press is refused, and a tapped dictation key opens a take and the next tap ends it.
     var askIsListening = false
@@ -34,6 +35,7 @@ final class RecordingHandheldActionHost: HandheldActionHost {
     func postKeyCombination(_ combination: HandheldKeyCombination) { postedCombinations.append(combination) }
     func openIsland() { islandOpenCount += 1 }
     func goToWaitingTerminal() { goToWaitingTerminalCount += 1 }
+    func toggleWindowSwitcher() { windowSwitcherToggleCount += 1 }
 }
 
 /// A clock the test moves by hand, in place of real timers.
@@ -279,5 +281,43 @@ struct HandheldActionRunnerTests {
         runner.handle(event("keyA", .longEnd), bindings: defaultBindings)
         scheduler.advance(bySeconds: HandheldActionRunner.holdLimitSeconds * 2)
         #expect(host.shortcutEvents.count == 2)
+    }
+
+    // MARK: a key that repeats while its button is held
+
+    private let deleteKey = HandheldKeyCombination(keyCode: 51, modifierFlags: 0, displayText: "Delete")
+
+    @Test func aKeyBoundToAHoldRepeatsUntilRelease() {
+        let runner = makeRunner()
+        runner.handle(event("keyC", .longStart), bindings: defaultBindings)
+        #expect(host.postedCombinations == [deleteKey])
+        scheduler.advance(bySeconds: HandheldActionRunner.keyRepeatSeconds * 5 + 0.001)
+        #expect(host.postedCombinations.count == 6)
+        runner.handle(event("keyC", .longEnd), bindings: defaultBindings)
+        scheduler.advance(bySeconds: 5)
+        #expect(host.postedCombinations.count == 6)
+    }
+
+    @Test func aRepeatingKeyStopsAtItsLimitAndWhenTheDeviceGoes() {
+        let runner = makeRunner()
+        runner.handle(event("keyC", .longStart), bindings: defaultBindings)
+        scheduler.advance(bySeconds: HandheldActionRunner.keyRepeatLimitSeconds + 5)
+        let countAtTheLimit = host.postedCombinations.count
+        #expect(countAtTheLimit <= Int(HandheldActionRunner.keyRepeatLimitSeconds / HandheldActionRunner.keyRepeatSeconds) + 2)
+        scheduler.advance(bySeconds: 30)
+        #expect(host.postedCombinations.count == countAtTheLimit)
+
+        runner.handle(event("keyC", .longStart), bindings: defaultBindings)
+        let countAfterTheSecondPress = host.postedCombinations.count
+        runner.releaseEverythingHeld(reason: "disconnected")
+        scheduler.advance(bySeconds: 5)
+        #expect(host.postedCombinations.count == countAfterTheSecondPress)
+    }
+
+    @Test func aKeyBoundToAPressIsPostedOnce() {
+        let runner = makeRunner()
+        runner.handle(event("keyC", .single), bindings: defaultBindings)
+        scheduler.advance(bySeconds: 5)
+        #expect(host.postedCombinations == [deleteKey])
     }
 }

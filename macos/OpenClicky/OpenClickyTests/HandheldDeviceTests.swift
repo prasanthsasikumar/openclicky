@@ -38,7 +38,10 @@ struct HandheldDeviceTests {
         // A key and a gesture the device description does not list, and a report cut short.
         #expect(whisprompt.decode(4, bytes("04 02 07 01 28 00 00 00")) == nil)
         #expect(whisprompt.decode(4, bytes("04 02 02 09 28 00 00 00")) == nil)
-        #expect(whisprompt.decode(4, bytes("04 02 01 03 28 00 00 00")) == nil)
+        // Every key reports a hold and its release (recorded 2026-11-27); only Key A reports going down.
+        #expect(whisprompt.decode(4, bytes("04 02 01 03 89 00 00 00 47 65 a3 00 00"))?.gesture == .longStart)
+        #expect(whisprompt.decode(4, bytes("04 02 00 04 87 00 00 00 8a 4e a3 00 00")) == HandheldEvent(controlID: "keyC", gesture: .longEnd, sequence: 0x87))
+        #expect(whisprompt.decode(4, bytes("04 02 01 05 28 00 00 00")) == nil)
         #expect(whisprompt.decode(4, bytes("04 02")) == nil)
         #expect(HandheldDeviceCatalog.device(vendorID: 0x303a, productID: 0x1234) == nil)
     }

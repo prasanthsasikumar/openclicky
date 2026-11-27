@@ -27,6 +27,8 @@ protocol HandheldActionHost: AnyObject {
     func postKeyCombination(_ combination: HandheldKeyCombination)
     func openIsland()
     func goToWaitingTerminal()
+    /// Opens the stack of open windows, or with it open goes to the window in front of it.
+    func toggleWindowSwitcher()
     /// A question is being listened to right now (⌃⌥ held, or a button standing in for it).
     var askIsListening: Bool { get }
     /// A dictation take is open right now, whoever started it.
@@ -50,11 +52,22 @@ final class HandheldActionRunner {
     /// The longest a hold lasts. A wireless handheld that is switched off, out of range or flat
     /// while a key is held never reports the release, and its receiver stays plugged in.
     static let holdLimitSeconds: TimeInterval = 120
+    /// A key bound to a hold is posted again this often while the button is held.
+    static let keyRepeatSeconds: TimeInterval = 0.08
+    /// The longest a held key repeats. Shorter than a held take: a Delete that never hears its
+    /// release would otherwise eat a document.
+    static let keyRepeatLimitSeconds: TimeInterval = 10
 
     private weak var host: HandheldActionHost?
     private let schedule: (TimeInterval, @escaping () -> Void) -> HandheldScheduledWork
-    /// What each control's long press started: the event that ends it, and its time limit.
-    private var holdByControlID: [String: (releaseEvent: CompanionShortcutEvent, limit: HandheldScheduledWork)] = [:]
+    /// What a control's long press started: the shortcut event that ends it (none for a repeating
+    /// key), its time limit, and the next repeat of a repeating key.
+    private struct Hold {
+        var releaseEvent: CompanionShortcutEvent?
+        var limit: HandheldScheduledWork
+        var nextKeyRepeat: HandheldScheduledWork?
+    }
+    private var holdByControlID: [String: Hold] = [:]
     /// True while a question started by one press waits for the press that sends it.
     private var askToggleIsOpen = false
     private var askToggleSecondsOpen: TimeInterval = 0
@@ -140,8 +153,13 @@ final class HandheldActionRunner {
             host?.goToWaitingTerminal()
         case .openIsland:
             host?.openIsland()
+        case .switchWindows:
+            host?.toggleWindowSwitcher()
         case .keyCombination(let combination):
             host?.postKeyCombination(combination)
+            if event.gesture == .longStart {
+                beginKeyRepeat(combination, controlID: event.controlID)
+            }
         case .nothing:
             return
         }
@@ -156,14 +174,36 @@ final class HandheldActionRunner {
             AppLog.append("handheld: hold ended at its limit (no release was reported)")
             self.release(controlID: controlID)
         }
-        holdByControlID[controlID] = (released, limit)
+        holdByControlID[controlID] = Hold(releaseEvent: released, limit: limit, nextKeyRepeat: nil)
         host?.performExternalShortcut(pressed)
+    }
+
+    /// A key bound to a hold: posted again and again until the button is let go, the device
+    /// goes, or its limit.
+    private func beginKeyRepeat(_ combination: HandheldKeyCombination, controlID: String) {
+        guard holdByControlID[controlID] == nil else { return }
+        let limit = schedule(Self.keyRepeatLimitSeconds) { [weak self] in
+            self?.release(controlID: controlID)
+        }
+        holdByControlID[controlID] = Hold(releaseEvent: nil, limit: limit, nextKeyRepeat: nil)
+        scheduleNextKeyRepeat(combination, controlID: controlID)
+    }
+
+    private func scheduleNextKeyRepeat(_ combination: HandheldKeyCombination, controlID: String) {
+        holdByControlID[controlID]?.nextKeyRepeat = schedule(Self.keyRepeatSeconds) { [weak self] in
+            guard let self, self.holdByControlID[controlID] != nil else { return }
+            self.host?.postKeyCombination(combination)
+            self.scheduleNextKeyRepeat(combination, controlID: controlID)
+        }
     }
 
     private func release(controlID: String) {
         guard let hold = holdByControlID.removeValue(forKey: controlID) else { return }
         hold.limit.cancel()
-        host?.performExternalShortcut(hold.releaseEvent)
+        hold.nextKeyRepeat?.cancel()
+        if let releaseEvent = hold.releaseEvent {
+            host?.performExternalShortcut(releaseEvent)
+        }
     }
 
     private func tapTheDictationKey() {
@@ -234,6 +274,10 @@ extension CompanionManager: HandheldActionHost {
 
     func openIsland() {
         notchHUDManager.openPanel()
+    }
+
+    func toggleWindowSwitcher() {
+        HandheldWindowSwitcher.shared.toggle(reduceMotion: dictationSettings.reduceAnimation || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 
     /// The session the terminal notices last spoke of (`AgentSessionNotifier`); with those notices

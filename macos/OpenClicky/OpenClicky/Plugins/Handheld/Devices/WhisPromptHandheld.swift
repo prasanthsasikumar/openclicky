@@ -2,10 +2,11 @@
 //  WhisPromptHandheld.swift
 //  OpenClicky
 //
-//  The WhisPrompt handheld: three keys, a wheel and a touch pad on a USB receiver, with its own
-//  microphone. Measured 2026-11-27 with its maker's app quit: the keys arrive by themselves as
-//  input report 4 on the device's vendor-defined HID collection; the wheel and the touch pad are
-//  an ordinary mouse, which macOS already handles, so they are not controls here.
+//  The WhisPrompt handheld: three keys, a wheel with a button in it and a touch pad on a USB
+//  receiver, with its own microphone. Measured 2026-11-27 with its maker's app quit: the keys and
+//  the wheel's button arrive by themselves as input report 4 on the device's vendor-defined HID
+//  collection; turning the wheel and the touch pad are an ordinary mouse, which macOS already
+//  handles, so they are not controls here.
 //
 //  Report 4, after the report id byte:
 //
@@ -13,7 +14,11 @@
 //            |  |  |           '-- the device's clock, not used
 //            |  |  '-- event counter, little endian
 //            |  '-- gesture: 05 down, 01 single, 02 double, 03 long press start, 04 long press end
-//            '-- key: 02, 01, 00
+//            '-- key: 02 (A), 01 (B), 00 (C), 03 (the wheel's button)
+//
+//  Every key reports a press, a double press, and a long press with its release; only Key A also
+//  reports going down. Holding Key B was seen to report a single press together with the long
+//  press's start.
 //
 
 import Foundation
@@ -34,11 +39,11 @@ enum WhisPromptHandheld {
         decode: decode
     )
 
-    /// Only the first key reports going down and being held; the other two report whole presses.
     static let controls: [HandheldControl] = [
         HandheldControl(id: "keyA", name: "Key A", gestures: [.down, .single, .double, .longStart, .longEnd]),
-        HandheldControl(id: "keyB", name: "Key B", gestures: [.single, .double]),
-        HandheldControl(id: "keyC", name: "Key C", gestures: [.single, .double]),
+        HandheldControl(id: "keyB", name: "Key B", gestures: [.single, .double, .longStart, .longEnd]),
+        HandheldControl(id: "keyC", name: "Key C", gestures: [.single, .double, .longStart, .longEnd]),
+        HandheldControl(id: "wheelButton", name: "Wheel button", gestures: [.single, .double, .longStart, .longEnd]),
     ]
 
     /// Key A is the voice key; B and C stand in for the keys a hand is away from while it holds
@@ -51,9 +56,13 @@ enum WhisPromptHandheld {
         (controlID: "keyB", gesture: .double, action: .goToWaitingTerminal),
         (controlID: "keyC", gesture: .single, action: .keyCombination(HandheldKeyCombination(keyCode: 51, modifierFlags: 0, displayText: "Delete"))),
         (controlID: "keyC", gesture: .double, action: .keyCombination(HandheldKeyCombination(keyCode: 6, modifierFlags: HandheldKeyCombination.commandFlag, displayText: "⌘Z"))),
+        // A key bound to a hold repeats while the button is held: holding Key C keeps deleting.
+        (controlID: "keyC", gesture: .longStart, action: .keyCombination(HandheldKeyCombination(keyCode: 51, modifierFlags: 0, displayText: "Delete"))),
+        // Press the wheel, turn it through the open windows, press again to go to one.
+        (controlID: "wheelButton", gesture: .single, action: .switchWindows),
     ])
 
-    private static let controlIDByKeyByte: [UInt8: String] = [0x02: "keyA", 0x01: "keyB", 0x00: "keyC"]
+    private static let controlIDByKeyByte: [UInt8: String] = [0x02: "keyA", 0x01: "keyB", 0x00: "keyC", 0x03: "wheelButton"]
     private static let gestureByGestureByte: [UInt8: HandheldGesture] = [
         0x05: .down, 0x01: .single, 0x02: .double, 0x03: .longStart, 0x04: .longEnd,
     ]

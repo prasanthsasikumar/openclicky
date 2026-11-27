@@ -37,6 +37,9 @@ enum HandheldAction: Codable, Equatable {
     case stop
     case goToWaitingTerminal
     case openIsland
+    /// Opens the stack of open windows (`Switcher/`); with it open, goes to the one in front.
+    case switchWindows
+    /// One key with its modifiers. Bound to a hold, it repeats until the button is let go.
     case keyCombination(HandheldKeyCombination)
     case nothing
 
@@ -51,6 +54,7 @@ enum HandheldAction: Codable, Equatable {
         case .stop: return "Stop"
         case .goToWaitingTerminal: return "Go to the waiting terminal"
         case .openIsland: return "Open the island"
+        case .switchWindows: return "Switch windows"
         case .keyCombination(let keyCombination): return keyCombination.displayText
         case .nothing: return "Nothing"
         }
@@ -69,7 +73,7 @@ enum HandheldAction: Codable, Equatable {
     /// picker itself.
     private static let allFixedActions: [HandheldAction] = [
         .dictateHold, .dictateToggle, .askHold, .askToggle, .handsFreeToggle, .typeQuestion, .stop,
-        .goToWaitingTerminal, .openIsland, .nothing,
+        .goToWaitingTerminal, .switchWindows, .openIsland, .nothing,
     ]
 
     /// The actions offered for one gesture of one control. The hold actions are offered only for

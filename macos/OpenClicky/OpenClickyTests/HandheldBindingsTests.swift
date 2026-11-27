@@ -31,6 +31,8 @@ struct HandheldBindingsTests {
         #expect(bindings.action(controlID: "keyC", gesture: .double)
                 == .keyCombination(HandheldKeyCombination(keyCode: 6, modifierFlags: HandheldKeyCombination.commandFlag, displayText: "⌘Z")))
         #expect(bindings.action(controlID: "keyB", gesture: .longStart) == .nothing)
+        // Holding Key C keeps deleting.
+        #expect(bindings.action(controlID: "keyC", gesture: .longStart) == .keyCombination(deleteKey))
     }
 
     @Test func choicesOfferHoldOnlyWhereItCanEnd() {
@@ -56,7 +58,8 @@ struct HandheldBindingsTests {
 
     @Test func bindableGesturesAreTheOnesAPersonChooses() {
         #expect(HandheldBindings.bindableGestures(of: whisprompt.control(withID: "keyA")!) == [.single, .double, .longStart])
-        #expect(HandheldBindings.bindableGestures(of: whisprompt.control(withID: "keyB")!) == [.single, .double])
+        #expect(HandheldBindings.bindableGestures(of: whisprompt.control(withID: "keyB")!) == [.single, .double, .longStart])
+        #expect(HandheldBindings.bindableGestures(of: HandheldControl(id: "side", name: "Side", gestures: [.single, .double])) == [.single, .double])
     }
 
     @Test func savedBindingsSurviveAndResetReturnsDefaults() {

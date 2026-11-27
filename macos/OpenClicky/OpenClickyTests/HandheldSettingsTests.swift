@@ -61,8 +61,9 @@ struct HandheldSettingsTests {
         let ids = relevantIDs(HandheldSettings.items(plugin: makePlugin(switchedOn: true, deviceSeen: true)))
         #expect(ids.filter { $0.hasPrefix("handheld.binding.") } == [
             "handheld.binding.whisprompt.keyA.single", "handheld.binding.whisprompt.keyA.double", "handheld.binding.whisprompt.keyA.longStart",
-            "handheld.binding.whisprompt.keyB.single", "handheld.binding.whisprompt.keyB.double",
-            "handheld.binding.whisprompt.keyC.single", "handheld.binding.whisprompt.keyC.double",
+            "handheld.binding.whisprompt.keyB.single", "handheld.binding.whisprompt.keyB.double", "handheld.binding.whisprompt.keyB.longStart",
+            "handheld.binding.whisprompt.keyC.single", "handheld.binding.whisprompt.keyC.double", "handheld.binding.whisprompt.keyC.longStart",
+            "handheld.binding.whisprompt.wheelButton.single", "handheld.binding.whisprompt.wheelButton.double", "handheld.binding.whisprompt.wheelButton.longStart",
         ])
         #expect(ids.contains("handheld.mouseNote"))
     }
