@@ -1445,14 +1445,15 @@ final class CompanionManager: ObservableObject {
         // The microphone chosen in settings is the one both ways in hear with: fn dictation and the
         // ⌃⌥ question. The question used the Mac's default input, which can be a headset or an
         // unplugged jack, and heard "no" while dictation, on the built-in microphone, heard fine.
-        dictationSettings.preferredMicrophoneUIDDidChange = { [weak self] uid in
-            self?.dictationTakeController.dictationManager.preferredMicrophoneUID = uid
-            self?.buddyDictationManager.preferredMicrophoneUID = uid
-            self?.realtimeVoiceClient.preferredMicrophoneUID = uid
+        dictationSettings.preferredMicrophoneUIDDidChange = { [weak self] _ in
+            self?.applyMicrophoneChoice()
         }
-        dictationTakeController.dictationManager.preferredMicrophoneUID = dictationSettings.preferredMicrophoneUID
-        buddyDictationManager.preferredMicrophoneUID = dictationSettings.preferredMicrophoneUID
-        realtimeVoiceClient.preferredMicrophoneUID = dictationSettings.preferredMicrophoneUID
+        // A handheld's own microphone can stand in while it is connected (Plugins/Handheld); the
+        // plugin says when that may have changed. It never fires while the plugin is off.
+        HandheldPlugin.shared.onMicrophoneChoiceChanged = { [weak self] in
+            self?.applyMicrophoneChoice()
+        }
+        applyMicrophoneChoice()
         AppUpdater.shared.start()
         clipboardHistoryMonitor.start()
         // The handheld plugin listens for its device only when it is switched on (Plugins/Handheld).
@@ -1472,6 +1473,17 @@ final class CompanionManager: ObservableObject {
         default:
             handleCompanionShortcut(shortcutEvent)
         }
+    }
+
+    /// Hands the microphone to everything that records. Takes and classic ⌃⌥ questions use the
+    /// person's choice, or a connected handheld's own microphone when that was asked for
+    /// (`HandheldMicrophone`); fast voice and hands-free always use the person's choice.
+    private func applyMicrophoneChoice() {
+        let personsChoiceUID = dictationSettings.preferredMicrophoneUID
+        let takesAndQuestionsUID = HandheldMicrophone.currentUID(personsChoiceUID: personsChoiceUID)
+        dictationTakeController.dictationManager.preferredMicrophoneUID = takesAndQuestionsUID
+        buddyDictationManager.preferredMicrophoneUID = takesAndQuestionsUID
+        realtimeVoiceClient.preferredMicrophoneUID = personsChoiceUID
     }
 
     private func handleCompanionShortcut(_ shortcutEvent: CompanionShortcutEvent) {
@@ -3219,7 +3231,8 @@ extension CompanionManager {
         guard !isStandardHandsFreeOn else { return }
         isStandardHandsFreeOn = true
         standardHandsFreeQuietSince = Date()
-        let microphone = buddyDictationManager.preferredMicrophoneUID
+        // Hands-free keeps the person's own microphone, never a handheld's standing in for it.
+        let microphone = dictationSettings.preferredMicrophoneUID
         Task { [weak self] in
             guard let self else { return }
             do {

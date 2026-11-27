@@ -32,11 +32,19 @@ final class HandheldPlugin: ObservableObject {
     @Published private(set) var lastSeenDevice: HandheldDevice?
     /// The bindings of the connected device, or of the last one seen.
     @Published private(set) var bindings = HandheldBindings()
+    /// "Use its microphone while it is connected" (`HandheldMicrophone`). Off until asked for.
+    @Published private(set) var usesDeviceMicrophone: Bool
 
     var makerAppIsAlsoRunning: Bool { makerAppIsRunning() }
     /// Called when the rows Settings should show change (the switch, a device coming or going), so
     /// an open Settings page is drawn again. Set by the plugin's settings rows.
     var onSettingsShapeChanged: (() -> Void)?
+    /// Called when the microphone takes should record from may have changed: the option, or a
+    /// device coming or going. The app then asks `HandheldMicrophone` again.
+    var onMicrophoneChoiceChanged: (() -> Void)?
+    /// A USB microphone can show up a moment after its device's buttons do, so the app is told
+    /// once more after this long.
+    private static let microphoneSettleSeconds: TimeInterval = 2
     /// The device the page is about: the connected one, else the last one seen.
     var deviceShown: HandheldDevice? { connectedDevice ?? lastSeenDevice }
 
@@ -54,6 +62,7 @@ final class HandheldPlugin: ObservableObject {
         self.makeSource = makeSource
         self.makerAppIsRunning = makerAppIsRunning
         isEnabled = defaults.bool(forKey: Self.enabledKey)
+        usesDeviceMicrophone = defaults.bool(forKey: HandheldMicrophone.useDeviceMicrophoneKey)
         if let lastSeenDeviceID = defaults.string(forKey: Self.lastSeenDeviceKey),
            let device = HandheldDeviceCatalog.all.first(where: { $0.id == lastSeenDeviceID }) {
             lastSeenDevice = device
@@ -77,6 +86,13 @@ final class HandheldPlugin: ObservableObject {
             stopListening()
         }
         onSettingsShapeChanged?()
+    }
+
+    func setUsesDeviceMicrophone(_ usesDeviceMicrophone: Bool) {
+        guard usesDeviceMicrophone != self.usesDeviceMicrophone else { return }
+        self.usesDeviceMicrophone = usesDeviceMicrophone
+        defaults.set(usesDeviceMicrophone, forKey: HandheldMicrophone.useDeviceMicrophoneKey)
+        onMicrophoneChoiceChanged?()
     }
 
     func setAction(_ action: HandheldAction, controlID: String, gesture: HandheldGesture) {
@@ -104,6 +120,7 @@ final class HandheldPlugin: ObservableObject {
             newActionRunner.releaseEverythingHeld(reason: "device disconnected")
             self?.connectedDevice = nil
             self?.onSettingsShapeChanged?()
+            self?.onMicrophoneChoiceChanged?()
         }
         listener = newListener
         actionRunner = newActionRunner
@@ -123,6 +140,7 @@ final class HandheldPlugin: ObservableObject {
         listener = nil
         actionRunner = nil
         connectedDevice = nil
+        onMicrophoneChoiceChanged?()
     }
 
     private func deviceWasSeen(_ device: HandheldDevice) {
@@ -134,5 +152,11 @@ final class HandheldPlugin: ObservableObject {
         }
         bindings = bindingsStore.bindings(for: device)
         onSettingsShapeChanged?()
+        onMicrophoneChoiceChanged?()
+        if usesDeviceMicrophone, device.microphoneName != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.microphoneSettleSeconds) { [weak self] in
+                self?.onMicrophoneChoiceChanged?()
+            }
+        }
     }
 }

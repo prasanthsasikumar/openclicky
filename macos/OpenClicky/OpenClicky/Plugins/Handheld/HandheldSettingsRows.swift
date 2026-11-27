@@ -82,6 +82,12 @@ enum HandheldSettings {
         }
 
         items.append(SettingsItem(
+            id: "handheld.microphone",
+            title: HandheldMicrophone.rowTitle, detail: HandheldMicrophone.rowDetail,
+            keywords: ["handheld", "microphone", "mic", "input"],
+            isRelevant: { plugin.isEnabled && plugin.deviceShown?.microphoneName != nil },
+            view: AnyView(HandheldMicrophoneRow(plugin: plugin))))
+        items.append(SettingsItem(
             id: "handheld.mouseNote",
             title: mouseNote, chrome: .footer,
             isRelevant: { plugin.isEnabled && plugin.deviceShown != nil },
@@ -99,6 +105,19 @@ struct HandheldSwitchRow: View {
         SettingsRow(title: HandheldSettings.switchTitle, detail: HandheldSettings.switchDetail) {
             SettingsSwitch(isOn: Binding(get: { plugin.isEnabled }, set: { plugin.setEnabled($0) }))
                 .accessibilityLabel(HandheldSettings.switchTitle)
+        }
+    }
+}
+
+// MARK: - Its microphone
+
+struct HandheldMicrophoneRow: View {
+    @ObservedObject var plugin: HandheldPlugin
+
+    var body: some View {
+        SettingsRow(title: HandheldMicrophone.rowTitle, detail: HandheldMicrophone.rowDetail) {
+            SettingsSwitch(isOn: Binding(get: { plugin.usesDeviceMicrophone }, set: { plugin.setUsesDeviceMicrophone($0) }))
+                .accessibilityLabel(HandheldMicrophone.rowTitle)
         }
     }
 }
