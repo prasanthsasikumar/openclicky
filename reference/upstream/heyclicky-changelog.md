@@ -2,6 +2,14 @@
 
 Recorded by `scripts/upstream-watch.mjs` from https://www.heyclicky.com/changelog and the Sparkle appcast. Newest first.
 
+## v1.1.6 (Sat, 21 Nov 2026 17:59:19 -0800)
+
+Download: https://github.com/farzaa/clicky-releases/releases/download/v1.1.6/HeyClicky.dmg (build 75)
+
+## v1.1.4 (Mon, 16 Nov 2026 19:57:55 -0800)
+
+Download: https://github.com/farzaa/clicky-releases/releases/download/v1.1.4/HeyClicky.dmg (build 73)
+
 ## v1.1.7 (Sat, 21 Nov 2026 19:14:43 -0800)
 
 Download: https://github.com/farzaa/clicky-releases/releases/download/v1.1.7/HeyClicky.dmg (build 76)
