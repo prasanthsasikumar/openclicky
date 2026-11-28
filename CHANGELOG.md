@@ -19,9 +19,15 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ### Mac
 
+- **The settings window and the menu bar can be in Chinese.** When this Mac’s language is Chinese, or Clicky is set to answer in Chinese, those screens are in Chinese. A line with no translation stays in English.
+- **Dictation can be pinned to Chinese.** Settings → Dictation → Language → Pin one now includes Chinese. Apple's recogniser and the online engines hear it; Parakeet does not.
 - **A follow-up changes the drawing that is up.** Ask "make the nucleus bigger", "colour the big gear red", "slow it down" or "hide the labels" and the drawing on screen changes, instead of being drawn again or drawn over.
 - **Urdu and Arabic answers are spoken sentence by sentence.** The voice now starts at the first Urdu full stop (۔) or Arabic question mark (؟) instead of waiting for a long piece of the answer.
 - **A safety filter is said plainly.** When the AI's safety filter stops a question or its answer, Clicky says so and offers to explain the ideas behind it, instead of "something went wrong". It remembers that, so "why?" next is answered knowing what happened.
+
+### Windows
+
+- **Dictation can be pinned to Chinese.** Settings → Dictation → Language → Pin one now includes Chinese. This PC's recogniser and the online engines hear it; Parakeet does not.
 
 ## 0.13.1
 

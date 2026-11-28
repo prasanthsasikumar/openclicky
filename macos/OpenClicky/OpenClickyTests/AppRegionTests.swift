@@ -16,6 +16,7 @@ struct AppRegionTests {
         #expect(!world.contains { $0.code.hasSuffix("-IN") })
         #expect(world.contains(DictationLanguage.named("en-US")))
         #expect(world.contains(DictationLanguage.named("fr-FR")))
+        #expect(world.contains(DictationLanguage.named("zh-CN")))
     }
 
     @Test func indiaKeepsItsLanguagesAndEnglishAsWrittenThere() {
