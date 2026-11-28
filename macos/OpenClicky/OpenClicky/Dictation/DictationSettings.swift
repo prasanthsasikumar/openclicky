@@ -198,10 +198,12 @@ struct DictationLanguage: Identifiable, Equatable {
         DictationLanguage(code: "gu-IN", name: "Gujarati", nativeName: "ગુજરાતી"),
         DictationLanguage(code: "pa-IN", name: "Punjabi", nativeName: "ਪੰਜਾਬੀ"),
         DictationLanguage(code: "od-IN", name: "Odia", nativeName: "ଓଡ଼ିଆ"),
-        // Offered outside India (AppRegion): English as written there, and the European languages
-        // Apple's recogniser, Parakeet and the online engines all hear.
+        // Offered outside India (AppRegion): English as written there, the European languages
+        // Apple's recogniser, Parakeet and the online engines all hear, and Chinese, which Apple's
+        // recogniser and the online engines hear. Parakeet does not hear Chinese.
         DictationLanguage(code: "en-US", name: "English (US)", nativeName: "English (US)"),
         DictationLanguage(code: "en-GB", name: "English (UK)", nativeName: "English (UK)"),
+        DictationLanguage(code: "zh-CN", name: "Chinese", nativeName: "中文"),
         DictationLanguage(code: "es-ES", name: "Spanish", nativeName: "Español"),
         DictationLanguage(code: "fr-FR", name: "French", nativeName: "Français"),
         DictationLanguage(code: "de-DE", name: "German", nativeName: "Deutsch"),

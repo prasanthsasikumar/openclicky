@@ -140,10 +140,10 @@ struct SettingsFormView: View {
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.secondary)
                                     .rotationEffect(.degrees(isOpen ? 90 : 0))
-                                Text(group.title).font(SettingsLook.rowTitle)
+                                Text(InterfaceLanguage.t(group.title)).font(SettingsLook.rowTitle)
                                 Spacer()
                                 if !isOpen {
-                                    Text("\(group.items.count) settings").font(SettingsLook.caption).foregroundStyle(.secondary)
+                                    Text(InterfaceLanguage.t("\(group.items.count) settings")).font(SettingsLook.caption).foregroundStyle(.secondary)
                                 }
                             }
                             .padding(.vertical, SettingsLook.Metric.rowVertical)
@@ -151,8 +151,8 @@ struct SettingsFormView: View {
                         }
                         .buttonStyle(.plain)
                         .pointerCursor()
-                        .accessibilityLabel(group.title)
-                        .accessibilityValue(isOpen ? "Open" : "Closed")
+                        .accessibilityLabel(InterfaceLanguage.t(group.title))
+                        .accessibilityValue(InterfaceLanguage.t(isOpen ? "Open" : "Closed"))
                         if isOpen {
                             rows(of: group)
                             ForEach(group.footers) { footer in footer.view }
@@ -162,7 +162,7 @@ struct SettingsFormView: View {
                     Section {
                         rows(of: group)
                     } header: {
-                        if !group.title.isEmpty { Text(group.title) }
+                        if !group.title.isEmpty { Text(InterfaceLanguage.t(group.title)) }
                     } footer: {
                         if !group.footers.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
@@ -291,7 +291,7 @@ struct SettingsKeys: View {
                     .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Color(nsColor: .separatorColor)))
             }
             if let gesture {
-                Text(gesture).font(.system(size: 12)).foregroundStyle(.secondary).padding(.leading, 4)
+                Text(InterfaceLanguage.t(gesture)).font(.system(size: 12)).foregroundStyle(.secondary).padding(.leading, 4)
             }
         }
         .accessibilityElement(children: .combine)
@@ -311,8 +311,8 @@ struct SettingsPageHeader: View {
                 .frame(width: 40, height: 40)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(page.tint.gradient))
             VStack(alignment: .leading, spacing: 2) {
-                Text(page.title).font(.system(size: 15, weight: .semibold))
-                Text(page.subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(InterfaceLanguage.t(page.title)).font(.system(size: 15, weight: .semibold))
+                Text(InterfaceLanguage.t(page.subtitle)).font(.system(size: 12)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)

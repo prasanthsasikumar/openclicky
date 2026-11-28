@@ -303,10 +303,12 @@ public sealed record DictationLanguage(string Code, string Name, string NativeNa
         new("gu-IN", "Gujarati", "ગુજરાતી"),
         new("pa-IN", "Punjabi", "ਪੰਜਾਬੀ"),
         new("od-IN", "Odia", "ଓଡ଼ିଆ"),
-        // Offered outside India (AppRegion): English as written there, and the European languages
-        // the PC's recogniser, Parakeet and the online engines all hear.
+        // Offered outside India (AppRegion): English as written there, the European languages
+        // the PC's recogniser, Parakeet and the online engines all hear, and Chinese, which the
+        // PC's recogniser and the online engines hear. Parakeet does not hear Chinese.
         new("en-US", "English (US)", "English (US)"),
         new("en-GB", "English (UK)", "English (UK)"),
+        new("zh-CN", "Chinese", "中文"),
         new("es-ES", "Spanish", "Español"),
         new("fr-FR", "French", "Français"),
         new("de-DE", "German", "Deutsch"),

@@ -662,7 +662,7 @@ private struct ReplyLanguageRow: View {
                     OpenClickyConfiguration.update { $0.language = chosenCode }
                 }
             )) {
-                ForEach(ReplyLanguage.choices(region: settings.region, currentCode: languageCode)) { choice in Text(choice.name).tag(choice.code) }
+                ForEach(ReplyLanguage.choices(region: settings.region, currentCode: languageCode)) { choice in Text(InterfaceLanguage.t(choice.name)).tag(choice.code) }
             }
             .labelsHidden().fixedSize()
             .pointerCursor()

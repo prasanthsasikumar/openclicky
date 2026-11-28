@@ -63,15 +63,15 @@ final class MenuBarPanelManager: NSObject {
         header.view = headerView
         menu.addItem(header)
         menu.addItem(.separator())
-        addItem(to: menu, title: "Agent Mode", action: #selector(toggleAgentMode), isOn: companionManager.isAgentModeEnabled)
+        addItem(to: menu, title: InterfaceLanguage.t("Agent Mode"), action: #selector(toggleAgentMode), isOn: companionManager.isAgentModeEnabled)
         menu.addItem(.separator())
-        addItem(to: menu, title: "Open OpenClicky", action: #selector(openWindow))
-        addItem(to: menu, title: "Open the Island", action: #selector(openIsland))
-        addItem(to: menu, title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        addItem(to: menu, title: PlateMenu.title(waiting: companionManager.plateController.waitingCount), action: #selector(showPlate))
-        addItem(to: menu, title: "Replay Welcome…", action: #selector(replayWelcome))
+        addItem(to: menu, title: InterfaceLanguage.t("Open OpenClicky"), action: #selector(openWindow))
+        addItem(to: menu, title: InterfaceLanguage.t("Open the Island"), action: #selector(openIsland))
+        addItem(to: menu, title: InterfaceLanguage.t("Settings…"), action: #selector(openSettings), keyEquivalent: ",")
+        addItem(to: menu, title: InterfaceLanguage.t(PlateMenu.title(waiting: companionManager.plateController.waitingCount)), action: #selector(showPlate))
+        addItem(to: menu, title: InterfaceLanguage.t("Replay Welcome…"), action: #selector(replayWelcome))
         menu.addItem(.separator())
-        addItem(to: menu, title: "Quit OpenClicky", action: #selector(quit), keyEquivalent: "q")
+        addItem(to: menu, title: InterfaceLanguage.t("Quit OpenClicky"), action: #selector(quit), keyEquivalent: "q")
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         // The menu is attached only for the click, or AppKit would keep it attached for good.
@@ -132,7 +132,7 @@ private struct StatusMenuHeader: View {
                 Circle().fill(statusText == "Ready" ? Color(nsColor: .systemGreen) : Color(nsColor: .systemOrange)).frame(width: 8, height: 8)
                 Text("OpenClicky").font(.system(size: 13, weight: .bold))
                 Spacer()
-                Text(statusText).font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(InterfaceLanguage.t(statusText)).font(.system(size: 13)).foregroundStyle(.secondary)
             }
             Text("Hold ⌃⌥ to talk · hold \(dictationKey) to dictate").font(.system(size: 12)).foregroundStyle(.secondary)
         }

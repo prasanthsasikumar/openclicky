@@ -57,7 +57,8 @@ struct SettingsItem: Identifiable {
     var searchGroupTitle: String { searchOnlyGroup ?? page.searchTitle }
 
     func matches(_ query: String) -> Bool {
-        let searchableText = ([title, detail, section, searchGroupTitle] + keywords).joined(separator: " ")
+        let shown = [title, detail, section, searchGroupTitle].flatMap { [$0, InterfaceLanguage.t($0)] }
+        let searchableText = (shown + keywords).joined(separator: " ")
         return query
             .lowercased()
             .split(separator: " ")
@@ -221,9 +222,9 @@ struct SettingsRow<Trailing: View>: View {
         HStack(alignment: .center, spacing: 16) {
             if let icon { icon.padding(.trailing, -6) }
             VStack(alignment: .leading, spacing: 2) {
-                Text(settingsHighlighted(title, query: searchQuery)).font(SettingsLook.rowTitle)
+                Text(settingsHighlighted(InterfaceLanguage.t(title), query: searchQuery)).font(SettingsLook.rowTitle)
                 if let detail, !detail.isEmpty {
-                    Text(settingsHighlighted(detail, query: searchQuery))
+                    Text(settingsHighlighted(InterfaceLanguage.t(detail), query: searchQuery))
                         .font(SettingsLook.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -233,7 +234,7 @@ struct SettingsRow<Trailing: View>: View {
         }
         .padding(.vertical, SettingsLook.Metric.rowVertical)
         .accessibilityElement(children: .contain)
-        .accessibilityHint(detail ?? "")
+        .accessibilityHint(InterfaceLanguage.t(detail ?? ""))
     }
 }
 

@@ -349,8 +349,8 @@ private struct DictationLanguageRow: View {
                             settings.languageCode = languageToPin.code
                         }
                     })) {
-                    Text("Auto-detect").tag(true)
-                    Text("Pin one").tag(false)
+                    Text(InterfaceLanguage.t("Auto-detect")).tag(true)
+                    Text(InterfaceLanguage.t("Pin one")).tag(false)
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize().tint(SettingsLook.accent)
                 .pointerCursor()
@@ -361,7 +361,7 @@ private struct DictationLanguageRow: View {
                         get: { settings.languageCode },
                         set: { code in settings.languageCode = code; lastPinnedLanguageCode = code })) {
                         ForEach(DictationLanguage.pinnableChoices(region: settings.region, current: settings.language)) { language in
-                            Text(language.name == language.nativeName ? language.name : "\(language.name) · \(language.nativeName)").tag(language.code)
+                            Text(InterfaceLanguage.t(language.name == language.nativeName ? language.name : "\(language.name) · \(language.nativeName)")).tag(language.code)
                         }
                     }
                     .labelsHidden().fixedSize()

@@ -217,7 +217,7 @@ struct DictationRootView: View {
                 ForEach(DictationSettingsPage.sidebarPages(handheldIsOn: HandheldPlugin.shared.isEnabled)) { page in pageRow(page, matches: matches) }
             }
             .listStyle(.sidebar)
-            .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search settings")
+            .searchable(text: $model.searchText, placement: .sidebar, prompt: Text(InterfaceLanguage.t("Search settings")))
             SidebarFooter(settings: settings, companionManager: companionManager, model: model)
             }
             .navigationSplitViewColumnWidth(240)
@@ -252,7 +252,7 @@ struct DictationRootView: View {
         if !query.isEmpty {
             Group {
                 if matches.isEmpty {
-                    Text("No settings match “\(query)”.")
+                    Text(InterfaceLanguage.t("No settings match “{query}”.").replacingOccurrences(of: "{query}", with: query))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -260,17 +260,17 @@ struct DictationRootView: View {
                         .environment(\.settingsSearchQuery, query)
                 }
             }
-            .navigationTitle("Search Results")
+            .navigationTitle(InterfaceLanguage.t("Search Results"))
         } else {
             switch model.destination {
             case .settings(let page):
                 SettingsFormView(groups: SettingsSectionGroup.groups(relevantItems.filter { $0.page == page && $0.showsOnPage }, foldsAdvanced: true), page: page)
                     .id(page)
-                    .navigationTitle(page.title)
+                    .navigationTitle(InterfaceLanguage.t(page.title))
             case .section(let section):
                 sectionPage(section)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .navigationTitle(section.sidebarTitle)
+                    .navigationTitle(InterfaceLanguage.t(section.sidebarTitle))
             }
         }
     }
@@ -300,7 +300,7 @@ struct SidebarIconLabel: View {
 
     var body: some View {
         Label {
-            Text(title)
+            Text(InterfaceLanguage.t(title))
         } icon: {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .semibold))
@@ -322,13 +322,13 @@ private struct SidebarFooter: View {
         VStack(spacing: 0) {
             Divider()
             HStack {
-                Text("Incognito").font(.system(size: 13))
+                Text(InterfaceLanguage.t("Incognito")).font(.system(size: 13))
                 Spacer()
                 SettingsSwitch(isOn: $settings.incognito)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .help(settings.incognito ? "Incognito is on: takes paste but are not saved." : "Incognito is off: takes are saved to history on this Mac.")
+            .help(InterfaceLanguage.t(settings.incognito ? "Incognito is on: takes paste but are not saved." : "Incognito is off: takes are saved to history on this Mac."))
             Divider()
             Button(action: { model.select(.settings(.account)) }) {
                 HStack(spacing: 10) {
@@ -339,7 +339,7 @@ private struct SidebarFooter: View {
                     .frame(width: 28, height: 28)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(accountName).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.tail)
-                        Text(authSession.accountEmail != nil ? "Signed in" : (authSession.isGuestWithoutEmail ? "Trying it free" : "Personal · no account"))
+                        Text(InterfaceLanguage.t(authSession.accountEmail != nil ? "Signed in" : (authSession.isGuestWithoutEmail ? "Trying it free" : "Personal · no account")))
                             .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 0)
@@ -349,7 +349,7 @@ private struct SidebarFooter: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Account")
+            .help(InterfaceLanguage.t("Account"))
             .pointerCursor()
         }
     }
@@ -358,7 +358,7 @@ private struct SidebarFooter: View {
     private var accountName: String {
         if let email = authSession.accountEmail { return String(email.split(separator: "@").first ?? "") }
         let nameParts = NSFullUserName().split(separator: " ")
-        guard let firstName = nameParts.first else { return "You" }
+        guard let firstName = nameParts.first else { return InterfaceLanguage.t("You") }
         if nameParts.count > 1, let lastInitial = nameParts.last?.first { return "\(firstName) \(lastInitial)." }
         return String(firstName)
     }

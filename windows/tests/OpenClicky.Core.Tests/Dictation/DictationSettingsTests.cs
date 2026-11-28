@@ -335,6 +335,7 @@ public sealed class DictationSettingsTests
         Assert.NotEmpty(world);
         Assert.DoesNotContain(world, language => language.Code.EndsWith("-IN", StringComparison.Ordinal));
         Assert.Contains(DictationLanguage.Named("en-US"), world);
+        Assert.Contains(DictationLanguage.Named("zh-CN"), world);
         Assert.Contains(DictationLanguage.Named("fr-FR"), world);
     }
 
