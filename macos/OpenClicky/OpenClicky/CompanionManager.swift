@@ -99,8 +99,9 @@ final class CompanionManager: ObservableObject {
     /// The floating card that shows an agent's result and takes follow-ups (top-right of the screen).
     let agentResultPanelManager = AgentResultPanelManager()
 
-    /// Agent mode: a cheap gate classifies each utterance; "do work" requests go to a Codex
-    /// thread via the OpenClicky CLI instead of the teacher (Claude + pointing) lane.
+    /// Agent mode: work (edit a file, run a command) goes to DeepSeek Harness when that key and
+    /// `dsh` are on this Mac, otherwise to a Codex thread via the OpenClicky CLI. A question
+    /// stays on the teacher lane.
     @Published var isAgentModeEnabled: Bool = UserDefaults.standard.object(forKey: "isOpenClickyAgentModeEnabled") == nil
         ? true
         : UserDefaults.standard.bool(forKey: "isOpenClickyAgentModeEnabled")
@@ -703,7 +704,10 @@ final class CompanionManager: ObservableObject {
         currentResponseTask?.cancel()
         isAskInFlight = false
         askIslandStatus = nil
-        if includingAgentWork { openClickyAgentClient.cancel() }
+        if includingAgentWork {
+            openClickyAgentClient.cancel()
+            deepSeekHarness.cancel()
+        }
         answerVoicePlayer.stopPlayback()
         stopSystemVoice()
     }
@@ -1888,6 +1892,16 @@ final class CompanionManager: ObservableObject {
                 // (teacher lane below: Claude + pointing) or real work (agent lane: Codex thread).
                 // The agent lane needs the openclicky tool (not in the downloaded app); without it the
                 // quick actions below are offered to whoever answers instead.
+                let deepSeekAgentRuns = isAgentModeEnabled && DeepSeekHarnessAgent.isAvailable
+                if deepSeekAgentRuns && DeepSeekHarnessLane.lane(for: transcript) == "agent" {
+                    try await runDeepSeekHarnessLane(transcript: transcript, screenCaptures: screenCaptures)
+                    if !Task.isCancelled {
+                        isAskInFlight = false
+                        voiceState = .idle
+                        scheduleTransientHideIfNeeded()
+                    }
+                    return
+                }
                 let agentLaneRuns = isAgentModeEnabled && OpenClickyConfiguration.isConfigured
                     && AccountCapabilities.current().usesAgent && OpenClickyAgentClient.isToolInstalled
                 if agentLaneRuns {
@@ -2502,6 +2516,36 @@ final class CompanionManager: ObservableObject {
     }
 
     // MARK: - OpenClicky Agent Lane
+
+    private let deepSeekHarness = DeepSeekHarnessAgent()
+    /// The harness Session the last piece of work used, so the next one continues it.
+    private var lastDeepSeekSessionId: String?
+
+    /// Hands the request to DeepSeek Harness. The cursor screen is saved and named in the task,
+    /// then the harness's last message is spoken.
+    private func runDeepSeekHarnessLane(transcript: String, screenCaptures: [CompanionScreenCapture]) async throws {
+        agentActivityText = "starting DeepSeek…"
+        islandReply.begin(question: transcript)
+        var task = transcript
+        if let capture = screenCaptures.first(where: { $0.isCursorScreen }) ?? screenCaptures.first {
+            let screenshotURL = FileManager.default.temporaryDirectory.appendingPathComponent("openclicky-\(UUID().uuidString).jpg")
+            if (try? capture.imageData.write(to: screenshotURL)) != nil {
+                task += "\n\nA screenshot from the moment of the request is at \(screenshotURL.path). Read it when the task depends on what is on screen."
+            }
+        }
+        AppLog.append("agent: deepseek harness")
+        let result = try await deepSeekHarness.run(task: task, sessionId: lastDeepSeekSessionId) { [weak self] milestone in
+            self?.agentActivityText = milestone
+            self?.islandReply.addStep(milestone)
+        }
+        if let sessionId = result.threadId { lastDeepSeekSessionId = sessionId }
+        agentActivityText = nil
+        var spoken = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if spoken.isEmpty { spoken = "done." }
+        rememberExchange(userTranscript: transcript, assistantResponse: spoken)
+        guard !Task.isCancelled else { return }
+        await speakWholeReply(spoken)
+    }
 
     /// Hands the request to a Codex thread through the `openclicky` CLI, attaching the cursor
     /// screen as image context, then speaks the agent's final message. The spinner stays up for

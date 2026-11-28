@@ -80,6 +80,7 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
     var groqKey: String?
     var mistralKey: String?
     var xaiKey: String?
+    var deepseekKey: String?
     var openCodeKey: String?
     var claudeCodePlanOn = false
     var codexPlanOn = false
@@ -88,7 +89,7 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
 
     init(openAIKey: String?, anthropicKey: String?, accountToken: String?,
          openRouterKey: String? = nil, geminiKey: String? = nil, groqKey: String? = nil,
-         mistralKey: String? = nil, xaiKey: String? = nil, openCodeKey: String? = nil,
+         mistralKey: String? = nil, xaiKey: String? = nil, deepseekKey: String? = nil, openCodeKey: String? = nil,
          claudeCodePlanOn: Bool = false, codexPlanOn: Bool = false, preferredAnswerSource: AnswerSource? = nil) {
         func cleaned(_ value: String?) -> String? {
             let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -102,6 +103,7 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
         self.groqKey = cleaned(groqKey)
         self.mistralKey = cleaned(mistralKey)
         self.xaiKey = cleaned(xaiKey)
+        self.deepseekKey = cleaned(deepseekKey)
         self.openCodeKey = cleaned(openCodeKey)
         self.claudeCodePlanOn = claudeCodePlanOn
         self.codexPlanOn = codexPlanOn
@@ -111,7 +113,8 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
     init(settings: OpenClickyShellSettings) {
         self.init(openAIKey: settings.openaiApiKey, anthropicKey: settings.anthropicApiKey, accountToken: settings.token,
                   openRouterKey: settings.openRouterApiKey, geminiKey: settings.geminiApiKey, groqKey: settings.groqApiKey,
-                  mistralKey: settings.mistralApiKey, xaiKey: settings.xaiApiKey, openCodeKey: settings.openCodeApiKey,
+                  mistralKey: settings.mistralApiKey, xaiKey: settings.xaiApiKey, deepseekKey: settings.deepseekApiKey,
+                  openCodeKey: settings.openCodeApiKey,
                   claudeCodePlanOn: settings.useClaudeCodePlan == true, codexPlanOn: settings.useCodexPlan == true,
                   preferredAnswerSource: settings.answerSource.flatMap(AnswerSource.init(rawValue:)))
     }
@@ -126,6 +129,7 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
         case .groq: return groqKey
         case .mistral: return mistralKey
         case .xai: return xaiKey
+        case .deepseek: return deepseekKey
         case .openCode: return openCodeKey
         case .claudeCodePlan, .codexPlan, .openClickyAccount: return nil
         }
@@ -144,7 +148,7 @@ nonisolated struct ProviderCredentials: Equatable, Sendable {
     /// The sources that can answer, in the order "automatic" tries them: own keys (Anthropic first,
     /// then OpenRouter, which reaches the most models), then the plans switched on, then the account.
     var answerSourcesInOrder: [AnswerSource] {
-        let order: [AnswerSource] = [.anthropic, .openRouter, .openAI, .gemini, .xai, .mistral, .groq, .openCode, .claudeCodePlan, .codexPlan, .openClickyAccount]
+        let order: [AnswerSource] = [.anthropic, .openRouter, .openAI, .gemini, .xai, .mistral, .groq, .deepseek, .openCode, .claudeCodePlan, .codexPlan, .openClickyAccount]
         return order.filter(canAnswer(with:))
     }
 }

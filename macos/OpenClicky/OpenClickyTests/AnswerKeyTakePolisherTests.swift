@@ -21,13 +21,14 @@ struct AnswerKeyTakePolisherTests {
     }
 
     @Test func everyKeyedAnswerSourceButTheBigTwoCanPolish() {
-        for source in [AnswerSource.openRouter, .gemini, .groq, .mistral, .xai, .openCode] {
+        for source in [AnswerSource.openRouter, .gemini, .groq, .mistral, .xai, .deepseek, .openCode] {
             var credentials = ProviderCredentials(openAIKey: nil, anthropicKey: nil, accountToken: nil)
             switch source {
             case .openRouter: credentials.openRouterKey = "k"
             case .gemini: credentials.geminiKey = "k"
             case .groq: credentials.groqKey = "k"
             case .mistral: credentials.mistralKey = "k"
+            case .deepseek: credentials.deepseekKey = "k"
             case .openCode: credentials.openCodeKey = "k"
             default: credentials.xaiKey = "k"
             }

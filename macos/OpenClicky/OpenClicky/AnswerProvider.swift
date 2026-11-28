@@ -7,7 +7,7 @@
 //  ProviderRouter picks one of these sources, ClaudeAPI hands the same request to an
 //  `AnswerProvider`:
 //    - OpenAI-compatible chat (OpenAIChatAnswerProvider): OpenAI, OpenRouter, Groq, Mistral, xAI,
-//      OpenCode Zen
+//      DeepSeek, OpenCode Zen
 //    - Google Gemini (GeminiAnswerProvider)
 //    - the Claude Code CLI on the person's Claude plan (ClaudeCodeAnswerProvider)
 //    - Codex on the person's ChatGPT plan (CodexAnswerProvider)
@@ -18,7 +18,7 @@ import Foundation
 
 /// The services that can answer, as the router and Settings name them.
 nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
-    case anthropic, openAI, openRouter, gemini, groq, mistral, xai, openCode, claudeCodePlan, codexPlan, openClickyAccount
+    case anthropic, openAI, openRouter, gemini, groq, mistral, xai, deepseek, openCode, claudeCodePlan, codexPlan, openClickyAccount
 
     var id: String { rawValue }
 
@@ -32,6 +32,7 @@ nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
         case .groq: return "Groq"
         case .mistral: return "Mistral"
         case .xai: return "Grok"
+        case .deepseek: return "DeepSeek"
         case .openCode: return "OpenCode"
         case .claudeCodePlan: return "Claude Code"
         case .codexPlan: return "Codex"
@@ -48,6 +49,7 @@ nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
         case .groq: return "Groq"
         case .mistral: return "Mistral"
         case .xai: return "xAI (Grok)"
+        case .deepseek: return "DeepSeek"
         case .openCode: return "OpenCode Zen"
         case .claudeCodePlan: return "Claude Code (your Claude plan)"
         case .codexPlan: return "Codex (your ChatGPT plan)"
@@ -65,6 +67,8 @@ nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
         case .groq: return "meta-llama/llama-4-scout-17b-16e-instruct"
         case .mistral: return "mistral-medium-latest"
         case .xai: return "grok-4"
+        // Flash sees screenshots. Pro does not. Thinking is on unless the request turns it off.
+        case .deepseek: return "deepseek-flash"
         // Kimi K3 reads screenshots on Zen's chat completions endpoint (opencode.ai/inference/v1/models);
         // K2.5 and K2.6 answered "Model access is disabled" on 2026-11-05.
         case .openCode: return "kimi-k3"
@@ -80,6 +84,7 @@ nonisolated enum AnswerSource: String, CaseIterable, Identifiable, Sendable {
         case .groq: return URL(string: "https://api.groq.com/openai/v1/chat/completions")
         case .mistral: return URL(string: "https://api.mistral.ai/v1/chat/completions")
         case .xai: return URL(string: "https://api.x.ai/v1/chat/completions")
+        case .deepseek: return URL(string: "https://api.deepseek.com/chat/completions")
         case .openCode: return URL(string: "https://opencode.ai/inference/openai/v1/chat/completions")
         default: return nil
         }

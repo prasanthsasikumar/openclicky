@@ -206,7 +206,7 @@ struct AnswerKeyTakePolisher: TakePolisher {
     let credentials: ProviderCredentials
 
     /// The keys that can polish, in the order they are tried; the fast ones first.
-    static let sourcesInOrder: [AnswerSource] = [.groq, .gemini, .mistral, .openRouter, .xai, .openCode]
+    static let sourcesInOrder: [AnswerSource] = [.groq, .gemini, .mistral, .openRouter, .xai, .deepseek, .openCode]
 
     /// The model asked to tidy a take, where it differs from the answer model.
     static func polishModel(for source: AnswerSource) -> String? {

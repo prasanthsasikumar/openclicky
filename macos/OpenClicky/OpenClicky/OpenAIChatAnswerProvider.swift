@@ -174,9 +174,9 @@ nonisolated struct OpenAIChatAnswerProvider: AnswerProvider {
     /// OpenAI's reasoning models (gpt-5…, o1/o3/o4…) refuse `max_tokens` and want
     /// `max_completion_tokens`, which OpenAI's other current models accept too; so every request to
     /// OpenAI itself sends `max_completion_tokens`. The compatible services (Groq, Mistral, xAI,
-    /// OpenRouter) are sent the classic `max_tokens`, which all of them take.
+    /// DeepSeek, OpenRouter) are sent the classic `max_tokens`, which all of them take.
     /// Note: on a reasoning model the limit also covers its hidden reasoning, so a small limit can
-    /// leave no room for the visible answer.
+    /// leave no room for the visible answer. DeepSeek thinks unless the body says not to.
     static func tokenLimitFieldName(for source: AnswerSource) -> String {
         source == .openAI ? "max_completion_tokens" : "max_tokens"
     }
@@ -220,6 +220,11 @@ nonisolated struct OpenAIChatAnswerProvider: AnswerProvider {
                     ] as [String: Any],
                 ] as [String: Any]
             }
+        }
+        // Thinking is on unless this says otherwise, and it spends the token budget before the
+        // spoken answer. A question wants the answer.
+        if source == .deepseek {
+            body["thinking"] = ["type": "disabled"]
         }
         return body
     }
