@@ -2,12 +2,14 @@
 // recogniser (SpeechAnalyzer on macOS 26, SFSpeechRecognizer before); here it is the Windows
 // speech recogniser (Windows.Media.SpeechRecognition continuous dictation, IOfflineSpeechRecognizer).
 // It listens in the dictation language when one is pinned, else the reply language, else en-US.
+// Automatic follows this PC's language, because there is no reply language to pin.
 //
 // The Windows recogniser listens to the default microphone itself and cannot be fed our audio,
 // so AppendAudio is ignored (the manager still captures for the level meter and the retained
 // take). Like SFSpeechRecognizer it closes a stretch at each pause and starts the next from
 // nothing; the platform session joins the stretches with SpokenStretches' rule.
 
+using System.Globalization;
 using OpenClicky.Core.Configuration;
 using OpenClicky.Core.Platform;
 
@@ -42,7 +44,9 @@ public sealed class WindowsSpeechTranscriptionProvider(IOfflineSpeechRecognizer 
         Action<Exception> onError,
         CancellationToken cancellationToken = default)
     {
-        var tags = LanguageTagsToTry(preferredLanguageTag(), ReplyLanguage.RecognitionLocale, ReplyLanguage.CurrentCode);
+        var tags = ReplyLanguage.FollowsTheSpeaker
+            ? LanguageTagsToTry(preferredLanguageTag(), CultureInfo.CurrentCulture.Name, CultureInfo.CurrentCulture.TwoLetterISOLanguageName)
+            : LanguageTagsToTry(preferredLanguageTag(), ReplyLanguage.RecognitionLocale, ReplyLanguage.CurrentCode);
         IOfflineSpeechSession speechSession;
         try
         {

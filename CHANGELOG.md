@@ -19,9 +19,14 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ### Mac
 
+- **Clicky can follow the language you are speaking.** In Settings → Clicky → Language, *Automatic* answers in the language of your latest clear sentence, and a short mishearing does not switch it. A pinned language still never switches, and that stays the default.
 - **A follow-up changes the drawing that is up.** Ask "make the nucleus bigger", "colour the big gear red", "slow it down" or "hide the labels" and the drawing on screen changes, instead of being drawn again or drawn over.
 - **Urdu and Arabic answers are spoken sentence by sentence.** The voice now starts at the first Urdu full stop (۔) or Arabic question mark (؟) instead of waiting for a long piece of the answer.
 - **A safety filter is said plainly.** When the AI's safety filter stops a question or its answer, Clicky says so and offers to explain the ideas behind it, instead of "something went wrong". It remembers that, so "why?" next is answered knowing what happened.
+
+### Windows
+
+- **Clicky can follow the language you are speaking.** In Settings → Clicky → Language, *Automatic* answers in the language of your latest clear sentence, and a short mishearing does not switch it. A pinned language still never switches, and that stays the default.
 
 ## 0.13.1
 

@@ -154,7 +154,7 @@ struct HearingSettingsTests {
 
     /// The ⌃⌥ lane builds the provider without a dictation language and keeps the HUD's.
     @Test @MainActor func theAskLaneKeepsTheReplyLanguage() {
-        #expect(OpenAIAudioTranscriptionProvider().language() == ReplyLanguage.currentCode)
+        #expect(OpenAIAudioTranscriptionProvider().language() == ReplyLanguage.transcriptionLanguageCode)
     }
 
     /// AssemblyAI's streaming model hears Hindi and Marathi but not Tamil; the missing ones are logged.

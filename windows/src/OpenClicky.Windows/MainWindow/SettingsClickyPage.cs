@@ -153,9 +153,10 @@ internal sealed partial class SettingsRowFactory
             case "clicky.language":
                 return new LiveContent(() =>
                 {
-                    var currentCode = ReplyLanguage.CurrentCode;
-                    return Ui.Card(Ui.Row(item.Title, L.T("Clicky speaks and listens in this. Dictation has its own, on the Dictation page."), query,
-                        Ui.Picker(ReplyLanguage.ChoicesFor(Settings.Region, currentCode).Select(choice => (choice.Code, choice.Name)), currentCode, code =>
+                    var currentCode = ReplyLanguage.ConfiguredCode;
+                    return Ui.Card(Ui.Row(item.Title, L.T("Clicky speaks and listens in this. Automatic follows the language you are speaking. Dictation has its own, on the Dictation page."), query,
+                        Ui.Picker(ReplyLanguage.ChoicesFor(Settings.Region, currentCode).Select(choice =>
+                            (choice.Code, choice.Code == ReplyLanguage.AutomaticCode ? L.T("Automatic") : choice.Name)), currentCode, code =>
                         {
                             OpenClickyConfiguration.Update(shell => shell.Language = code);
                             ShellSettingsRevision.NoteChanged();

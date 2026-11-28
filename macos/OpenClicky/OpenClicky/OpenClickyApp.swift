@@ -419,7 +419,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             setvbuf(stdout, nil, _IONBF, 0)
             let request = launchArguments[localAskIndex + 1]
             Task { @MainActor in
-                let gateDecision = LocalAskRung.gate(transcript: request, replyLanguageCode: ReplyLanguage.currentCode)
+                let gateDecision = LocalAskRung.gate(transcript: request, replyLanguageCode: ReplyLanguage.configuredCode)
                 print("local-ask: gate \(gateDecision)")
                 guard case .tryModel(let mentionsRewriting) = gateDecision else { exit(0) }
                 guard let model = LocalAskModelAvailability.makeModel() else {

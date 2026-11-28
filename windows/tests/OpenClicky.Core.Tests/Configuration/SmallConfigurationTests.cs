@@ -22,6 +22,8 @@ public sealed class AppRegionTests
     {
         Assert.Contains(ReplyLanguage.ChoicesFor(AppRegion.World, "ta"), choice => choice.Code == "ta");
         Assert.DoesNotContain(ReplyLanguage.ChoicesFor(AppRegion.World, "en"), choice => choice.Code == "hi");
+        Assert.Contains(ReplyLanguage.ChoicesFor(AppRegion.World, "en"), choice => choice.Code == ReplyLanguage.AutomaticCode);
+        Assert.Equal(ReplyLanguage.AutomaticCode, ReplyLanguage.Choices[0].Code);
         Assert.Equal(ReplyLanguage.Choices.Count, ReplyLanguage.ChoicesFor(AppRegion.India, "en").Count);
     }
 
@@ -64,6 +66,24 @@ public sealed class ReplyLanguageTests
         Assert.Equal("en", ReplyLanguage.NormalizedCode("  "));
         Assert.Equal("en", ReplyLanguage.NormalizedCode("en-US"));
         Assert.Equal("hi", ReplyLanguage.NormalizedCode("HI_in"));
+        Assert.Equal("auto", ReplyLanguage.NormalizedCode("auto"));
+        Assert.Equal("auto", ReplyLanguage.NormalizedCode("AUTO"));
+    }
+
+    [Fact]
+    public void AutomaticFollowsTheLatestClearSentence()
+    {
+        Assert.Null(ReplyLanguage.TranscriptionLanguage("auto"));
+        Assert.Equal("en", ReplyLanguage.EngineCode("auto"));
+        Assert.Equal("en", ReplyLanguage.TranscriptionLanguage(null));
+        var rule = ReplyLanguage.Instruction("auto");
+        Assert.Contains("latest clear sentence", rule);
+        Assert.Contains("not a language change", rule);
+        Assert.DoesNotContain("Always speak and write", rule);
+        Assert.Contains("Use English until", ReplyLanguage.GreetingInstructions("auto"));
+        var drawing = OpenClicky.Core.Plugins.DrawStage.DrawStageLesson.SystemPrompt(100, 100, languageCode: "auto");
+        Assert.Contains("latest clear sentence", drawing);
+        Assert.DoesNotContain("Every say() line", drawing);
     }
 
     [Fact]
