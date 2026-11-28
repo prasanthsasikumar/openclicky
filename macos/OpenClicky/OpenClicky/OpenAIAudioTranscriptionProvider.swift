@@ -28,7 +28,7 @@ final class OpenAIAudioTranscriptionProvider: BuddyTranscriptionProvider {
     /// page's language; the ⌃⌥ lane keeps the HUD's.
     let language: () -> String?
 
-    init(language: @escaping () -> String? = { ReplyLanguage.currentCode }) {
+    init(language: @escaping () -> String? = { ReplyLanguage.transcriptionLanguageCode }) {
         self.language = language
     }
 

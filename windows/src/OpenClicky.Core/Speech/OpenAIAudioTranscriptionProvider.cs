@@ -24,7 +24,7 @@ public sealed class OpenAIAudioTranscriptionProvider : IBuddyTranscriptionProvid
 
     public OpenAIAudioTranscriptionProvider(Func<string?>? language = null)
     {
-        this.language = language ?? (() => ReplyLanguage.CurrentCode);
+        this.language = language ?? (() => ReplyLanguage.TranscriptionLanguageCode);
     }
 
     /// <summary>An own OpenAI key (straight to OpenAI) or an account (the backend).</summary>

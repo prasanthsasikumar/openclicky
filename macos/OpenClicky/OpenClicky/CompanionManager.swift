@@ -248,8 +248,7 @@ final class CompanionManager: ObservableObject {
                 self.realtimeVoiceClient.startListeningContinuously()
                 if !self.didGreetRealtime {
                     self.didGreetRealtime = true
-                    let languageName = ReplyLanguage.englishName(for: ReplyLanguage.currentCode)
-                    self.realtimeVoiceClient.requestResponse(instructions: "Greet the user in \(languageName) in one short sentence as OpenClicky.")
+                    self.realtimeVoiceClient.requestResponse(instructions: ReplyLanguage.greetingInstructions(for: ReplyLanguage.configuredCode))
                 }
             }
         }
@@ -1812,7 +1811,7 @@ final class CompanionManager: ObservableObject {
                 var writingTargetWasCaptured = false
                 var pauseAlreadyWaitedOut = false
                 if !isGuidedStepContinuation, dictationSettings.answerSimpleRequestsOnThisMac, let localAskRung {
-                    switch LocalAskRung.gate(transcript: transcript, replyLanguageCode: ReplyLanguage.currentCode) {
+                    switch LocalAskRung.gate(transcript: transcript, replyLanguageCode: ReplyLanguage.configuredCode) {
                     case .skip(let reason):
                         AppLog.append("local rung: gate skipped (\(reason))")
                         localRungOutcome = "gate_skipped"

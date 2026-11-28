@@ -24,8 +24,8 @@ struct OpenClickyShellSettings: Codable {
     var voiceSeconds: Int = 5
     /// "openai" (via the OpenClicky backend, default), "assemblyai" (needs ASSEMBLYAI_API_KEY on the backend), or "apple".
     var transcriptionProvider: String? = nil
-    /// The language OpenClicky speaks and transcribes, as a language code ("en", "hi"). Unset is
-    /// English. See ReplyLanguage.swift for why it is one fixed language and not "follow the user".
+    /// The language OpenClicky speaks and transcribes ("en", "hi"), or "auto" to follow the
+    /// language just spoken. Unset is English. See ReplyLanguage.swift.
     var language: String? = nil
     /// Opt in to launching at login (upstream OpenClicky registered itself unconditionally).
     var registerAsLoginItem: Bool? = nil

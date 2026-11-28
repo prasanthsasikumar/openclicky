@@ -240,7 +240,7 @@ public static class SpeechServer
 public sealed class SpeechServerTranscriptionProvider(Func<string?>? language = null, Func<OpenClickyShellSettings>? settings = null,
                                                        HttpClient? client = null) : IBuddyTranscriptionProvider
 {
-    private readonly Func<string?> language = language ?? (() => ReplyLanguage.CurrentCode);
+    private readonly Func<string?> language = language ?? (() => ReplyLanguage.TranscriptionLanguageCode);
     private readonly Func<OpenClickyShellSettings> settings = settings ?? (() => OpenClickyConfiguration.Settings);
 
     public string DisplayName => "your speech server";

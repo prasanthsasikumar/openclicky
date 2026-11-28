@@ -88,6 +88,20 @@ struct ReplyLanguageTests {
         #expect(ReplyLanguage.normalizedCode("en-US") == "en")
         #expect(ReplyLanguage.normalizedCode("hi_IN") == "hi")
         #expect(ReplyLanguage.normalizedCode("TA") == "ta")
+        #expect(ReplyLanguage.normalizedCode("auto") == "auto")
+        #expect(ReplyLanguage.normalizedCode("AUTO") == "auto")
+    }
+
+    /// Automatic is opt-in. It does not pin a language, and a fragment is not a switch.
+    @Test func automaticFollowsTheLatestClearSentence() {
+        #expect(ReplyLanguage.transcriptionLanguage(for: "auto") == nil)
+        #expect(ReplyLanguage.engineCode(for: "auto") == "en")
+        #expect(ReplyLanguage.transcriptionLanguage(for: nil) == "en")
+        let rule = ReplyLanguage.instruction(for: "auto")
+        #expect(rule.contains("latest clear sentence"))
+        #expect(rule.contains("not a language change"))
+        #expect(!rule.contains("Always speak and write"))
+        #expect(ReplyLanguage.greetingInstructions(for: "auto").contains("Use English until"))
     }
 
     /// "Speak English unless the user speaks another language" let the model drift; the rule holds
@@ -113,9 +127,11 @@ struct ReplyLanguageTests {
         #expect(withSkills.hasSuffix("## Skill: X"))
     }
 
-    @Test func thePickerOffersEnglishFirst() {
-        #expect(ReplyLanguage.choices.first?.code == "en")
+    @Test func thePickerOffersAutomaticThenEnglish() {
+        #expect(ReplyLanguage.choices.first?.code == ReplyLanguage.automaticCode)
+        #expect(ReplyLanguage.choices.dropFirst().first?.code == "en")
         #expect(Set(ReplyLanguage.choices.map(\.code)).count == ReplyLanguage.choices.count)
+        #expect(ReplyLanguage.choices(region: .world, currentCode: "en").contains { $0.code == "auto" })
     }
 }
 

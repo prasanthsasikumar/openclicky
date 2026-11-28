@@ -52,8 +52,7 @@ public sealed partial class CompanionManager
             if (!didGreetRealtime)
             {
                 didGreetRealtime = true;
-                var languageName = ReplyLanguage.EnglishName(ReplyLanguage.CurrentCode);
-                RealtimeVoiceClient.RequestResponse($"Greet the user in {languageName} in one short sentence as OpenClicky.");
+                RealtimeVoiceClient.RequestResponse(ReplyLanguage.GreetingInstructions(ReplyLanguage.ConfiguredCode));
             }
         }
         catch (Exception error)

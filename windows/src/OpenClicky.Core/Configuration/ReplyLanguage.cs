@@ -1,11 +1,13 @@
-// Ports ReplyLanguage.swift: the one language OpenClicky speaks, from `language` in
-// %USERPROFILE%\.openclicky\shell.json (Settings → Voice → Language), English until another is
-// chosen.
+// Ports ReplyLanguage.swift: the language OpenClicky speaks, from `language` in
+// %USERPROFILE%\.openclicky\shell.json (Settings → Clicky → Language), English until another is
+// chosen. "auto" is optional: answers follow the language of the latest clear sentence, and
+// transcription is not pinned.
 //
 // The Realtime prompt used to say "Speak English unless the user speaks another language", and
 // any such freedom gets used: in the sibling app Saathi, clean English audio was answered in
-// Italian, Japanese and Portuguese once the model had followed one misheard turn. So there is one
-// language, stated in every prompt, and the transcription is pinned to it too.
+// Italian, Japanese and Portuguese once the model had followed one misheard turn. A pinned
+// language is still the default. Automatic is the same freedom, chosen on purpose, and a
+// misheard fragment is not allowed to switch it.
 
 using System.Globalization;
 
@@ -18,9 +20,13 @@ public static class ReplyLanguage
         public string Id => Code;
     }
 
+    /// <summary>Stored in shell.json when Clicky should follow the language just spoken.</summary>
+    public const string AutomaticCode = "auto";
+
     /// <summary>What the Settings picker offers. Short on purpose: it is a picker in a small panel.</summary>
     public static IReadOnlyList<Choice> Choices { get; } =
     [
+        new(AutomaticCode, "Automatic"),
         new("en", "English"),
         new("hi", "हिन्दी"),
         new("ta", "தமிழ்"),
@@ -38,11 +44,17 @@ public static class ReplyLanguage
         new("zh", "中文"),
     ];
 
-    /// <summary>
-    /// The configured language as an ISO-639-1 code, which is what the transcription models take:
-    /// "en-US" in shell.json is sent as "en".
-    /// </summary>
-    public static string CurrentCode => NormalizedCode(OpenClickyConfiguration.Settings.Language);
+    /// <summary>What is stored: "en", "hi", or <see cref="AutomaticCode"/>. Unset stays English.</summary>
+    public static string ConfiguredCode => NormalizedCode(OpenClickyConfiguration.Settings.Language);
+
+    /// <summary>Whether answers follow the language just spoken, instead of one pinned language.</summary>
+    public static bool FollowsTheSpeaker => IsAutomatic(ConfiguredCode);
+
+    /// <summary>A real language for engines that need one. Automatic falls back to English for those.</summary>
+    public static string CurrentCode => EngineCode(OpenClickyConfiguration.Settings.Language);
+
+    /// <summary>The code sent to a transcriber, or null when Automatic so the model detects the language.</summary>
+    public static string? TranscriptionLanguageCode => TranscriptionLanguage(OpenClickyConfiguration.Settings.Language);
 
     public static string NormalizedCode(string? configured)
     {
@@ -51,9 +63,22 @@ public static class ReplyLanguage
         return string.IsNullOrEmpty(first) ? "en" : first.ToLowerInvariant();
     }
 
+    public static bool IsAutomatic(string? code) => string.Equals(code, AutomaticCode, StringComparison.Ordinal);
+
+    /// <summary>Null for Automatic. Anything else is the bare code transcription models take ("en-US" → "en").</summary>
+    public static string? TranscriptionLanguage(string? configured)
+    {
+        var code = NormalizedCode(configured);
+        return IsAutomatic(code) ? null : code;
+    }
+
+    /// <summary>A language code an engine can load. Automatic uses English until a sentence arrives.</summary>
+    public static string EngineCode(string? configured) => TranscriptionLanguage(configured) ?? "en";
+
     /// <summary>The language's name in English, for the prompt: "English", "Hindi".</summary>
     public static string EnglishName(string code)
     {
+        if (IsAutomatic(code)) return "the language they are speaking";
         try
         {
             var culture = CultureInfo.GetCultureInfo(code);
@@ -98,9 +123,22 @@ public static class ReplyLanguage
         _ => null,
     };
 
+    /// <summary>The one sentence that opens a hands-free session.</summary>
+    public static string GreetingInstructions(string code) => IsAutomatic(code)
+        ? "Greet the user in one short sentence as OpenClicky. Use English until they have spoken another language."
+        : $"Greet the user in {EnglishName(code)} in one short sentence as OpenClicky.";
+
     /// <summary>Added to every system prompt, Realtime and Claude alike.</summary>
     public static string Instruction(string code)
     {
+        if (IsAutomatic(code))
+        {
+            return "Reply in the language of the user's latest clear sentence. One misheard word, noise, "
+                + "or a fragment is not a language change: stay with the language of the last clear "
+                + "sentence, and use English until there is one. If a turn is silent, only noise, or too "
+                + "short to make out, do not invent what was said: say that you did not catch that and "
+                + "ask them to say it again, in the language you are already using.";
+        }
         var name = EnglishName(code);
         return $"Always speak and write in {name}. Every reply is in {name}: whatever language the user "
             + "seems to use, whatever language the transcript shows, and whatever language any earlier "

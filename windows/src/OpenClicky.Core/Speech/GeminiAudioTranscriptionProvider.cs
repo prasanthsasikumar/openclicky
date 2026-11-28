@@ -17,7 +17,7 @@ public sealed class GeminiAudioTranscriptionProvider(Func<string?>? language = n
     /// <summary>The model that listens: the one that answers on a Gemini key, quick with its thinking low.</summary>
     public const string Model = "gemini-3.8-flash";
 
-    private readonly Func<string?> language = language ?? (() => ReplyLanguage.CurrentCode);
+    private readonly Func<string?> language = language ?? (() => ReplyLanguage.TranscriptionLanguageCode);
 
     public string DisplayName => "Gemini";
     public bool RequiresSpeechRecognitionPermission => false;

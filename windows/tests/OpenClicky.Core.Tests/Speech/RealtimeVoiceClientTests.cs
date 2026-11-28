@@ -143,6 +143,8 @@ public class RealtimeSessionUpdateTests
         Assert.Null(input["turn_detection"]);
         Assert.Equal(24_000, input["format"]!["rate"]!.GetValue<int>());
         Assert.Equal("en", input["transcription"]!["language"]!.GetValue<string>());
+        var automatic = RealtimeVoiceClient.BuildSessionUpdate(RealtimeTurnMode.PushToTalk, "be brief", null, null);
+        Assert.False(automatic["session"]!["audio"]!["input"]!["transcription"]!.AsObject().ContainsKey("language"));
         Assert.Equal("gpt-4o-mini-transcribe", input["transcription"]!["model"]!.GetValue<string>());
         Assert.Equal("marin", pushToTalk["session"]!["audio"]!["output"]!["voice"]!.GetValue<string>());
 

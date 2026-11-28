@@ -76,8 +76,8 @@ extension SettingsCatalog {
         var items: [SettingsItem] = [
             SettingsItem(
                 id: "clicky.language",
-                title: "Language", detail: "Clicky speaks and listens in this.",
-                keywords: ["language", "english", "hindi", "tamil", "spanish", "french", "speak", "reply", "listen"],
+                title: "Language", detail: "Clicky speaks and listens in this. Automatic follows the language you are speaking.",
+                keywords: ["language", "english", "hindi", "tamil", "spanish", "french", "speak", "reply", "listen", "automatic"],
                 view: AnyView(ReplyLanguageRow(settings: settings))),
             SettingsItem(
                 id: "clicky.speechVoice",
@@ -648,13 +648,13 @@ private final class VoicePreview {
     }
 }
 
-/// The one language OpenClicky speaks and listens in (`language` in shell.json).
+/// The language OpenClicky speaks and listens in (`language` in shell.json), or Automatic.
 private struct ReplyLanguageRow: View {
     @ObservedObject var settings: DictationSettings
-    @State private var languageCode = ReplyLanguage.currentCode
+    @State private var languageCode = ReplyLanguage.configuredCode
 
     var body: some View {
-        SettingsRow(title: "Language", detail: "Clicky speaks and listens in this. Dictation has its own, on the Dictation page.") {
+        SettingsRow(title: "Language", detail: "Clicky speaks and listens in this. Automatic follows the language you are speaking. Dictation has its own, on the Dictation page.") {
             Picker("", selection: Binding(
                 get: { languageCode },
                 set: { chosenCode in

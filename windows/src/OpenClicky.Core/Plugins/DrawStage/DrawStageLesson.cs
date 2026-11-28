@@ -345,7 +345,11 @@ public static partial class DrawStageLesson
         bool pieces = false, string? languageCode = null, IReadOnlyList<Answers.AnswerStyleChoice>? answerStyle = null)
     {
         var prompt = SystemPromptWithout(width, height, detail, theirInstructions, pieces) + Answers.AnswerStyle.DrawingSection(answerStyle ?? []);
-        return languageCode is null or "en" ? prompt : prompt + "\n\n" + Configuration.ReplyLanguage.Instruction(languageCode) + LanguageSection(languageCode);
+        if (languageCode is null or "en") return prompt;
+        var instruction = Configuration.ReplyLanguage.Instruction(languageCode);
+        // Automatic follows the sentence; it has no one script to force onto every label.
+        if (Configuration.ReplyLanguage.IsAutomatic(languageCode)) return prompt + "\n\n" + instruction;
+        return prompt + "\n\n" + instruction + LanguageSection(languageCode);
     }
 
     /// <summary>For a language other than English: every word the drawing says or writes is in it, in its own script, while the

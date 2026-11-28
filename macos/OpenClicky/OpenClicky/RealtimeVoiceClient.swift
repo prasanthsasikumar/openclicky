@@ -677,11 +677,15 @@ final class RealtimeVoiceClient: NSObject, ObservableObject {
     }
 
     private func sessionUpdate(mode: TurnMode, instructions text: String) -> [String: Any] {
+        var transcription: [String: Any] = ["model": "gpt-4o-mini-transcribe"]
+        // Pinned when a language is chosen: unpinned, English audio was transcribed as Chinese and
+        // the model took that as a switch. Automatic leaves the language out. See ReplyLanguage.swift.
+        if let language = ReplyLanguage.transcriptionLanguageCode {
+            transcription["language"] = language
+        }
         var input: [String: Any] = [
             "format": ["type": "audio/pcm", "rate": Int(Self.sampleRate)],
-            // Pinned, like the reply: unpinned, English audio was transcribed as Chinese and the
-            // model took that as the user switching language. See ReplyLanguage.swift.
-            "transcription": ["model": "gpt-4o-mini-transcribe", "language": ReplyLanguage.currentCode],
+            "transcription": transcription,
         ]
         switch mode {
         case .pushToTalk:

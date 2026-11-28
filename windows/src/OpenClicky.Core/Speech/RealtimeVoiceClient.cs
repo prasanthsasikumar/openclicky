@@ -863,15 +863,17 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     }
 
     /// <summary>The session.update payload: audio formats, pinned transcription language, turn detection, tools.</summary>
-    public static JsonObject BuildSessionUpdate(RealtimeTurnMode mode, string instructionsText, string? voice, string transcriptionLanguage,
+    public static JsonObject BuildSessionUpdate(RealtimeTurnMode mode, string instructionsText, string? voice, string? transcriptionLanguage,
                                                 IReadOnlyList<JsonObject>? extraTools = null)
     {
+        var transcription = new JsonObject { ["model"] = "gpt-4o-mini-transcribe" };
+        // Pinned when a language is chosen: unpinned, English audio was transcribed as Chinese and
+        // the model took that as a switch. Automatic passes null and leaves the language out.
+        if (!string.IsNullOrEmpty(transcriptionLanguage)) transcription["language"] = transcriptionLanguage;
         var input = new JsonObject
         {
             ["format"] = new JsonObject { ["type"] = "audio/pcm", ["rate"] = RealtimeAudio.SampleRate },
-            // Pinned, like the reply: unpinned, English audio was transcribed as Chinese and the
-            // model took that as the user switching language. See ReplyLanguage.
-            ["transcription"] = new JsonObject { ["model"] = "gpt-4o-mini-transcribe", ["language"] = transcriptionLanguage },
+            ["transcription"] = transcription,
         };
         input["turn_detection"] = mode == RealtimeTurnMode.PushToTalk
             ? null
@@ -969,7 +971,7 @@ public sealed partial class RealtimeVoiceClient : ObservableObject, IDisposable
     };
 
     private JsonObject SessionUpdate(RealtimeTurnMode mode, string instructionsText) =>
-        BuildSessionUpdate(mode, instructionsText, voice, ReplyLanguage.CurrentCode,
+        BuildSessionUpdate(mode, instructionsText, voice, ReplyLanguage.TranscriptionLanguageCode,
             [.. DesktopActionToolDefinitions?.Invoke() ?? [], .. PluginToolDefinitions?.Invoke() ?? []]);
 
     // MARK: - Instructions (skills)
