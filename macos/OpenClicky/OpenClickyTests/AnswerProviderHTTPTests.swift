@@ -151,9 +151,23 @@ struct AnswerProviderHTTPTests {
         let body = OpenAIChatAnswerProvider.makeRequestBody(source: .openAI, model: "gpt-5", answerRequest: sampleRequest)
         #expect(body["max_completion_tokens"] as? Int == 512)
         #expect(body["max_tokens"] == nil)
-        for compatibleSource in [AnswerSource.openRouter, .groq, .mistral, .xai, .openCode] {
+        for compatibleSource in [AnswerSource.openRouter, .groq, .mistral, .xai, .deepseek, .openCode] {
             #expect(OpenAIChatAnswerProvider.tokenLimitFieldName(for: compatibleSource) == "max_tokens")
         }
+    }
+
+    @Test func deepSeekAnswersWithItsKeyAndDoesNotThink() throws {
+        #expect(AnswerSource.deepseek.defaultModel == "deepseek-flash")
+        let urlRequest = try OpenAIChatAnswerProvider.makeURLRequest(
+            source: .deepseek, apiKey: "sk-ds", model: "deepseek-flash", answerRequest: sampleRequest)
+        #expect(urlRequest.url?.absoluteString == "https://api.deepseek.com/chat/completions")
+        #expect(urlRequest.value(forHTTPHeaderField: "Authorization") == "Bearer sk-ds")
+        let body = OpenAIChatAnswerProvider.makeRequestBody(source: .deepseek, model: "deepseek-flash", answerRequest: sampleRequest)
+        #expect((body["thinking"] as? [String: String])?["type"] == "disabled")
+        #expect(body["max_tokens"] as? Int == 512)
+        let onlyDeepSeek = ProviderCredentials(openAIKey: nil, anthropicKey: nil, accountToken: nil, deepseekKey: " sk-ds ")
+        #expect(onlyDeepSeek.key(for: .deepseek) == "sk-ds")
+        #expect(ProviderRouter.route(for: .claude, credentials: onlyDeepSeek) == .answerProvider(.deepseek))
     }
 
     @Test func openRouterIsToldWhoIsAsking() throws {

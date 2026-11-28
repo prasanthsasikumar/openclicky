@@ -14,7 +14,7 @@ nonisolated enum AnswerProviderFactory {
                      modelOverrides: [String: String]) async throws -> AnswerProvider {
         let model = modelOverrides[source.rawValue].flatMap { $0.isEmpty ? nil : $0 } ?? source.defaultModel
         switch source {
-        case .openAI, .openRouter, .groq, .mistral, .xai, .openCode:
+        case .openAI, .openRouter, .groq, .mistral, .xai, .deepseek, .openCode:
             guard let key = credentials.key(for: source), let model else { throw missing(source, "add its key in settings, account.") }
             return OpenAIChatAnswerProvider(source: source, apiKey: key, model: model)
         case .gemini:

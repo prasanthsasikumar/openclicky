@@ -19,6 +19,8 @@ downloads table. Under a platform heading, don't start bullets with "Windows:" a
 
 ### Mac
 
+- **A DeepSeek key can answer.** Settings → Keys & Account → DeepSeek. The key goes straight to DeepSeek. Questions use `deepseek-flash`, which can see the screen, with thinking turned off so the spoken answer is not spent on it. Pick it under Clicky → Answers come from when another key is already set.
+- **Work goes to DeepSeek Harness.** With a DeepSeek key and `dsh` on this Mac, a request to edit, create, or run something is handed to `dsh --profile headless`. A question is still just answered. The harness keeps its own home at `~/.openclicky/dsh-home`.
 - **A follow-up changes the drawing that is up.** Ask "make the nucleus bigger", "colour the big gear red", "slow it down" or "hide the labels" and the drawing on screen changes, instead of being drawn again or drawn over.
 - **Urdu and Arabic answers are spoken sentence by sentence.** The voice now starts at the first Urdu full stop (۔) or Arabic question mark (؟) instead of waiting for a long piece of the answer.
 - **A safety filter is said plainly.** When the AI's safety filter stops a question or its answer, Clicky says so and offers to explain the ideas behind it, instead of "something went wrong". It remembers that, so "why?" next is answered knowing what happened.

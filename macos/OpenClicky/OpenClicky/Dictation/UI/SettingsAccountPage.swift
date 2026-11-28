@@ -271,7 +271,7 @@ private struct BackendEngineUsageRow: View {
 /// A provider a key can be saved for: where it lives in shell.json and how its row reads.
 /// Not private: the Spotify row's mapping is unit-tested.
 enum KeyProvider: String, CaseIterable, Identifiable {
-    case openAI, anthropic, openRouter, gemini, groq, mistral, xai, openCode, sarvam, elevenLabs, googleCloud, amazonPolly, spotify
+    case openAI, anthropic, openRouter, gemini, groq, mistral, xai, deepseek, openCode, sarvam, elevenLabs, googleCloud, amazonPolly, spotify
 
     var id: String { rawValue }
 
@@ -284,6 +284,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return "Groq"
         case .mistral: return "Mistral"
         case .xai: return "xAI (Grok)"
+        case .deepseek: return "DeepSeek"
         case .openCode: return "OpenCode Zen"
         case .sarvam: return "Sarvam"
         case .elevenLabs: return "ElevenLabs"
@@ -302,6 +303,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return "Very fast answers on open models."
         case .mistral: return "Mistral’s own models."
         case .xai: return "Grok, from xAI."
+        case .deepseek: return "Answers about what’s on screen. Your key goes straight to DeepSeek."
         case .openCode: return "Your OpenCode Zen key: Kimi, GLM, DeepSeek and more. From opencode.ai/zen."
         case .sarvam: return "Speaks answers in a natural voice (Bulbul), and the Sarvam dictation engine for Indian languages."
         case .elevenLabs: return "Speaks answers in ElevenLabs’ voice, on your own ElevenLabs account."
@@ -320,6 +322,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return "gsk_…"
         case .mistral: return "Mistral key"
         case .xai: return "xai-…"
+        case .deepseek: return "sk-…"
         case .openCode: return "sk-…"
         case .sarvam: return "Sarvam key"
         case .elevenLabs: return "sk_…"
@@ -338,6 +341,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return \.groqApiKey
         case .mistral: return \.mistralApiKey
         case .xai: return \.xaiApiKey
+        case .deepseek: return \.deepseekApiKey
         case .openCode: return \.openCodeApiKey
         case .sarvam: return \.sarvamKey
         case .elevenLabs: return \.elevenLabsApiKey
@@ -357,6 +361,7 @@ enum KeyProvider: String, CaseIterable, Identifiable {
         case .groq: return .groq
         case .mistral: return .mistral
         case .xai: return .xai
+        case .deepseek: return .deepseek
         case .openCode: return .openCode
         case .sarvam, .elevenLabs, .googleCloud, .amazonPolly, .spotify: return nil
         }
